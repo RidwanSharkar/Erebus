@@ -9,6 +9,7 @@ import { DragonHorns } from './DragonHorns';
 import ChargedOrbitals, { DashChargeStatus } from './ChargedOrbitals';
 import BoneAura from './BoneAura';
 import { WeaponType, WeaponSubclass } from './weapons';
+import { isEventOverGameUi } from '@/utils/gameUiInput';
 import DraconicWingJets from './DraconicWingJets';
 import EtherealBow from '../weapons/EtherBow';
 import Scythe from '../weapons/Scythe';
@@ -320,7 +321,7 @@ export default function DragonUnit({
     ]);
 
     const onMouseDown = (e: MouseEvent) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || isEventOverGameUi(e)) return;
       if (!AURA_WEAPONS.has(currentWeapon)) return;
       isLeftMouseHeldRef.current = true;
       spellAuraTimerRef.current = setTimeout(() => {
@@ -329,7 +330,7 @@ export default function DragonUnit({
     };
 
     const onMouseUp = (e: MouseEvent) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || isEventOverGameUi(e)) return;
       isLeftMouseHeldRef.current = false;
       if (spellAuraTimerRef.current) {
         clearTimeout(spellAuraTimerRef.current);

@@ -8,7 +8,11 @@ import DragonUnit from './DragonUnit';
 import RunebladeSlashImpact from '../weapons/RunebladeSlashImpact';
 import RunebladeWraithStrikeImpact from '../weapons/RunebladeWraithStrikeImpact';
 import { DashChargeStatus } from './ChargedOrbitals';
-import ViperStingManager, { triggerGlobalViperSting } from '../projectiles/ViperStingManager';
+import ViperStingManager, {
+  getGlobalViperStingProjectiles,
+  triggerGlobalViperSting,
+} from '../projectiles/ViperStingManager';
+import { queryViperExplosionTargets } from '../projectiles/viperExplosionTargets';
 import GhostTrail from './GhostTrail';
 import DashFireTrail from './DashFireTrail';
 import { WeaponType, WeaponSubclass } from './weapons';
@@ -44,6 +48,7 @@ type DragonEnemyDataEntry = {
   health: number;
   maxHealth: number;
   isBoss: boolean;
+  isDying: boolean;
 };
 
 type DragonActiveEffect = {
@@ -270,7 +275,7 @@ interface DragonRendererProps {
   talentLoadout?: TalentLoadout | null;
 }
 
-export default function DragonRenderer({
+function DragonRenderer({
   entityId,
   position,
   realTimePositionRef,
@@ -457,10 +462,12 @@ export default function DragonRenderer({
     for (const enemy of enemies) {
       const transform = enemy.getComponent(Transform)!;
       const health = enemy.getComponent(Health)!;
-      if (health.currentHealth <= 0) continue;
+      if (health.currentHealth <= 0 || health.isDead) continue;
+      if (enemy.userData?.coopEnemyDying) continue;
 
       const ec = enemy.getComponent(Enemy);
       const worldPos = transform.getWorldPosition();
+      const isDying = !!enemy.userData?.coopEnemyDying;
       if (writeIndex < enemyDataArray.length) {
         const entry = enemyDataArray[writeIndex];
         entry.id = enemy.id.toString();
@@ -468,6 +475,7 @@ export default function DragonRenderer({
         entry.health = health.currentHealth;
         entry.maxHealth = health.maxHealth;
         entry.isBoss = ec != null && ec.type === EnemyType.BOSS;
+        entry.isDying = isDying;
       } else {
         enemyDataArray.push({
           id: enemy.id.toString(),
@@ -475,12 +483,19 @@ export default function DragonRenderer({
           health: health.currentHealth,
           maxHealth: health.maxHealth,
           isBoss: ec != null && ec.type === EnemyType.BOSS,
+          isDying,
         });
       }
       writeIndex++;
     }
     enemyDataArray.length = writeIndex;
   }, [world]);
+
+  const queryExplosionTargets = useCallback(
+    (cx: number, cz: number, radius: number) =>
+      queryViperExplosionTargets(world, cx, cz, radius),
+    [world],
+  );
 
   useEffect(() => {
     if (!isLocalPlayer || !onWraithStrikeSlashImpactQueueReady) return;
@@ -656,7 +671,12 @@ export default function DragonRenderer({
       currentWeapon === WeaponType.RUNEBLADE
     ) {
       const queryNow = performance.now();
-      if (isSwinging || queryNow - lastEnemyQueryTimeRef.current >= 100) {
+      const viperProjectilesActive = getGlobalViperStingProjectiles().some((p) => p.active);
+      if (
+        isSwinging ||
+        viperProjectilesActive ||
+        queryNow - lastEnemyQueryTimeRef.current >= 100
+      ) {
         lastEnemyQueryTimeRef.current = queryNow;
         refreshEnemyDataRef();
       }
@@ -746,7 +766,13 @@ export default function DragonRenderer({
           !isBlizzard &&
           (viperPhase === 'forward' || viperPhase === 'return' || viperPhase === 'explosion');
 
-        const damageType = isBlizzard ? 'blizzard' : isReapingViperPhase ? 'reaping_talons' : 'sword';
+        const damageType = isBlizzard
+          ? 'blizzard'
+          : viperPhase === 'explosion'
+            ? 'reaping_talons_explosion'
+            : isReapingViperPhase
+              ? 'reaping_talons'
+              : 'sword';
 
         const glacialTalonsForHit = glacialTalonsTheme && isReapingViperPhase;
         const rbComboStep =
@@ -1027,6 +1053,7 @@ export default function DragonRenderer({
           wrathfulTalonsReturnCrit={wrathfulTalonsReturnCrit}
           wrathfulTalonsExplosionCrit={wrathfulTalonsExplosionCrit}
           explosiveTalons={explosiveTalons}
+          queryExplosionTargets={queryExplosionTargets}
           onExecuteFirstForwardHit={executeReapingTalons ? onExecuteFirstForwardHit : undefined}
           giantKiller={giantKillerReapingTalons}
           glacialTalonsTheme={glacialTalonsTheme}
@@ -1065,3 +1092,5 @@ export default function DragonRenderer({
     </>
   );
 }
+
+export default React.memo(DragonRenderer);

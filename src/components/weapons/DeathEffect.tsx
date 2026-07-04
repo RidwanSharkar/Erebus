@@ -1,10 +1,11 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { Group, Vector3, Mesh, Material, MeshStandardMaterial } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import type { Position3 } from '@/utils/position3';
 
 interface DeathEffectProps {
-  position: Vector3;
+  position: Position3;
   duration?: number;
   startTime?: number;
   playerId?: string;
@@ -12,7 +13,7 @@ interface DeathEffectProps {
   // For tracking player position updates
   playerData?: Array<{
     id: string;
-    position: Vector3;
+    position: Position3;
     health: number;
   }>;
 }
@@ -27,13 +28,32 @@ export default function DeathEffect({
 }: DeathEffectProps) {
   const effectRef = useRef<Group>(null);
   const rotationSpeed = useRef(Math.random() * 0.01 + 0.005);
-  const hasCompleted = useRef(false); // Flag to prevent multiple onComplete calls
+  const hasCompleted = useRef(false);
+
+  const mistParticles = useMemo(
+    () =>
+      Array.from({ length: 8 }, () => ({
+        position: [
+          (Math.random() - 0.5) * 1.5,
+          Math.random() * 1.5 + 0.2,
+          (Math.random() - 0.5) * 1.5,
+        ] as [number, number, number],
+        rotation: [
+          Math.random() * Math.PI,
+          Math.random() * Math.PI,
+          Math.random() * Math.PI,
+        ] as [number, number, number],
+        radius: 0.1 + Math.random() * 0.1,
+      })),
+    [],
+  );
 
   const coreMatRef = useRef<MeshStandardMaterial>(null);
   const mistMatRefs = useRef<(MeshStandardMaterial | null)[]>([]);
   const ringMatRefs = useRef<(MeshStandardMaterial | null)[]>([]);
   const skullMatRef = useRef<MeshStandardMaterial>(null);
   const glowMatRef = useRef<MeshStandardMaterial>(null);
+  const followPosScratch = useRef(new Vector3());
 
   // Borrow a pooled light instead of mounting a <pointLight> (avoids lit-shader recompiles).
   const deathLight = useDynamicLight({ color: '#6A1B9A', distance: 8, decay: 2, priority: 1 });
@@ -89,9 +109,8 @@ export default function DeathEffect({
 
       if (target && target.health <= 0) {
         // Update the group position to follow the dead player
-        const targetPosition = target.position.clone();
-        targetPosition.y += 0.5; // Adjust Y offset to be at player level
-        effectRef.current.position.copy(targetPosition);
+        followPosScratch.current.set(target.position.x, target.position.y + 0.5, target.position.z);
+        effectRef.current.position.copy(followPosScratch.current);
       }
     }
 
@@ -147,7 +166,7 @@ export default function DeathEffect({
   });
 
   return (
-    <group ref={effectRef} position={position}>
+    <group ref={effectRef} position={[position.x, position.y, position.z]}>
       {/* Dark ethereal sphere */}
       <mesh position={[0, 0.5, 0]}>
         <sphereGeometry args={[0.8, 16, 16]} />
@@ -164,21 +183,13 @@ export default function DeathEffect({
       </mesh>
 
       {/* Death mist particles */}
-      {[...Array(8)].map((_, i) => (
+      {mistParticles.map((particle, i) => (
         <mesh
           key={`mist-${i}`}
-          position={[
-            (Math.random() - 0.5) * 1.5,
-            Math.random() * 1.5 + 0.2,
-            (Math.random() - 0.5) * 1.5
-          ]}
-          rotation={[
-            Math.random() * Math.PI,
-            Math.random() * Math.PI,
-            Math.random() * Math.PI
-          ]}
+          position={particle.position}
+          rotation={particle.rotation}
         >
-          <sphereGeometry args={[0.1 + Math.random() * 0.1, 8, 8]} />
+          <sphereGeometry args={[particle.radius, 8, 8]} />
           <meshStandardMaterial
             ref={(el) => { mistMatRefs.current[i] = el; }}
             color="#6A1B9A"

@@ -7,6 +7,7 @@ import ExplosiveTalonsDetonation from './ExplosiveTalonsDetonation';
 import { useViperSting } from './useViperSting';
 import { useViperStingBeam } from './useViperStingBeam';
 import { REAPING_TALONS_RETURN_HEAL_PER_ORB } from '@/utils/talents';
+import type { ViperExplosionTarget } from './viperExplosionTargets';
 
 interface ViperStingManagerProps {
   parentRef: React.RefObject<Group>;
@@ -58,6 +59,7 @@ interface ViperStingManagerProps {
   onExecuteFirstForwardHit?: () => number;
   giantKiller?: boolean;
   glacialTalonsTheme?: boolean;
+  queryExplosionTargets?: (cx: number, cz: number, radius: number) => ViperExplosionTarget[];
 }
 
 interface SoulStealEffect {
@@ -128,6 +130,7 @@ export default function ViperStingManager({
   onExecuteFirstForwardHit,
   giantKiller,
   glacialTalonsTheme,
+  queryExplosionTargets,
 }: ViperStingManagerProps) {
   const [soulStealEffects, setSoulStealEffects] = useState<SoulStealEffect[]>([]);
   const nextSoulStealId = useRef(0);
@@ -145,7 +148,7 @@ export default function ViperStingManager({
   const { activeEffects: beamEffects, createBeamEffect, removeEffect: removeBeamEffect } = useViperStingBeam();
 
   // Viper Sting projectile management with soul steal effect creation
-  const { shootViperSting, projectilePool, soulStealEffects: viperStingSoulStealEffects, createSoulStealEffect } = useViperSting({
+  const { shootViperSting, projectilePool, soulStealEffects: viperStingSoulStealEffects, createSoulStealEffect, removeSoulStealEffect } = useViperSting({
     parentRef,
     onHit,
     enemyData,
@@ -168,6 +171,7 @@ export default function ViperStingManager({
     onExplosiveTalonsDetonate,
     giantKiller,
     glacialTalonsTheme,
+    queryExplosionTargets,
   });
 
   // Register global manager
@@ -217,7 +221,7 @@ export default function ViperStingManager({
       ))}
 
       {/* Soul Steal Effects */}
-      {viperStingSoulStealEffects.current.map(effect => (
+      {viperStingSoulStealEffects.map(effect => (
         <SoulStealEffect
           key={effect.id}
           id={effect.id}
@@ -256,8 +260,7 @@ export default function ViperStingManager({
               }
             }
             
-            // Remove the effect from the array
-            viperStingSoulStealEffects.current = viperStingSoulStealEffects.current.filter(e => e.id !== effect.id);
+            removeSoulStealEffect(effect.id);
           }}
         />
       ))}

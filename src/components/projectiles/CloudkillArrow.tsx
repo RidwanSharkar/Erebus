@@ -59,6 +59,31 @@ const pulsingRingMaterial = new MeshBasicMaterial({
 });
 const trailColor = new Color('#00ff00');
 
+const CLOUDKILL_TRAIL_VERTEX_SHADER = `
+  attribute float opacity;
+  attribute float scale;
+  varying float vOpacity;
+  void main() {
+    vOpacity = opacity;
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * mvPosition;
+    gl_PointSize = scale * 45.0 * (300.0 / -mvPosition.z);
+  }
+`;
+
+const CLOUDKILL_TRAIL_FRAGMENT_SHADER = `
+  varying float vOpacity;
+  uniform vec3 uColor;
+  void main() {
+    float d = length(gl_PointCoord - vec2(0.5));
+    float strength = smoothstep(0.5, 0.1, d);
+    vec3 glowColor = mix(uColor, vec3(0.53, 1.0, 0.53), 0.35);
+    gl_FragColor = vec4(glowColor, vOpacity * strength);
+  }
+`;
+
+const trailUniforms = { uColor: { value: trailColor } };
+
 const scratchDir = new Vector3();
 const scratchIdeal = new Vector3();
 const scratchFinal = new Vector3();
@@ -290,30 +315,9 @@ function CloudkillArrowInner({
             transparent
             depthWrite={false}
             blending={AdditiveBlending}
-            vertexShader={`
-              attribute float opacity;
-              attribute float scale;
-              varying float vOpacity;
-              void main() {
-                vOpacity = opacity;
-                vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-                gl_Position = projectionMatrix * mvPosition;
-                gl_PointSize = scale * 45.0 * (300.0 / -mvPosition.z);
-              }
-            `}
-            fragmentShader={`
-              varying float vOpacity;
-              uniform vec3 uColor;
-              void main() {
-                float d = length(gl_PointCoord - vec2(0.5));
-                float strength = smoothstep(0.5, 0.1, d);
-                vec3 glowColor = mix(uColor, vec3(0.53, 1.0, 0.53), 0.35);
-                gl_FragColor = vec4(glowColor, vOpacity * strength);
-              }
-            `}
-            uniforms={{
-              uColor: { value: trailColor },
-            }}
+            vertexShader={CLOUDKILL_TRAIL_VERTEX_SHADER}
+            fragmentShader={CLOUDKILL_TRAIL_FRAGMENT_SHADER}
+            uniforms={trailUniforms}
           />
         </points>
       )}

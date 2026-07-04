@@ -7,12 +7,13 @@ import WarlockFlameStrike from '@/components/enemies/WarlockFlameStrike';
 import WeaverLightningStrike from '@/components/enemies/WeaverLightningStrike';
 import FrostNova from '@/components/weapons/FrostNova';
 import Blizzard from '@/components/weapons/Blizzard/Blizzard';
-import { ARCTIC_BLIZZARD_DAMAGE_PER_TICK } from '@/utils/talents';
+import { ARCTIC_BLIZZARD_DAMAGE_PER_TICK, ARCTIC_BLIZZARD_DURATION_SEC, ARCTIC_BLIZZARD_HIT_RADIUS, ARCTIC_BLIZZARD_TICK_MS } from '@/utils/talents';
 import type {
   BossLeapShockwaveState,
   DualityBlizzardState,
   RoomBoomFlameStrikeState,
   RoomBoomFrostNovaState,
+  RoomBoomArcticBlizzardState,
   WarlockFlameStrikeState,
   WeaverLightningState,
 } from '@/components/coop/coopVfxLayerTypes';
@@ -24,6 +25,7 @@ export type CoopBossTelegraphLayerHandle = {
   addWeaverLightningStrike: (strike: WeaverLightningState) => void;
   addRoomBoomFlameStrike: (effect: RoomBoomFlameStrikeState) => void;
   addRoomBoomFrostNova: (effect: RoomBoomFrostNovaState) => void;
+  addRoomBoomArcticBlizzard: (effect: RoomBoomArcticBlizzardState) => void;
   addDualityBlizzard: (storm: DualityBlizzardState) => void;
 };
 
@@ -38,6 +40,7 @@ const CoopBossTelegraphLayer = memo(forwardRef<CoopBossTelegraphLayerHandle, Coo
     const [weaverLightningStrikes, setWeaverLightningStrikes] = useState<WeaverLightningState[]>([]);
     const [roomBoomFlameStrikes, setRoomBoomFlameStrikes] = useState<RoomBoomFlameStrikeState[]>([]);
     const [roomBoomFrostNovas, setRoomBoomFrostNovas] = useState<RoomBoomFrostNovaState[]>([]);
+    const [roomBoomArcticBlizzards, setRoomBoomArcticBlizzards] = useState<RoomBoomArcticBlizzardState[]>([]);
     const [activeDualityBlizzards, setActiveDualityBlizzards] = useState<DualityBlizzardState[]>([]);
 
     const clearAll = useCallback(() => {
@@ -46,6 +49,7 @@ const CoopBossTelegraphLayer = memo(forwardRef<CoopBossTelegraphLayerHandle, Coo
       setWeaverLightningStrikes([]);
       setRoomBoomFlameStrikes([]);
       setRoomBoomFrostNovas([]);
+      setRoomBoomArcticBlizzards([]);
       setActiveDualityBlizzards([]);
     }, []);
 
@@ -69,6 +73,10 @@ const CoopBossTelegraphLayer = memo(forwardRef<CoopBossTelegraphLayerHandle, Coo
       setRoomBoomFrostNovas((prev) => [...prev, effect]);
     }, []);
 
+    const addRoomBoomArcticBlizzard = useCallback((effect: RoomBoomArcticBlizzardState) => {
+      setRoomBoomArcticBlizzards((prev) => [...prev, effect]);
+    }, []);
+
     const addDualityBlizzard = useCallback((storm: DualityBlizzardState) => {
       setActiveDualityBlizzards((prev) => [...prev, storm]);
     }, []);
@@ -80,6 +88,7 @@ const CoopBossTelegraphLayer = memo(forwardRef<CoopBossTelegraphLayerHandle, Coo
       addWeaverLightningStrike,
       addRoomBoomFlameStrike,
       addRoomBoomFrostNova,
+      addRoomBoomArcticBlizzard,
       addDualityBlizzard,
     }), [
       clearAll,
@@ -88,6 +97,7 @@ const CoopBossTelegraphLayer = memo(forwardRef<CoopBossTelegraphLayerHandle, Coo
       addWeaverLightningStrike,
       addRoomBoomFlameStrike,
       addRoomBoomFrostNova,
+      addRoomBoomArcticBlizzard,
       addDualityBlizzard,
     ]);
 
@@ -155,6 +165,19 @@ const CoopBossTelegraphLayer = memo(forwardRef<CoopBossTelegraphLayerHandle, Coo
             duration={effect.duration}
             visualScale={0.5}
             onComplete={() => setRoomBoomFrostNovas((prev) => prev.filter((e) => e.id !== effect.id))}
+          />
+        ))}
+
+        {roomBoomArcticBlizzards.map((effect) => (
+          <Blizzard
+            key={`room-boom-arctic-bz-${effect.id}`}
+            position={effect.position}
+            durationSeconds={ARCTIC_BLIZZARD_DURATION_SEC}
+            flatDamagePerTick={ARCTIC_BLIZZARD_DAMAGE_PER_TICK}
+            damageTickIntervalMs={ARCTIC_BLIZZARD_TICK_MS}
+            hitRadius={ARCTIC_BLIZZARD_HIT_RADIUS}
+            visualPreset="concentrated"
+            onComplete={() => setRoomBoomArcticBlizzards((prev) => prev.filter((e) => e.id !== effect.id))}
           />
         ))}
       </>

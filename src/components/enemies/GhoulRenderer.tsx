@@ -1,15 +1,17 @@
 'use client';
+import { positionScratch, type Position3 } from '@/utils/position3';
 
 import React, { useRef, useState, useEffect, useLayoutEffect, useCallback } from 'react';
 import { Group, Mesh, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
-import { Billboard, Text } from '@react-three/drei';
+import { Billboard } from '@react-three/drei';
 import GhoulModel from './GhoulModel';
 import EnemyMeleeAttackRangeRing, { GHOUL_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import EnemyStaggerBar from './EnemyStaggerBar';
-import { applyEnemyHealthBarFill } from '@/utils/enemyHealthBar';
+import { applyEnemyHealthBarFill, syncEnemyHealthBarFillFromRef, syncEnemyHealthBarNumericTextFromRef } from '@/utils/enemyHealthBar';
+import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 
 const GHOUL_HP_BAR_WIDTH = 1.8;
 const GHOUL_HP_BAR_HEIGHT = 0.22;
@@ -17,7 +19,7 @@ const GHOUL_HP_BAR_FILL_HEIGHT = 0.20;
 
 interface GhoulRendererProps {
   id: string;
-  position: Vector3;
+  position: Position3;
   rotation: number;
   health: number;
   maxHealth: number;
@@ -42,9 +44,10 @@ function GhoulRenderer({
   staggerBuildup = 0,
   visualScale = 1,
 }: GhoulRendererProps) {
-  const { socket, enemyTransformsRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
+  const hpTextRef = useRef<any>(null);
 
   const [isAttacking,    setIsAttacking]    = useState(false);
   const [isWalking,      setIsWalking]      = useState(false);
@@ -54,7 +57,7 @@ function GhoulRenderer({
   const [impactPlayKey,  setImpactPlayKey]  = useState(0);
   const [isLeaping,      setIsLeaping]      = useState(false);
 
-  const targetPosition  = useRef(position.clone());
+  const targetPosition  = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation  = useRef(rotation);
   const isAttackingRef  = useRef(false);
   const isSummoningRef  = useRef(true);
@@ -92,11 +95,11 @@ function GhoulRenderer({
   }, []);
 
   useEffect(() => {
-    const dist = targetPosition.current.distanceTo(position);
-    targetPosition.current.copy(position);
+    const dist = targetPosition.current.distanceTo(positionScratch.set(position.x, position.y, position.z));
+    targetPosition.current.set(position.x, position.y, position.z);
 
     if (dist > 8.0 && groupRef.current) {
-      groupRef.current.position.copy(position);
+      groupRef.current.position.set(position.x, position.y, position.z);
     }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -199,6 +202,9 @@ function GhoulRenderer({
     while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
 
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, GHOUL_HP_BAR_WIDTH);
+    syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
+
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
@@ -258,16 +264,14 @@ function GhoulRenderer({
               <meshBasicMaterial color="#aa3300" opacity={0.95} transparent />
             </mesh>
 
-            <Text
-              position={[0, 0, 0.002]}
+            <EnemyHealthBarTextLabel
+              leading="💀"
+              numericRef={hpTextRef}
+              health={health}
+              maxHealth={maxHealth}
               fontSize={0.16}
               color="#ffccaa"
-              anchorX="center"
-              anchorY="middle"
-              fontWeight="bold"
-            >
-              {`💀 ${Math.ceil(health)}/${maxHealth}`}
-            </Text>
+            />
             <EnemyStaggerBar stagger={staggerBuildup} />
           </>
         )}

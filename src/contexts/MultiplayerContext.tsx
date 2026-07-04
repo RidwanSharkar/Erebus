@@ -139,6 +139,8 @@ export interface EnemyDamageMeta {
   tempestBurstArcticChill?: boolean;
   /** Tempest Rounds burst — Wyvern Sting zombie on kill. */
   tempestBurstWyvernZombie?: boolean;
+  /** Explosive Talons end-of-range detonation (server validates AoE). */
+  explosiveTalonsDetonation?: boolean;
 }
 
 /** Server enemy; `type` includes e.g. `knight`, `training-dummy` (throne prep). */
@@ -172,6 +174,8 @@ export interface Enemy {
   zombieVariant?: 'standard' | 'juggernaut';
   /** Staggering Strike buildup (0–100), server-authoritative. */
   staggerBuildup?: number;
+  /** Client-side stun window expiry (ms since epoch) from `enemy-status-effect`. */
+  stunnedUntilMs?: number;
   /** Boss3 Weaver Nexus summoned ghoul — larger client model. */
   visualScale?: number;
   /** Per-ghoul leap landing damage override (Boss3 summons deal 2×). */
@@ -250,6 +254,20 @@ export interface MerchantPurchaseSuccessPayload {
   timestamp?: number;
 }
 
+export type BossSlainLabel = 'hate' | 'knights' | 'envy' | 'fear' | 'trinity';
+
+export interface BossDefeatedPayload {
+  bossId?: string;
+  killedBy?: string;
+  slainLabel?: BossSlainLabel;
+  timestamp?: number;
+}
+
+export interface BossItemPickupPayload {
+  label: string;
+  rarity?: ItemRarity;
+}
+
 export interface GoldDrop {
   id: string;
   amount: number;
@@ -322,6 +340,8 @@ interface MultiplayerContextType {
   isInRoom: boolean;
   currentRoomId: string | null;
   players: Map<string, Player>;
+  /** Bumps on infrequent roster meta changes (weapon swap, level-up, purchase) — not every XP tick. */
+  playerRosterMetaRev: number;
   /** Always-current player metadata mirror (includes in-place position updates from movement ref). */
   playersRef: React.MutableRefObject<Map<string, Player>>;
   /** Server-authoritative player positions/rotations updated without React setState (~60 Hz). */
@@ -399,6 +419,10 @@ interface MultiplayerContextType {
     position: { x: number; y: number; z: number },
     rotation: { x: number; y: number; z: number },
   ) => void;
+  /** Synchronous mirror of `coopTransitionOverlay` — updated before React state in portal handlers. */
+  coopTransitionOverlayRef: React.MutableRefObject<boolean>;
+  /** Blocks local `player-update` emits from portal click until ECS snap completes. */
+  coopPendingPortalSnapRef: React.MutableRefObject<boolean>;
   /** @deprecated Use hideCoopPortalTransition + confirmCoopPortalTransitionComplete instead. */
   endCoopPortalTransition: () => void;
 
@@ -516,6 +540,12 @@ interface MultiplayerContextType {
   registerPlayerGoldChangedHandler: (
     handler: (payload: { playerId: string; gold: number }) => void,
   ) => () => void;
+  registerBossDefeatedHandler: (
+    handler: (payload: BossDefeatedPayload) => void,
+  ) => () => void;
+  registerBossItemPickupHandler: (
+    handler: (payload: BossItemPickupPayload) => void,
+  ) => () => void;
   pickupItem: (itemId: string) => void;
   pickupGoldDrop: (dropId: string) => void;
 
@@ -587,6 +617,8 @@ export type MultiplayerActionsContextType = Pick<
   | 'registerMerchantPurchaseSuccessHandler'
   | 'registerMerchantNpcGreetHandler'
   | 'registerPlayerGoldChangedHandler'
+  | 'registerBossDefeatedHandler'
+  | 'registerBossItemPickupHandler'
   | 'pickupItem'
   | 'pickupGoldDrop'
   | 'sendChatMessage'
@@ -596,6 +628,8 @@ export type MultiplayerActionsContextType = Pick<
   | 'hideCoopPortalTransition'
   | 'confirmCoopPortalTransitionComplete'
   | 'resetLocalPositionEmitThrottle'
+  | 'coopTransitionOverlayRef'
+  | 'coopPendingPortalSnapRef'
   | 'endCoopPortalTransition'
   | 'clearCoopClearedRoomColor'
   | 'clearLateJoinCombatLoadout'
@@ -892,6 +926,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [isInRoom, setIsInRoom] = useState(false);
   const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
   const [players, setPlayers] = useState<Map<string, Player>>(new Map());
+  const [playerRosterMetaRev, setPlayerRosterMetaRev] = useState(0);
+  const bumpPlayerRosterMetaRev = useCallback(() => {
+    setPlayerRosterMetaRev((v) => v + 1);
+  }, []);
   const [enemies, setEnemies] = useState<Map<string, Enemy>>(new Map());
   const enemiesRef = useRef<Map<string, Enemy>>(enemies);
   const enemyTransformsRef = useRef<Map<string, EnemyLiveTransform>>(new Map());
@@ -956,6 +994,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopThroneBossKind, setCoopThroneBossKind] = useState<'boss' | 'boss2' | 'boss3' | 'boss_all' | null>(null);
   const [coopTerrainTheme, setCoopTerrainTheme] = useState<CoopTerrainTheme>('purple');
   const [coopTransitionOverlay, setCoopTransitionOverlay] = useState(false);
+  const coopTransitionOverlayRef = useRef(false);
+  const coopPendingPortalSnapRef = useRef(false);
   const [coopPortalBlinkSeq, setCoopPortalBlinkSeq] = useState(0);
   const pendingLocalPortalBlinkRef = useRef(false);
   const [coopCombatTransitionId, setCoopCombatTransitionId] = useState<number | null>(null);
@@ -1005,6 +1045,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const playerGoldChangedHandlersRef = useRef<
     Set<(payload: { playerId: string; gold: number }) => void>
   >(new Set());
+  const bossDefeatedHandlersRef = useRef<
+    Set<(payload: BossDefeatedPayload) => void>
+  >(new Set());
+  const bossItemPickupHandlersRef = useRef<
+    Set<(payload: BossItemPickupPayload) => void>
+  >(new Set());
 
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
   /** Deferred `io()` so React Strict Mode’s mount→unmount→mount does not disconnect a half-open socket. */
@@ -1016,7 +1062,6 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const lastLocalPositionEmitRef = useRef({ time: 0, x: 0, y: 0, z: 0, ry: 0 });
   const lastPlayerHealthUpdate = useRef<{ [playerId: string]: number }>({});
   const lastEnemyMoveUpdate = useRef<{ [enemyId: string]: number }>({});
-  const lastEnemyDamageUpdate = useRef<{ [enemyId: string]: number }>({});
   const enemyDamageListenersRef = useRef<Set<ConfirmedEnemyDamageListener>>(new Set());
   /** Coalesce many `enemy-removed` events (wave end) into one `setEnemies` per frame. */
   const pendingEnemyRemovalsRef = useRef<Set<string>>(new Set());
@@ -1286,20 +1331,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
 
     addEventHandler('player-weapon-changed', (data) => {
-      unstable_batchedUpdates(() => {
-        setPlayers(prev => {
-          const updated = new Map(prev);
-          const player = updated.get(data.playerId);
-          if (player) {
-            updated.set(data.playerId, {
-              ...player,
-              weapon: data.weapon,
-              subclass: data.subclass
-            });
-          }
-          return updated;
-        });
+      patchPlayerRef(playersRef, data.playerId, {
+        weapon: data.weapon,
+        subclass: data.subclass,
       });
+      bumpPlayerRosterMetaRev();
     });
 
     addEventHandler('player-health-updated', (data) => {
@@ -1469,14 +1505,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         });
       }
 
-      // Throttle enemy damage updates to prevent infinite re-renders (throne training dummy: always apply so HP bar stays accurate under rapid fire). Never throttle kill packets — dropping wasKilled breaks death VFX/sync.
-      const now = Date.now();
-      const lastUpdate = lastEnemyDamageUpdate.current[data.enemyId] || 0;
       const urgent = data.wasKilled === true;
-      if (!isThroneDummy && !urgent && now - lastUpdate < 50) {
-        return;
-      }
-      lastEnemyDamageUpdate.current[data.enemyId] = now;
 
       const isThroneDummyEnemy = String(data.enemyId || '').startsWith('throne-training-dummy');
       const shouldMarkDying =
@@ -1518,6 +1547,19 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
     addEventHandler('enemy-stagger-updated', (data: { enemyId: string; stagger: number }) => {
       patchEnemyRef(enemiesRef, data.enemyId, { staggerBuildup: data.stagger });
+    });
+
+    addEventHandler('enemy-status-effect', (data: {
+      enemyId: string;
+      effectType: string;
+      duration: number;
+      timestamp: number;
+    }) => {
+      if (data.effectType !== 'stun' || !data.enemyId) return;
+      const ts = typeof data.timestamp === 'number' ? data.timestamp : Date.now();
+      const duration = typeof data.duration === 'number' ? data.duration : 0;
+      if (duration <= 0) return;
+      patchEnemyRef(enemiesRef, data.enemyId, { stunnedUntilMs: ts + duration });
     });
 
     addEventHandler('allied-knight-orbs-updated', (data: {
@@ -1632,6 +1674,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
             pickedUpAt: Date.now()
           }
         ]);
+        if (data.item.category === 'boss_drop') {
+          bossItemPickupHandlersRef.current.forEach((handler) => handler({
+            label: data.item.label ?? 'Artifact',
+            rarity: data.item.rarity,
+          }));
+        }
       }
     });
 
@@ -1760,8 +1808,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       console.warn('Failed to start game:', data?.error || 'unknown');
     });
 
-    addEventHandler('boss-defeated', () => {
+    addEventHandler('boss-defeated', (data: BossDefeatedPayload) => {
       setCoopBossClearedBgmSeq((s) => s + 1);
+      bossDefeatedHandlersRef.current.forEach((handler) => handler(data));
     });
 
     addEventHandler('coop-main-arena-intermission', (data: any) => {
@@ -1852,6 +1901,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ? Number(data.coopCombatTransitionId)
         : NaN;
       setCoopCombatTransitionId(Number.isFinite(transitionId) ? transitionId : null);
+      coopTransitionOverlayRef.current = true;
+      coopPendingPortalSnapRef.current = true;
       setCoopTransitionOverlay(true);
       setCoopCombatArenaEnterSeq((s) => s + 1);
       if (pendingLocalPortalBlinkRef.current) {
@@ -1906,22 +1957,20 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
     // Experience system event handlers
     addEventHandler('player-experience-gained', (data) => {
-      // console.log('📈 Player experience gained:', data);
-      setPlayers(prev => {
-        const updated = new Map(prev);
-        const player = updated.get(data.playerId);
-        if (player) {
-          const newExperience = (player.experience || 0) + data.experienceGained;
-          const newLevel = ExperienceSystem.getLevelFromExperience(newExperience);
+      const player = playersRef.current.get(data.playerId);
+      const prevExperience = player?.experience ?? 0;
+      const prevLevel = ExperienceSystem.getLevelFromExperience(prevExperience);
+      const newExperience = prevExperience + data.experienceGained;
+      const newLevel = ExperienceSystem.getLevelFromExperience(newExperience);
 
-          updated.set(data.playerId, {
-            ...player,
-            experience: newExperience,
-            level: newLevel
-          });
-        }
-        return updated;
+      patchPlayerRef(playersRef, data.playerId, {
+        experience: newExperience,
+        level: newLevel,
       });
+
+      if (newLevel > prevLevel) {
+        bumpPlayerRosterMetaRev();
+      }
 
       // Trigger level up effects if level changed
       window.dispatchEvent(new CustomEvent('player-level-up-check', {
@@ -1937,39 +1986,31 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
     // Experience system event handlers
     addEventHandler('player-experience-updated', (data) => {
-      setPlayers(prev => {
-        const updated = new Map(prev);
-        const player = updated.get(data.playerId);
-        if (player) {
-          updated.set(data.playerId, {
-            ...player,
-            experience: data.experience,
-            level: data.level
-          });
-        }
-        return updated;
+      const player = playersRef.current.get(data.playerId);
+      const prevLevel = player?.level ?? ExperienceSystem.getLevelFromExperience(player?.experience ?? 0);
+      patchPlayerRef(playersRef, data.playerId, {
+        experience: data.experience,
+        level: data.level,
       });
+      if (typeof data.level === 'number' && data.level > prevLevel) {
+        bumpPlayerRosterMetaRev();
+      }
     });
 
 
     addEventHandler('player-purchase', (data) => {
-      setPlayers(prev => {
-        const updated = new Map(prev);
-        const player = updated.get(data.playerId);
-        if (player) {
-          const nextEssence =
-            data.currency === 'essence' ? (player.essence || 0) - data.cost : (player.essence || 0);
-          const nextGold =
-            data.currency === 'gold' ? (player.gold || 0) - data.cost : (player.gold || 0);
-          updated.set(data.playerId, {
-            ...player,
-            purchasedItems: [...(player.purchasedItems || []), data.itemId],
-            essence: nextEssence,
-            gold: nextGold,
-          });
-        }
-        return updated;
+      const player = playersRef.current.get(data.playerId);
+      if (!player) return;
+      const nextEssence =
+        data.currency === 'essence' ? (player.essence || 0) - data.cost : (player.essence || 0);
+      const nextGold =
+        data.currency === 'gold' ? (player.gold || 0) - data.cost : (player.gold || 0);
+      patchPlayerRef(playersRef, data.playerId, {
+        purchasedItems: [...(player.purchasedItems || []), data.itemId],
+        essence: nextEssence,
+        gold: nextGold,
       });
+      bumpPlayerRosterMetaRev();
     });
 
     addEventHandler('chat-message', (data) => {
@@ -2015,7 +2056,6 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       pendingEnemyRemovalsRef.current.add(id);
       // Prune throttle maps so they don't accumulate stale entries
       delete lastEnemyMoveUpdate.current[id];
-      delete lastEnemyDamageUpdate.current[id];
       if (enemyRemovalRafRef.current != null) return;
       enemyRemovalRafRef.current = requestAnimationFrame(() => {
         enemyRemovalRafRef.current = null;
@@ -2147,6 +2187,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setCoopBossThroneArena(false);
     setCoopThroneBossKind(null);
     setCoopTransitionOverlay(false);
+    coopTransitionOverlayRef.current = false;
+    coopPendingPortalSnapRef.current = false;
     setCoopPortalBlinkSeq(0);
     pendingLocalPortalBlinkRef.current = false;
     setCoopCombatTransitionId(null);
@@ -2182,6 +2224,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
   const startCoopPortalBlink = useCallback(() => {
     pendingLocalPortalBlinkRef.current = true;
+    coopTransitionOverlayRef.current = true;
+    coopPendingPortalSnapRef.current = true;
     setCoopPortalBlinkSeq((s) => s + 1);
     setCoopTransitionOverlay(true);
   }, []);
@@ -2194,6 +2238,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   }, [socket, currentRoomId, startCoopPortalBlink]);
 
   const hideCoopPortalTransition = useCallback(() => {
+    coopTransitionOverlayRef.current = false;
     setCoopTransitionOverlay(false);
   }, []);
 
@@ -2217,6 +2262,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     }
     setCoopCombatTransitionId(null);
+    coopTransitionOverlayRef.current = false;
+    coopPendingPortalSnapRef.current = false;
     setCoopTransitionOverlay(false);
   }, [socket, currentRoomId, coopCombatTransitionId]);
 
@@ -2385,6 +2432,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ...(meta?.entanglementBarrage ? { entanglementBarrage: true } : {}),
         ...(meta?.tempestBurstArcticChill ? { tempestBurstArcticChill: true } : {}),
         ...(meta?.tempestBurstWyvernZombie ? { tempestBurstWyvernZombie: true } : {}),
+        ...(meta?.explosiveTalonsDetonation ? { explosiveTalonsDetonation: true } : {}),
       });
     }
   }, [socket, currentRoomId]);
@@ -2803,6 +2851,26 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     [],
   );
 
+  const registerBossDefeatedHandler = useCallback(
+    (handler: (payload: BossDefeatedPayload) => void) => {
+      bossDefeatedHandlersRef.current.add(handler);
+      return () => {
+        bossDefeatedHandlersRef.current.delete(handler);
+      };
+    },
+    [],
+  );
+
+  const registerBossItemPickupHandler = useCallback(
+    (handler: (payload: BossItemPickupPayload) => void) => {
+      bossItemPickupHandlersRef.current.add(handler);
+      return () => {
+        bossItemPickupHandlersRef.current.delete(handler);
+      };
+    },
+    [],
+  );
+
   // Chat functions
   const sendChatMessage = useCallback((message: string) => {
     if (!socket || !currentRoomId || !socket.id) return;
@@ -2852,6 +2920,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     isInRoom,
     currentRoomId,
     players,
+    playerRosterMetaRev,
     playersRef,
     playersTransformsRef,
     enemies,
@@ -2886,6 +2955,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     hideCoopPortalTransition,
     confirmCoopPortalTransitionComplete,
     resetLocalPositionEmitThrottle,
+    coopTransitionOverlayRef,
+    coopPendingPortalSnapRef,
     endCoopPortalTransition,
     currentPreview,
     joinRoom,
@@ -2941,6 +3012,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     registerMerchantPurchaseSuccessHandler,
     registerMerchantNpcGreetHandler,
     registerPlayerGoldChangedHandler,
+    registerBossDefeatedHandler,
+    registerBossItemPickupHandler,
     droppedItems,
     goldDrops,
     inventory,
@@ -2954,7 +3027,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     closeChat,
     setPlayers
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, lateJoinCombatLoadout, clearLateJoinCombatLoadout, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, leaveRoom, previewRoom, clearPreview, startGame, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, setSelectedWeapons, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, registerMerchantNpcGreetHandler, registerPlayerGoldChangedHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
+  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, playerRosterMetaRev, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, lateJoinCombatLoadout, clearLateJoinCombatLoadout, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, leaveRoom, previewRoom, clearPreview, startGame, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, setSelectedWeapons, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, registerMerchantNpcGreetHandler, registerPlayerGoldChangedHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
 
   const actionsValue: MultiplayerActionsContextType = useMemo(
     () => ({
@@ -3009,6 +3082,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       registerMerchantPurchaseSuccessHandler,
       registerMerchantNpcGreetHandler,
       registerPlayerGoldChangedHandler,
+      registerBossDefeatedHandler,
+      registerBossItemPickupHandler,
       pickupItem,
       pickupGoldDrop,
       sendChatMessage,
@@ -3018,6 +3093,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       hideCoopPortalTransition,
       confirmCoopPortalTransitionComplete,
       resetLocalPositionEmitThrottle,
+      coopTransitionOverlayRef,
+      coopPendingPortalSnapRef,
       endCoopPortalTransition,
       clearCoopClearedRoomColor,
       clearLateJoinCombatLoadout,
@@ -3070,6 +3147,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       registerMerchantPurchaseSuccessHandler,
       registerMerchantNpcGreetHandler,
       registerPlayerGoldChangedHandler,
+      registerBossDefeatedHandler,
+      registerBossItemPickupHandler,
       pickupItem,
       pickupGoldDrop,
       sendChatMessage,
@@ -3079,6 +3158,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       hideCoopPortalTransition,
       confirmCoopPortalTransitionComplete,
       resetLocalPositionEmitThrottle,
+      coopTransitionOverlayRef,
+      coopPendingPortalSnapRef,
       endCoopPortalTransition,
       clearCoopClearedRoomColor,
       clearLateJoinCombatLoadout,
@@ -3092,6 +3173,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       isInRoom,
       currentRoomId,
       players,
+      playerRosterMetaRev,
       enemies,
       killCount,
       skeletonKillCount,
@@ -3138,6 +3220,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       isInRoom,
       currentRoomId,
       players,
+      playerRosterMetaRev,
       enemies,
       killCount,
       skeletonKillCount,

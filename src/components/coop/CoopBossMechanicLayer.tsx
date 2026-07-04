@@ -95,7 +95,9 @@ const CoopBossMechanicLayer = memo(forwardRef<CoopBossMechanicLayerHandle, objec
             position={[cr.x, cr.y, cr.z]}
             radius={TECTONIC_HIT_RADIUS}
             seed={cr.seed}
-            durationMs={cr.durationMs}
+            visibleMs={cr.visibleMs}
+            fadeMs={cr.fadeMs}
+            theme={cr.theme}
             onComplete={() =>
               setTectonicSpikeGroundCracks((prev) => prev.filter((c) => c.id !== cr.id))
             }

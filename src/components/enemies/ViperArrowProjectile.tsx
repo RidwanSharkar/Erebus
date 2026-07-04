@@ -35,7 +35,7 @@ export default function ViperArrowProjectile({
   const doneRef  = useRef(false);
 
   // One pooled light follows the arrow (collapses the 2 mounted <pointLight>s → 1).
-  const arrowLight = useDynamicLight({ color: new Color('#aaff00'), distance: 6, decay: 2, priority: 2 });
+  const arrowLight = useDynamicLight({ color: new Color('#aaff00'), distance: 6, decay: 2, priority: 1 });
 
   // `targetPosition` is the aim point; the arrow always travels `VIPER_ARROW_MAX_RANGE` along that ray.
   const { direction, totalDist, duration, yaw, pitch } = useMemo(() => {

@@ -6,8 +6,11 @@ import {
   getDuoBoonColors,
   getTalentBoonDefinition,
   getTalentIconSrc,
+  getUltimateBoonColor,
+  isUltimateBoonTalent,
   type CoopRoomColor,
 } from '@/utils/talents';
+import { isAbilityIconSrc } from '@/utils/weaponAbilities';
 
 export const TALENT_SLOT_PX = 48;
 
@@ -127,15 +130,59 @@ export function getTalentTooltipContent(talentId: TalentId): TooltipContent {
   };
 }
 
+interface AbilityIconProps {
+  icon: string;
+  color?: string;
+  filter?: string;
+  isOnCooldown?: boolean;
+  sizeClass?: string;
+  emojiClass?: string;
+}
+
+export function AbilityIcon({
+  icon,
+  color,
+  filter,
+  isOnCooldown = false,
+  sizeClass = 'h-7 w-7',
+  emojiClass = 'text-base',
+}: AbilityIconProps) {
+  if (isAbilityIconSrc(icon)) {
+    const imgFilter = isOnCooldown ? 'opacity(0.65)' : filter;
+    return (
+      <img
+        src={icon}
+        alt=""
+        className={`${sizeClass} shrink-0 object-contain`}
+        style={{ filter: imgFilter }}
+      />
+    );
+  }
+
+  return (
+    <span
+      className={`${emojiClass} shrink-0 font-bold leading-none`}
+      style={{ color, filter: isOnCooldown ? undefined : filter }}
+    >
+      {icon}
+    </span>
+  );
+}
+
 interface TalentSlotProps {
   talentId: TalentId;
-  variant: 'primary' | 'default' | 'duo';
+  variant: 'primary' | 'default' | 'duo' | 'ultimate';
   onMouseEnter: (e: React.MouseEvent, talentId: TalentId) => void;
   onMouseLeave: () => void;
 }
 
 export function TalentSlot({ talentId, variant, onMouseEnter, onMouseLeave }: TalentSlotProps) {
-  const roomColor = variant === 'primary' ? getCoopRoomColorForTalent(talentId) : null;
+  const roomColor =
+    variant === 'primary'
+      ? getCoopRoomColorForTalent(talentId)
+      : variant === 'ultimate'
+        ? getUltimateBoonColor(talentId)
+        : null;
   const roomStyle = roomColor ? getCoopRoomColorHudSlotStyle(roomColor) : null;
   const src = getTalentIconSrc(talentId, roomColor);
 
@@ -147,6 +194,14 @@ export function TalentSlot({ talentId, variant, onMouseEnter, onMouseLeave }: Ta
     slotStyle = getDuoTalentSlotStyle(talentId);
     iconFilter = 'drop-shadow(0 0 4px rgba(251,191,36,0.45))';
     fallbackGlyphColor = 'rgba(253,224,71,0.85)';
+  } else if (variant === 'ultimate' && roomStyle) {
+    slotStyle = {
+      background: roomStyle.background,
+      border: roomStyle.border,
+      boxShadow: `${roomStyle.boxShadow}, 0 0 14px rgba(251,191,36,0.2)`,
+    };
+    iconFilter = roomStyle.iconFilter;
+    fallbackGlyphColor = roomStyle.fallbackGlyphColor;
   } else if (roomStyle) {
     slotStyle = {
       background: roomStyle.background,

@@ -2,6 +2,14 @@ import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, AdditiveBlending } from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import {
+  VIPER_STING_CORE_GEO,
+  VIPER_STING_RING_GEOS,
+  VIPER_STING_SHAFT_GEO,
+  VIPER_STING_TIP_GEO,
+  VIPER_STING_TRAIL_GLOW_GEO,
+  VIPER_STING_TRAIL_SPHERE_GEO,
+} from './sharedProjectileGeometry';
 
 interface ViperStingProjectile {
   id: number;
@@ -57,8 +65,7 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
   return (
     <group ref={groupRef}>
       {/* Main projectile body - sleek venomous arrow */}
-      <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <cylinderGeometry args={[0.025, 0.09, 1.9, 8]} />
+      <mesh rotation={[Math.PI / 2, 0, 0]} geometry={VIPER_STING_SHAFT_GEO}>
         <meshStandardMaterial
           color="#ff4400" // Reddish-orange PerfectShot color
           emissive="#cc0000"
@@ -69,8 +76,7 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
       </mesh>
 
       {/* Arrowhead */}
-      <mesh position={[0, 0, 1]} rotation={[Math.PI / 2, 0, 0]}>
-        <coneGeometry args={[0.11, 0.45, 6]} />
+      <mesh position={[0, 0, 1]} rotation={[Math.PI / 2, 0, 0]} geometry={VIPER_STING_TIP_GEO}>
         <meshStandardMaterial
           color="#cc0000"
           emissive="#ff4400"
@@ -85,8 +91,8 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
         <group key={`ring-${i}`} position={[0, 0, 0.22 - i * 0.32] as [number, number, number]}>
           <mesh
             rotation={[0, 0, Date.now() * 0.01 + i * Math.PI / 3]}
+            geometry={VIPER_STING_RING_GEOS[i]}
           >
-            <torusGeometry args={[0.105 + i * 0.035, 0.014, 6, 12]} />
             <meshStandardMaterial
               color="#cc0000" // Dark red
               emissive="#cc0000"
@@ -101,8 +107,7 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
       ))}
 
       {/* Venom energy core */}
-      <mesh>
-        <sphereGeometry args={[0.055, 8, 8]} />
+      <mesh geometry={VIPER_STING_CORE_GEO}>
         <meshStandardMaterial
           color="#ff6600"
           emissive="#cc0000"
@@ -129,8 +134,7 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
             position={trailOffset}
           >
             {/* Venom energy trail */}
-            <mesh scale={[trailScale, trailScale, trailScale]}>
-              <sphereGeometry args={[0.105, 8, 8]} />
+            <mesh scale={[trailScale, trailScale, trailScale]} geometry={VIPER_STING_TRAIL_SPHERE_GEO}>
               <meshStandardMaterial
                 color="#cc0000" // Dark red
                 emissive="#cc0000"
@@ -143,8 +147,7 @@ const ViperStingProjectileVisual: React.FC<{ projectile: ViperStingProjectile }>
             </mesh>
             
             {/* Outer venom glow */}
-            <mesh scale={[trailScale * 1.35, trailScale * 1.35, trailScale * 1.35]}>
-              <sphereGeometry args={[0.14, 6, 6]} />
+            <mesh scale={[trailScale * 1.35, trailScale * 1.35, trailScale * 1.35]} geometry={VIPER_STING_TRAIL_GLOW_GEO}>
               <meshStandardMaterial
                 color="#ff6600" // Orange
                 emissive="#ff6600"

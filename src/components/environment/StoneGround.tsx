@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useEffect } from 'react';
+import React, { useRef, useMemo, useEffect, useLayoutEffect } from 'react';
 import {
   InstancedMesh,
   BoxGeometry,
@@ -290,7 +290,12 @@ const StoneGround: React.FC<{
       fragmentShader: STONE_FRAGMENT,
       uniforms: { uTheme: { value: tid } },
     });
-  }, [roomTheme]);
+  }, []);
+
+  useLayoutEffect(() => {
+    const tid = THEME_ID[roomTheme] ?? 0;
+    material.uniforms.uTheme.value = tid;
+  }, [roomTheme, material]);
 
   useEffect(() => {
     const mesh = meshRef.current;
@@ -312,12 +317,14 @@ const StoneGround: React.FC<{
     });
 
     mesh.instanceMatrix.needsUpdate = true;
+  }, [geometry, material, slabs]);
 
+  useEffect(() => {
     return () => {
       geometry.dispose();
       material.dispose();
     };
-  }, [geometry, material, slabs]);
+  }, [geometry, material]);
 
   return (
     <instancedMesh

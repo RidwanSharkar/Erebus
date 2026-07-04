@@ -1,7 +1,6 @@
 'use client';
 
-import { useRef, useState, useMemo } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useState, useMemo, useEffect } from 'react';
 import { Vector3 } from 'three';
 import ViperShotTelegraphLine from './ViperShotTelegraphLine';
 import TitanCannonBeam from './TitanCannonBeam';
@@ -38,7 +37,12 @@ export default function TitanCannonAbility({
   onComplete,
 }: TitanCannonAbilityProps) {
   const [phase, setPhase] = useState<'telegraph' | 'beam'>('telegraph');
-  const transitionedRef = useRef(false);
+
+  useEffect(() => {
+    const delay = Math.max(0, strikeAt - Date.now());
+    const timer = setTimeout(() => setPhase('beam'), delay);
+    return () => clearTimeout(timer);
+  }, [strikeAt]);
 
   // Compute ground strip end from origin + direction derived from rotation
   const ux = Math.sin(rotation);
@@ -51,15 +55,7 @@ export default function TitanCannonAbility({
     [origin.x, origin.z, ux, uz, range],
   );
 
-  useFrame(() => {
-    if (phase === 'telegraph' && !transitionedRef.current && Date.now() >= strikeAt) {
-      transitionedRef.current = true;
-      setPhase('beam');
-    }
-  });
-
-  // The beam needs the titan group's XZ position (not the offset origin) so it can apply the
-  // same pitch transform as Boss3GreenBeam. We back-calculate titan centre from origin.
+  // The beam needs the titan group's XZ position
   const titanPos = useMemo(
     () => new Vector3(origin.x - ux * 0.65, 0, origin.z - uz * 0.65),
     [origin.x, origin.z, ux, uz],

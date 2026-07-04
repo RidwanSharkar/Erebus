@@ -1,4 +1,5 @@
 'use client';
+import type { Position3 } from '@/utils/position3';
 
 import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
@@ -18,7 +19,7 @@ import type { Enemy, Player } from '@/contexts/MultiplayerContext';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface GreaterHealBeamEffectProps {
-  position: Vector3;
+  position: Position3;
   targetKind?: 'player' | 'ally';
   targetId?: string;
   enemiesRef?: React.MutableRefObject<Map<string, Enemy>>;
@@ -47,7 +48,7 @@ export default function GreaterHealBeamEffect({
   const timeRef = useRef(0);
   const doneRef = useRef(false);
   const groupRef = useRef<Group | null>(null);
-  const trackedPosition = useRef(position.clone());
+  const trackedPosition = useRef(new Vector3(position.x, position.y, position.z));
 
   const outerBeamRef = useRef<Mesh>(null);
   const innerBeamRef = useRef<Mesh>(null);
@@ -196,7 +197,7 @@ export default function GreaterHealBeamEffect({
       }
     }
 
-    out.copy(position);
+    out.set(position.x, position.y, position.z);
   };
 
   useFrame((_, delta) => {

@@ -29,7 +29,7 @@ export default function GreedFireProjectile({
   const doneRef = useRef(false);
   const dirRef = useRef(new Vector3(0, 0, -1));
 
-  const fireLight = useDynamicLight({ color: '#ff6a00', distance: 6.5, priority: 2 });
+  const fireLight = useDynamicLight({ color: '#ff6a00', distance: 6.5, priority: 1 });
 
   const maxLifetimeRef = useRef(1);
 
@@ -102,7 +102,7 @@ export default function GreedFireProjectile({
       <EntropicBoltTrail
         color={trailColor}
         accentColor={trailAccent}
-        size={0.12}
+        size={0.075}
         meshRef={groupRef}
         opacity={0.95}
         flightDirectionRef={dirRef}

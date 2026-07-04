@@ -5,6 +5,14 @@ import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
 
 import { useFrame } from '@react-three/fiber';
 import { Mesh, Group, AdditiveBlending } from 'three';
+import {
+  SOUL_ORB_CORE_GEO,
+  SOUL_ORB_GLOW_GEO,
+  SOUL_ORB_PARTICLE_GEO,
+  SOUL_ORB_RING_GEO,
+  SOUL_TYPE_MATERIALS,
+  type SharedSoulType,
+} from '@/utils/sharedEnemyUiGeometry';
 
 type SoulType = 'green' | 'red' | 'blue' | 'purple' | 'yellow';
 
@@ -57,6 +65,7 @@ function KnightSoulEffect({ soulType, compact = false }: KnightSoulEffectProps) 
   const particleRefs = useRef<(Mesh | null)[]>([]);
 
   const colors = SOUL_COLORS[soulType];
+  const soulMats = SOUL_TYPE_MATERIALS[soulType as SharedSoulType] ?? SOUL_TYPE_MATERIALS.green;
 
   // Unique phase offset per soul so multiple knights don't pulse in lockstep
   const phaseOffset = useMemo(() => Math.random() * Math.PI * 2, []);
@@ -103,25 +112,9 @@ function KnightSoulEffect({ soulType, compact = false }: KnightSoulEffectProps) 
         decay={5}
       />
 
-      <mesh ref={coreRef} position={[0, coreYOffset, 0]}>
-        <sphereGeometry args={[coreRadius, 14, 14]} />
-        <meshBasicMaterial
-          color={colors.core}
-          toneMapped={false}
-        />
-      </mesh>
+      <mesh ref={coreRef} position={[0, coreYOffset, 0]} geometry={SOUL_ORB_CORE_GEO} material={soulMats.core} scale={[coreRadius / 0.14, coreRadius / 0.14, coreRadius / 0.14]} />
 
-      <mesh ref={glowRef}>
-        <sphereGeometry args={[glowRadius, 14, 14]} />
-        <meshBasicMaterial
-          color={colors.glow}
-          transparent
-          opacity={0.38}
-          depthWrite={false}
-          blending={AdditiveBlending}
-          toneMapped={false}
-        />
-      </mesh>
+      <mesh ref={glowRef} geometry={SOUL_ORB_GLOW_GEO} material={soulMats.glow} scale={[glowRadius / 0.3, glowRadius / 0.3, glowRadius / 0.3]} />
 
       <group ref={orbitGroupRef} position={[0, orbitYOffset, 0]}>
         {Array.from({ length: ORBIT_COUNT }).map((_, i) => {
@@ -133,33 +126,15 @@ function KnightSoulEffect({ soulType, compact = false }: KnightSoulEffectProps) 
               key={i}
               position={[x, 0, z]}
               ref={el => { particleRefs.current[i] = el; }}
-            >
-              <sphereGeometry args={[particleRadius, 8, 8]} />
-              <meshBasicMaterial
-                color={colors.core}
-                toneMapped={false}
-                transparent
-                opacity={1.0}
-                blending={AdditiveBlending}
-                depthWrite={false}
-              />
-            </mesh>
+              geometry={SOUL_ORB_PARTICLE_GEO}
+              material={soulMats.particle}
+              scale={[particleRadius / 0.08, particleRadius / 0.08, particleRadius / 0.08]}
+            />
           );
         })}
       </group>
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, cfg.ringY, 0]}>
-        <ringGeometry args={[0.60, 0.825, 32]} />
-        <meshBasicMaterial
-          color={colors.glow}
-          transparent
-          opacity={0.5}
-          depthWrite={false}
-          blending={AdditiveBlending}
-          toneMapped={false}
-          side={2}
-        />
-      </mesh>
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, cfg.ringY, 0]} geometry={SOUL_ORB_RING_GEO} material={soulMats.ring} scale={[cfg.scale, cfg.scale, cfg.scale]} />
     </group>
   );
 }

@@ -10,6 +10,15 @@ import {
 } from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import EntropicBoltTrail, { ENTROPIC_TRAIL_FADE_OUT_DURATION } from './EntropicBoltTrail';
+import {
+  ENTROPIC_CORE_CONE_GEO,
+  ENTROPIC_GLOW_SPHERE_GEO,
+  ENTROPIC_SHAFT_CYL_GEO,
+  ENTROPIC_SHARD_BOX_A_GEO,
+  ENTROPIC_SHARD_BOX_B_GEO,
+  ENTROPIC_SHARD_CONE_GEO,
+  ENTROPIC_SHARD_TETRA_GEO,
+} from './sharedProjectileGeometry';
 import { getEntropicColorTheme } from '@/utils/entropicColorThemes';
 import {
   computeEntropicChaosOffset,
@@ -172,8 +181,7 @@ function EntropicBolt({
             <group ref={wobbleRef}>
             <group ref={coreRef}>
               {/* Jagged core bolt */}
-              <mesh position={[0, 0.18, 0]}>
-                <coneGeometry args={[0.042, 0.48, 5, 1, false]} />
+              <mesh position={[0, 0.18, 0]} geometry={ENTROPIC_CORE_CONE_GEO}>
                 <meshStandardMaterial
                   color={primaryColor}
                   emissive={secondaryColor}
@@ -186,8 +194,7 @@ function EntropicBolt({
               </mesh>
 
               {/* Fractured shaft shards */}
-              <mesh position={[0.028, 0.08, 0.012]} rotation={[0.15, 0.4, 0.25]}>
-                <boxGeometry args={[0.018, 0.14, 0.012]} />
+              <mesh position={[0.028, 0.08, 0.012]} rotation={[0.15, 0.4, 0.25]} geometry={ENTROPIC_SHARD_BOX_A_GEO}>
                 <meshStandardMaterial
                   color={secondaryColor}
                   emissive={primaryColor}
@@ -198,8 +205,7 @@ function EntropicBolt({
                   depthWrite={false}
                 />
               </mesh>
-              <mesh position={[-0.022, 0.12, -0.01]} rotation={[-0.2, -0.35, 0.18]}>
-                <boxGeometry args={[0.014, 0.11, 0.01]} />
+              <mesh position={[-0.022, 0.12, -0.01]} rotation={[-0.2, -0.35, 0.18]} geometry={ENTROPIC_SHARD_BOX_B_GEO}>
                 <meshStandardMaterial
                   color={secondaryColor}
                   emissive={primaryColor}
@@ -210,8 +216,7 @@ function EntropicBolt({
                   depthWrite={false}
                 />
               </mesh>
-              <mesh position={[0.01, 0.22, -0.024]} rotation={[0.35, 0.1, -0.3]}>
-                <coneGeometry args={[0.012, 0.1, 4, 1, false]} />
+              <mesh position={[0.01, 0.22, -0.024]} rotation={[0.35, 0.1, -0.3]} geometry={ENTROPIC_SHARD_CONE_GEO}>
                 <meshStandardMaterial
                   color={primaryColor}
                   emissive={lightColor}
@@ -224,8 +229,7 @@ function EntropicBolt({
               </mesh>
 
               {/* Outer corona shell */}
-              <mesh position={[0, 0.16, 0]}>
-                <cylinderGeometry args={[0.058, 0.038, 0.44, 6, 1, true]} />
+              <mesh position={[0, 0.16, 0]} geometry={ENTROPIC_SHAFT_CYL_GEO}>
                 <meshStandardMaterial
                   color={secondaryColor}
                   emissive={primaryColor}
@@ -243,8 +247,7 @@ function EntropicBolt({
             <group ref={orbitRef} position={[0, 0.14, 0]}>
               {ORBIT_SHARD_ANGLES.map((angle, i) => (
                 <group key={i} rotation={[0, angle, 0]}>
-                  <mesh position={[0.11, 0, 0]} rotation={[0.5, 0.8, 0.3]}>
-                    <tetrahedronGeometry args={[0.032, 0]} />
+                  <mesh position={[0.11, 0, 0]} rotation={[0.5, 0.8, 0.3]} geometry={ENTROPIC_SHARD_TETRA_GEO}>
                     <meshStandardMaterial
                       color={i % 2 === 0 ? secondaryColor : primaryColor}
                       emissive={lightColor}
@@ -260,8 +263,7 @@ function EntropicBolt({
             </group>
 
             {/* Tip emissive glow */}
-            <mesh position={[0, 0.3, 0]}>
-              <sphereGeometry args={[0.046, 8, 8]} />
+            <mesh position={[0, 0.3, 0]} geometry={ENTROPIC_GLOW_SPHERE_GEO}>
               <meshStandardMaterial
                 color={lightColor}
                 emissive={lightColor}

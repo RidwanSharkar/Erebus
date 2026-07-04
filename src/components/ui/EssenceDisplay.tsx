@@ -10,7 +10,7 @@ interface EssenceDisplayProps {
 
 export default function EssenceDisplay({ essence, isLocalPlayer = false }: EssenceDisplayProps) {
   return (
-    <div className="rounded-lg border border-purple-600 bg-black/70 p-1.5 backdrop-blur-sm">
+    <div className="rounded-lg border border-purple-600 bg-black/70 p-1.5 backdrop-blur-sm" data-block-game-input>
       <div className="flex items-center gap-1">
         <div className="text-lg text-purple-400">⚡</div>
         <div className={`text-sm font-bold ${isLocalPlayer ? 'text-purple-400' : 'text-purple-300'}`}>

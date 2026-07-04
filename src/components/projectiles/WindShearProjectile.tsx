@@ -3,6 +3,7 @@
 import React, { useRef, useState, useCallback } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, AdditiveBlending, BufferGeometry, BufferAttribute, Group, MeshBasicMaterial } from 'three';
+import { WIND_SHEAR_TORUS_GEO } from './sharedProjectileGeometry';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 // Teal/cyan wind-slash palette
@@ -128,8 +129,7 @@ function WindShearInstance({ projectile: p }: { projectile: WindShearProjectileV
             side={2}
           />
         </mesh>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
-          <torusGeometry args={[0.38, 0.045, 6, 40, Math.PI * 0.75]} />
+        <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={1} geometry={WIND_SHEAR_TORUS_GEO}>
           <meshBasicMaterial
             ref={torusMatRef}
             color={COLOR_OUTER}
@@ -229,8 +229,7 @@ function StandaloneWindShearInstance({ projectile }: { projectile: StandalonePro
             side={2}
           />
         </mesh>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
-          <torusGeometry args={[0.38, 0.045, 6, 40, Math.PI * 0.75]} />
+        <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={1} geometry={WIND_SHEAR_TORUS_GEO}>
           <meshBasicMaterial
             ref={torusMatRef}
             color={COLOR_OUTER}

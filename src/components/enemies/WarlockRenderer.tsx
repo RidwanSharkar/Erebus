@@ -1,22 +1,32 @@
 'use client';
+import { positionScratch, type Position3 } from '@/utils/position3';
 
-import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Group, Vector3 } from 'three';
+import React, { useRef, useState, useEffect, useCallback, useLayoutEffect } from 'react';
+import { Group, Mesh, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
-import { Billboard, Text } from '@react-three/drei';
+import { Billboard } from '@react-three/drei';
 import WarlockModel from './WarlockModel';
-import WarlockTeleportEffect from './WarlockTeleportEffect';
 import CubeSoulEffect from './CubeSoulEffect';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
+import {
+  ENEMY_HP_BAR_WIDTH,
+  ENEMY_HP_BAR_HEIGHT,
+  ENEMY_HP_BAR_FILL_HEIGHT,
+  ENEMY_HP_BAR_FILL_Z, ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO,
+  applyEnemyHealthBarFill,
+  syncEnemyHealthBarFillFromRef,
+  syncEnemyHealthBarNumericTextFromRef,
+} from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
+import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 import GhostTrail from '../dragon/GhostTrail';
 import { WeaponType } from '../dragon/weapons';
 
 interface WarlockRendererProps {
   id: string;
-  position: Vector3;
+  position: Position3;
   rotation: number;
   health: number;
   maxHealth: number;
@@ -51,8 +61,10 @@ function WarlockRenderer({
   staggerBuildup = 0,
 }: WarlockRendererProps) {
   const theme = campHpTheme(campType);
-  const { socket, enemyTransformsRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
+  const hpFillRef = useRef<Mesh>(null);
+  const hpTextRef = useRef<any>(null);
 
   const [isBlinking,  setIsBlinking]  = useState(false);
   const isBlinkingRef = useRef(false);
@@ -63,10 +75,7 @@ function WarlockRenderer({
   const [isImpacting, setIsImpacting] = useState(false);
   const [impactPlayKey, setImpactPlayKey] = useState(0);
 
-  type BlinkFx = { id: string; position: Vector3; type: 'start' | 'end' };
-  const [blinkFx, setBlinkFx] = useState<BlinkFx[]>([]);
-
-  const targetPosition = useRef(position.clone());
+  const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation = useRef(rotation);
   const prevHealthRef  = useRef(health);
   const lastHitImpactAtRef = useRef(0);
@@ -104,13 +113,13 @@ function WarlockRenderer({
 
   // Keep spawn snap in sync with React position prop updates.
   useEffect(() => {
-    const dist = targetPosition.current.distanceTo(position);
+    const dist = targetPosition.current.distanceTo(positionScratch.set(position.x, position.y, position.z));
     const isLaunchLocked = isLaunchingRef.current;
     if (!isLaunchLocked && !isBlinkingRef.current) {
-      targetPosition.current.copy(position);
+      targetPosition.current.set(position.x, position.y, position.z);
     }
     if (dist > 2.0 && groupRef.current && !isLaunchLocked && !isBlinkingRef.current) {
-      groupRef.current.position.copy(position);
+      groupRef.current.position.set(position.x, position.y, position.z);
     }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -172,20 +181,6 @@ function WarlockRenderer({
         groupRef.current.rotation.y = data.rotation;
       }
 
-      // Play blink sound at the departure position
-      (window as any).audioSystem?.playEnemyBlinkSound(startPos);
-
-      const fxId = `${id}-${Date.now()}`;
-
-      // Departure effect at the original position
-      setBlinkFx(prev => [...prev, { id: `${fxId}-start`, position: startPos, type: 'start' }]);
-
-      // Arrival effect fires roughly halfway through the blink animation
-      const arrivalDelay = Math.round(BLINK_ANIMATION_DURATION * 0.45);
-      trackTimeout(() => {
-        setBlinkFx(prev => [...prev, { id: `${fxId}-end`, position: newPos, type: 'end' }]);
-      }, arrivalDelay);
-
       trackTimeout(() => {
         setIsBlinking(false);
         isBlinkingRef.current = false;
@@ -237,9 +232,17 @@ function WarlockRenderer({
     return () => { socket.off('warlock-archon-shock', handleArchonShock); };
   }, [id, socket, trackTimeout]);
 
+  useLayoutEffect(() => {
+    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth, ENEMY_HP_BAR_WIDTH);
+  }, [health, maxHealth]);
+
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, ENEMY_HP_BAR_WIDTH);
+    syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
+
     const isLaunchLocked = isLaunchingRef.current;
 
     if (isBlinkingRef.current) {
@@ -306,16 +309,6 @@ function WarlockRenderer({
 
   return (
     <>
-      {/* Blink teleport effects — rendered in world space, outside the moving group */}
-      {blinkFx.map(fx => (
-        <WarlockTeleportEffect
-          key={fx.id}
-          position={fx.position}
-          type={fx.type}
-          onComplete={() => setBlinkFx(prev => prev.filter(f => f.id !== fx.id))}
-        />
-      ))}
-
       <GhostTrail
         parentRef={groupRef as React.RefObject<Group>}
         weaponType={WeaponType.NONE}
@@ -346,25 +339,27 @@ function WarlockRenderer({
         {health > 0 && !isDying && (
           <>
             <mesh position={[0, 0, 0]}>
-              <planeGeometry args={[2.0, 0.25]} />
+              <primitive object={ENEMY_HP_BAR_BG_GEO} attach="geometry" />
               <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
             </mesh>
 
-            <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
-              <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
+            <mesh
+              ref={hpFillRef}
+              position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
+              scale={[1, 1, 1]}
+            >
+              <primitive object={ENEMY_HP_BAR_FILL_GEO} attach="geometry" />
               <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
             </mesh>
 
-            <Text
-              position={[0, 0, 0.002]}
+            <EnemyHealthBarTextLabel
+              leading="🔮"
+              numericRef={hpTextRef}
+              health={health}
+              maxHealth={maxHealth}
               fontSize={0.18}
               color={theme.text}
-              anchorX="center"
-              anchorY="middle"
-              fontWeight="bold"
-            >
-              {`🔮 ${Math.ceil(health)}/${maxHealth}`}
-            </Text>
+            />
             <EnemyStaggerBar stagger={staggerBuildup} />
           </>
         )}

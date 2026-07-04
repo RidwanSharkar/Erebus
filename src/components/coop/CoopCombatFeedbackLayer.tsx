@@ -14,6 +14,7 @@ import EntropicBoltImpact from '@/components/weapons/EntropicBoltImpact';
 import SabreImpactEffect from '@/components/weapons/SabreImpactEffect';
 import CrescentSlashEffect from '@/components/weapons/CrescentSlashEffect';
 import MortalStrikeEffect from '@/components/weapons/MortalStrikeEffect';
+import WraithStrikeEffect from '@/components/weapons/WraithStrikeEffect';
 import PsionicBladeSliceEffect from '@/components/weapons/PsionicBladeSliceEffect';
 import PlayerHitBurst from '@/components/weapons/PlayerHitBurst';
 import type { ImpactEffectEvent } from '@/utils/ImpactEffectManager';
@@ -148,6 +149,17 @@ const CoopCombatFeedbackLayer = memo(forwardRef<CoopCombatFeedbackLayerHandle, C
           if (e.type === 'mortal-strike-effect') {
             return (
               <MortalStrikeEffect
+                key={e.id}
+                position={e.position}
+                direction={e.direction}
+                theme={e.colorVariant}
+                onComplete={onImpactDone}
+              />
+            );
+          }
+          if (e.type === 'wraith-strike-effect') {
+            return (
+              <WraithStrikeEffect
                 key={e.id}
                 position={e.position}
                 direction={e.direction}

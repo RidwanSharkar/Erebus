@@ -90,6 +90,7 @@ import {
   shouldApplyFrostpathTalent,
   shouldApplySolarRechargeTalent,
   getEntropicBoltFireRateSec,
+  SCYTHE_LMB_WINDUP_SEC,
   getArcaneSynergyEntropicBoltFlatDamageBonus,
   shouldApplyWindfuryTalent,
   shouldApplyCrusaderTalent,
@@ -168,6 +169,7 @@ import {
   shouldApplyCycloneRushTalent,
   WRAITH_STRIKE_COOLDOWN_SEC,
   WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES,
+  WRAITH_STRIKE_DOUBLE_STRIKE_INTERNAL_COOLDOWN_SEC,
   BACKSTAB_COOLDOWN_SEC,
   BACKSTAB_DOUBLE_STAB_MAX_CHARGES,
   BACKSTAB_DOUBLE_STAB_INTERNAL_COOLDOWN_SEC,
@@ -212,6 +214,7 @@ import {
   shouldApplyCrescentBladesTalent,
   shouldApplyMortalStrikeTalent,
   resolveMortalStrikeDamageBundle,
+  resolveWraithStrikeTheme,
   MORTAL_STRIKE_ATTACK_INTERVAL,
   MORTAL_STRIKE_RANGE,
   MORTAL_STRIKE_ARC_ANGLE,
@@ -303,6 +306,12 @@ export class ControlSystem extends System {
   private orbitBasisRight = new Vector3();
   private movementWorldDirection = new Vector3();
   private readonly movementZeroDirection = new Vector3(0, 0, 0);
+  private readonly inputDirectionScratch = new Vector3();
+  private readonly cameraDirScratch = new Vector3();
+  private readonly cameraRightScratch = new Vector3();
+  private readonly cameraForwardScratch = new Vector3();
+  private static readonly WORLD_UP = new Vector3(0, 1, 0);
+  private readonly nearbyEntitiesScratch: Entity[] = [];
   private meleeAttackDirection = new Vector3();
   private meleeQueryToEnemy = new Vector3();
   private meleeQueryToEnemyFlat = new Vector3();
@@ -491,6 +500,7 @@ export class ControlSystem extends System {
   // Rate limiting for projectile firing
   private lastBowFireTime = 0; // Bow projectiles
   private lastScytheFireTime = 0; // Scythe entropic bolts
+  private scytheLmbStreamStartTime = 0; // seconds; 0 = not holding / stream ended
   private lastSwordFireTime = 0; // Sword melee attacks
   private lastRunebladeFireTime = 0; // Runeblade melee attacks
   private lastSabresFireTime = 0; // Sabres melee attacks
@@ -517,7 +527,7 @@ export class ControlSystem extends System {
   private sabresFireRate = 0.625; // Sabres dual attack rate (600ms between attacks)
   private crescentBladesAttackCount = 0; // Tracks swings toward Crescent Blades special (resets at 3)
   private mortalStrikeAttackCount = 0; // Tracks swings toward Mortal Strike special (resets at 4)
-  private summonTotemFireRate = 6.5; // Summon Totem cooldown
+  private summonTotemFireRate = 7.0; // Summon Totem cooldown
   private viperStingFireRate = 7.0; // Viper Sting rate (2 seconds cooldown)
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
   private cobraShotFireRate = 5.0; // Cobra Shot rate (2 seconds cooldown)
@@ -638,7 +648,7 @@ export class ControlSystem extends System {
   private isSkyfalling = false;
   private skyfallPhase: 'none' | 'ascending' | 'descending' | 'landing' = 'none';
   private lastSkyfallTime = 0;
-  private skyfallCooldown = 7.25; // 4 second cooldown
+  private skyfallCooldown = 8.00; // 4 second cooldown
   private skyfallStartTime = 0;
   private skyfallStartPosition = new Vector3();
   private skyfallTargetHeight = 0;
@@ -772,6 +782,7 @@ export class ControlSystem extends System {
   private wraithStrikeDoubleStrikeActive = false;
   private wraithStrikeCharges = 0;
   private wraithStrikeNextChargeAt: number | null = null;
+  private lastWraithStrikeDoubleStrikeChargeSpendTime = Number.NEGATIVE_INFINITY;
 
   // Corrupted Aura ability state (Runeblade)
   private corruptedAuraActive = false;
@@ -967,7 +978,7 @@ export class ControlSystem extends System {
     // If input is disabled (e.g., chat / modal open), skip input processing but clear locomotion so
     // stale moveDirection/inputStrength is not reapplied by PhysicsSystem.
     if (this.inputDisabled) {
-      playerMovement.setMoveDirection(new Vector3(0, 0, 0), 0);
+      playerMovement.setMoveDirection(this.movementZeroDirection, 0);
       playerMovement.velocity.x = 0;
       playerMovement.velocity.z = 0;
       playerMovement.acceleration.set(0, 0, 0);
@@ -997,7 +1008,7 @@ export class ControlSystem extends System {
     }
 
     if (this.isLocalPlayerStunned()) {
-      playerMovement.setMoveDirection(new Vector3(0, 0, 0), 0);
+      playerMovement.setMoveDirection(this.movementZeroDirection, 0);
       playerMovement.velocity.x = 0;
       playerMovement.velocity.z = 0;
       playerMovement.acceleration.set(0, 0, 0);
@@ -1014,7 +1025,7 @@ export class ControlSystem extends System {
     }
 
     if (playerMovement.isFrozen) {
-      playerMovement.setMoveDirection(new Vector3(0, 0, 0), 0);
+      playerMovement.setMoveDirection(this.movementZeroDirection, 0);
       this.clearMovementControlState();
       if (playerMovement.isDashing) {
         playerMovement.cancelDash();
@@ -1167,7 +1178,7 @@ export class ControlSystem extends System {
   }
 
   private getMovementInputDirection(): { inputDirection: Vector3; hasInput: boolean } {
-    const inputDirection = new Vector3(0, 0, 0);
+    const inputDirection = this.inputDirectionScratch.set(0, 0, 0);
     let hasInput = false;
 
     if (this.inputManager.isKeyPressed('w') || this.inputManager.isKeyPressed('arrowup')) {
@@ -1202,14 +1213,14 @@ export class ControlSystem extends System {
       return { cameraForward: this.orbitBasisForward, cameraRight: this.orbitBasisRight };
     }
 
-    const cameraDirection = new Vector3();
+    const cameraDirection = this.cameraDirScratch;
     this.camera.getWorldDirection(cameraDirection);
 
-    const cameraRight = new Vector3();
-    cameraRight.crossVectors(cameraDirection, new Vector3(0, 1, 0)).normalize();
+    const cameraRight = this.cameraRightScratch;
+    cameraRight.crossVectors(cameraDirection, ControlSystem.WORLD_UP).normalize();
 
-    const cameraForward = new Vector3();
-    cameraForward.crossVectors(new Vector3(0, 1, 0), cameraRight).normalize();
+    const cameraForward = this.cameraForwardScratch;
+    cameraForward.crossVectors(ControlSystem.WORLD_UP, cameraRight).normalize();
 
     return { cameraForward, cameraRight };
   }
@@ -1303,7 +1314,7 @@ export class ControlSystem extends System {
         break;
       case WeaponType.BOW:
         this.currentSubclass = WeaponSubclass.ELEMENTAL;
-        this.fireRate = 0.225; // Bow fire rate
+        this.fireRate = 0.25; // Bow fire rate
         break;
       case WeaponType.SCYTHE:
         this.currentSubclass = WeaponSubclass.CHAOS;
@@ -1742,6 +1753,7 @@ export class ControlSystem extends System {
         this.wraithStrikeDoubleStrikeActive = false;
         this.wraithStrikeCharges = 0;
         this.wraithStrikeNextChargeAt = null;
+        this.lastWraithStrikeDoubleStrikeChargeSpendTime = Number.NEGATIVE_INFINITY;
       }
       return false;
     }
@@ -1749,6 +1761,7 @@ export class ControlSystem extends System {
       this.wraithStrikeDoubleStrikeActive = true;
       this.wraithStrikeCharges = WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES;
       this.wraithStrikeNextChargeAt = null;
+      this.lastWraithStrikeDoubleStrikeChargeSpendTime = Number.NEGATIVE_INFINITY;
     }
     return true;
   }
@@ -1777,9 +1790,17 @@ export class ControlSystem extends System {
       this.advanceWraithStrikeChargeRecharges(currentTime);
       const maxC = WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES;
       if (this.wraithStrikeCharges > 0) {
+        const internalCooldownRemaining = Math.max(
+          0,
+          WRAITH_STRIKE_DOUBLE_STRIKE_INTERNAL_COOLDOWN_SEC -
+            (currentTime - this.lastWraithStrikeDoubleStrikeChargeSpendTime),
+        );
         return {
-          current: 0,
-          max: this.wraithStrikeCooldown,
+          current: internalCooldownRemaining,
+          max:
+            internalCooldownRemaining > 0
+              ? WRAITH_STRIKE_DOUBLE_STRIKE_INTERNAL_COOLDOWN_SEC
+              : this.wraithStrikeCooldown,
           isActive: this.isWraithStriking,
           charges: this.wraithStrikeCharges,
           maxCharges: maxC,
@@ -2340,37 +2361,43 @@ export class ControlSystem extends System {
     // - passive unlocked: Icebeam replaces primary
     if (isIcebeamUnlocked) {
       if (this.inputManager.isMouseButtonPressed(0)) { // Left mouse button held
+        const currentTime = Date.now() / 1000;
+
         if (!this.isIcebeaming) {
-          // Check cooldown
-          const currentTime = Date.now() / 1000;
-          if (currentTime - this.lastIcebeamTime < this.icebeamCooldownDurationSec) {
-            return; // On cooldown
+          if (this.scytheLmbStreamStartTime === 0) {
+            if (currentTime - this.lastIcebeamTime < this.icebeamCooldownDurationSec) {
+              return; // On cooldown
+            }
+
+            this.scytheLmbStreamStartTime = currentTime;
+
+            // Start spinning animation during wind-up
+            if (!this.isCharging) {
+              this.isCharging = true;
+              this.chargeProgress = 0;
+            }
           }
 
-          this.isIcebeaming = true;
-          this.icebeamStartTime = Date.now();
+          if (currentTime - this.scytheLmbStreamStartTime >= SCYTHE_LMB_WINDUP_SEC) {
+            this.isIcebeaming = true;
+            this.icebeamStartTime = Date.now();
 
-          // Apply movement and camera speed debuffs
-          const playerMovement = this.playerEntity?.getComponent(Movement);
-          if (playerMovement) {
-            playerMovement.isIcebeaming = true;
-          }
+            // Apply movement and camera speed debuffs
+            const playerMovement = this.playerEntity?.getComponent(Movement);
+            if (playerMovement) {
+              playerMovement.isIcebeaming = true;
+            }
 
-          // Apply camera rotation speed debuff
-          const cameraSystem = (window as any).cameraSystem;
-          if (cameraSystem && cameraSystem.setIceBeamActive) {
-            cameraSystem.setIceBeamActive(true);
-          }
+            // Apply camera rotation speed debuff
+            const cameraSystem = (window as any).cameraSystem;
+            if (cameraSystem && cameraSystem.setIceBeamActive) {
+              cameraSystem.setIceBeamActive(true);
+            }
 
-          // Start spinning animation
-          if (!this.isCharging) {
-            this.isCharging = true;
-            this.chargeProgress = 0;
-          }
-
-          // Trigger Icebeam state change callback
-          if (this.onIcebeamStateChangeCallback) {
-            this.onIcebeamStateChangeCallback(true);
+            // Trigger Icebeam state change callback
+            if (this.onIcebeamStateChangeCallback) {
+              this.onIcebeamStateChangeCallback(true);
+            }
           }
         } else {
           // Continue spinning animation while Icebeaming
@@ -2380,9 +2407,16 @@ export class ControlSystem extends System {
             this.stopIcebeam(true);
           }
         }
-      } else if (this.isIcebeaming) {
-        // Stop Icebeam when mouse is released
-        this.stopIcebeam();
+      } else {
+        this.scytheLmbStreamStartTime = 0;
+        if (this.isIcebeaming) {
+          // Stop Icebeam when mouse is released
+          this.stopIcebeam();
+        } else if (this.isCharging) {
+          // Cancelled wind-up before beam started
+          this.isCharging = false;
+          this.chargeProgress = 0;
+        }
       }
     } else {
       // Ensure Icebeam is fully reset if passive is not unlocked
@@ -2390,9 +2424,18 @@ export class ControlSystem extends System {
         this.stopIcebeam();
       }
 
-      // Default Scythe primary attack: Entropic Bolt
-      if (this.inputManager.isMouseButtonPressed(0) && !this.isCrossentropyCharging && !this.isSummonTotemCharging) {
+      const entropicLmbActive =
+        this.inputManager.isMouseButtonPressed(0) &&
+        !this.isCrossentropyCharging &&
+        !this.isSummonTotemCharging;
+
+      if (entropicLmbActive) {
+        if (this.scytheLmbStreamStartTime === 0) {
+          this.scytheLmbStreamStartTime = Date.now() / 1000;
+        }
         this.fireEntropicBoltProjectile(playerTransform);
+      } else {
+        this.scytheLmbStreamStartTime = 0;
       }
     }
     
@@ -2402,6 +2445,7 @@ export class ControlSystem extends System {
   private stopIcebeam(endedByMaxHold = false): void {
     this.isIcebeaming = false;
     this.icebeamStartTime = 0;
+    this.scytheLmbStreamStartTime = 0;
     this.icebeamCooldownDurationSec = endedByMaxHold
       ? ICEBEAM_COOLDOWN_AFTER_MAX_HOLD_SEC
       : ICEBEAM_COOLDOWN_AFTER_RELEASE_SEC;
@@ -2478,7 +2522,13 @@ export class ControlSystem extends System {
   private fireEntropicBoltProjectile(playerTransform: Transform): void {
     const currentTime = Date.now() / 1000;
     const entropicFireRate = this.getEntropicBoltFireRateSec();
-    if (currentTime - this.lastScytheFireTime < entropicFireRate) {
+    const isFirstBoltInStream = this.lastScytheFireTime < this.scytheLmbStreamStartTime;
+
+    if (isFirstBoltInStream) {
+      if (currentTime - this.scytheLmbStreamStartTime < SCYTHE_LMB_WINDUP_SEC) {
+        return;
+      }
+    } else if (currentTime - this.lastScytheFireTime < entropicFireRate) {
       return;
     }
     this.lastScytheFireTime = currentTime;
@@ -4188,7 +4238,7 @@ export class ControlSystem extends System {
       if (playerMovement) {
         playerMovement.velocity.x = 0;
         playerMovement.velocity.z = 0;
-        playerMovement.setMoveDirection(new Vector3(0, 0, 0), 0);
+        playerMovement.setMoveDirection(this.movementZeroDirection, 0);
       }
     }
 
@@ -4300,7 +4350,7 @@ export class ControlSystem extends System {
       if (playerMovement) {
         playerMovement.velocity.x = 0;
         playerMovement.velocity.z = 0;
-        playerMovement.setMoveDirection(new Vector3(0, 0, 0), 0);
+        playerMovement.setMoveDirection(this.movementZeroDirection, 0);
       }
     }
 
@@ -4538,7 +4588,7 @@ export class ControlSystem extends System {
       if (playerMovement) {
         playerMovement.velocity.x = 0;
         playerMovement.velocity.z = 0;
-        playerMovement.setMoveDirection(new Vector3(0, 0, 0), 0);
+        playerMovement.setMoveDirection(this.movementZeroDirection, 0);
       }
     }
 
@@ -4567,6 +4617,12 @@ export class ControlSystem extends System {
       if (this.wraithStrikeCharges <= 0) {
         return;
       }
+      if (
+        currentTime - this.lastWraithStrikeDoubleStrikeChargeSpendTime <
+        WRAITH_STRIKE_DOUBLE_STRIKE_INTERNAL_COOLDOWN_SEC
+      ) {
+        return;
+      }
     } else if (currentTime - this.lastWraithStrikeTime < this.wraithStrikeCooldown) {
       return;
     }
@@ -4578,6 +4634,7 @@ export class ControlSystem extends System {
 
     if (this.wraithStrikeDoubleStrikeActive) {
       this.wraithStrikeCharges--;
+      this.lastWraithStrikeDoubleStrikeChargeSpendTime = currentTime;
       if (
         this.wraithStrikeCharges < WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES &&
         this.wraithStrikeNextChargeAt === null
@@ -4609,7 +4666,7 @@ export class ControlSystem extends System {
       if (playerMovement) {
         playerMovement.velocity.x = 0;
         playerMovement.velocity.z = 0;
-        playerMovement.setMoveDirection(new Vector3(0, 0, 0), 0);
+        playerMovement.setMoveDirection(this.movementZeroDirection, 0);
       }
     }
 
@@ -4623,6 +4680,23 @@ export class ControlSystem extends System {
     this.performWraithStrikeDamage(playerTransform);
     if (this.shouldApplyBreathWeaponTalent()) {
       this.scheduleAftershockDetonation(playerTransform);
+    }
+
+    const attackDirection = direction.clone();
+    attackDirection.y = 0;
+    if (attackDirection.lengthSq() < 1e-8) {
+      attackDirection.set(0, 0, -1);
+    } else {
+      attackDirection.normalize();
+    }
+
+    const combatSystem = this.world.getSystem(CombatSystem);
+    if (combatSystem) {
+      combatSystem.addWraithStrikeEffect(
+        playerTransform.position,
+        attackDirection,
+        resolveWraithStrikeTheme(this.talentLoadout, this.abilityLoadout),
+      );
     }
 
     // Trigger wraith strike callback
@@ -6486,6 +6560,7 @@ export class ControlSystem extends System {
     // Reset all ability states when switching weapons
     this.isSwinging = false; // Reset swinging state to prevent sound overlap
     this.isCharging = false; // Reset bow charging state
+    this.scytheLmbStreamStartTime = 0;
     this.chargeProgress = 0; // Reset charge progress
     this.bowPrimaryChargeStartMs = null;
     this.isViperStingCharging = false; // Reset viper sting charging
@@ -6668,7 +6743,8 @@ export class ControlSystem extends System {
   private queryNearbyEntities(center: Vector3, radius: number): Entity[] {
     const collisionSystem = this.world.getSystem(CollisionSystem);
     if (collisionSystem) {
-      return collisionSystem.queryCollidersRadius(center, radius);
+      collisionSystem.queryCollidersRadiusInto(center, radius, this.nearbyEntitiesScratch);
+      return this.nearbyEntitiesScratch;
     }
     return this.world.getAllEntities();
   }
@@ -7561,7 +7637,7 @@ export class ControlSystem extends System {
     if (key === 'w' && shouldApplyInfernalDashTalent(this.talentLoadout)) {
       variant = 'infernal';
     } else if (
-      key === 's' &&
+      (key === 'w' || key === 's') &&
       shouldApplyGlacialDashTalent(this.talentLoadout) &&
       nowMs - this.lastGlacialDashRoomBoomMs >= GLACIAL_DASH_COOLDOWN_MS
     ) {

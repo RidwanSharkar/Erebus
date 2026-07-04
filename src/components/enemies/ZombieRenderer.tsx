@@ -1,18 +1,27 @@
 'use client';
+import { positionScratch, type Position3 } from '@/utils/position3';
 
-import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Group, Vector3 } from 'three';
+import React, { useRef, useState, useEffect, useCallback, useLayoutEffect } from 'react';
+import { Group, Mesh, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
-import { Billboard, Text } from '@react-three/drei';
+import { Billboard } from '@react-three/drei';
 import ZombieModel from './ZombieModel';
 import EnemyMeleeAttackRangeRing, { GHOUL_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import {
+  ENEMY_HP_BAR_FILL_HEIGHT,
+  ENEMY_HP_BAR_FILL_Z,
+  applyEnemyHealthBarFill,
+  syncEnemyHealthBarFillFromRef,
+  syncEnemyHealthBarNumericTextFromRef,
+} from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
+import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 
 interface ZombieRendererProps {
   id: string;
-  position: Vector3;
+  position: Position3;
   rotation: number;
   health: number;
   maxHealth: number;
@@ -27,6 +36,10 @@ const FADE_DURATION = 1.5;
 const LERP_SPEED = 14;
 const WALK_STOP_DELAY = 250;
 
+const ZOMBIE_HP_BAR_WIDTH = 1.8;
+const ZOMBIE_HP_BAR_HEIGHT = 0.22;
+const ZOMBIE_HP_BAR_FILL_HEIGHT = 0.2;
+
 function ZombieRenderer({
   id,
   position,
@@ -37,15 +50,17 @@ function ZombieRenderer({
   staggerBuildup = 0,
   visualScale = 1,
 }: ZombieRendererProps) {
-  const { socket, enemyTransformsRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
+  const hpFillRef = useRef<Mesh>(null);
+  const hpTextRef = useRef<any>(null);
 
   const [isAttacking, setIsAttacking] = useState(false);
   const [isWalking, setIsWalking] = useState(false);
   const [isSummoning, setIsSummoning] = useState(true);
   const isSummoningRef = useRef(true);
 
-  const targetPosition = useRef(position.clone());
+  const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation = useRef(rotation);
   const isAttackingRef = useRef(false);
   const isWalkingRef = useRef(false);
@@ -74,11 +89,11 @@ function ZombieRenderer({
   }, []);
 
   useEffect(() => {
-    const dist = targetPosition.current.distanceTo(position);
-    targetPosition.current.copy(position);
+    const dist = targetPosition.current.distanceTo(positionScratch.set(position.x, position.y, position.z));
+    targetPosition.current.set(position.x, position.y, position.z);
 
     if (dist > 8.0 && groupRef.current) {
-      groupRef.current.position.copy(position);
+      groupRef.current.position.set(position.x, position.y, position.z);
     }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -115,9 +130,16 @@ function ZombieRenderer({
     };
   }, [id, socket]);
 
+  useLayoutEffect(() => {
+    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth, ZOMBIE_HP_BAR_WIDTH);
+  }, [health, maxHealth]);
+
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, ZOMBIE_HP_BAR_WIDTH);
+    syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
 
     const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
     updateEnemyWalkStateFromMoveDist(
@@ -177,25 +199,27 @@ function ZombieRenderer({
         {health > 0 && !isDying && !isSummoning && (
           <>
             <mesh position={[0, 0, 0]}>
-              <planeGeometry args={[1.8, 0.22]} />
+              <planeGeometry args={[ZOMBIE_HP_BAR_WIDTH, ZOMBIE_HP_BAR_HEIGHT]} />
               <meshBasicMaterial color="#0a1a0a" opacity={0.9} transparent />
             </mesh>
 
-            <mesh position={[-0.9 + (health / maxHealth) * 0.9, 0, 0.001]}>
-              <planeGeometry args={[(health / maxHealth) * 1.8, 0.2]} />
+            <mesh
+              ref={hpFillRef}
+              position={[-ZOMBIE_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
+              scale={[1, 1, 1]}
+            >
+              <planeGeometry args={[ZOMBIE_HP_BAR_WIDTH, ZOMBIE_HP_BAR_FILL_HEIGHT]} />
               <meshBasicMaterial color="#33aa44" opacity={0.95} transparent />
             </mesh>
 
-            <Text
-              position={[0, 0, 0.002]}
+            <EnemyHealthBarTextLabel
+              leading="🧟"
+              numericRef={hpTextRef}
+              health={health}
+              maxHealth={maxHealth}
               fontSize={0.16}
               color="#ccffcc"
-              anchorX="center"
-              anchorY="middle"
-              fontWeight="bold"
-            >
-              {`🧟 ${Math.ceil(health)}/${maxHealth}`}
-            </Text>
+            />
             <EnemyStaggerBar stagger={staggerBuildup} />
           </>
         )}

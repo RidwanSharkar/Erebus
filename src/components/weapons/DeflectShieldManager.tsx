@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3 } from '@/utils/three-exports';
 import { WeaponType } from '@/components/dragon/weapons';
@@ -32,6 +32,12 @@ export function triggerGlobalDeflectShield(
   weaponType: WeaponType = WeaponType.RUNEBLADE,
   paletteVariant: AegisPaletteVariant = 'default',
 ): number {
+  if (playerId) {
+    globalDeflectShieldEffects = globalDeflectShieldEffects.filter(
+      (effect) => effect.playerId !== playerId,
+    );
+  }
+
   const effect: DeflectShieldEffect = {
     id: nextDeflectShieldId++,
     position: position.clone(),
@@ -57,19 +63,21 @@ export function clearDeflectShieldEffect(id: number): void {
 
 export default function DeflectShieldManager({ }: DeflectShieldManagerProps) {
   const [activeEffects, setActiveEffects] = useState<DeflectShieldEffect[]>([]);
+  const lastEffectKeyRef = useRef('');
 
   useFrame(() => {
-    // Sync with global state
     const now = Date.now();
-    const currentEffects = globalDeflectShieldEffects.filter(effect => 
-      now - effect.startTime < effect.duration
+    const currentEffects = globalDeflectShieldEffects.filter(
+      (effect) => now - effect.startTime < effect.duration,
     );
-    
-    // Remove expired effects from global state
+
     globalDeflectShieldEffects = currentEffects;
-    
-    // Update local state
-    setActiveEffects(currentEffects);
+
+    const nextKey = currentEffects.map((e) => e.id).join(',');
+    if (nextKey !== lastEffectKeyRef.current) {
+      lastEffectKeyRef.current = nextKey;
+      setActiveEffects(currentEffects);
+    }
   });
 
   return (

@@ -2,6 +2,7 @@
 
 import React, { forwardRef, memo, useCallback, useImperativeHandle, useState } from 'react';
 import { Vector3 } from '@/utils/three-exports';
+import type { Position3 } from '@/utils/position3';
 import GoldCollectMoteEffect from '@/components/enemies/GoldCollectMoteEffect';
 import MushroomEruptionVfx from '@/components/environment/MushroomEruptionVfx';
 import DeathEffect from '@/components/weapons/DeathEffect';
@@ -23,7 +24,7 @@ export type CoopEnvironmentVfxLayerHandle = {
 
 type DeathEffectPlayerData = {
   id: string;
-  position: Vector3;
+  position: Position3;
   health: number;
 };
 

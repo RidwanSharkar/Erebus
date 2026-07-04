@@ -37,7 +37,7 @@ export default function ExperienceBar({
   const showSkeletonTracker = !bossSpawned;
 
   return (
-    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 select-none">
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-40 select-none" data-block-game-input>
       <div
         className="rounded-xl border border-white/10 bg-black/75 backdrop-blur-md px-4 py-2.5 shadow-xl"
         style={{ minWidth: 320 }}

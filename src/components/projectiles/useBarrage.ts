@@ -2,6 +2,9 @@ import { useCallback, useRef } from 'react';
 import { Vector3, Matrix4 } from '@/utils/three-exports';
 
 const BARRAGE_DAMAGE_NUMBER_MERGE_MS = 500;
+const _barrageMovementScratch = new Vector3();
+const _barrageProj2D = new Vector3();
+const _barrageEnemy2D = new Vector3();
 
 interface BarrageProjectile {
   id: number;
@@ -108,9 +111,7 @@ export function useBarrage({
       if (distanceTraveled < projectile.maxDistance && !projectile.hasCollided && !projectile.fadeStartTime) {
         // Move projectile
         const speed = 0.45; // Slightly faster than regular arrows
-        projectile.position.add(
-          projectile.direction.clone().multiplyScalar(speed)
-        );
+        projectile.position.addScaledVector(projectile.direction, speed);
 
         // Check for enemy collisions
         for (const enemy of enemyData) {
@@ -128,17 +129,9 @@ export function useBarrage({
             continue; // Skip local player completely
           }
 
-          const projectilePos2D = new Vector3(
-            projectile.position.x,
-            0,
-            projectile.position.z
-          );
-          const enemyPos2D = new Vector3(
-            enemy.position.x,
-            0,
-            enemy.position.z
-          );
-          const distanceToEnemy = projectilePos2D.distanceTo(enemyPos2D);
+          _barrageProj2D.set(projectile.position.x, 0, projectile.position.z);
+          _barrageEnemy2D.set(enemy.position.x, 0, enemy.position.z);
+          const distanceToEnemy = _barrageProj2D.distanceTo(_barrageEnemy2D);
           
           if (distanceToEnemy < 1.2) {
             // Mark this enemy as hit by this projectile

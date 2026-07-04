@@ -7,8 +7,8 @@ import MartyrDetonationExplosion from '@/components/enemies/MartyrDetonationExpl
 import CrossentropyExplosion from '@/components/projectiles/CrossentropyExplosion';
 import DeathFlashExplosion from '@/components/enemies/DeathFlashExplosion';
 import TemplarBlinkSmiteGround from '@/components/enemies/TemplarBlinkSmiteGround';
-import BossTeleportEffect from '@/components/enemies/BossTeleportEffect';
 import ShadeTeleportEffect from '@/components/enemies/ShadeTeleportEffect';
+import WarlockTeleportEffect from '@/components/enemies/WarlockTeleportEffect';
 import type {
   DeathFlashExplosionState,
   FissionDetonationState,
@@ -132,11 +132,10 @@ const CoopExplosionBurstLayer = memo(forwardRef<CoopExplosionBurstLayerHandle, o
             );
           }
           return (
-            <BossTeleportEffect
+            <WarlockTeleportEffect
               key={effect.id}
               position={effect.position}
               type={effect.type}
-              theme={effect.theme === 'blue' ? 'blue' : effect.theme === 'purple' ? 'purple' : 'red'}
               onComplete={onComplete}
             />
           );

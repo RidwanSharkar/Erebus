@@ -46,6 +46,7 @@ export default function GoldDisplay({ gold, isLocalPlayer = false }: GoldDisplay
         'rounded-lg border bg-black/70 px-3 py-1.5 backdrop-blur-sm transition-transform duration-150',
         pulse ? 'scale-110 border-yellow-300' : 'border-yellow-700',
       ].join(' ')}
+      data-block-game-input
     >
       <div className="flex items-center gap-1">
         <GoldCoinIcon />

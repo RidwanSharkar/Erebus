@@ -1,7 +1,22 @@
 import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3, Shape, Color, DoubleSide, AdditiveBlending } from 'three';
+import { Group, Vector3, Shape, Color, DoubleSide, AdditiveBlending, ConeGeometry, CylinderGeometry, ExtrudeGeometry, SphereGeometry, TorusGeometry } from 'three';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+
+const THROW_SPEAR_SHAFT_GEO = new CylinderGeometry(0.03, 0.04, 2.2, 12);
+const THROW_SPEAR_GRIP_TORUS_GEO = new TorusGeometry(0.045, 0.016, 8, 16);
+const THROW_SPEAR_RING_TORUS_GEO = new TorusGeometry(0.26, 0.07, 16, 32);
+const THROW_SPEAR_ORB_GEOS = [
+  new SphereGeometry(0.155, 16, 16),
+  new SphereGeometry(0.1, 16, 16),
+  new SphereGeometry(0.145, 16, 16),
+  new SphereGeometry(0.175, 16, 16),
+] as const;
+const THROW_SPEAR_TRAIL_GLOW_GEO = new SphereGeometry(0.2, 6, 6);
+const THROW_SPEAR_GUARD_SPIKE_GEO = new ConeGeometry(0.070, 0.55, 3);
+for (const geo of [THROW_SPEAR_SHAFT_GEO, THROW_SPEAR_GRIP_TORUS_GEO, THROW_SPEAR_RING_TORUS_GEO, ...THROW_SPEAR_ORB_GEOS, THROW_SPEAR_TRAIL_GLOW_GEO, THROW_SPEAR_GUARD_SPIKE_GEO]) {
+  geo.userData.shared = true;
+}
 
 // Reused scratch vectors — no per-frame alloc.
 const _spearLightWorld = new Vector3();
@@ -170,8 +185,7 @@ export default function ThrowSpearProjectile({
         >
           {/* Spear shaft */}
           <group position={[-0.025, -0.55, 0.35]} rotation={[0, 0, -Math.PI]}>
-            <mesh>
-              <cylinderGeometry args={[0.03, 0.04, 2.2, 12]} />
+            <mesh geometry={THROW_SPEAR_SHAFT_GEO}>
               <meshStandardMaterial 
                 color="#2a3b4c" 
                 roughness={0.7}
@@ -182,8 +196,7 @@ export default function ThrowSpearProjectile({
             
             {/* Spear rings along shaft */}
             {[...Array(12)].map((_, i) => (
-              <mesh key={i} position={[0, 1.0 - i * 0.18, 0]} rotation={[Math.PI / 2, 0, 0]}>
-                <torusGeometry args={[0.045, 0.016, 8, 16]} />
+              <mesh key={i} position={[0, 1.0 - i * 0.18, 0]} rotation={[Math.PI / 2, 0, 0]} geometry={THROW_SPEAR_GRIP_TORUS_GEO}>
                 <meshStandardMaterial 
                   color="#1a2b3c" 
                   metalness={0.6} 
@@ -198,8 +211,7 @@ export default function ThrowSpearProjectile({
           
           {/* Spear guard/crossguard */}
           <group ref={lightAnchorRef} position={[-0.025, .45, 0.35]} rotation={[Math.PI, 1.5, Math.PI]}>
-            <mesh>
-              <torusGeometry args={[0.26, 0.07, 16, 32]} />
+            <mesh geometry={THROW_SPEAR_RING_TORUS_GEO}>
               <meshStandardMaterial 
                 color="#4a5b6c" 
                 metalness={0.9}
@@ -220,8 +232,8 @@ export default function ThrowSpearProjectile({
                   0
                 ]}
                 rotation={[0, 0, i * Math.PI / 4 - Math.PI / 2]}
+                geometry={THROW_SPEAR_GUARD_SPIKE_GEO}
               >
-                <coneGeometry args={[0.070, 0.55, 3]} />
                 <meshStandardMaterial 
                   color="#4a5b6c"
                   metalness={0.9}
@@ -234,8 +246,7 @@ export default function ThrowSpearProjectile({
             ))}
             
             {/* Energy core - gets brighter with charge */}
-            <mesh>
-              <sphereGeometry args={[0.155, 16, 16]} />
+            <mesh geometry={THROW_SPEAR_ORB_GEOS[0]}>
               <meshStandardMaterial
                 color={cSpear}
                 emissive={cSpear}
@@ -246,8 +257,7 @@ export default function ThrowSpearProjectile({
               />
             </mesh>
             
-            <mesh>
-              <sphereGeometry args={[0.1, 16, 16]} />
+            <mesh geometry={THROW_SPEAR_ORB_GEOS[1]}>
               <meshStandardMaterial
                 color={cSpear}
                 emissive={cSpear}
@@ -258,8 +268,7 @@ export default function ThrowSpearProjectile({
               />
             </mesh>
             
-            <mesh>
-              <sphereGeometry args={[0.145, 16, 16]} />
+            <mesh geometry={THROW_SPEAR_ORB_GEOS[2]}>
               <meshStandardMaterial
                 color={cSpear}
                 emissive={cSpear}
@@ -270,8 +279,7 @@ export default function ThrowSpearProjectile({
               />
             </mesh>
             
-            <mesh>
-              <sphereGeometry args={[.175, 16, 16]} />
+            <mesh geometry={THROW_SPEAR_ORB_GEOS[3]}>
               <meshStandardMaterial
                 color={cSpear}
                 emissive={cSpear}
@@ -396,8 +404,7 @@ export default function ThrowSpearProjectile({
 
             
             {/* Outer energy glow */}
-            <mesh scale={[trailScale * 1.5, trailScale * 1.5, trailScale * 1.5]}>
-              <sphereGeometry args={[0.2, 6, 6]} />
+            <mesh scale={[trailScale * 1.5, trailScale * 1.5, trailScale * 1.5]} geometry={THROW_SPEAR_TRAIL_GLOW_GEO}>
               <meshStandardMaterial
                 color={cLightning}
                 emissive={cLightning}

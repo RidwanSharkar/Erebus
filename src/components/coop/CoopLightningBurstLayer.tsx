@@ -133,6 +133,7 @@ const CoopLightningBurstLayer = memo(forwardRef<CoopLightningBurstLayerHandle, o
             position={fx.position}
             magmaCurrent={fx.magmaCurrent}
             forceOfNature={fx.forceOfNature}
+            stormShield={fx.stormShield}
             onComplete={() => setStaggerProcEffects(prev => prev.filter(e => e.id !== fx.id))}
           />
         ))}

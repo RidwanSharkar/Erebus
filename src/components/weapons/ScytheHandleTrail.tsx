@@ -14,6 +14,37 @@ const _worldPos = new Vector3();
 const _localPos = new Vector3();
 const _lastLocalPos = new Vector3();
 
+const SCYTHE_TRAIL_VERTEX_SHADER = `
+  attribute float opacity;
+  attribute float scale;
+  attribute float age;
+  varying float vOpacity;
+  varying float vAge;
+  void main() {
+    vOpacity = opacity;
+    vAge = age;
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * mvPosition;
+    gl_PointSize = scale * 16.0 * (300.0 / -mvPosition.z);
+  }
+`;
+
+const SCYTHE_TRAIL_FRAGMENT_SHADER = `
+  varying float vOpacity;
+  varying float vAge;
+  uniform vec3 uColor;
+  uniform vec3 uAccent;
+  void main() {
+    float d = length(gl_PointCoord - vec2(0.5));
+    float core = smoothstep(0.38, 0.08, d);
+    float halo = smoothstep(0.55, 0.12, d);
+    float sparkle = 0.88 + 0.12 * sin(vAge * 36.0 + gl_PointCoord.x * 14.0);
+    vec3 mixedCol = mix(uAccent, uColor, clamp(vAge * 0.9, 0.0, 1.0));
+    float strength = core * 0.8 + halo * 0.45;
+    gl_FragColor = vec4(mixedCol * 2.2 * sparkle, vOpacity * strength);
+  }
+`;
+
 export default function ScytheHandleTrail({
   anchorRef,
   parentRef,
@@ -130,37 +161,6 @@ export default function ScytheHandleTrail({
     geometry.attributes.age.needsUpdate = true;
   });
 
-  const vertexShader = `
-    attribute float opacity;
-    attribute float scale;
-    attribute float age;
-    varying float vOpacity;
-    varying float vAge;
-    void main() {
-      vOpacity = opacity;
-      vAge = age;
-      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-      gl_Position = projectionMatrix * mvPosition;
-      gl_PointSize = scale * 16.0 * (300.0 / -mvPosition.z);
-    }
-  `;
-
-  const fragmentShader = `
-    varying float vOpacity;
-    varying float vAge;
-    uniform vec3 uColor;
-    uniform vec3 uAccent;
-    void main() {
-      float d = length(gl_PointCoord - vec2(0.5));
-      float core = smoothstep(0.38, 0.08, d);
-      float halo = smoothstep(0.55, 0.12, d);
-      float sparkle = 0.88 + 0.12 * sin(vAge * 36.0 + gl_PointCoord.x * 14.0);
-      vec3 mixedCol = mix(uAccent, uColor, clamp(vAge * 0.9, 0.0, 1.0));
-      float strength = core * 0.8 + halo * 0.45;
-      gl_FragColor = vec4(mixedCol * 2.2 * sparkle, vOpacity * strength);
-    }
-  `;
-
   return (
     <points ref={trailRef}>
       <bufferGeometry>
@@ -173,8 +173,8 @@ export default function ScytheHandleTrail({
         transparent
         depthWrite={false}
         blending={AdditiveBlending}
-        vertexShader={vertexShader}
-        fragmentShader={fragmentShader}
+        vertexShader={SCYTHE_TRAIL_VERTEX_SHADER}
+        fragmentShader={SCYTHE_TRAIL_FRAGMENT_SHADER}
         uniforms={uniforms}
       />
     </points>

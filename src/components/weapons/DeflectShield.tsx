@@ -1,7 +1,18 @@
 import { useRef, useEffect, useMemo, useLayoutEffect } from 'react';
 import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3, Color, AdditiveBlending, DoubleSide, BackSide } from '@/utils/three-exports';
+import {
+  Group,
+  Vector3,
+  Color,
+  AdditiveBlending,
+  DoubleSide,
+  BackSide,
+  SphereGeometry,
+  CylinderGeometry,
+  BoxGeometry,
+  MeshStandardMaterial,
+} from '@/utils/three-exports';
 
 // Module-level scratch vectors — DeflectShield is always a singleton.
 const _dRotScratch = new Vector3();
@@ -10,6 +21,16 @@ const _fwdDirScratch = new Vector3();
 const _shieldPosScratch = new Vector3();
 import { WeaponType } from '@/components/dragon/weapons';
 import { getAegisShieldPalette, type AegisPaletteVariant } from '@/utils/aegisShieldPalette';
+
+const BODY_OUTER_GEO = new SphereGeometry(1.75, 40, 40);
+const BODY_INNER_GEO = new SphereGeometry(1.75, 32, 32);
+const FWD_CYL_OUTER_GEO = new CylinderGeometry(3, 3, 0.1, 32);
+const FWD_CYL_MID_GEO = new CylinderGeometry(2.2, 2.2, 0.05, 32);
+const FWD_CYL_INNER_GEO = new CylinderGeometry(3.5, 3.5, 0.02, 32);
+const FWD_BOX_GEO = new BoxGeometry(0.8, 0.1, 0.05);
+const FWD_CROSS_V_GEO = new BoxGeometry(0.15, 2.5, 0.05);
+const FWD_CROSS_H_GEO = new BoxGeometry(2.5, 0.15, 0.05);
+const FWD_PARTICLE_GEO = new SphereGeometry(0.08, 8, 8);
 
 function tagShieldMaterials(root: Group) {
   root.traverse((child: any) => {
@@ -162,149 +183,137 @@ export default function DeflectShield({
   }), [palette]);
   const { cMain, cEm, cDeep, cAccent } = colors;
 
+  const materials = useMemo(() => {
+    const shared = {
+      transparent: true as const,
+      blending: AdditiveBlending,
+      depthWrite: false as const,
+    };
+    return {
+      bodyOuter: new MeshStandardMaterial({
+        color: cMain,
+        emissive: cEm,
+        emissiveIntensity: 1.2,
+        opacity: 0.55,
+        side: BackSide,
+        ...shared,
+      }),
+      bodyInner: new MeshStandardMaterial({
+        color: cAccent,
+        emissive: cDeep,
+        emissiveIntensity: 0.8,
+        opacity: 0.22,
+        side: DoubleSide,
+        ...shared,
+      }),
+      fwdOuter: new MeshStandardMaterial({
+        color: cMain,
+        emissive: cEm,
+        emissiveIntensity: 1.5,
+        opacity: 0.7,
+        side: DoubleSide,
+        transparent: true,
+        blending: AdditiveBlending,
+      }),
+      fwdMid: new MeshStandardMaterial({
+        color: cAccent,
+        emissive: cEm,
+        emissiveIntensity: 2,
+        opacity: 0.5,
+        side: DoubleSide,
+        transparent: true,
+        blending: AdditiveBlending,
+      }),
+      fwdInner: new MeshStandardMaterial({
+        color: cEm,
+        emissive: cDeep,
+        emissiveIntensity: 1,
+        opacity: 0.3,
+        side: DoubleSide,
+        transparent: true,
+        blending: AdditiveBlending,
+      }),
+      spoke: new MeshStandardMaterial({
+        color: cAccent,
+        emissive: cEm,
+        emissiveIntensity: 3,
+        opacity: 0.8,
+        transparent: true,
+        blending: AdditiveBlending,
+      }),
+      cross: new MeshStandardMaterial({
+        color: cAccent,
+        emissive: cEm,
+        emissiveIntensity: 4,
+        opacity: 0.9,
+        transparent: true,
+        blending: AdditiveBlending,
+      }),
+      particle: new MeshStandardMaterial({
+        color: cMain,
+        emissive: cEm,
+        emissiveIntensity: 2,
+        opacity: 0.6,
+        transparent: true,
+        blending: AdditiveBlending,
+      }),
+    };
+  }, [cMain, cEm, cDeep, cAccent]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(materials).forEach((mat) => mat.dispose());
+    };
+  }, [materials]);
+
   if (!isActive) return null;
 
   return (
     <>
       <group ref={bodyShellRef}>
-        <mesh>
-          <sphereGeometry args={[1.75, 40, 40]} />
-          <meshStandardMaterial
-            color={cMain}
-            emissive={cEm}
-            emissiveIntensity={1.2}
-            transparent
-            opacity={0.55}
-            side={BackSide}
-            blending={AdditiveBlending}
-            depthWrite={false}
-          />
-        </mesh>
-        <mesh scale={1.04}>
-          <sphereGeometry args={[1.75, 32, 32]} />
-          <meshStandardMaterial
-            color={cAccent}
-            emissive={cDeep}
-            emissiveIntensity={0.8}
-            transparent
-            opacity={0.22}
-            side={DoubleSide}
-            blending={AdditiveBlending}
-            depthWrite={false}
-          />
-        </mesh>
+        <mesh geometry={BODY_OUTER_GEO} material={materials.bodyOuter} />
+        <mesh geometry={BODY_INNER_GEO} material={materials.bodyInner} scale={1.04} />
         <PooledEffectLight color={cMain} intensity={1.2} distance={6} decay={2} />
       </group>
 
       <group ref={forwardGroupRef}>
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[3, 3, 0.1, 32]} />
-          <meshStandardMaterial
-            color={cMain}
-            emissive={cEm}
-            emissiveIntensity={1.5}
-            transparent
-            opacity={0.7}
-            side={DoubleSide}
-            blending={AdditiveBlending}
-          />
-        </mesh>
-
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[2.2, 2.2, 0.05, 32]} />
-          <meshStandardMaterial
-            color={cAccent}
-            emissive={cEm}
-            emissiveIntensity={2}
-            transparent
-            opacity={0.5}
-            side={DoubleSide}
-            blending={AdditiveBlending}
-          />
-        </mesh>
-
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[3.5, 3.5, 0.02, 32]} />
-          <meshStandardMaterial
-            color={cEm}
-            emissive={cDeep}
-            emissiveIntensity={1}
-            transparent
-            opacity={0.3}
-            side={DoubleSide}
-            blending={AdditiveBlending}
-          />
-        </mesh>
+        <mesh rotation={[Math.PI / 2, 0, 0]} geometry={FWD_CYL_OUTER_GEO} material={materials.fwdOuter} />
+        <mesh rotation={[Math.PI / 2, 0, 0]} geometry={FWD_CYL_MID_GEO} material={materials.fwdMid} />
+        <mesh rotation={[Math.PI / 2, 0, 0]} geometry={FWD_CYL_INNER_GEO} material={materials.fwdInner} />
 
         <group rotation={[Math.PI / 2, 0, 0]}>
           {[...Array(8)].map((_, i) => (
             <mesh
               key={i}
+              geometry={FWD_BOX_GEO}
+              material={materials.spoke}
               position={[
                 Math.cos((i * Math.PI) / 4) * 1.5,
                 Math.sin((i * Math.PI) / 4) * 1.5,
                 0.05,
               ]}
               rotation={[0, 0, (i * Math.PI) / 4]}
-            >
-              <boxGeometry args={[0.8, 0.1, 0.05]} />
-              <meshStandardMaterial
-                color={cAccent}
-                emissive={cEm}
-                emissiveIntensity={3}
-                transparent
-                opacity={0.8}
-                blending={AdditiveBlending}
-              />
-            </mesh>
+            />
           ))}
         </group>
 
         <group rotation={[Math.PI / 2, 0, 0]}>
-          <mesh position={[0, 0, 0.1]}>
-            <boxGeometry args={[0.15, 2.5, 0.05]} />
-            <meshStandardMaterial
-              color={cAccent}
-              emissive={cEm}
-              emissiveIntensity={4}
-              transparent
-              opacity={0.9}
-              blending={AdditiveBlending}
-            />
-          </mesh>
-          <mesh position={[0, 0, 0.1]}>
-            <boxGeometry args={[2.5, 0.15, 0.05]} />
-            <meshStandardMaterial
-              color={cAccent}
-              emissive={cEm}
-              emissiveIntensity={4}
-              transparent
-              opacity={0.9}
-              blending={AdditiveBlending}
-            />
-          </mesh>
+          <mesh position={[0, 0, 0.1]} geometry={FWD_CROSS_V_GEO} material={materials.cross} />
+          <mesh position={[0, 0, 0.1]} geometry={FWD_CROSS_H_GEO} material={materials.cross} />
         </group>
 
         <group rotation={[Math.PI / 2, 0, 0]}>
           {[...Array(12)].map((_, i) => (
             <mesh
               key={`particle-${i}`}
+              geometry={FWD_PARTICLE_GEO}
+              material={materials.particle}
               position={[
                 Math.cos((i * Math.PI) / 6) * (3.8 + Math.sin(Date.now() * 0.005 + i) * 0.3),
                 Math.sin((i * Math.PI) / 6) * (3.8 + Math.sin(Date.now() * 0.005 + i) * 0.3),
                 Math.sin(Date.now() * 0.003 + i) * 0.2,
               ]}
-            >
-              <sphereGeometry args={[0.08, 8, 8]} />
-              <meshStandardMaterial
-                color={cMain}
-                emissive={cEm}
-                emissiveIntensity={2}
-                transparent
-                opacity={0.6}
-                blending={AdditiveBlending}
-              />
-            </mesh>
+            />
           ))}
         </group>
 

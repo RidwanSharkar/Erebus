@@ -33,7 +33,7 @@ export default function BossSpearProjectile({
   const doneRef  = useRef(false);
 
   // Single pooled light follows the spear (replaces 2 near-coincident <pointLight>s).
-  const spearLight = useDynamicLight({ color: '#ff7700', distance: 7, priority: 2 });
+  const spearLight = useDynamicLight({ color: '#ff7700', distance: 7, priority: 1 });
 
   const { direction, totalDist, duration, yaw, pitch } = useMemo(() => {
     const d = new Vector3().subVectors(targetPosition, startPosition);

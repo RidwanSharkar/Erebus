@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, Mesh, DoubleSide, AdditiveBlending } from '@/utils/three-exports';
 import ChargedArrowTrail from './ChargedArrowTrail';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import { ARROW_AURA_GEO, ARROW_SHAFT_GEO, ARROW_TIP_GEO } from './sharedProjectileGeometry';
 
 const _lookAtTarget = new Vector3();
 const _dirNorm = new Vector3();
@@ -49,8 +50,7 @@ export default function ChargedArrow({ position, direction, onImpact }: ChargedA
     <group name="charged-arrow-group">
       <group ref={arrowRef} position={position}>
         {/* Arrow Head */}
-        <mesh ref={arrowHeadRef} position={[0, 0, 0.2]}>
-          <coneGeometry args={[0.08, 0.25, 8]} />
+        <mesh ref={arrowHeadRef} position={[0, 0, 0.2]} geometry={ARROW_TIP_GEO}>
           <meshStandardMaterial
             color={color}
             emissive="#ff6600"
@@ -64,8 +64,7 @@ export default function ChargedArrow({ position, direction, onImpact }: ChargedA
         </mesh>
 
         {/* Arrow Shaft */}
-        <mesh ref={arrowShaftRef}>
-          <cylinderGeometry args={[0.02, 0.03, 0.4, 8]} />
+        <mesh ref={arrowShaftRef} geometry={ARROW_SHAFT_GEO}>
           <meshStandardMaterial
             color={color}
             emissive="#ff8800"
@@ -107,8 +106,7 @@ export default function ChargedArrow({ position, direction, onImpact }: ChargedA
         </group>
         
         {/* Energy Aura around arrow */}
-        <mesh>
-          <sphereGeometry args={[size * 1.5, 16, 16]} />
+        <mesh geometry={ARROW_AURA_GEO}>
           <meshStandardMaterial
             color={color}
             emissive="#ffaa00"

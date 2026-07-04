@@ -47,7 +47,11 @@ function handlePlayerEvents(socket, gameRooms) {
     const coopTransitionActive =
       typeof room.isCoopCombatTransitionActive === 'function' &&
       room.isCoopCombatTransitionActive();
-    if (position && rotation && !isDead && !coopTransitionActive) {
+    const coopPostTeleportGuardActive =
+      typeof room.isCoopPostTeleportPositionGuardActive === 'function' &&
+      room.isCoopPostTeleportPositionGuardActive();
+    const coopPositionWriteBlocked = coopTransitionActive || coopPostTeleportGuardActive;
+    if (position && rotation && !isDead && !coopPositionWriteBlocked) {
       room.updatePlayerPosition(playerId, position, rotation, movementDirection);
     }
     
@@ -73,7 +77,7 @@ function handlePlayerEvents(socket, gameRooms) {
       rotationDeltaExceedsEpsilon(rotation, state.lastRotation);
     const intervalElapsed = now - state.lastBroadcastAt >= PLAYER_MOVE_REBROADCAST_MIN_MS;
 
-    if (hasNonMoveUpdate || (moveChanged && intervalElapsed && !coopTransitionActive)) {
+    if (hasNonMoveUpdate || (moveChanged && intervalElapsed && !coopPositionWriteBlocked)) {
       socket.to(roomId).emit('player-moved', {
         playerId,
         position: broadcastPosition,
@@ -140,6 +144,10 @@ function handlePlayerEvents(socket, gameRooms) {
       duality: !!raw.duality,
       acidRain: !!raw.acidRain,
       spellThief: !!raw.spellThief,
+      divineCold: !!raw.divineCold,
+      pyromania: !!raw.pyromania,
+      lethalInjection: !!raw.lethalInjection,
+      stormShield: !!raw.stormShield,
       stamina: typeof raw.stamina === 'number' ? raw.stamina : 0,
       agility: typeof raw.agility === 'number' ? raw.agility : 0,
       intellect: typeof raw.intellect === 'number' ? raw.intellect : 0,
@@ -191,6 +199,15 @@ function handlePlayerEvents(socket, gameRooms) {
       y: position?.y ?? 0,
       z: position?.z ?? 0,
     });
+  });
+
+  /** Co-op: DIVINE COLD ultimate — spawn arctic blizzard on an enemy in front after Aegis invuln proc. */
+  socket.on('divine-cold-proc', (data) => {
+    const { roomId, targetPosition, direction } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.tryProcDivineColdBlizzard !== 'function') return;
+    room.tryProcDivineColdBlizzard(socket.id, targetPosition, direction);
   });
 
   /** Co-op: METEOR STRIKE boon active ability — call down meteors on the nearest enemy. */
@@ -315,6 +332,11 @@ function handlePlayerEvents(socket, gameRooms) {
           console.log(`👻 Wraith Strike: Player ${socket.id} taunted enemy ${enemyId} (${enemy.type}) for ${tauntDuration/1000} seconds`);
         }
       }
+    }
+
+    // Explosive Talons — record cast for server-side detonation radius validation
+    if (abilityType === 'viper_sting' && extraData?.explosiveTalons && position && direction) {
+      gameRoom.recordExplosiveTalonsCast(socket.id, position, direction);
     }
 
     // Broadcast ability usage to other players

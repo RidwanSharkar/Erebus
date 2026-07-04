@@ -1,13 +1,13 @@
 'use client';
+import { positionScratch, type Position3 } from '@/utils/position3';
 
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
 
-import { Billboard, Text } from '@react-three/drei';
+import { Billboard } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { Group, Mesh, Vector3 } from 'three';
 import WarlockModel from './WarlockModel';
-import WarlockTeleportEffect from './WarlockTeleportEffect';
 import GhostTrail from '../dragon/GhostTrail';
 import BoneWings from '../dragon/BoneWings';
 import BoneAura from '../dragon/BoneAura';
@@ -18,11 +18,12 @@ import EnemyStaggerBar from './EnemyStaggerBar';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
 import { campHpTheme } from '@/utils/campHpTheme';
 import BossBoneWings from './BossBoneWings';
-import { ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_HEIGHT, ENEMY_HP_BAR_FILL_HEIGHT, ENEMY_HP_BAR_FILL_Z, applyEnemyHealthBarFill } from '@/utils/enemyHealthBar';
+import { ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_HEIGHT, ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO, ENEMY_HP_BAR_FILL_HEIGHT, ENEMY_HP_BAR_FILL_Z, applyEnemyHealthBarFill, syncEnemyHealthBarFillFromRef, syncEnemyHealthBarNumericTextFromRef } from '@/utils/enemyHealthBar';
+import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 
 interface Boss2RendererProps {
   id: string;
-  position: Vector3;
+  position: Position3;
   rotation: number;
   health: number;
   maxHealth: number;
@@ -48,13 +49,14 @@ function Boss2Renderer({
   staggerBuildup = 0,
 }: Boss2RendererProps) {
   const theme = campHpTheme('red');
-  const { socket, enemyTransformsRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
+  const hpTextRef = useRef<any>(null);
   const isBlinkingRef = useRef(false);
   const isLaunchingRef = useRef(false);
   const isWalkingRef = useRef(false);
-  const targetPosition = useRef(position.clone());
+  const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation = useRef(rotation);
   const lastMoveTimeRef = useRef(0);
   const launchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -80,7 +82,6 @@ function Boss2Renderer({
   const [isWalking, setIsWalking] = useState(false);
   const [isBlinking, setIsBlinking] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
-  const [blinkFx, setBlinkFx] = useState<{ id: string; position: Vector3; type: 'start' | 'end' }[]>([]);
 
   const setGroupRef = useCallback((group: Group | null) => {
     groupRef.current = group;
@@ -91,11 +92,11 @@ function Boss2Renderer({
   }, []);
 
   useEffect(() => {
-    const dist = targetPosition.current.distanceTo(position);
-    targetPosition.current.copy(position);
+    const dist = targetPosition.current.distanceTo(positionScratch.set(position.x, position.y, position.z));
+    targetPosition.current.set(position.x, position.y, position.z);
 
     if (dist > 8 && groupRef.current) {
-      groupRef.current.position.copy(position);
+      groupRef.current.position.set(position.x, position.y, position.z);
     }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -132,11 +133,6 @@ function Boss2Renderer({
       targetRotation.current = data.rotation;
 
       (window as any).audioSystem?.playEnemyBlinkSound(startPos);
-      const fxId = `${id}-${Date.now()}`;
-      setBlinkFx(prev => [...prev, { id: `${fxId}-start`, position: startPos, type: 'start' }]);
-      trackTimeout(() => {
-        setBlinkFx(prev => [...prev, { id: `${fxId}-end`, position: endPos, type: 'end' }]);
-      }, Math.round(BLINK_ANIMATION_DURATION * 0.45));
 
       trackTimeout(() => {
         setIsBlinking(false);
@@ -206,6 +202,9 @@ function Boss2Renderer({
     while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
 
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, ENEMY_HP_BAR_WIDTH);
+    syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
+
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
@@ -234,15 +233,6 @@ function Boss2Renderer({
 
   return (
     <>
-      {blinkFx.map(fx => (
-        <WarlockTeleportEffect
-          key={fx.id}
-          position={fx.position}
-          type={fx.type}
-          onComplete={() => setBlinkFx(prev => prev.filter(f => f.id !== fx.id))}
-        />
-      ))}
-
       <BoneAura parentRef={groupRef as React.RefObject<Group>} />
       <GhostTrail
         parentRef={groupRef as React.RefObject<Group>}
@@ -272,7 +262,7 @@ function Boss2Renderer({
           {health > 0 && !isDying && (
             <>
               <mesh position={[0, 0, 0]}>
-                <planeGeometry args={[ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_HEIGHT]} />
+                <primitive object={ENEMY_HP_BAR_BG_GEO} attach="geometry" />
                 <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
               </mesh>
               <mesh
@@ -280,19 +270,17 @@ function Boss2Renderer({
                 position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
                 scale={[1, 1, 1]}
               >
-                <planeGeometry args={[ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_FILL_HEIGHT]} />
+                <primitive object={ENEMY_HP_BAR_FILL_GEO} attach="geometry" />
                 <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
               </mesh>
-              <Text
-                position={[0, 0, 0.002]}
+              <EnemyHealthBarTextLabel
+                leading="ENVY"
+                numericRef={hpTextRef}
+                health={health}
+                maxHealth={maxHealth}
                 fontSize={0.18}
                 color={theme.text}
-                anchorX="center"
-                anchorY="middle"
-                fontWeight="bold"
-              >
-                {`ENVY ${Math.ceil(health)}/${maxHealth}`}
-              </Text>
+              />
               <EnemyStaggerBar stagger={staggerBuildup} staggerMax={STAGGER_MAX_BOSS} />
             </>
           )}

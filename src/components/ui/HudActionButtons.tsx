@@ -10,7 +10,7 @@ export default function HudActionButtons({
   onOpenRulebook,
 }: HudActionButtonsProps) {
   return (
-    <div className="flex gap-2">
+    <div className="flex gap-2" data-block-game-input>
       <button
         type="button"
         onClick={onOpenRulebook}

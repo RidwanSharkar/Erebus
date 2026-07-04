@@ -57,7 +57,7 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'runeblade_wraithblade', file: 'runeblade/wraithblade.mp3' },
   { id: 'runeblade_void_grasp', file: 'runeblade/void_grasp.mp3' },
   { id: 'runeblade_swing_hit', file: 'runeblade/runeblade_swing.mp3' },
-  { id: 'runeblade_whirlwind', file: 'runeblade/whirwind.mp3' },
+  { id: 'runeblade_whirlwind', file: 'runeblade/whirlwind.mp3' },
   { id: 'sword_miss_1', file: 'runeblade/swordMiss1.mp3' },
   { id: 'sword_miss_2', file: 'runeblade/swordMiss2.mp3' },
   { id: 'knight_miss', file: 'sabres/sabreMiss3.mp3' },
@@ -95,6 +95,7 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'warlock_voidbolt', file: 'versus/voidbolt.mp3' },
   { id: 'warlock_zap', file: 'versus/warlockzap.mp3' },
   { id: 'enemy_titan_stomp', file: 'versus/titanstomp.mp3' },
+  { id: 'enemy_titan_bladestorm', file: 'runeblade/whirwind2.mp3' },
   { id: 'enemy_telegraph', file: 'versus/telegraph.mp3' },
   { id: 'versus_arming', file: 'versus/arming.mp3' },
   { id: 'whisper_infernal', file: 'versus/whisperInfernal.mp3' },
@@ -822,7 +823,7 @@ export class AudioSystem extends System {
 
   /** Titan bladestorm tick — one-shot whirwind (caller throttles to ~1/sec). */
   public playTitanBladestormDamageSound(position: Vector3) {
-    return this.playWeaponSound('runeblade_whirlwind', position, { volume: 0.85 });
+    return this.playWeaponSound('enemy_titan_bladestorm', position, { volume: 0.85 });
   }
 
   public playWeaverGhoulSummonSound(position: Vector3) {

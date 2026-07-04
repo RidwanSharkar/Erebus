@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Shape, Vector3 } from '@/utils/three-exports';
 import Blizzard from './Blizzard/Blizzard';
@@ -526,8 +526,7 @@ export default function Sabres({
     }
   });
 
-  // Create custom sabre blade shape (scimitar)
-  const createBladeShape = () => {
+  const bladeShape = useMemo(() => {
     const shape = new Shape();
 
     // Start at center
@@ -562,10 +561,9 @@ export default function Sabres({
     shape.quadraticCurveTo(0.4, -0.02, 0, 0);
 
     return shape;
-  };
+  }, []);
 
-  // Make inner blade shape match outer blade
-  const createInnerBladeShape = () => {
+  const innerBladeShape = useMemo(() => {
     const shape = new Shape();
 
     // Start at center
@@ -600,7 +598,7 @@ export default function Sabres({
     shape.quadraticCurveTo(0.08, -0.04, 0, -0.04);
 
     return shape;
-  };
+  }, []);
 
   // Update blade extrude settings for an even thinner blade
   const bladeExtrudeSettings = {
@@ -682,7 +680,7 @@ export default function Sabres({
         <group position={[0.2, 0.3, 0.0]} rotation={[0, Math.PI / 2, Math.PI / 2]}>
           {/* Base blade */}
           <mesh>
-            <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
+            <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
             <meshStandardMaterial 
               color={colors.primary}
               emissive={colors.emissive}
@@ -696,7 +694,7 @@ export default function Sabres({
           
           {/* Outer ethereal glow */}
           <mesh position={[0, 0, -0.02]}>
-            <extrudeGeometry args={[createInnerBladeShape(), {
+            <extrudeGeometry args={[innerBladeShape, {
               ...innerBladeExtrudeSettings,
               depth: 0.06
             }]} />
@@ -741,7 +739,7 @@ export default function Sabres({
         <group position={[-0.2, 0.3, 0.]} rotation={[0, Math.PI / 2, Math.PI / 2]}>
           {/* Base blade */}
           <mesh>
-            <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
+            <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
             <meshStandardMaterial 
               color={colors.primary}
               emissive={colors.emissive}
@@ -755,7 +753,7 @@ export default function Sabres({
           
           {/* Outer ethereal glow */}
           <mesh position={[0, 0, -0.02]}>
-            <extrudeGeometry args={[createInnerBladeShape(), {
+            <extrudeGeometry args={[innerBladeShape, {
               ...innerBladeExtrudeSettings,
               depth: 0.06
             }]} />

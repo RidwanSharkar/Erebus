@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, AdditiveBlending, Group } from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import { BARRAGE_RING_GEOS, BARRAGE_SHAFT_GEO } from './sharedProjectileGeometry';
 
 const _lookAtTarget = new Vector3();
 const _dirNorm = new Vector3();
@@ -91,8 +92,7 @@ function BarrageProjectileVisual({ projectile }: { projectile: BarrageProjectile
     <group>
       <group ref={arrowRef} position={projectile.position}>
       {/* Base arrow - slightly smaller than regular bow arrows */}
-      <mesh rotation={[Math.PI/2, 0, 0]}>
-        <cylinderGeometry args={[0.025, 0.1, 1.8, 6]} />
+      <mesh rotation={[Math.PI/2, 0, 0]} geometry={BARRAGE_SHAFT_GEO}>
         <meshStandardMaterial
           color={mainColor}
           emissive={emissiveColor}
@@ -108,8 +108,8 @@ function BarrageProjectileVisual({ projectile }: { projectile: BarrageProjectile
           key={`barrage-ring-${i}`}
           position={[0, 0, -i * 0.4 + 0.4]}
           rotation={[Math.PI, 0, Date.now() * 0.004 + i * Math.PI / 2]}
+          geometry={BARRAGE_RING_GEOS[i]}
         >
-          <torusGeometry args={[0.1 + i * 0.03, 0.04, 6, 10]} />
           <meshStandardMaterial
             color={mainColor}
             emissive={emissiveColor}

@@ -14,6 +14,12 @@ const COOP_THRONE_ROOM_RADIUS = 24;
 const THRONE_RIM_INSET = 1.25;
 const ENEMY_WALL_COLLISION_RADIUS = 0.5;
 
+function _enemyAiLog(...args) {
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(...args);
+  }
+}
+
 // ─── Navigation grid constants ────────────────────────────────────────────────
 // The grid covers the playable area with 1-unit cells. Walls are "inflated" by
 // NAV_ENEMY_RADIUS so that enemy centres always stay clear of geometry.
@@ -137,7 +143,7 @@ const PLAYER_ZOMBIE_UNLOCK_MOVE_SPEED = 1.75;
 const PACK_HUNTER_DAMAGE_PER_ZOMBIE = 15;
 const EXPLODER_STRAIN_RADIUS = 2.5;
 
-const ALLIED_KNIGHT_MAX_HP = 1000;
+const ALLIED_KNIGHT_MAX_HP = 1500;
 const ALLIED_KNIGHT_DAMAGE = 50;
 const ALLIED_KNIGHT_ATTACK_COOLDOWN_MS = 1250;
 const ALLIED_KNIGHT_MOVE_SPEED = 3.0;
@@ -235,7 +241,7 @@ const BOSS_MELEE_ATTACK_LOCK_MS = 1200;
 /** Windup before melee damage lands (matches `TITAN_HIT_DELAY_MS`). */
 const BOSS_MELEE_HIT_DELAY_MS = 875;
 /** Leap only once at or below this health fraction (not at full HP). */
-const BOSS_LEAP_MAX_HP_PCT = 1.0;
+const BOSS_LEAP_MAX_HP_PCT = 0.97;
 const BOSS_LEAP_LAND_STANDOFF_M = 0.65; // land near player for leap (not full walk standoff 3.2m)
 const BOSS_LEAP_COOLDOWN_MS = 8000;
 const BOSS_LEAP_MAX_TRAVEL = 14;
@@ -327,6 +333,7 @@ const BOSS2_FLAME_PILLAR_STAGGER_MS = 250;
 const BOSS2_FLAME_PILLAR_FORWARD_1 = 1.82;
 const BOSS2_FLAME_PILLAR_FORWARD_2 = 2.42;
 const BOSS2_WARLOCK_SUMMON_INTERVAL_MS = 20_000;
+const BOSS2_WARLOCK_SUMMON_MAX_LIVING = 3;
 const BOSS2_SUMMON_ARENA_EXTENT = 12;
 
 // Boss 3: Weaver Nexus (scaled weaver + arcane nova)
@@ -463,6 +470,7 @@ const KNIGHT_SMITE_DAMAGE_POST_BOSS2 = {
 };
 
 /** Knight Block — reactive invuln after taking damage; elite Boss1 knights use HP thresholds. */
+const KNIGHT_BLOCK_START_MS = 567; // sync with knightCoopAbilitiesConstants.ts (knight_startblock.glb)
 const KNIGHT_BLOCK_REACT_WINDOW_MS = 500;
 const KNIGHT_BLOCK_DURATION_MS = {
   red: 2000,
@@ -476,7 +484,7 @@ const KNIGHT_BLOCK_COOLDOWN_MS = {
   purple: 12000,
   green: 15000,
 };
-const KNIGHT_ELITE_BLOCK_DURATION_MS = 10000;
+const KNIGHT_ELITE_BLOCK_DURATION_MS = 8000;
 const KNIGHT_ELITE_BLOCK_HEALTH_THRESHOLDS = [0.9, 0.5, 0.2];
 const KNIGHT_BLOCK_UNLOCK_BOSS_COUNT = 2;
 
@@ -493,8 +501,8 @@ const WEAVER_SUMMON_CAST_LOCK_MS = 3000;
 const WEAVER_LIGHTNING_CAST_LOCK_MS = 900;
 
 /** Greed — bonus/additive wandering-then-fleeing unit; 4 color variants each with a distinct ability. */
-const GREED_AGGRO_RADIUS = 9;
-const GREED_FLEE_DISTANCE = 14;
+const GREED_AGGRO_RADIUS = 7;
+const GREED_FLEE_DISTANCE = 10;
 const GREED_WANDER_REPICK_MS = 4000;
 const GREED_WANDER_REACH = 1.0;
 const GREED_RED_RANGE = 10;
@@ -510,7 +518,7 @@ const GREED_BLUE_EMBER_DURATION_MS = 5000;
 const GREED_BLUE_EMBER_TICK_MS = 750;
 const GREED_BLUE_EMBER_DAMAGE = 20;
 const GREED_BLUE_EMBER_RADIUS = 2.0;
-const GREED_FIREBALL_SPEED = 11;
+const GREED_FIREBALL_SPEED = 10;
 const GREED_FIREBALL_HIT_RADIUS = 1.1;
 
 class EnemyAI {
@@ -600,7 +608,7 @@ class EnemyAI {
 
     // Shade blink+attack cooldown tracking (4-second cooldown)
     this.shadeBlinkCooldown = new Map(); // enemyId -> lastBlinkTime
-    this.shadeLastQueuedMove = new Map(); // enemyId -> last { x, y, z, rotation } sent via _queueMove
+    this.enemyLastQueuedMove = new Map(); // enemyId -> last { x, y, z, rotation } sent via _queueMove
 
     // Viper arrow shot cooldown tracking (2-second cooldown)
     this.viperAttackCooldown = new Map(); // enemyId -> lastAttackTime
@@ -654,6 +662,8 @@ class EnemyAI {
 
     // Red / Green: Death Grasp (independent 15s CD from knightAbilityCooldown)
     this.knightDeathGraspCooldown = new Map(); // enemyId -> lastCastMs
+    /** @type {Map<string, ReturnType<typeof setTimeout>[]>} */
+    this.knightDeathGraspTimeouts = new Map(); // enemyId -> cast + travel handles
 
     // Blue: Storm Lash channeled lightning zaps (timeout handles cleared on death)
     this.knightStormLashTimeouts = new Map(); // enemyId -> handle[]
@@ -668,6 +678,11 @@ class EnemyAI {
     this.enemyPaths = new Map(); // enemyId -> { waypoints, wpIndex, lastTargetPos }
     /** Per-tick cache — avoids repeated Array.from(getEnemies()) in hot paths. */
     this._tickEnemies = [];
+    this._tickPlayers = [];
+    this._movesFlushBuffer = [];
+    this._meleePeerScratch = [];
+    this._cachedAlliedKnightBoons = null;
+    this._alliedKnightBoonsCachedAt = 0;
     this._meleePeerGrid = null;
     this._meleePeerBucketPool = [];
     /** Pooled A* typed arrays (reused across path recomputes). */
@@ -725,10 +740,32 @@ class EnemyAI {
     this._pendingMoves.set(enemyId, { position, rotation });
   }
 
+  /** Skip redundant move batches when position/rotation unchanged (stationary casters). */
+  _queueMoveIfChanged(enemyId, position, rotation) {
+    const lastQueued = this.enemyLastQueuedMove.get(enemyId);
+    if (
+      lastQueued &&
+      Math.abs(lastQueued.x - position.x) <= 0.001 &&
+      Math.abs(lastQueued.y - position.y) <= 0.001 &&
+      Math.abs(lastQueued.z - position.z) <= 0.001 &&
+      Math.abs(lastQueued.rotation - rotation) <= 0.001
+    ) {
+      return;
+    }
+    this.enemyLastQueuedMove.set(enemyId, {
+      x: position.x,
+      y: position.y,
+      z: position.z,
+      rotation,
+    });
+    this._queueMove(enemyId, position, rotation);
+  }
+
   /** Emit all queued position updates as a single `enemies-moved` batch event. */
   _flushMoves() {
     if (!this.io || this._pendingMoves.size === 0) return;
-    const moves = [];
+    const moves = this._movesFlushBuffer;
+    moves.length = 0;
     this._pendingMoves.forEach((m, id) => {
       moves.push({ enemyId: id, position: m.position, rotation: m.rotation });
     });
@@ -782,6 +819,10 @@ class EnemyAI {
       (timers || []).forEach((t) => clearTimeout(t));
     });
     this.boss2DeathGraspTimeouts.clear();
+    this.knightDeathGraspTimeouts.forEach((timers) => {
+      (timers || []).forEach((t) => clearTimeout(t));
+    });
+    this.knightDeathGraspTimeouts.clear();
     this.boss2FlamePillarTimeouts.forEach((ids) => {
       (ids || []).forEach((t) => clearTimeout(t));
     });
@@ -827,7 +868,7 @@ class EnemyAI {
     this.warlockArchonShockCooldown.clear();
     this.warlockArchonShockLockUntil.clear();
     this.shadeBlinkCooldown.clear();
-    this.shadeLastQueuedMove.clear();
+    this.enemyLastQueuedMove.clear();
     this.viperAttackCooldown.clear();
     this.viperFollowupTimeout.forEach((t) => clearTimeout(t));
     this.viperFollowupTimeout.clear();
@@ -899,6 +940,19 @@ class EnemyAI {
     return scratch;
   }
 
+  /** Reuse scratch array instead of getPlayers() allocation each tick. */
+  _refreshTickPlayers() {
+    const scratch = this._tickPlayers;
+    scratch.length = 0;
+    const playerMap = this.room?.players;
+    if (playerMap) {
+      for (const player of playerMap.values()) {
+        scratch.push(player);
+      }
+    }
+    return scratch;
+  }
+
   updateAI() {
     if (!this.room || !this.room.getGameStarted()) return;
     if (this.room.isCoopCombatTransitionActive && this.room.isCoopCombatTransitionActive()) return;
@@ -906,7 +960,7 @@ class EnemyAI {
     if (this.room.gameMode === 'coop' && this.room.combatArenaActive === false) return;
 
     const enemies = this._refreshTickEnemies();
-    const players = this.room.getPlayers();
+    const players = this._refreshTickPlayers();
     this._meleePeerGrid = this._buildMeleePeerGrid(enemies);
     
     if (enemies.length === 0 || players.length === 0) {
@@ -1126,7 +1180,7 @@ class EnemyAI {
             if (currentDistance <= attackRange) {
               this.bossSkeletonAttackPlayer(skeleton, currentTarget);
             } else {
-              console.log(`💀 Skeleton ${sid} attack missed - player ${currentTarget.id} dodged out of range!`);
+              _enemyAiLog(`💀 Skeleton ${sid} attack missed - player ${currentTarget.id} dodged out of range!`);
             }
           }, telegraphDelay);
         } else if (resolved.kind === 'zombie') {
@@ -1189,7 +1243,7 @@ class EnemyAI {
       });
     }
 
-    console.log(`💀 Boss skeleton ${skeleton.id} telegraphing attack at player ${player.id}!`);
+    _enemyAiLog(`💀 Boss skeleton ${skeleton.id} telegraphing attack at player ${player.id}!`);
   }
 
   bossSkeletonAttackPlayer(skeleton, player) {
@@ -1207,7 +1261,7 @@ class EnemyAI {
       });
     }
 
-    console.log(`💀 Boss skeleton ${skeleton.id} attacked player ${player.id} for ${damage} damage!`);
+    _enemyAiLog(`💀 Boss skeleton ${skeleton.id} attacked player ${player.id} for ${damage} damage!`);
   }
 
   // ─── Knight AI ───────────────────────────────────────────────────────────────
@@ -1284,7 +1338,7 @@ class EnemyAI {
         } else if (now - lastAttackTime >= attackCooldown) {
           this.bossAttackCooldown.set(knight.id, now);
 
-          const SWING_LOCK_MS = 1200;
+          const SWING_LOCK_MS = 800;
           this.meleeLockUntil.set(knight.id, now + SWING_LOCK_MS);
 
           const attackFocus = { ...targetPlayer.position };
@@ -1306,7 +1360,7 @@ class EnemyAI {
             if (currentDistance <= attackRange) {
               this.knightAttackPlayer(knight, currentTarget);
             } else {
-              console.log(`⚔️ Knight ${knight.id} swing missed - player dodged out of range!`);
+              _enemyAiLog(`⚔️ Knight ${knight.id} swing missed - player dodged out of range!`);
             }
           }, 1000);
         }
@@ -1340,7 +1394,7 @@ class EnemyAI {
         } else if (now - lastAttackTime >= attackCooldown) {
           this.bossAttackCooldown.set(knight.id, now);
 
-          const SWING_LOCK_MS = 1200;
+          const SWING_LOCK_MS = 800;
           this.meleeLockUntil.set(knight.id, now + SWING_LOCK_MS);
 
           const attackFocus = { ...z.position };
@@ -1361,7 +1415,7 @@ class EnemyAI {
               const damage = knight.damage || 25;
               this.damagePlayerZombieFromMob(knight, liveZ, damage, 'knight_melee');
             } else {
-              console.log(`⚔️ Knight ${knight.id} swing missed — zombie dodged out of range!`);
+              _enemyAiLog(`⚔️ Knight ${knight.id} swing missed — zombie dodged out of range!`);
             }
           }, 1000);
         }
@@ -1674,6 +1728,50 @@ class EnemyAI {
     }, KNIGHT_MELEE_WINDUP_STEP_DELAY_MS);
   }
 
+  scheduleBossMeleeWindupStep(boss, targetPlayer) {
+    if (!targetPlayer) return;
+
+    const focusPosition = {
+      x: targetPlayer.position.x,
+      y: targetPlayer.position.y ?? 0,
+      z: targetPlayer.position.z,
+    };
+
+    setTimeout(() => {
+      if (boss.isDying || !this.room?.getGameStarted()) return;
+      if (this.room?.isEnemyAffectedBy(boss.id, 'stun')) return;
+
+      const dx = focusPosition.x - boss.position.x;
+      const dz = focusPosition.z - boss.position.z;
+      const mag = Math.sqrt(dx * dx + dz * dz);
+      if (mag < 1e-4) return;
+
+      const baseSpeed = boss.moveSpeed ?? this.getEnemyMoveSpeed(boss.type);
+      const moveSpeed = this.getModifiedMovementSpeed(boss.id, baseSpeed);
+      if (moveSpeed === 0) return;
+
+      const maxStep = Math.min(
+        KNIGHT_MELEE_WINDUP_STEP,
+        moveSpeed * (KNIGHT_MELEE_WINDUP_STEP_DELAY_MS / 1000),
+        mag,
+      );
+      const dirX = dx / mag;
+      const dirZ = dz / mag;
+      const rawX = boss.position.x + dirX * maxStep;
+      const rawZ = boss.position.z + dirZ * maxStep;
+
+      const resolved = this.resolveEnemyWallCollisions(rawX, rawZ);
+
+      boss.position.x = resolved.x;
+      boss.position.z = resolved.z;
+      boss.rotation = Math.atan2(dirX, dirZ);
+
+      if (this.io) {
+        this._queueMove(boss.id, boss.position, boss.rotation);
+      }
+    }, KNIGHT_MELEE_WINDUP_STEP_DELAY_MS);
+  }
+
   telegraphKnightAttack(knight, player) {
     if (this.io) {
       this.io.to(this.roomId).emit('knight-attack-telegraph', {
@@ -1683,7 +1781,7 @@ class EnemyAI {
         timestamp: Date.now()
       });
     }
-    console.log(`⚔️ Knight ${knight.id} telegraphing attack at player ${player.id}!`);
+    _enemyAiLog(`⚔️ Knight ${knight.id} telegraphing attack at player ${player.id}!`);
   }
 
   knightAttackPlayer(knight, player) {
@@ -1701,7 +1799,7 @@ class EnemyAI {
       });
     }
 
-    console.log(`⚔️ Knight ${knight.id} attacked player ${player.id} for ${damage} damage!`);
+    _enemyAiLog(`⚔️ Knight ${knight.id} attacked player ${player.id} for ${damage} damage!`);
 
     this.room?.tryDamageAlliedKnightInXZDisk(
       { x: knight.position.x, z: knight.position.z },
@@ -1754,21 +1852,38 @@ class EnemyAI {
         timestamp: Date.now(),
       });
     }
-    console.log(`💀 Knight ${knight.id} (${knight.soulType}) casting Death Grasp at player ${targetPlayer.id}!`);
+    _enemyAiLog(`💀 Knight ${knight.id} (${knight.soulType}) casting Death Grasp at player ${targetPlayer.id}!`);
 
     const targetId = targetPlayer.id;
     const knightId = knight.id;
 
-    setTimeout(() => {
-      if (!this.room?.getGameStarted()) return;
+    this.clearKnightDeathGraspTimers(knightId);
+
+    const launchTimer = setTimeout(() => {
+      if (!this.room?.getGameStarted()) {
+        this.clearKnightDeathGraspTimers(knightId);
+        return;
+      }
       const liveKnight = this.room?.getEnemy(knightId);
-      if (!liveKnight || liveKnight.isDying) return;
-      if (this.room?.isEnemyAffectedBy(knightId, 'stun')) return;
+      if (!liveKnight || liveKnight.isDying) {
+        this.clearKnightDeathGraspTimers(knightId);
+        return;
+      }
+      if (this.room?.isEnemyAffectedBy(knightId, 'stun')) {
+        this.clearKnightDeathGraspTimers(knightId);
+        return;
+      }
 
       const currentPlayers = this.room?.getPlayers();
-      if (!currentPlayers) return;
+      if (!currentPlayers) {
+        this.clearKnightDeathGraspTimers(knightId);
+        return;
+      }
       const launchTarget = currentPlayers.find(p => p.id === targetId);
-      if (!launchTarget || launchTarget.health <= 0) return;
+      if (!launchTarget || launchTarget.health <= 0) {
+        this.clearKnightDeathGraspTimers(knightId);
+        return;
+      }
 
       const startPosition = {
         x: liveKnight.position.x,
@@ -1793,9 +1908,11 @@ class EnemyAI {
         });
       }
 
-      setTimeout(() => {
+      const travelTimer = setTimeout(() => {
+        this.clearKnightDeathGraspTimers(knightId);
         if (!this.room?.getGameStarted()) return;
         if (this.room?.isEnemyAffectedBy(knightId, 'stun')) return;
+        if (this._isCoopPortalPositionWriteBlocked()) return;
         const players = this.room?.getPlayers();
         if (!players) return;
         const currentTarget = players.find(p => p.id === targetId);
@@ -1809,7 +1926,7 @@ class EnemyAI {
         const distXZ = Math.sqrt(dx * dx + dz * dz);
 
         if (distXZ > HIT_RADIUS) {
-          console.log(`💀 Knight ${knightId} Death Grasp missed — player dodged!`);
+          _enemyAiLog(`💀 Knight ${knightId} Death Grasp missed — player dodged!`);
           return;
         }
 
@@ -1845,9 +1962,11 @@ class EnemyAI {
             timestamp: Date.now(),
           });
         }
-        console.log(`💀 Knight ${knightId} Death Grasp pulled player ${targetId} to standoff!`);
+        _enemyAiLog(`💀 Knight ${knightId} Death Grasp pulled player ${targetId} to standoff!`);
       }, PROJECTILE_TRAVEL_MS);
+      this.addKnightDeathGraspTimer(knightId, travelTimer);
     }, CAST_LAUNCH_MS);
+    this.addKnightDeathGraspTimer(knightId, launchTimer);
   }
 
   // ─── Knight Special Abilities ────────────────────────────────────────────────
@@ -1909,10 +2028,11 @@ class EnemyAI {
       this.io.to(this.roomId).emit('knight-block-telegraph', {
         knightId,
         durationMs,
+        startBlockMs: KNIGHT_BLOCK_START_MS,
         timestamp: now,
       });
     }
-    console.log(`🛡️ Knight ${knightId} (${knight.soulType || 'elite'}) blocking for ${durationMs}ms.`);
+    _enemyAiLog(`🛡️ Knight ${knightId} (${knight.soulType || 'elite'}) blocking for ${durationMs}ms.`);
   }
 
   isKnightBlocking(enemyId) {
@@ -2016,7 +2136,7 @@ class EnemyAI {
         timestamp,
       });
     }
-    console.log(`⚡ ${soulType} Knight ${knightId} charging Smite at target ${targetId}!`);
+    _enemyAiLog(`⚡ ${soulType} Knight ${knightId} charging Smite at target ${targetId}!`);
 
     setTimeout(() => {
       const liveKnight = this.room?.getEnemy(knightId);
@@ -2048,9 +2168,9 @@ class EnemyAI {
               timestamp: Date.now(),
             });
           }
-          console.log(`⚡ ${soulType} Knight ${knightId} SMITE hit player ${currentTarget.id} for ${damage} dmg!`);
+          _enemyAiLog(`⚡ ${soulType} Knight ${knightId} SMITE hit player ${currentTarget.id} for ${damage} dmg!`);
         } else {
-          console.log(`⚡ ${soulType} Knight ${knightId} Smite missed — player dodged!`);
+          _enemyAiLog(`⚡ ${soulType} Knight ${knightId} Smite missed — player dodged!`);
         }
       }
 
@@ -2072,7 +2192,7 @@ class EnemyAI {
         timestamp: Date.now(),
       });
     }
-    console.log(`🟢💚 Knight ${knight.id} (${knight.soulType}) casting Heal!`);
+    _enemyAiLog(`🟢💚 Knight ${knight.id} (${knight.soulType}) casting Heal!`);
 
     // Apply the heal at the animation midpoint (~1 200 ms)
     setTimeout(() => {
@@ -2094,7 +2214,7 @@ class EnemyAI {
           timestamp:  Date.now(),
         });
       }
-      console.log(`🟢💚 Knight ${knight.id} healed for ${healed} HP (${prevHp} → ${liveKnight.health})`);
+      _enemyAiLog(`🟢💚 Knight ${knight.id} healed for ${healed} HP (${prevHp} → ${liveKnight.health})`);
     }, 1200);
   }
 
@@ -2118,7 +2238,7 @@ class EnemyAI {
         timestamp: Date.now(),
       });
     }
-    console.log(`🔵❄️ Knight ${knight.id} (${knight.soulType}) casting Frost Ray at player ${targetPlayer.id}!`);
+    _enemyAiLog(`🔵❄️ Knight ${knight.id} (${knight.soulType}) casting Frost Ray at player ${targetPlayer.id}!`);
 
     const targetId = targetPlayer.id;
     const knightId = knight.id;
@@ -2184,9 +2304,9 @@ class EnemyAI {
                 timestamp: Date.now(),
               });
             }
-            console.log(`🔵❄️ Knight ${knightId} Frost Ray hit player ${currentTarget.id} for 17 dmg + freeze!`);
+            _enemyAiLog(`🔵❄️ Knight ${knightId} Frost Ray hit player ${currentTarget.id} for 17 dmg + freeze!`);
           } else {
-            console.log(`🔵 Knight ${knightId} Frost Ray missed — player dodged!`);
+            _enemyAiLog(`🔵 Knight ${knightId} Frost Ray missed — player dodged!`);
           }
         }
 
@@ -2220,7 +2340,7 @@ class EnemyAI {
         timestamp: Date.now(),
       });
     }
-    console.log(`🔵⚡ Blue Knight ${knightId} channeling Storm Lash at player ${targetId}!`);
+    _enemyAiLog(`🔵⚡ Blue Knight ${knightId} channeling Storm Lash at player ${targetId}!`);
 
     const oldHandles = this.knightStormLashTimeouts.get(knightId);
     if (oldHandles) {
@@ -2329,18 +2449,7 @@ class EnemyAI {
     const dz = tpos.z - shade.position.z;
     const newRot = Math.atan2(dx, dz);
     shade.rotation = newRot;
-    const pos = shade.position;
-    const lastQueued = this.shadeLastQueuedMove.get(shade.id);
-    if (
-      !lastQueued ||
-      Math.abs(lastQueued.x - pos.x) > 0.001 ||
-      Math.abs(lastQueued.y - pos.y) > 0.001 ||
-      Math.abs(lastQueued.z - pos.z) > 0.001 ||
-      Math.abs(lastQueued.rotation - newRot) > 0.001
-    ) {
-      this.shadeLastQueuedMove.set(shade.id, { x: pos.x, y: pos.y, z: pos.z, rotation: newRot });
-      this._queueMove(shade.id, shade.position, shade.rotation);
-    }
+    this._queueMoveIfChanged(shade.id, shade.position, shade.rotation);
 
     if (distance <= attackRange) {
       const blinkCooldown = 5250;
@@ -2516,7 +2625,7 @@ class EnemyAI {
 
     const dirLabel = theta > 0 ? (Math.abs(theta) < Math.PI / 2 ? 'diagonal-fwd-left' : 'left') : (Math.abs(theta) < Math.PI / 2 ? 'diagonal-fwd-right' : 'right');
     if (process.env.NODE_ENV !== 'production') {
-      console.log(`👻 Shade ${shade.id} ${reason} blinked 5 units ${dirLabel} of target (θ=${(theta * 180 / Math.PI).toFixed(0)}°)`);
+      _enemyAiLog(`👻 Shade ${shade.id} ${reason} blinked 5 units ${dirLabel} of target (θ=${(theta * 180 / Math.PI).toFixed(0)}°)`);
     }
     return true;
   }
@@ -2559,7 +2668,7 @@ class EnemyAI {
       });
     }
     if (process.env.NODE_ENV !== 'production') {
-      console.log(`👻 Shade ${shade.id} throwing daggers at player ${targetPlayer.id}!`);
+      _enemyAiLog(`👻 Shade ${shade.id} throwing daggers at player ${targetPlayer.id}!`);
     }
   }
 
@@ -2602,7 +2711,7 @@ class EnemyAI {
     const dx = tpos.x - warlock.position.x;
     const dz = tpos.z - warlock.position.z;
     warlock.rotation = Math.atan2(dx, dz);
-    this._queueMove(warlock.id, warlock.position, warlock.rotation);
+    this._queueMoveIfChanged(warlock.id, warlock.position, warlock.rotation);
 
     const now = Date.now();
     const isPurpleWarlock = warlock.soulType === 'purple';
@@ -2838,7 +2947,7 @@ class EnemyAI {
       });
     }
 
-    console.log(`🔮 Warlock ${warlock.id} blinked 5 units closer to player ${targetPlayer.id}`);
+    _enemyAiLog(`🔮 Warlock ${warlock.id} blinked 5 units closer to player ${targetPlayer.id}`);
 
     const flameXZ = { x: endPosition.x, z: endPosition.z };
     const wid = warlock.id;
@@ -3071,7 +3180,7 @@ class EnemyAI {
       });
     }
 
-    console.log(`🔮 Warlock ${warlock.id} launching chaotic orb at player ${targetPlayer.id}!`);
+    _enemyAiLog(`🔮 Warlock ${warlock.id} launching chaotic orb at player ${targetPlayer.id}!`);
 
     const sx = warlock.position.x;
     const sy = warlock.position.y + 2.0;
@@ -3141,7 +3250,7 @@ class EnemyAI {
       });
     }
 
-    console.log(`☄️ Warlock ${warlock.id} casting meteor swarm (${WARLOCK_METEOR_COUNT} impacts near player ${targetPlayer.id})`);
+    _enemyAiLog(`☄️ Warlock ${warlock.id} casting meteor swarm (${WARLOCK_METEOR_COUNT} impacts near player ${targetPlayer.id})`);
 
     const wid = warlock.id;
     targetPositions.forEach((pos, index) => {
@@ -3317,7 +3426,7 @@ class EnemyAI {
             if (currentDistance <= attackRange) {
               this.templarAttackPlayer(templar, currentTarget);
             } else {
-              console.log(`🛡️ Templar ${templar.id} swing missed — player dodged!`);
+              _enemyAiLog(`🛡️ Templar ${templar.id} swing missed — player dodged!`);
             }
           }, 1000);
         } else if (distance > meleePressDistance) {
@@ -3354,7 +3463,7 @@ class EnemyAI {
               const damage = templar.damage || 48;
               this.damagePlayerZombieFromMob(templar, liveZ, damage, 'templar_melee');
             } else {
-              console.log(`🛡️ Templar ${templar.id} swing missed — zombie dodged!`);
+              _enemyAiLog(`🛡️ Templar ${templar.id} swing missed — zombie dodged!`);
             }
           }, 1000);
         } else if (distance > meleePressDistance) {
@@ -3413,7 +3522,7 @@ class EnemyAI {
         timestamp: Date.now()
       });
     }
-    console.log(`🛡️ Templar ${templar.id} telegraphing attack at player ${player.id}!`);
+    _enemyAiLog(`🛡️ Templar ${templar.id} telegraphing attack at player ${player.id}!`);
   }
 
   templarAttackPlayer(templar, player) {
@@ -3431,7 +3540,7 @@ class EnemyAI {
       });
     }
 
-    console.log(`🛡️ Templar ${templar.id} attacked player ${player.id} for ${damage} damage!`);
+    _enemyAiLog(`🛡️ Templar ${templar.id} attacked player ${player.id} for ${damage} damage!`);
 
     this.room?.tryDamageAlliedKnightInXZDisk(
       { x: templar.position.x, z: templar.position.z },
@@ -3561,7 +3670,7 @@ class EnemyAI {
         );
       }, TEMPLAR_BLINK_SMITE_STRIKE_DELAY_MS);
 
-      console.log(`🛡️ Templar ${e.id} Blink Smite — behind ${targetPlayerId}, strike in ${TEMPLAR_BLINK_SMITE_STRIKE_DELAY_MS}ms`);
+      _enemyAiLog(`🛡️ Templar ${e.id} Blink Smite — behind ${targetPlayerId}, strike in ${TEMPLAR_BLINK_SMITE_STRIKE_DELAY_MS}ms`);
     }, TEMPLAR_BLINK_SMITE_CHARGE_MS);
   }
 
@@ -3674,7 +3783,7 @@ class EnemyAI {
     const dx = tpos.x - viper.position.x;
     const dz = tpos.z - viper.position.z;
     viper.rotation = Math.atan2(dx, dz);
-    this._queueMove(viper.id, viper.position, viper.rotation);
+    this._queueMoveIfChanged(viper.id, viper.position, viper.rotation);
 
     const attackCooldown = viper.attackCooldown ?? 5000;
     const lastAttackTime = this.viperAttackCooldown.get(viper.id) || 0;
@@ -3841,7 +3950,7 @@ class EnemyAI {
         timestamp: Date.now()
       });
     }
-    console.log(`🐍 Viper ${viper.id} drawing bow at player ${targetPlayer.id}!`);
+    _enemyAiLog(`🐍 Viper ${viper.id} drawing bow at player ${targetPlayer.id}!`);
   }
 
   // ─── Weaver AI ───────────────────────────────────────────────────────────────
@@ -3887,7 +3996,7 @@ class EnemyAI {
     const dx = tpos.x - weaver.position.x;
     const dz = tpos.z - weaver.position.z;
     weaver.rotation = Math.atan2(dx, dz);
-    this._queueMove(weaver.id, weaver.position, weaver.rotation);
+    this._queueMoveIfChanged(weaver.id, weaver.position, weaver.rotation);
 
     if ((this.room?.coopBossesDefeatedCount ?? 0) >= WEAVER_IMPALE_SPIKE_UNLOCK_BOSS_COUNT) {
       const lastImpale = this.weaverImpaleSpikeCooldown.get(weaver.id) || 0;
@@ -3981,7 +4090,7 @@ class EnemyAI {
     const dx = targetPlayer.position.x - weaver.position.x;
     const dz = targetPlayer.position.z - weaver.position.z;
     weaver.rotation = Math.atan2(dx, dz);
-    this._queueMove(weaver.id, weaver.position, weaver.rotation);
+    this._queueMoveIfChanged(weaver.id, weaver.position, weaver.rotation);
 
     this.weaverImpaleSpikeCooldown.set(wid, now);
     this.weaverCastLockUntil.set(
@@ -4056,13 +4165,13 @@ class EnemyAI {
     }
     this.weaverImpaleSpikePendingTimeouts.get(wid).push(telegraphHandle);
 
-    console.log(`🧵 Weaver ${wid} casting Impale Spike on player ${targetPlayerId}`);
+    _enemyAiLog(`🧵 Weaver ${wid} casting Impale Spike on player ${targetPlayerId}`);
   }
 
   weaverCastLightningOnZombie(weaver, zombie, now) {
     const CHARGE_MS = 1500;
     this.weaverCastLockUntil.set(weaver.id, now + CHARGE_MS);
-    this._queueMove(weaver.id, weaver.position, weaver.rotation);
+    this._queueMoveIfChanged(weaver.id, weaver.position, weaver.rotation);
     const tx = zombie.position.x;
     const tz = zombie.position.z;
     if (this.io) {
@@ -4091,13 +4200,13 @@ class EnemyAI {
         damageType: 'weaver_lightning',
       });
     }, CHARGE_MS);
-    console.log(`🧵 Weaver ${weaver.id} lightning (zombie) at (${tx.toFixed(1)}, ${tz.toFixed(1)})`);
+    _enemyAiLog(`🧵 Weaver ${weaver.id} lightning (zombie) at (${tx.toFixed(1)}, ${tz.toFixed(1)})`);
   }
 
   weaverCastLightningOnTrap(weaver, trap, now) {
     const CHARGE_MS = 1150;
     this.weaverCastLockUntil.set(weaver.id, now + CHARGE_MS);
-    this._queueMove(weaver.id, weaver.position, weaver.rotation);
+    this._queueMoveIfChanged(weaver.id, weaver.position, weaver.rotation);
     const tx = trap.position.x;
     const tz = trap.position.z;
     if (this.io) {
@@ -4129,7 +4238,7 @@ class EnemyAI {
         damageType: 'weaver_lightning',
       });
     }, CHARGE_MS);
-    console.log(`🧵 Weaver ${weaver.id} lightning (trap) at (${tx.toFixed(1)}, ${tz.toFixed(1)})`);
+    _enemyAiLog(`🧵 Weaver ${weaver.id} lightning (trap) at (${tx.toFixed(1)}, ${tz.toFixed(1)})`);
   }
 
   // Find the allied enemy (not a player) within healRange of the weaver that has
@@ -4166,17 +4275,18 @@ class EnemyAI {
     const dz = targetEnemy.position.z - weaver.position.z;
     weaver.rotation = Math.atan2(dx, dz);
     this.weaverCastLockUntil.set(weaver.id, now + WEAVER_HEAL_CAST_LOCK_MS);
-    this._queueMove(weaver.id, weaver.position, weaver.rotation);
+    this._queueMoveIfChanged(weaver.id, weaver.position, weaver.rotation);
 
     if (this.io) {
       this.io.to(this.roomId).emit('weaver-heal-telegraph', {
         weaverId:       weaver.id,
         targetEnemyId:  targetEnemy.id,
+        weaverPosition: { ...weaver.position },
         targetPosition: { ...targetEnemy.position },
         timestamp:      Date.now()
       });
     }
-    console.log(`🧵 Weaver ${weaver.id} casting Heal on ${targetEnemy.id} (HP: ${targetEnemy.health}/${targetEnemy.maxHealth})`);
+    _enemyAiLog(`🧵 Weaver ${weaver.id} casting Heal on ${targetEnemy.id} (HP: ${targetEnemy.health}/${targetEnemy.maxHealth})`);
 
     // After cast animation (~1.8s) apply the actual heal.
     setTimeout(() => {
@@ -4199,7 +4309,7 @@ class EnemyAI {
           timestamp:  Date.now()
         });
       }
-      console.log(`🧵 Weaver ${weaver.id} healed ${liveEnemy.id} for ${actualHeal} HP (${previousHp} -> ${liveEnemy.health})`);
+      _enemyAiLog(`🧵 Weaver ${weaver.id} healed ${liveEnemy.id} for ${actualHeal} HP (${previousHp} -> ${liveEnemy.health})`);
     }, 1800);
   }
 
@@ -4207,7 +4317,7 @@ class EnemyAI {
     // Client shows a blue ground circle; after CHARGE_MS, same dodge/damage as meteor (local check).
     const CHARGE_MS = WEAVER_LIGHTNING_CAST_LOCK_MS;
     this.weaverCastLockUntil.set(weaver.id, now + CHARGE_MS);
-    this._queueMove(weaver.id, weaver.position, weaver.rotation);
+    this._queueMoveIfChanged(weaver.id, weaver.position, weaver.rotation);
     if (this.io) {
       this.io.to(this.roomId).emit('weaver-lightning-telegraph', {
         weaverId: weaver.id,
@@ -4223,7 +4333,7 @@ class EnemyAI {
         timestamp: now
       });
     }
-    console.log(`🧵 Weaver ${weaver.id} calling lightning at (${targetPlayer.position.x.toFixed(1)}, ${targetPlayer.position.z.toFixed(1)}) in ${CHARGE_MS}ms`);
+    _enemyAiLog(`🧵 Weaver ${weaver.id} calling lightning at (${targetPlayer.position.x.toFixed(1)}, ${targetPlayer.position.z.toFixed(1)}) in ${CHARGE_MS}ms`);
 
     const strikeX = targetPlayer.position.x;
     const strikeZ = targetPlayer.position.z;
@@ -4244,7 +4354,7 @@ class EnemyAI {
 
     const now = Date.now();
     this.weaverCastLockUntil.set(weaver.id, now + WEAVER_SUMMON_CAST_LOCK_MS);
-    this._queueMove(weaver.id, weaver.position, weaver.rotation);
+    this._queueMoveIfChanged(weaver.id, weaver.position, weaver.rotation);
 
     // Ritual circle spawns 2–3 units in front/side of weaver
     const angle    = weaver.rotation + (Math.random() - 0.5) * (Math.PI / 3);
@@ -4265,7 +4375,7 @@ class EnemyAI {
         timestamp:      Date.now()
       });
     }
-    console.log(`🧵 Weaver ${weaver.id} beginning summon ritual…`);
+    _enemyAiLog(`🧵 Weaver ${weaver.id} beginning summon ritual…`);
 
     const isBoss3Summon = weaver.type === 'boss3';
 
@@ -4308,7 +4418,7 @@ class EnemyAI {
           timestamp:      Date.now()
         });
       }
-      console.log(`🧵 Weaver ${weaver.id} summoned ghoul ${ghoulId} at ritual circle!`);
+      _enemyAiLog(`🧵 Weaver ${weaver.id} summoned ghoul ${ghoulId} at ritual circle!`);
 
       // Unlock movement once the summon animation finishes (~4500ms, extended to match ritual duration)
       const speedMult = isBoss3Summon ? BOSS3_SUMMONED_GHOUL_SPEED_MULT : 1;
@@ -4316,7 +4426,7 @@ class EnemyAI {
         const spawnedGhoul = this.room?.getEnemy(ghoulId);
         if (spawnedGhoul && !spawnedGhoul.isDying) {
           spawnedGhoul.moveSpeed = GHOUL_BASE_MOVE_SPEED * speedMult;
-          console.log(`💀 Ghoul ${ghoulId} summon animation complete — movement unlocked`);
+          _enemyAiLog(`💀 Ghoul ${ghoulId} summon animation complete — movement unlocked`);
         }
       }, 4500);
     }, 2000);
@@ -4401,7 +4511,7 @@ class EnemyAI {
             if (currentDistance <= attackRange) {
               this.ghoulAttackPlayer(ghoul, currentTarget);
             } else {
-              console.log(`💀 Ghoul ${ghoul.id} swing missed — player dodged!`);
+              _enemyAiLog(`💀 Ghoul ${ghoul.id} swing missed — player dodged!`);
             }
           }, 900);
         } else if (resolved.kind === 'zombie') {
@@ -4420,7 +4530,7 @@ class EnemyAI {
               const damage = ghoul.damage || GHOUL_BASE_DAMAGE;
               this.damagePlayerZombieFromMob(ghoul, zz, damage, 'ghoul_melee');
             } else {
-              console.log(`💀 Ghoul ${ghoul.id} swing missed — zombie dodged!`);
+              _enemyAiLog(`💀 Ghoul ${ghoul.id} swing missed — zombie dodged!`);
             }
           }, 900);
         } else {
@@ -4799,7 +4909,7 @@ class EnemyAI {
       this.titanCompleteBladestormPowerup(titanId);
     }, TITAN_BLADESTORM_POWERUP_MS);
     this.titanBladestormPowerupTimeout.set(titan.id, handle);
-    console.log(`🗿 Titan ${titan.id} powering up for Bladestorm at ${Math.round((titan.health / titan.maxHealth) * 100)}% HP.`);
+    _enemyAiLog(`🗿 Titan ${titan.id} powering up for Bladestorm at ${Math.round((titan.health / titan.maxHealth) * 100)}% HP.`);
   }
 
   titanCompleteBladestormPowerup(titanId) {
@@ -4820,7 +4930,7 @@ class EnemyAI {
         timestamp: startTime,
       });
     }
-    console.log(`🗿 Titan ${titan.id} entered Bladestorm.`);
+    _enemyAiLog(`🗿 Titan ${titan.id} entered Bladestorm.`);
   }
 
   titanStartStomp(titan, targetPlayer) {
@@ -5120,7 +5230,7 @@ class EnemyAI {
         timestamp: Date.now(),
       });
     }
-    console.log(`🗿 Titan ${titan.id} telegraphing attack at target ${player.id}!`);
+    _enemyAiLog(`🗿 Titan ${titan.id} telegraphing attack at target ${player.id}!`);
   }
 
   titanAttackPlayer(titan, player) {
@@ -5149,7 +5259,7 @@ class EnemyAI {
       });
     }
 
-    console.log(`🗿 Titan ${titan.id} attacked player ${player.id} for ${damage} damage + knockback!`);
+    _enemyAiLog(`🗿 Titan ${titan.id} attacked player ${player.id} for ${damage} damage + knockback!`);
 
     this.room?.tryDamageAlliedKnightInXZDisk(
       { x: titan.position.x, z: titan.position.z },
@@ -5168,7 +5278,7 @@ class EnemyAI {
         timestamp:      Date.now()
       });
     }
-    console.log(`💀 Ghoul ${ghoul.id} telegraphing attack at player ${player.id}!`);
+    _enemyAiLog(`💀 Ghoul ${ghoul.id} telegraphing attack at player ${player.id}!`);
   }
 
   ghoulAttackPlayer(ghoul, player) {
@@ -5185,7 +5295,7 @@ class EnemyAI {
         timestamp: Date.now()
       });
     }
-    console.log(`💀 Ghoul ${ghoul.id} attacked player ${player.id} for ${damage} damage!`);
+    _enemyAiLog(`💀 Ghoul ${ghoul.id} attacked player ${player.id} for ${damage} damage!`);
 
     const GHOUL_MELEE_ALLY_RADIUS = 2.4;
     this.room?.tryDamageAlliedKnightInXZDisk(
@@ -5349,7 +5459,7 @@ class EnemyAI {
     boss.position.x = resolved.x;
     boss.position.z = resolved.z;
     boss.rotation = Math.atan2(dirX, dirZ);
-    this._queueMove(boss.id, boss.position, boss.rotation);
+    this._queueMoveIfChanged(boss.id, boss.position, boss.rotation);
   }
 
   bossStartLeap(boss, targetPlayer) {
@@ -5399,7 +5509,7 @@ class EnemyAI {
         landPosition: land ? { x: land.x, y: 0, z: land.z } : { x: boss.position.x, y: 0, z: boss.position.z },
         timestamp: Date.now(),
       });
-      this._queueMove(bossId, boss.position, boss.rotation);
+      this._queueMoveIfChanged(bossId, boss.position, boss.rotation);
     }
   }
 
@@ -5639,8 +5749,15 @@ class EnemyAI {
       this.boss2WarlockSummonLastAt.set(boss.id, lastSummon);
     }
     if (now - lastSummon >= BOSS2_WARLOCK_SUMMON_INTERVAL_MS) {
-      this.boss2WarlockSummonLastAt.set(boss.id, now);
-      this.boss2SummonPurpleWarlock(boss);
+      const livingAdds = [...(this.room?.enemies?.values?.() ?? [])].filter(
+        (e) => e.summonedByBoss2Id === boss.id && !e.isDying && (e.health ?? 0) > 0,
+      ).length;
+      if (livingAdds < BOSS2_WARLOCK_SUMMON_MAX_LIVING) {
+        this.boss2WarlockSummonLastAt.set(boss.id, now);
+        this.boss2SummonPurpleWarlock(boss);
+      } else {
+        this.boss2WarlockSummonLastAt.set(boss.id, now);
+      }
     }
 
     const targetPlayer = this.getBossThreatTarget(boss, players);
@@ -5690,6 +5807,37 @@ class EnemyAI {
       timers.forEach((t) => clearTimeout(t));
     }
     this.boss2DeathGraspTimeouts.delete(bossId);
+  }
+
+  addKnightDeathGraspTimer(knightId, timer) {
+    const timers = this.knightDeathGraspTimeouts.get(knightId) || [];
+    timers.push(timer);
+    this.knightDeathGraspTimeouts.set(knightId, timers);
+  }
+
+  clearKnightDeathGraspTimers(knightId) {
+    const timers = this.knightDeathGraspTimeouts.get(knightId);
+    if (timers) {
+      timers.forEach((t) => clearTimeout(t));
+    }
+    this.knightDeathGraspTimeouts.delete(knightId);
+  }
+
+  _isCoopPortalPositionWriteBlocked() {
+    if (!this.room) return false;
+    if (
+      typeof this.room.isCoopCombatTransitionActive === 'function' &&
+      this.room.isCoopCombatTransitionActive()
+    ) {
+      return true;
+    }
+    if (
+      typeof this.room.isCoopPostTeleportPositionGuardActive === 'function' &&
+      this.room.isCoopPostTeleportPositionGuardActive()
+    ) {
+      return true;
+    }
+    return false;
   }
 
   addBoss2FlamePillarTimeout(bossId, handle) {
@@ -5758,7 +5906,7 @@ class EnemyAI {
         timestamp: Date.now(),
       });
     }
-    console.log(`👹 Boss2 ${boss.id} summoned purple warlock ${warlockId} at (${pos.x.toFixed(2)}, ${pos.z.toFixed(2)})`);
+    _enemyAiLog(`👹 Boss2 ${boss.id} summoned purple warlock ${warlockId} at (${pos.x.toFixed(2)}, ${pos.z.toFixed(2)})`);
   }
 
   boss2CastDeathGraspArc(boss, targetPlayer, onComplete) {
@@ -5782,7 +5930,7 @@ class EnemyAI {
     );
 
     if (this.io) {
-      this._queueMove(bossId, boss.position, boss.rotation);
+      this._queueMoveIfChanged(bossId, boss.position, boss.rotation);
       this.io.to(this.roomId).emit('boss2-deathgrasp-telegraph', {
         bossId,
         targetPlayerId: targetId,
@@ -5838,6 +5986,7 @@ class EnemyAI {
         const k = this.room?.getEnemy(bossId);
         const currentPlayers = this.room?.getPlayers();
         if (!this.room?.getGameStarted() || !k || k.isDying || k.health <= 0 || !currentPlayers) return;
+        if (this._isCoopPortalPositionWriteBlocked()) return;
 
         const hitPlayerIds = new Set();
         projectiles.forEach(({ endPosition }) => {
@@ -5922,7 +6071,7 @@ class EnemyAI {
       const beamTarget = this.getBossThreatTarget(boss, players);
       if (beamTarget) {
         this.updateBoss3GreenBeamRotation(boss, beamTarget);
-        this._queueMove(boss.id, boss.position, boss.rotation);
+        this._queueMoveIfChanged(boss.id, boss.position, boss.rotation);
         boss.bossStationary = true;
         return;
       }
@@ -5944,7 +6093,7 @@ class EnemyAI {
     const lockUntilBoss = this.boss3LockUntil.get(boss.id) || 0;
     if (now < lockUntilBoss) {
       boss.bossStationary = true;
-      this._queueMove(boss.id, boss.position, boss.rotation);
+      this._queueMoveIfChanged(boss.id, boss.position, boss.rotation);
       return;
     }
 
@@ -5979,7 +6128,7 @@ class EnemyAI {
       this.weaverSummonCooldown.set(boss.id, now);
       this.weaverCastSummon(boss);
       this.boss3LockUntil.set(boss.id, now + BOSS3_SUMMON_CAST_MS);
-      console.log(`🕸 Boss3 ${boss.id} summons ghoul (charges left ${boss.summonChargesLeft}).`);
+      _enemyAiLog(`🕸 Boss3 ${boss.id} summons ghoul (charges left ${boss.summonChargesLeft}).`);
       return;
     }
 
@@ -6023,7 +6172,7 @@ class EnemyAI {
     while (boss.rotation > Math.PI) boss.rotation -= Math.PI * 2;
     while (boss.rotation < -Math.PI) boss.rotation += Math.PI * 2;
 
-    this._queueMove(boss.id, boss.position, boss.rotation);
+    this._queueMoveIfChanged(boss.id, boss.position, boss.rotation);
   }
 
   boss3MaybeTriggerGreenBeamStages(boss, now) {
@@ -6102,7 +6251,7 @@ class EnemyAI {
     const intervalId = setInterval(applyTick, BOSS3_GREEN_BEAM_TICK_MS);
     this.boss3GreenBeamDamageInterval.set(bossId, intervalId);
 
-    console.log(`🕸 Boss3 ${bossId} green beam channel (${BOSS3_GREEN_BEAM_DURATION_MS}ms).`);
+    _enemyAiLog(`🕸 Boss3 ${bossId} green beam channel (${BOSS3_GREEN_BEAM_DURATION_MS}ms).`);
   }
 
   boss3MaybeStartLightningPhase(boss) {
@@ -6144,13 +6293,13 @@ class EnemyAI {
         });
       });
 
-      console.log(`🕸 Boss3 ${live.id} 50% lightning phase — 3 staggered strikes.`);
+      _enemyAiLog(`🕸 Boss3 ${live.id} 50% lightning phase — 3 staggered strikes.`);
     };
 
     castLightningGroup();
     const interval = setInterval(castLightningGroup, BOSS3_LIGHTNING_INTERVAL_MS);
     this.boss3LightningInterval.set(boss.id, interval);
-    console.log(`🕸 Boss3 ${boss.id} entered persistent lightning phase at ${Math.round((boss.health / boss.maxHealth) * 100)}% HP.`);
+    _enemyAiLog(`🕸 Boss3 ${boss.id} entered persistent lightning phase at ${Math.round((boss.health / boss.maxHealth) * 100)}% HP.`);
   }
 
   boss3CreateLightningTargets(primaryTarget) {
@@ -6337,7 +6486,7 @@ class EnemyAI {
     this.boss3AddNovaSweepInterval(bossId, intervalId);
     tick();
 
-    console.log(`🕸 Boss3 ${live.id} arcane nova round ${roundIndex + 1}/${burstRounds} — 3 discs.`);
+    _enemyAiLog(`🕸 Boss3 ${live.id} arcane nova round ${roundIndex + 1}/${burstRounds} — 3 discs.`);
     return true;
   }
 
@@ -6385,7 +6534,7 @@ class EnemyAI {
         );
       }
 
-      console.log(
+      _enemyAiLog(
         `🕸 Boss3 ${boss.id} arcane nova burst (${burstRounds} round${burstRounds > 1 ? 's' : ''}).`,
       );
     }, BOSS3_NOVA_WINDUP_MS);
@@ -6425,7 +6574,7 @@ class EnemyAI {
         rotation: boss.rotation,
         timestamp: Date.now(),
       });
-      this._queueMove(boss.id, boss.position, boss.rotation);
+      this._queueMoveIfChanged(boss.id, boss.position, boss.rotation);
     }
 
     const bossId = boss.id;
@@ -6649,7 +6798,7 @@ class EnemyAI {
             index: idx,
             timestamp: now,
           });
-          this._queueMove(boss.id, boss.position, boss.rotation);
+          this._queueMoveIfChanged(boss.id, boss.position, boss.rotation);
         }
         if (idx % 2 === 1) {
           const alive = players.filter((p) => p.health > 0);
@@ -6760,10 +6909,10 @@ class EnemyAI {
     }
 
     const distance = this.calculateDistance(boss.position, targetPlayer.position);
-    this.updateBossRotation(boss, targetPlayer);
 
     // Block all movement while the throw animation plays
     if (this.bossThrowEndAt.has(boss.id)) {
+      this.updateBossRotation(boss, targetPlayer);
       boss.bossStationary = true;
       return;
     }
@@ -6799,8 +6948,9 @@ class EnemyAI {
         boss.bossStationary = false;
         return;
       }
-      this.moveEnemyTowardsTarget(boss, targetPlayer);
+      this.moveEnemyTowardsTarget(boss, targetPlayer, { stopThreshold: 0.5 });
     } else {
+      this.updateBossRotation(boss, targetPlayer);
       const lastAttackTime = this.bossAttackCooldown.get(boss.id) || 0;
       if (
         now - lastAttackTime >= BOSS_MELEE_COOLDOWN_MS &&
@@ -6814,6 +6964,7 @@ class EnemyAI {
         this.bossMeleePatternIndex.set(boss.id, idx + 1);
 
         this.telegraphBossAttack(boss, targetPlayer, meleeIndex);
+        this.scheduleBossMeleeWindupStep(boss, targetPlayer);
 
         const pid = targetPlayer.id;
         const bossId = boss.id;
@@ -6856,7 +7007,7 @@ class EnemyAI {
         timestamp: Date.now(),
       });
     }
-    console.log(`🔥 Boss ${boss.id} telegraphing melee ${meleeIndex} at player ${player.id}!`);
+    _enemyAiLog(`🔥 Boss ${boss.id} telegraphing melee ${meleeIndex} at player ${player.id}!`);
   }
 
   bossAttackPlayer(boss, player, meleeIndex = 0) {
@@ -6873,7 +7024,7 @@ class EnemyAI {
         timestamp: Date.now(),
       });
     }
-    console.log(`🔥 Boss ${boss.id} attacked player ${player.id} for ${damage} damage (melee ${meleeIndex})`);
+    _enemyAiLog(`🔥 Boss ${boss.id} attacked player ${player.id} for ${damage} damage (melee ${meleeIndex})`);
   }
 
   bossStartThrow(boss, targetPlayer) {
@@ -6898,7 +7049,7 @@ class EnemyAI {
       this.bossCompleteThrow(boss.id);
     }, BOSS_THROW_SPEAR_RELEASE_MS);
     this.bossThrowTimeout.set(boss.id, t);
-    console.log(`🗡️  Boss ${boss.id} starting throw at player ${targetPlayer.id}`);
+    _enemyAiLog(`🗡️  Boss ${boss.id} starting throw at player ${targetPlayer.id}`);
   }
 
   bossCompleteThrow(bossId) {
@@ -6936,7 +7087,7 @@ class EnemyAI {
         timestamp: Date.now(),
       });
     }
-    console.log(`🗡️  Boss ${bossId} launched spear toward (${staleTarget.x.toFixed(1)}, ${staleTarget.z.toFixed(1)})`);
+    _enemyAiLog(`🗡️  Boss ${bossId} launched spear toward (${staleTarget.x.toFixed(1)}, ${staleTarget.z.toFixed(1)})`);
   }
 
   bossSummonSkeleton(boss) {
@@ -6986,7 +7137,7 @@ class EnemyAI {
       });
     }
 
-    console.log(`💀 Boss ${boss.id} summoned skeleton ${skeletonId} at position (${skeletonPosition.x.toFixed(2)}, ${skeletonPosition.z.toFixed(2)})`);
+    _enemyAiLog(`💀 Boss ${boss.id} summoned skeleton ${skeletonId} at position (${skeletonPosition.x.toFixed(2)}, ${skeletonPosition.z.toFixed(2)})`);
   }
 
   // Track when a boss skeleton is killed
@@ -6994,7 +7145,7 @@ class EnemyAI {
     const skeletons = this.bossSummonedSkeletons.get(bossId);
     if (skeletons) {
       skeletons.delete(skeletonId);
-      console.log(`💀 Skeleton ${skeletonId} removed from boss ${bossId}'s summons (${skeletons.size}/2 remaining)`);
+      _enemyAiLog(`💀 Skeleton ${skeletonId} removed from boss ${bossId}'s summons (${skeletons.size}/2 remaining)`);
     }
   }
 
@@ -7024,7 +7175,7 @@ class EnemyAI {
       const stealthMultiplier = 10.0; // 10x aggro generation while stealthing
       effectiveDamage *= stealthMultiplier;
       if (process.env.NODE_ENV !== 'production') {
-        console.log(`👤 Stealth aggro bonus: Player ${playerId} stealth attack (${damage} damage) -> ${effectiveDamage} effective aggro`);
+        _enemyAiLog(`👤 Stealth aggro bonus: Player ${playerId} stealth attack (${damage} damage) -> ${effectiveDamage} effective aggro`);
       }
     }
 
@@ -7032,7 +7183,7 @@ class EnemyAI {
     damageMap.set(playerId, currentDamage + effectiveDamage);
 
     if (process.env.NODE_ENV !== 'production') {
-      console.log(`📊 Boss aggro - Player ${playerId} has dealt ${currentDamage + effectiveDamage} total damage to boss ${bossId}${player?.isStealthing ? ' (STEALTH BONUS)' : ''}`);
+      _enemyAiLog(`📊 Boss aggro - Player ${playerId} has dealt ${currentDamage + effectiveDamage} total damage to boss ${bossId}${player?.isStealthing ? ' (STEALTH BONUS)' : ''}`);
     }
   }
 
@@ -7098,7 +7249,7 @@ class EnemyAI {
     while (boss.rotation < -Math.PI) boss.rotation += Math.PI * 2;
     
     // Broadcast rotation update to all players
-    this._queueMove(boss.id, boss.position, boss.rotation);
+    this._queueMoveIfChanged(boss.id, boss.position, boss.rotation);
   }
 
   getMeleeBodyRadius(type) {
@@ -7190,11 +7341,14 @@ class EnemyAI {
     const { grid, cellSize } = this._meleePeerGrid;
     const cx = Math.floor(x / cellSize);
     const cz = Math.floor(z / cellSize);
-    const out = [];
+    const out = this._meleePeerScratch;
+    out.length = 0;
     for (let dx = -1; dx <= 1; dx++) {
       for (let dz = -1; dz <= 1; dz++) {
         const bucket = grid.get(`${cx + dx},${cz + dz}`);
-        if (bucket) out.push(...bucket);
+        if (bucket) {
+          for (let i = 0; i < bucket.length; i++) out.push(bucket[i]);
+        }
       }
     }
     return out;
@@ -7273,7 +7427,7 @@ class EnemyAI {
     const baseSpeed = enemy.moveSpeed ?? this.getEnemyMoveSpeed(enemy.type);
     const moveSpeed = this.getModifiedMovementSpeed(enemy.id, baseSpeed);
 
-    const stopThreshold = useSurround ? 0.18 : 2.0;
+    const stopThreshold = options?.stopThreshold ?? (useSurround ? 0.18 : 2.0);
     if (distanceToGoal < stopThreshold || moveSpeed === 0) return;
 
     // Resolve next waypoint via A* when a wall blocks the direct path,
@@ -7436,6 +7590,10 @@ class EnemyAI {
    * @returns {{ tempestInitiate: boolean; necrosInitiate: boolean; infernalInitiate: boolean; abyssalInitiate: boolean; agility: number; strength: number; stamina: number }}
    */
   getCoopAlliedKnightBoons() {
+    const now = Date.now();
+    if (this._cachedAlliedKnightBoons && now - this._alliedKnightBoonsCachedAt < 1000) {
+      return this._cachedAlliedKnightBoons;
+    }
     const result = {
       tempestInitiate: false,
       necrosInitiate: false,
@@ -7465,6 +7623,8 @@ class EnemyAI {
         result.abyssalInitiate = true;
       }
     }
+    this._cachedAlliedKnightBoons = result;
+    this._alliedKnightBoonsCachedAt = now;
     return result;
   }
 
@@ -8110,7 +8270,7 @@ class EnemyAI {
         liveHealer.id,
       );
       if (healed > 0) {
-        console.log(`✨ Allied healer ${liveHealer.id} healed ${targetKind}:${targetId} for ${healed} HP`);
+        _enemyAiLog(`✨ Allied healer ${liveHealer.id} healed ${targetKind}:${targetId} for ${healed} HP`);
       }
     }, ALLIED_HEALER_GREATER_HEAL_IMPACT_DELAY_MS);
 
@@ -8324,7 +8484,7 @@ class EnemyAI {
       }
     }, summonLockMs);
 
-    console.log(`🧟 Infested zombie ${zombieId} raised for player ${ownerId}`);
+    _enemyAiLog(`🧟 Infested zombie ${zombieId} raised for player ${ownerId}`);
   }
 
   findNearestHostileForZombie(zombie) {
@@ -8812,6 +8972,61 @@ class EnemyAI {
     };
   }
 
+  /** Grid-based LOS — walks nav cells along the segment instead of 166 wall AABB tests. */
+  _hasLineOfSightGrid(posA, posB) {
+    if (!this.navGrid) this.navGrid = this._buildNavGrid();
+    const grid = this.navGrid;
+    let { col: c0, row: r0 } = this._worldToGrid(posA.x, posA.z);
+    let { col: c1, row: r1 } = this._worldToGrid(posB.x, posB.z);
+    const dc = Math.abs(c1 - c0);
+    const dr = Math.abs(r1 - r0);
+    const sc = c0 < c1 ? 1 : -1;
+    const sr = r0 < r1 ? 1 : -1;
+    let err = dc - dr;
+    for (;;) {
+      if (grid[r0 * NAV_COLS + c0]) return false;
+      if (c0 === c1 && r0 === r1) break;
+      const e2 = 2 * err;
+      if (e2 > -dr) {
+        err -= dr;
+        c0 += sc;
+      }
+      if (e2 < dc) {
+        err += dc;
+        r0 += sr;
+      }
+    }
+    return true;
+  }
+
+  /** Push enemy out of blocked nav cells (replaces per-segment AABB loop in combat arenas). */
+  _resolveEnemyWallCollisionsGrid(x, z) {
+    if (!this.navGrid) this.navGrid = this._buildNavGrid();
+    const grid = this.navGrid;
+    let { col, row } = this._worldToGrid(x, z);
+    if (col >= 0 && col < NAV_COLS && row >= 0 && row < NAV_ROWS && !grid[row * NAV_COLS + col]) {
+      return { x, z };
+    }
+    let best = null;
+    let bestDist = Infinity;
+    for (let dr = -1; dr <= 1; dr++) {
+      for (let dc = -1; dc <= 1; dc++) {
+        if (dc === 0 && dr === 0) continue;
+        const nc = col + dc;
+        const nr = row + dr;
+        if (nc < 0 || nc >= NAV_COLS || nr < 0 || nr >= NAV_ROWS) continue;
+        if (grid[nr * NAV_COLS + nc]) continue;
+        const w = this._gridToWorld(nc, nr);
+        const d = (w.x - x) ** 2 + (w.z - z) ** 2;
+        if (d < bestDist) {
+          bestDist = d;
+          best = w;
+        }
+      }
+    }
+    return best ? { x: best.x, z: best.z } : { x, z };
+  }
+
   /**
    * A* on the nav grid.  Returns an array of world-space {x,z} waypoints from
    * the cell after start up to and including the goal cell, or null if no path
@@ -8988,49 +9203,8 @@ class EnemyAI {
    * any castle wall segment, false if at least one wall intersects the segment.
    */
   hasLineOfSight(posA, posB) {
-    const ox = posA.x;
-    const oz = posA.z;
-    const dx = posB.x - posA.x;
-    const dz = posB.z - posA.z;
-
-    for (const seg of WALL_SEGMENTS) {
-      const halfX = seg.sizeX / 2;
-      const halfZ = seg.sizeZ / 2;
-      const bx0   = seg.center[0] - halfX;
-      const bx1   = seg.center[0] + halfX;
-      const bz0   = seg.center[2] - halfZ;
-      const bz1   = seg.center[2] + halfZ;
-
-      let tmin = 0;
-      let tmax = 1;
-
-      // X-axis slab
-      if (Math.abs(dx) < 1e-10) {
-        if (ox < bx0 || ox > bx1) continue; // parallel and outside
-      } else {
-        const tx1 = (bx0 - ox) / dx;
-        const tx2 = (bx1 - ox) / dx;
-        tmin = Math.max(tmin, Math.min(tx1, tx2));
-        tmax = Math.min(tmax, Math.max(tx1, tx2));
-        if (tmax < tmin) continue;
-      }
-
-      // Z-axis slab
-      if (Math.abs(dz) < 1e-10) {
-        if (oz < bz0 || oz > bz1) continue;
-      } else {
-        const tz1 = (bz0 - oz) / dz;
-        const tz2 = (bz1 - oz) / dz;
-        tmin = Math.max(tmin, Math.min(tz1, tz2));
-        tmax = Math.min(tmax, Math.max(tz1, tz2));
-      }
-
-      if (tmax >= tmin && tmin <= 1 && tmax >= 0) {
-        return false; // wall blocks the path
-      }
-    }
-
-    return true;
+    if (!this.navGrid) this.navGrid = this._buildNavGrid();
+    return this._hasLineOfSightGrid(posA, posB);
   }
 
   /**
@@ -9066,23 +9240,9 @@ class EnemyAI {
         rz *= s;
       }
     } else {
-      for (const seg of WALL_SEGMENTS) {
-        const halfX = seg.sizeX / 2 + ENEMY_RADIUS;
-        const halfZ = seg.sizeZ / 2 + ENEMY_RADIUS;
-        const relX  = rx - seg.center[0];
-        const relZ  = rz - seg.center[2];
-
-        if (Math.abs(relX) < halfX && Math.abs(relZ) < halfZ) {
-          const overlapX = halfX - Math.abs(relX);
-          const overlapZ = halfZ - Math.abs(relZ);
-
-          if (overlapX < overlapZ) {
-            rx += relX >= 0 ? overlapX : -overlapX;
-          } else {
-            rz += relZ >= 0 ? overlapZ : -overlapZ;
-          }
-        }
-      }
+      const gridResolved = this._resolveEnemyWallCollisionsGrid(rx, rz);
+      rx = gridResolved.x;
+      rz = gridResolved.z;
       const clamped = this.clampToArenaXZ(rx, rz);
       rx = clamped.x;
       rz = clamped.z;
@@ -9122,15 +9282,15 @@ class EnemyAI {
     // Get absolute angle difference
     const absAngleDiff = Math.abs(angleDiff);
 
-    // Boss can attack if within 45 degrees (π/4 radians) of facing the target
-    const facingTolerance = Math.PI / 4; // 45 degrees (90 degree cone total)
+    // Boss can attack if within 60 degrees (π/3 radians) of facing the target
+    const facingTolerance = Math.PI / 3;
 
     const isFacing = absAngleDiff <= facingTolerance;
     
     // Debug log when boss tries to attack but isn't facing target
     if (!isFacing) {
       const angleDegrees = (absAngleDiff * 180 / Math.PI).toFixed(1);
-      console.log(`🔄 Boss ${boss.id} rotating to face target (${angleDegrees}° off)`);
+      _enemyAiLog(`🔄 Boss ${boss.id} rotating to face target (${angleDegrees}° off)`);
     }
 
     return isFacing;
@@ -9243,7 +9403,7 @@ class EnemyAI {
     if (warlockShockT) clearTimeout(warlockShockT);
     this.warlockArchonShockTimeout.delete(enemyId);
     this.shadeBlinkCooldown.delete(enemyId);
-    this.shadeLastQueuedMove.delete(enemyId);
+    this.enemyLastQueuedMove.delete(enemyId);
     this.viperAttackCooldown.delete(enemyId);
     const viperFollowupT = this.viperFollowupTimeout.get(enemyId);
     if (viperFollowupT) clearTimeout(viperFollowupT);
@@ -9290,6 +9450,7 @@ class EnemyAI {
       for (const h of stormLashHandles) clearTimeout(h);
     }
     this.knightStormLashTimeouts.delete(enemyId);
+    this.clearKnightDeathGraspTimers(enemyId);
     this.knightBlockCooldown.delete(enemyId);
     this.knightBlockActiveUntil.delete(enemyId);
     this.knightBlockStages.delete(enemyId);
@@ -9307,7 +9468,7 @@ class EnemyAI {
     this.weaverSummonedGhouls.forEach((ghoulId, weaverId) => {
       if (ghoulId === enemyId) {
         this.weaverSummonedGhouls.set(weaverId, null);
-        console.log(`🧵 Weaver ${weaverId} ghoul ${enemyId} died — resummon available`);
+        _enemyAiLog(`🧵 Weaver ${weaverId} ghoul ${enemyId} died — resummon available`);
       }
     });
 
@@ -9337,11 +9498,11 @@ class EnemyAI {
       const damageMap = this.bossDamageTracking.get(enemyId);
       const currentDamage = damageMap.get(taunterPlayerId) || 0;
       damageMap.set(taunterPlayerId, currentDamage + 1000); // Large damage bonus for taunt
-      console.log(`🎯 Boss ${enemyId} taunted by player ${taunterPlayerId} for ${duration/1000} seconds (damage bonus: +1000)`);
+      _enemyAiLog(`🎯 Boss ${enemyId} taunted by player ${taunterPlayerId} for ${duration/1000} seconds (damage bonus: +1000)`);
     } else {
       // For regular enemies, use regular aggro system
       this.updateAggro(enemyId, taunterPlayerId, 1000); // Large aggro bonus
-      console.log(`🎯 Enemy ${enemyId} taunted by player ${taunterPlayerId} for ${duration/1000} seconds (aggro priority)`);
+      _enemyAiLog(`🎯 Enemy ${enemyId} taunted by player ${taunterPlayerId} for ${duration/1000} seconds (aggro priority)`);
     }
   }
 
@@ -9352,7 +9513,7 @@ class EnemyAI {
 
     // Check if taunt has expired
     if (Date.now() > tauntData.tauntEndTime) {
-      console.log(`⏰ Taunt expired for enemy ${enemyId}`);
+      _enemyAiLog(`⏰ Taunt expired for enemy ${enemyId}`);
       this.enemyTaunts.delete(enemyId);
       return false;
     }
@@ -9750,7 +9911,7 @@ class EnemyAI {
   // Remove player from all aggro charts when they die
   removePlayerFromAllAggro(deadPlayerId) {
     if (process.env.NODE_ENV !== 'production') {
-      console.log(`💀 Removing dead player ${deadPlayerId} from all aggro charts`);
+      _enemyAiLog(`💀 Removing dead player ${deadPlayerId} from all aggro charts`);
     }
 
     // Remove from all boss damage tracking
@@ -9758,7 +9919,7 @@ class EnemyAI {
       if (damageMap.has(deadPlayerId)) {
         damageMap.delete(deadPlayerId);
         if (process.env.NODE_ENV !== 'production') {
-          console.log(`  - Removed ${deadPlayerId} from boss ${bossId} damage tracking`);
+          _enemyAiLog(`  - Removed ${deadPlayerId} from boss ${bossId} damage tracking`);
         }
       }
     });
@@ -9775,7 +9936,7 @@ class EnemyAI {
         aggroData.threatFromDamage = false;
         aggroData.directPlayerDamageAggroed = false;
         if (process.env.NODE_ENV !== 'production') {
-          console.log(`  - Cleared ${deadPlayerId} as target for enemy ${enemyId}`);
+          _enemyAiLog(`  - Cleared ${deadPlayerId} as target for enemy ${enemyId}`);
         }
       }
     });

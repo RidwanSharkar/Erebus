@@ -42,8 +42,8 @@ export default React.memo(function ZombieModel({ isWalking, isAttacking, isSummo
     const clone = SkeletonUtils.clone(scene) as Group;
     clone.traverse((child: any) => {
       if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
+        child.castShadow = false;
+        child.receiveShadow = false;
         child.material = Array.isArray(child.material)
           ? child.material.map((m: any) => m.clone())
           : child.material.clone();

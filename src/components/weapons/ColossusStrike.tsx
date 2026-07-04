@@ -155,8 +155,26 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
   // Create geometries and materials
   const geometries = useMemo(() => ({
     bolt: new SphereGeometry(1, 8, 8),
-    impact: new SphereGeometry(0.8, 16, 16)
+    impact: new SphereGeometry(0.8, 16, 16),
+    impactRings: [
+      new RingGeometry(1, 1.2, 32),
+      new RingGeometry(1.4, 1.6, 32),
+      new RingGeometry(1.8, 2.0, 32),
+    ],
   }), []);
+
+  const impactRingRotations = useMemo(
+    () =>
+      [0, 1, 2].map(
+        () =>
+          [Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI] as [
+            number,
+            number,
+            number,
+          ],
+      ),
+    [],
+  );
   
   // Updated materials for yellow lightning
   const materials = useMemo(() => ({
@@ -177,14 +195,31 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
       emissive: new Color('#FFD700'), // Golden yellow
       emissiveIntensity: 1,
       transparent: true
-    })
+    }),
+    impactRings: [
+      new MeshBasicMaterial({ color: '#FFD700', transparent: true, blending: AdditiveBlending }),
+      new MeshBasicMaterial({ color: '#FFD700', transparent: true, blending: AdditiveBlending }),
+      new MeshBasicMaterial({ color: '#FFD700', transparent: true, blending: AdditiveBlending }),
+    ],
   }), []);
 
   // Dispose GPU resources on unmount
   useEffect(() => {
     return () => {
-      Object.values(geometries).forEach(g => g.dispose());
-      Object.values(materials).forEach(m => m.dispose());
+      Object.values(geometries).forEach((g) => {
+        if (Array.isArray(g)) {
+          g.forEach((geo) => geo.dispose());
+        } else {
+          g.dispose();
+        }
+      });
+      Object.values(materials).forEach((m) => {
+        if (Array.isArray(m)) {
+          m.forEach((mat) => mat.dispose());
+        } else {
+          m.dispose();
+        }
+      });
     };
   }, [geometries, materials]);
 
@@ -289,6 +324,9 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
     materials.coreBolt.opacity = fadeOut;
     materials.secondaryBolt.opacity = fadeOut * 0.8;
     materials.impact.opacity = fadeOut * 0.9;
+    materials.impactRings.forEach((mat, i) => {
+      mat.opacity = (0.8 - i * 0.15) * (1 - progress);
+    });
   });
 
   // Don't render anything if not visible yet or if completed
@@ -322,19 +360,13 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
         />
         
         {/* Impact rings */}
-        {[1, 1.4, 1.8].map((size, i) => (
-          <mesh 
-            key={i} 
-            rotation={[Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI]}
-          >
-            <ringGeometry args={[size, size + 0.2, 32]} />
-            <meshBasicMaterial
-              color="#FFD700" // Golden yellow
-              transparent
-              opacity={(0.8 - (i * 0.15)) * (1 - (startTimeRef.current ? (Date.now() - startTimeRef.current) / (duration * 1000) : 0))}
-              blending={AdditiveBlending}
-            />
-          </mesh>
+        {[0, 1, 2].map((i) => (
+          <mesh
+            key={i}
+            geometry={geometries.impactRings[i]}
+            material={materials.impactRings[i]}
+            rotation={impactRingRotations[i]}
+          />
         ))}
       </group>
     </group>

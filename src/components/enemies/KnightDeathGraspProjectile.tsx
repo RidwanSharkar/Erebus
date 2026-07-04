@@ -47,8 +47,8 @@ export default function KnightDeathGraspProjectile({
   const tempQuaternionRef = useRef(new Quaternion());
 
   // Two pooled lights at the fixed start/end of the grasp (replaces 2 <pointLight>s).
-  const startLight = useDynamicLight({ color: '#6A0DAD', distance: 5, priority: 2 });
-  const endLight = useDynamicLight({ color: '#9370DB', distance: 6, priority: 2 });
+  const startLight = useDynamicLight({ color: '#6A0DAD', distance: 5, priority: 1 });
+  const endLight = useDynamicLight({ color: '#9370DB', distance: 6, priority: 1 });
 
   const { right, up, particles } = useMemo(() => {
     const path = endPosition.clone().sub(startPosition);
@@ -62,7 +62,7 @@ export default function KnightDeathGraspProjectile({
       side.normalize();
     }
     const pathUp = new Vector3().crossVectors(side, normalizedDirection).normalize();
-    const segmentCount = Math.max(10, Math.ceil(pathDistance * 5));
+    const segmentCount = Math.min(15, Math.max(10, Math.ceil(pathDistance * 5)));
     const streamCount = 3;
     const spiralTurns = 3.5;
     const particleData: Array<{

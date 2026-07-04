@@ -4,6 +4,7 @@ import { RenderSystem as BaseRenderSystem } from '@/ecs/System';
 import { Entity } from '@/ecs/Entity';
 import { Transform } from '@/ecs/components/Transform';
 import { Renderer } from '@/ecs/components/Renderer';
+import { ENABLE_REALTIME_SHADOWS } from '@/utils/renderConfig';
 
 export class RenderSystem extends BaseRenderSystem {
   public readonly requiredComponents = [Transform, Renderer];
@@ -191,6 +192,10 @@ export class RenderSystem extends BaseRenderSystem {
   }
 
   public enableShadows(enable: boolean = true): void {
+    if (!ENABLE_REALTIME_SHADOWS) {
+      this.renderer.shadowMap.enabled = false;
+      return;
+    }
     this.renderer.shadowMap.enabled = enable;
     this.renderer.shadowMap.type = PCFSoftShadowMap;
   }

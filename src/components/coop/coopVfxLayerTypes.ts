@@ -98,6 +98,11 @@ export interface RoomBoomFrostNovaState {
   duration: number;
 }
 
+export interface RoomBoomArcticBlizzardState {
+  id: number;
+  position: Vector3;
+}
+
 export interface CrossentropyMeteorState {
   id: string;
   targetPosition: Vector3;
@@ -203,7 +208,9 @@ export interface TectonicSpikeGroundCrackState {
   y: number;
   z: number;
   seed: string;
-  durationMs: number;
+  visibleMs: number;
+  fadeMs?: number;
+  theme?: 'earth' | 'blue' | 'green';
 }
 
 export interface WeaverImpaleSpikeState {
@@ -242,8 +249,8 @@ export interface TeleportEffectState {
   position: Vector3;
   type: 'start' | 'end';
   timestamp: number;
-  /** 'templar' (default) uses BossTeleportEffect; 'shade' uses ShadeTeleportEffect */
-  variant?: 'templar' | 'shade';
+  /** 'shade' → ShadeTeleportEffect; 'warlock' | 'templar' → WarlockTeleportEffect */
+  variant?: 'templar' | 'shade' | 'warlock';
   theme?: 'blue' | 'purple' | 'red';
 }
 
@@ -266,6 +273,7 @@ export interface StaggerProcEffectState {
   position: Vector3;
   magmaCurrent?: boolean;
   forceOfNature?: boolean;
+  stormShield?: boolean;
 }
 
 
@@ -331,6 +339,13 @@ export interface EnemySummonFlameVfxState {
 export interface WeaverHealEffectState {
   id: string;
   position: Vector3;
+}
+
+export interface WeaverHealZapState {
+  id: string;
+  from: Vector3;
+  to: Vector3;
+  variant: 'cast' | 'impact';
 }
 
 export interface GreaterHealBeamState {

@@ -4,8 +4,15 @@ import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Color, Group, Mesh, AdditiveBlending, MathUtils } from '@/utils/three-exports';
 
-const _dirScratch = new Vector3();
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import {
+  TOWER_CORE_GEO,
+  TOWER_OCTA_LARGE_GEO,
+  TOWER_OCTA_SMALL_GEO,
+  TOWER_SPIKE_GEO,
+  TOWER_TRAIL_SPHERE_GEO,
+} from './sharedProjectileGeometry';
+const _dirScratch = new Vector3();
 
 interface TowerProjectileProps {
   position: Vector3;
@@ -115,8 +122,7 @@ function TowerProjectile({
   return (
     <group ref={groupRef}>
       {/* Main projectile body - crystalline energy shard */}
-      <mesh>
-        <octahedronGeometry args={[0.2, 0]} />
+      <mesh geometry={TOWER_OCTA_LARGE_GEO}>
         <meshStandardMaterial
           color={projectileColor}
           emissive={emissiveColor}
@@ -130,8 +136,7 @@ function TowerProjectile({
 
       {/* Energy core - spinning inner crystal */}
       <group name="CoreSpinner">
-        <mesh>
-          <octahedronGeometry args={[0.12, 0]} />
+        <mesh geometry={TOWER_OCTA_SMALL_GEO}>
           <meshStandardMaterial
             color={coreBrightColor}
             emissive={coreEmissiveColor}
@@ -145,8 +150,7 @@ function TowerProjectile({
       </group>
 
       {/* Outer glow sphere */}
-      <mesh name="GlowSphere">
-        <sphereGeometry args={[0.35, 12, 12]} />
+      <mesh name="GlowSphere" geometry={TOWER_CORE_GEO}>
         <meshStandardMaterial
           color={projectileColor}
           emissive={emissiveColor}
@@ -170,8 +174,8 @@ function TowerProjectile({
             key={`tendril-${i}`}
             position={[x, 0, z]}
             rotation={[0, angle, 0]}
+            geometry={TOWER_SPIKE_GEO}
           >
-            <coneGeometry args={[0.03, 0.15, 4]} />
             <meshStandardMaterial
               color={tendrilBrightColor}
               emissive={emissiveColor}
@@ -198,8 +202,8 @@ function TowerProjectile({
             <mesh
               key={`particle-${i}`}
               position={[x, y, z]}
+              geometry={TOWER_TRAIL_SPHERE_GEO}
             >
-              <sphereGeometry args={[0.02, 6, 6]} />
               <meshStandardMaterial
                 color={projectileColor}
                 emissive={emissiveColor}

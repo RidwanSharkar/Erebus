@@ -59,7 +59,7 @@ export default function WarlockProjectile({
   const currentDirRef = useRef(new Vector3(0, 0, -1));
 
   // Collapse the three per-orb <pointLight>s into one pooled light that follows the orb.
-  const orbLight = useDynamicLight({ color: '#dd1133', distance: 6.5, priority: 2 });
+  const orbLight = useDynamicLight({ color: '#dd1133', distance: 6.5, priority: 1 });
 
   const staleDist = useMemo(() => {
     const d = targetPosition.clone().sub(startPosition);

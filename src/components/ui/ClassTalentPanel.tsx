@@ -57,15 +57,15 @@ export default function ClassTalentPanel({
     };
   }, []);
 
-  const { classTalents, duoBoons } = useMemo(
+  const { classTalents, duoBoons, ultimateBoons } = useMemo(
     () =>
       talentLoadout
         ? partitionTalentsForHud(talentLoadout, currentWeapon, abilityLoadout)
-        : { primaryRoomBoons: [], otherRoomBoons: [], classTalents: [], duoBoons: [] },
+        : { primaryRoomBoons: [], otherRoomBoons: [], classTalents: [], duoBoons: [], ultimateBoons: [] },
     [talentLoadout, currentWeapon, abilityLoadout]
   );
 
-  const totalCount = classTalents.length + duoBoons.length;
+  const totalCount = classTalents.length + duoBoons.length + ultimateBoons.length;
   const needsScroll = totalCount > MAX_VISIBLE_SLOTS;
   const scrollableMaxHeightPx =
     MAX_VISIBLE_SLOTS * TALENT_SLOT_PX + Math.max(0, MAX_VISIBLE_SLOTS - 1) * SLOT_GAP_PX;
@@ -90,7 +90,7 @@ export default function ClassTalentPanel({
     if (!el || !needsScroll) return;
     el.scrollTop = 0;
     updateScrollButtons();
-  }, [classTalents, duoBoons, needsScroll, updateScrollButtons]);
+  }, [classTalents, duoBoons, ultimateBoons, needsScroll, updateScrollButtons]);
 
   const handleTalentHover = useCallback((e: React.MouseEvent, talentId: TalentId) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -145,12 +145,30 @@ export default function ClassTalentPanel({
           onMouseLeave={handleTalentLeave}
         />
       ))}
+      {ultimateBoons.length > 0 && (classTalents.length > 0 || duoBoons.length > 0) && (
+        <div className="flex flex-row items-center justify-center gap-1 py-0.5">
+          <div className="h-px w-3 rounded" style={{ background: 'rgba(120,120,160,0.3)' }} />
+          <span className="text-[9px]" style={{ color: 'rgba(251,191,36,0.65)' }}>
+            ✦
+          </span>
+          <div className="h-px w-3 rounded" style={{ background: 'rgba(120,120,160,0.3)' }} />
+        </div>
+      )}
+      {ultimateBoons.map((talentId) => (
+        <TalentSlot
+          key={talentId}
+          talentId={talentId}
+          variant="ultimate"
+          onMouseEnter={handleTalentHover}
+          onMouseLeave={handleTalentLeave}
+        />
+      ))}
     </>
   );
 
   return (
     <>
-      <div className="fixed left-4 z-40" style={{ top: topOffsetPx }}>
+      <div className="fixed left-4 z-40" style={{ top: topOffsetPx }} data-block-game-input>
         <div
           className="backdrop-blur-md px-3 py-3"
           style={{

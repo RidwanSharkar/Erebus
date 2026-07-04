@@ -401,8 +401,19 @@ export class CollisionSystem extends PhysicsSystem {
   }
 
   public queryCollidersRadius(center: Vector3, radius: number): Entity[] {
+    const scratch: Entity[] = [];
+    this.queryCollidersRadiusInto(center, radius, scratch);
+    return scratch;
+  }
+
+  /** Write radius query results into `out`, truncating length — no per-call .map() allocation. */
+  public queryCollidersRadiusInto(center: Vector3, radius: number, out: Entity[]): Entity[] {
     const entries = this.spatialHash.queryRadius(center, radius);
-    return entries.map(entry => entry.entity);
+    out.length = entries.length;
+    for (let i = 0; i < entries.length; i++) {
+      out[i] = entries[i].entity;
+    }
+    return out;
   }
 
   public queryCollidersPoint(point: Vector3): Entity[] {

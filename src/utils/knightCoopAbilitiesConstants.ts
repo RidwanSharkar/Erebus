@@ -21,6 +21,7 @@ export const KNIGHT_SMITE_RADIUS_BASE = 2.8;
 export const KNIGHT_SMITE_RADIUS_POST_BOSS2 = 3.75;
 
 // Knight Block (enemyAI: tryKnightBlock, knightCastBlock)
+export const KNIGHT_BLOCK_START_MS = 567; // knight_startblock.glb raise-shield clip duration
 export const KNIGHT_BLOCK_REACT_WINDOW_MS = 500;
 export const KNIGHT_BLOCK_DURATION_MS: Record<'red' | 'blue' | 'purple' | 'green', number> = {
   red: 2000,

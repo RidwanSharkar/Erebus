@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, DoubleSide, AdditiveBlending } from '@/utils/three-exports';
 import type { TempestBurstTheme } from '@/utils/talents';
+import { ARROW_AURA_GEO, ARROW_FLETCHING_GEO, ARROW_SHAFT_GEO, ARROW_TIP_GEO } from './sharedProjectileGeometry';
 
 interface RegularArrowProps {
   position: Vector3;
@@ -135,8 +136,7 @@ function RegularArrow({
     <group name="regular-arrow-group">
       <group ref={arrowRef} position={position}>
         {/* Arrow Head */}
-        <mesh position={[0, 0, 0.2]} rotation={[Math.PI / 2, 0, 0]}>
-          <coneGeometry args={[0.08, 0.25, 8]} />
+        <mesh position={[0, 0, 0.2]} rotation={[Math.PI / 2, 0, 0]} geometry={ARROW_TIP_GEO}>
           <meshStandardMaterial
             color={color}
             emissive={emissiveColor}
@@ -151,8 +151,7 @@ function RegularArrow({
         </mesh>
         
         {/* Arrow Shaft */}
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
-          <cylinderGeometry args={[0.02, 0.03, 0.4, 8]} />
+        <mesh rotation={[Math.PI / 2, 0, 0]} geometry={ARROW_SHAFT_GEO}>
           <meshStandardMaterial
             color={color}
             emissive={shaftEmissiveColor}
@@ -177,8 +176,8 @@ function RegularArrow({
                 0
               ]}
               rotation={[0, 0, (angle * Math.PI) / 180]}
+              geometry={ARROW_FLETCHING_GEO}
             >
-              <planeGeometry args={[0.08, 0.12]} />
               <meshStandardMaterial
                 color={fletchingColor}
                 emissive={fletchingEmissiveColor}
@@ -194,8 +193,7 @@ function RegularArrow({
         </group>
         
         {/* Energy Aura around arrow */}
-        <mesh>
-          <sphereGeometry args={[size * 1.5, 16, 16]} />
+        <mesh geometry={ARROW_AURA_GEO}>
           <meshStandardMaterial
             color={auraColor}
             emissive={color}

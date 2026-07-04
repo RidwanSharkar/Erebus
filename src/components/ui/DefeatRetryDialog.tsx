@@ -15,6 +15,7 @@ export default function DefeatRetryDialog({ open }: DefeatRetryDialogProps) {
       aria-modal="true"
       aria-labelledby="defeat-retry-title"
       className="fixed inset-0 z-[500] flex items-center justify-center px-4 py-6 pointer-events-auto"
+      data-block-game-input
       style={{
         background:
           'radial-gradient(ellipse at 50% 40%, rgba(0,0,0,0.75) 0%, rgba(0,0,0,0.94) 100%)',

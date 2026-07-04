@@ -11,12 +11,34 @@ export const TRIAL_ROOM_PEDESTAL_GOLD = 250;
 export const STAT_ROOM_PEDESTAL_POINTS = StatSystem.STAT_ROOM_PEDESTAL_POINTS;
 export const BOON_REROLL_GOLD_COST = 50;
 
+export const ROOM_TITLE_ANNOUNCEMENT_MS = 4100;
+
 export const REWARD_ANNOUNCEMENT_COLORS = {
   gold: '#eab308',
   stat: '#eab308',
   purchased: '#ec4899',
   unlocked: '#c084fc',
 } as const;
+
+export const GUIDE_ANNOUNCEMENTS = {
+  chooseWeapon: { title: 'CHOOSE YOUR WEAPON', color: '#eab308' },
+  enterPortal: { title: 'ENTER A PORTAL', color: '#eab308' },
+  claimReward: { title: 'CLAIM YOUR REWARD', color: '#94a3b8' },
+  chooseGateway: { title: 'CHOOSE A GATEWAY', color: '#94a3b8' },
+} as const;
+
+export type BossSlainLabel = 'hate' | 'knights' | 'envy' | 'fear' | 'trinity';
+
+export const BOSS_SLAIN_ANNOUNCEMENTS: Record<
+  BossSlainLabel,
+  { title: string; color: string }
+> = {
+  hate: { title: 'HATE SLAIN', color: '#dc2626' },
+  knights: { title: 'KNIGHTS SLAIN', color: '#dc2626' },
+  envy: { title: 'ENVY SLAIN', color: '#22c55e' },
+  fear: { title: 'FEAR SLAIN', color: '#6c3dff' },
+  trinity: { title: 'TRINITY SLAIN', color: '#dc2626' },
+};
 
 /** Portal hex colors — keep in sync with ThroneRoom.tsx THRONE_PORTAL_COLOR_HEX. */
 const ROOM_TITLE_COLORS = {

@@ -35,6 +35,7 @@ function handleEnemyEvents(socket, gameRooms) {
       cloudkill,
       tempestBurstArcticChill,
       tempestBurstWyvernZombie,
+      explosiveTalonsDetonation,
     } = data;
 
     if (process.env.NODE_ENV !== 'production') {
@@ -78,8 +79,16 @@ function handleEnemyEvents(socket, gameRooms) {
       hitMeta = { damageType: 'rebuke', rebukeRoom: !!rebukeRoom };
     } else if (damageType === 'infernal_dash') {
       hitMeta = { damageType: 'infernal_dash', infernalDashRoom: true };
+    } else if (damageType === 'reaping_talons_explosion') {
+      hitMeta = { damageType: 'reaping_talons', explosiveTalonsDetonation: true };
+      if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
+        hitMeta.staggerToAdd = staggerToAdd;
+      }
+      if (glacialTalons) hitMeta.glacialTalons = true;
+      if (wyvernTalonsZombie) hitMeta.wyvernTalonsZombie = true;
     } else if (damageType === 'reaping_talons') {
       hitMeta = { damageType: 'reaping_talons' };
+      if (explosiveTalonsDetonation) hitMeta.explosiveTalonsDetonation = true;
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
         hitMeta.staggerToAdd = staggerToAdd;
       }

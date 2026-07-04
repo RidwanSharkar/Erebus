@@ -64,13 +64,13 @@ export const universalAbilityPool: UniversalAbility[] = [
   },
   {
     id: 'RUNEBLADE_E', sourceWeapon: WeaponType.RUNEBLADE, sourceKey: 'E',
-    name: 'Wraith Strike', cooldown: 3.0, icon: '🗡️',
+    name: 'Wraith Strike', cooldown: 3.0, icon: '/icons/strike.svg',
     description: 'A swift strike that briefly applies SLOW and TAUNT to enemies hit. 5 second cooldown.',
     allowedWeapons: [WeaponType.SABRES, WeaponType.SPEAR, WeaponType.RUNEBLADE],
   },
   {
     id: 'RUNEBLADE_R', sourceWeapon: WeaponType.RUNEBLADE, sourceKey: 'R',
-    name: 'Colossus Strike', cooldown: 3.0, icon: '⚡️',
+    name: 'Colossus Strike', cooldown: 3.0, icon: '/icons/smite.svg',
     description: 'Calls down a pillar of radiant energy, dealing damage to enemy players in a small area, healing you for 10 HP. 8 second cooldown.',
     allowedWeapons: [WeaponType.SPEAR, WeaponType.RUNEBLADE],
   },
@@ -92,19 +92,19 @@ export const universalAbilityPool: UniversalAbility[] = [
   // ── BOW ───────────────────────────────────────────────────────────────
   {
     id: 'BOW_Q', sourceWeapon: WeaponType.BOW, sourceKey: 'Q',
-    name: 'Frostbite', cooldown: 5.0, icon: '🎯',
+    name: 'Frostbite', cooldown: 5.0, icon: '/icons/frostBite.svg',
     description: 'Fires 5 arrows in an arc. An enemy can be hit by multiple arrows at close range. 8 second cooldown.',
     allowedWeapons: [WeaponType.BOW, WeaponType.SCYTHE, WeaponType.RUNEBLADE],
   },
   {
     id: 'BOW_E', sourceWeapon: WeaponType.BOW, sourceKey: 'E',
-    name: 'Viper Sting', cooldown: 2.0, icon: '🐉',
+    name: 'Viper Sting', cooldown: 2.0, icon: '/icons/wyvernSting.svg',
     description: 'Fires a laced arrow that applies VENOM damage over time to the target, preventing shield regeneration for 6 seconds.',
     allowedWeapons: [WeaponType.BOW, WeaponType.SCYTHE],
   },
   {
     id: 'BOW_R', sourceWeapon: WeaponType.BOW, sourceKey: 'R',
-    name: 'Reaping Talons', cooldown: 2.0, icon: '🪶',
+    name: 'Reaping Talons', cooldown: 2.0, icon: '/icons/reapingTalons.svg',
     description: 'Fires a powerful piercing arrow that returns to you. Each hit heals you for 2 HP each when orbs are returned. 7 second cooldown.',
     allowedWeapons: [WeaponType.BOW],
   },
@@ -130,19 +130,19 @@ export const universalAbilityPool: UniversalAbility[] = [
   },
   {
     id: 'SCYTHE_E', sourceWeapon: WeaponType.SCYTHE, sourceKey: 'E',
-    name: 'Coldsnap', cooldown: 12.0, icon: '❄️',
+    name: 'Coldsnap', cooldown: 12.0, icon: '/icons/coldsnap.svg',
     description: 'Conjures an explosive ice vortex that applies FREEZE to enemies, immobilizing them for 6 seconds.',
     allowedWeapons: ALL_WEAPONS,
   },
   {
     id: 'SCYTHE_R', sourceWeapon: WeaponType.SCYTHE, sourceKey: 'R',
-    name: 'Crossentropy', cooldown: 2.0, icon: '🔥',
+    name: 'Crossentropy', cooldown: 2.0, icon: '/icons/crossentropy.svg',
     description: 'Charges for 1 second to fire an accelerating plasma bolt that explodes on impact. 8 second cooldown.',
     allowedWeapons: [WeaponType.SCYTHE],
   },
   {
     id: 'SCYTHE_F', sourceWeapon: WeaponType.SCYTHE, sourceKey: 'F',
-    name: 'Mantra', cooldown: 5.0, icon: '🪬',
+    name: 'Mantra', cooldown: 5.0, icon: '/icons/totem.svg',
     description: 'Summons a totem that lasts for 8 seconds that blasts nearby enemies within range. 7 second cooldown',
     allowedWeapons: ALL_WEAPONS,
   },
@@ -156,19 +156,19 @@ export const universalAbilityPool: UniversalAbility[] = [
   // ── SABRES ────────────────────────────────────────────────────────────
   {
     id: 'SABRES_Q', sourceWeapon: WeaponType.SABRES, sourceKey: 'Q',
-    name: 'Backstab', cooldown: 2.0, icon: '🔪',
+    name: 'Backstab', cooldown: 2.0, icon: '/icons/stab.svg',
     description: 'Strikes through enemies, dealing massive bonus damage if attacking the target from behind. 4 second cooldown.',
     allowedWeapons: [WeaponType.SABRES],
   },
   {
     id: 'SABRES_E', sourceWeapon: WeaponType.SABRES, sourceKey: 'E',
-    name: 'Flourish', cooldown: 1.5, icon: '💥',
+    name: 'Flourish', cooldown: 1.5, icon: '/icons/flourish.svg',
     description: 'Unleash a flurry of close-range slashes. Applies a 4 second STUN to enemies that are hit by this ability a third time. 1.5 second cooldown.',
     allowedWeapons: [WeaponType.SABRES, WeaponType.RUNEBLADE],
   },
   {
     id: 'SABRES_R', sourceWeapon: WeaponType.SABRES, sourceKey: 'R',
-    name: 'Divebomb', cooldown: 6.0, icon: '🐦‍🔥',
+    name: 'Divebomb', cooldown: 6.0, icon: '/icons/vengeance.svg',
     description: 'Leap into the air and crash down, dealing 125 damage and applying STUN for 2 seconds to enemies caught below. 8 second cooldown.',
     allowedWeapons: [WeaponType.SABRES, WeaponType.RUNEBLADE],
   },
@@ -194,7 +194,7 @@ export const universalAbilityPool: UniversalAbility[] = [
   },
   {
     id: 'SPEAR_R', sourceWeapon: WeaponType.SPEAR, sourceKey: 'R',
-    name: 'Lightning Bolt', cooldown: 3.0, icon: '⚡',
+    name: 'Lightning Bolt', cooldown: 3.0, icon: '/icons/lightningBolt.svg',
     description: `Calls down a lightning bolt on a random enemy within range, dealing ${LIGHTNING_BOLT_ROOM_DAMAGE} + ${LIGHTNING_BOLT_ROOM_DAMAGE_PER_AGILITY} damage per point of AGILITY and applying ${LIGHTNING_BOLT_ROOM_STAGGER} stagger.`,
     allowedWeapons: ALL_WEAPONS,
   },
@@ -208,19 +208,19 @@ export const universalAbilityPool: UniversalAbility[] = [
   // ── ROOM ACTIVE BOON ABILITIES ────────────────────────────────────────
   {
     id: 'RAISE_DEAD', sourceWeapon: WeaponType.NONE, sourceKey: 'R',
-    name: 'Raise Dead', cooldown: 15.0, icon: '💀',
+    name: 'Raise Dead', cooldown: 15.0, icon: '/icons/raiseDead.svg',
     description: 'Instantly summons one allied zombie at your position. Subject to the 3-zombie cap; benefits from all owned zombie boons.',
     allowedWeapons: ALL_WEAPONS,
   },
   {
     id: 'METEOR_STRIKE', sourceWeapon: WeaponType.NONE, sourceKey: 'R',
-    name: 'Meteor', cooldown: 8.0, icon: '☄️',
+    name: 'Meteor', cooldown: 8.0, icon: '/icons/meteorStrike.svg',
     description: 'Calls down 1 meteor on the nearest enemy within range, with a 15% chance to call a second and a 5% chance to call a third. Meteors deal 240 AoE damage.',
     allowedWeapons: ALL_WEAPONS,
   },
   {
     id: 'AEGIS_ROOM', sourceWeapon: WeaponType.NONE, sourceKey: 'R',
-    name: 'Aegis', cooldown: 8.0, icon: '🛡️',
+    name: 'Aegis', cooldown: 8.0, icon: '/icons/aegis.svg',
     description: 'Creates a protective barrier that blocks all incoming damage for 3 seconds.',
     allowedWeapons: ALL_WEAPONS,
   },
@@ -229,6 +229,10 @@ export const universalAbilityPool: UniversalAbility[] = [
 /** Look up a universal ability by its id. Returns undefined if not found. */
 export function getUniversalAbilityById(id: string): UniversalAbility | undefined {
   return universalAbilityPool.find(a => a.id === id);
+}
+
+export function isAbilityIconSrc(icon: string): boolean {
+  return icon.startsWith('/icons/');
 }
 
 /** Returns an empty loadout (no abilities selected) */

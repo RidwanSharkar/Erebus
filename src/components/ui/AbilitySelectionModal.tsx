@@ -9,6 +9,7 @@ import {
   getDefaultLoadoutForWeapon,
   isAbilityLoadoutCompleteForWeapon,
 } from '@/utils/weaponAbilities';
+import { AbilityIcon } from './hotkeyTalentSlot';
 
 interface AbilitySelectionModalProps {
   selectedWeapon: WeaponType;
@@ -190,7 +191,7 @@ export default function AbilitySelectionModal({
   }, []);
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200] overflow-y-auto py-4">
+    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[200] overflow-y-auto py-4" data-block-game-input>
       <div className="bg-gray-900/98 border-2 border-green-500 rounded-xl p-6 max-w-3xl w-11/12 mx-auto">
 
         {/* Header */}
@@ -238,7 +239,7 @@ export default function AbilitySelectionModal({
 
                 {assigned ? (
                   <>
-                    <div className="text-2xl">{assigned.icon}</div>
+                    <div className="text-2xl">{assigned ? <AbilityIcon icon={assigned.icon} sizeClass="h-8 w-8" emojiClass="text-2xl" /> : null}</div>
                     <div className="text-white text-xs font-semibold text-center leading-tight">{assigned.name}</div>
                     <div className="text-gray-400 text-xs">{assigned.cooldown}s CD</div>
                     <div className={`text-xs ${WEAPON_COLORS[assigned.sourceWeapon].text}`}>
@@ -281,7 +282,7 @@ export default function AbilitySelectionModal({
                           }
                         `}
                       >
-                        <div className="text-xl shrink-0">{ability.icon}</div>
+                        <AbilityIcon icon={ability.icon} sizeClass="h-6 w-6" emojiClass="text-xl" />
                         <div className="min-w-0">
                           <div className="text-white text-xs font-semibold truncate">{ability.name}</div>
                           <div className="text-gray-400 text-xs">{ability.cooldown}s CD</div>
@@ -324,7 +325,7 @@ export default function AbilitySelectionModal({
                       }
                     `}
                   >
-                    <div className="text-xl shrink-0">{ability.icon}</div>
+                    <AbilityIcon icon={ability.icon} sizeClass="h-6 w-6" emojiClass="text-xl" />
                     <div className="min-w-0">
                       <div className="text-white text-xs font-semibold">{ability.name}</div>
                       <div className="text-violet-400 text-xs">PASSIVE</div>
@@ -389,7 +390,7 @@ export default function AbilitySelectionModal({
           style={{ left: tooltipPos.x - 120, top: Math.max(8, tooltipPos.y - 120) }}
         >
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xl">{hoveredAbility.icon}</span>
+            <AbilityIcon icon={hoveredAbility.icon} sizeClass="h-6 w-6" emojiClass="text-xl" />
             <span className="font-semibold text-white">{hoveredAbility.name}</span>
           </div>
           <div className="text-yellow-400 text-xs mb-1">Cooldown: {hoveredAbility.cooldown}s</div>

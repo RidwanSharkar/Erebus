@@ -1,9 +1,12 @@
-import { useRef, useEffect, memo } from 'react';
+import { useRef, useEffect, memo, useMemo } from 'react';
 import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
 import { Group, Vector3, Shape, ExtrudeGeometry, MeshStandardMaterial, DoubleSide, PointLight } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { Color } from 'three';
 import { WeaponType, WeaponSubclass } from '../dragon/weapons';
+
+const SPEAR_GOLD = new Color(0xE8CD57);
+const SPEAR_GOLD_HEX = '#E8CD57';
 
 interface SpearProps {
   isSwinging: boolean;
@@ -313,7 +316,7 @@ const SpearComponent = memo(function Spear({
 
   });
 
-  const createBladeShape = () => {
+  const bladeShape = useMemo(() => {
     const shape = new Shape();
     shape.moveTo(0, 0);
     shape.lineTo(0.4, -0.130);
@@ -330,9 +333,9 @@ const SpearComponent = memo(function Spear({
     );
     shape.lineTo(0, 0);
     return shape;
-  };
+  }, []);
 
-  const createInnerBladeShape = () => {
+  const innerBladeShape = useMemo(() => {
     const shape = new Shape();
     shape.moveTo(0, 0);
 
@@ -346,7 +349,7 @@ const SpearComponent = memo(function Spear({
     shape.lineTo(0, 0);
 
     return shape;
-  };
+  }, []);
 
   const bladeExtrudeSettings = {
     steps: 2,
@@ -426,7 +429,7 @@ const SpearComponent = memo(function Spear({
           <mesh>
             <sphereGeometry args={[0.155, 16, 16]} />
             <meshStandardMaterial
-              color={new Color(0xE8CD57)}         // Greyish silver
+              color={SPEAR_GOLD}         // Greyish silver
               emissive={new Color(0xE8CD57)}      // Greyish silver emission
               emissiveIntensity={1 + (isThrowSpearCharging ? throwSpearChargeProgress * 20 : 0) + (isWhirlwindCharging ? whirlwindChargeProgress * 20 : 0)}
               transparent
@@ -437,8 +440,8 @@ const SpearComponent = memo(function Spear({
           <mesh>
             <sphereGeometry args={[0.1, 16, 16]} />
             <meshStandardMaterial
-              color={new Color(0xE8CD57)}
-              emissive={new Color(0xE8CD57)}
+              color={SPEAR_GOLD}
+              emissive={SPEAR_GOLD}
               emissiveIntensity={40 + (isThrowSpearCharging ? throwSpearChargeProgress * 60 : 0) + (isWhirlwindCharging ? whirlwindChargeProgress * 60 : 0)}
               transparent
               opacity={0.8}
@@ -448,8 +451,8 @@ const SpearComponent = memo(function Spear({
           <mesh>
             <sphereGeometry args={[0.145, 16, 16]} />
             <meshStandardMaterial
-              color={new Color(0xE8CD57)}
-              emissive={new Color(0xE8CD57)}
+              color={SPEAR_GOLD}
+              emissive={SPEAR_GOLD}
               emissiveIntensity={35 + (isThrowSpearCharging ? throwSpearChargeProgress * 50 : 0) + (isWhirlwindCharging ? whirlwindChargeProgress * 50 : 0)}
               transparent
               opacity={0.6}
@@ -459,8 +462,8 @@ const SpearComponent = memo(function Spear({
           <mesh>
             <sphereGeometry args={[.175, 16, 16]} />
             <meshStandardMaterial
-              color={new Color(0xE8CD57)}
-              emissive={new Color(0xE8CD57)}
+              color={SPEAR_GOLD}
+              emissive={SPEAR_GOLD}
               emissiveIntensity={30 + (isThrowSpearCharging ? throwSpearChargeProgress * 40 : 0) + (isWhirlwindCharging ? whirlwindChargeProgress * 40 : 0)}
               transparent
               opacity={0.4}
@@ -468,7 +471,7 @@ const SpearComponent = memo(function Spear({
           </mesh>
 
           <PooledEffectLight
-            color={new Color(0xE8CD57)}
+            color={SPEAR_GOLD}
             intensity={2 + (isThrowSpearCharging ? throwSpearChargeProgress * 15 : 0) + (isWhirlwindCharging ? whirlwindChargeProgress * 15 : 0)}
             distance={0.5}
             decay={2}
@@ -479,9 +482,9 @@ const SpearComponent = memo(function Spear({
           <group rotation={[0, 0, 0]}>
             <group rotation={[0, 0, 0.7]} scale={[0.4, 0.4, -0.4]}>
               <mesh>
-                <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
+                <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
                 <meshStandardMaterial
-                  color={new Color('#E8CD57')}
+                  color={SPEAR_GOLD_HEX}
                   emissive={new Color('#E8CD57')}
                   emissiveIntensity={1.55}
                   metalness={0.8}
@@ -497,9 +500,9 @@ const SpearComponent = memo(function Spear({
           <group rotation={[0, (2 * Math.PI) / 3, Math.PI/2]}>
             <group rotation={[0, 0., 5.33]} scale={[0.4, 0.4, -0.4]}>
               <mesh>
-                <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
+                <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
                 <meshStandardMaterial
-                  color={new Color('#E8CD57')}
+                  color={SPEAR_GOLD_HEX}
                   emissive={new Color('#E8CD57')}
                   emissiveIntensity={1.55}
                   metalness={0.8}
@@ -515,9 +518,9 @@ const SpearComponent = memo(function Spear({
           <group rotation={[0, (4 * Math.PI) / 3, Math.PI/2]}>
             <group rotation={[0, 0, 5.33]} scale={[0.4, 0.4, -0.4]}>
               <mesh>
-                <extrudeGeometry args={[createBladeShape(), bladeExtrudeSettings]} />
+                <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
                 <meshStandardMaterial
-                  color={new Color('#E8CD57')}
+                  color={SPEAR_GOLD_HEX}
                   emissive={new Color('#E8CD57')}
                   emissiveIntensity={1.55}
                   metalness={0.8}
@@ -538,10 +541,10 @@ const SpearComponent = memo(function Spear({
           scale={[0.725, 0.5125, 0.75]}
         >
           <mesh>
-            <extrudeGeometry args={[createInnerBladeShape(), bladeExtrudeSettings]} />
+            <extrudeGeometry args={[innerBladeShape, bladeExtrudeSettings]} />
             <meshStandardMaterial
-              color={new Color(0xE8CD57)}
-              emissive={new Color(0xE8CD57)}
+              color={SPEAR_GOLD}
+              emissive={SPEAR_GOLD}
               emissiveIntensity={1.25}
               metalness={0.3}
               roughness={0.1}
@@ -549,7 +552,7 @@ const SpearComponent = memo(function Spear({
           </mesh>
 
           <mesh>
-            <extrudeGeometry args={[createInnerBladeShape(), innerBladeExtrudeSettings]} />
+            <extrudeGeometry args={[innerBladeShape, innerBladeExtrudeSettings]} />
             <meshStandardMaterial
               color={new Color(0xC0C0C0)}
               emissive={new Color(0xC0C0C0)}

@@ -27,6 +27,51 @@ const _flightFallback = new Vector3(0, 1, 0);
 // Shared scratch for getWorldPosition — safe because R3F runs useFrame serially.
 const _wpEB = new Vector3();
 
+const ENTROPIC_TRAIL_VERTEX_SHADER = `
+  attribute float opacity;
+  attribute float scale;
+  attribute float age;
+  varying float vOpacity;
+  varying float vAge;
+  void main() {
+    vOpacity = opacity;
+    vAge = age;
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * mvPosition;
+    gl_PointSize = scale * 20.0 * (300.0 / -mvPosition.z);
+  }
+`;
+
+const ENTROPIC_CORE_FRAGMENT_SHADER = `
+  varying float vOpacity;
+  varying float vAge;
+  uniform vec3 uColor;
+  uniform vec3 uAccent;
+  void main() {
+    float d = length(gl_PointCoord - vec2(0.5));
+    float core = smoothstep(0.38, 0.08, d);
+    float halo = smoothstep(0.55, 0.12, d);
+    float sparkle = 0.85 + 0.15 * sin(vAge * 40.0 + gl_PointCoord.x * 12.0);
+    vec3 mixedCol = mix(uAccent, uColor, clamp(vAge * 1.1, 0.0, 1.0));
+    float strength = core * 0.75 + halo * 0.55;
+    gl_FragColor = vec4(mixedCol * 2.6 * sparkle, vOpacity * strength);
+  }
+`;
+
+const ENTROPIC_DUST_FRAGMENT_SHADER = `
+  varying float vOpacity;
+  varying float vAge;
+  uniform vec3 uColor;
+  uniform vec3 uAccent;
+  void main() {
+    float d = length(gl_PointCoord - vec2(0.5));
+    float dust = smoothstep(0.62, 0.05, d);
+    float sparkle = 0.7 + 0.3 * sin(vAge * 28.0 + gl_PointCoord.y * 16.0);
+    vec3 mixedCol = mix(uColor, uAccent, clamp(vAge * 0.85, 0.0, 1.0));
+    gl_FragColor = vec4(mixedCol * 1.35 * sparkle, vOpacity * dust * 0.65);
+  }
+`;
+
 const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
   color,
   accentColor,
@@ -66,6 +111,35 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
   const dustSeeds = useRef<Float32Array>(
     Float32Array.from({ length: TRAIL_LENGTH }, (_, i) => (i * 0.618 + 0.13) % 1),
   );
+
+  const uniforms = useMemo(
+    () => ({
+      uColor: { value: color.clone() },
+      uAccent: { value: accent.clone() },
+    }),
+    [color, accent],
+  );
+
+  useEffect(() => {
+    uniforms.uColor.value.copy(color);
+    uniforms.uAccent.value.copy(accent);
+  }, [color, accent, uniforms]);
+
+  useEffect(() => {
+    return () => {
+      for (const ref of [trailRef, dustRef]) {
+        const points = ref.current;
+        if (!points) continue;
+        points.geometry?.dispose();
+        const mat = points.material;
+        if (Array.isArray(mat)) {
+          mat.forEach((m) => m.dispose());
+        } else {
+          mat?.dispose();
+        }
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (meshRef.current && !isInitialized.current) {
@@ -174,51 +248,6 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
     }
   });
 
-  const vertexShader = `
-    attribute float opacity;
-    attribute float scale;
-    attribute float age;
-    varying float vOpacity;
-    varying float vAge;
-    void main() {
-      vOpacity = opacity;
-      vAge = age;
-      vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-      gl_Position = projectionMatrix * mvPosition;
-      gl_PointSize = scale * 20.0 * (300.0 / -mvPosition.z);
-    }
-  `;
-
-  const coreFragmentShader = `
-    varying float vOpacity;
-    varying float vAge;
-    uniform vec3 uColor;
-    uniform vec3 uAccent;
-    void main() {
-      float d = length(gl_PointCoord - vec2(0.5));
-      float core = smoothstep(0.38, 0.08, d);
-      float halo = smoothstep(0.55, 0.12, d);
-      float sparkle = 0.85 + 0.15 * sin(vAge * 40.0 + gl_PointCoord.x * 12.0);
-      vec3 mixedCol = mix(uAccent, uColor, clamp(vAge * 1.1, 0.0, 1.0));
-      float strength = core * 0.75 + halo * 0.55;
-      gl_FragColor = vec4(mixedCol * 2.6 * sparkle, vOpacity * strength);
-    }
-  `;
-
-  const dustFragmentShader = `
-    varying float vOpacity;
-    varying float vAge;
-    uniform vec3 uColor;
-    uniform vec3 uAccent;
-    void main() {
-      float d = length(gl_PointCoord - vec2(0.5));
-      float dust = smoothstep(0.62, 0.05, d);
-      float sparkle = 0.7 + 0.3 * sin(vAge * 28.0 + gl_PointCoord.y * 16.0);
-      vec3 mixedCol = mix(uColor, uAccent, clamp(vAge * 0.85, 0.0, 1.0));
-      gl_FragColor = vec4(mixedCol * 1.35 * sparkle, vOpacity * dust * 0.65);
-    }
-  `;
-
   return (
     <>
       <points ref={dustRef}>
@@ -232,9 +261,9 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
           transparent
           depthWrite={false}
           blending={AdditiveBlending}
-          vertexShader={vertexShader}
-          fragmentShader={dustFragmentShader}
-          uniforms={{ uColor: { value: color }, uAccent: { value: accent } }}
+          vertexShader={ENTROPIC_TRAIL_VERTEX_SHADER}
+          fragmentShader={ENTROPIC_DUST_FRAGMENT_SHADER}
+          uniforms={uniforms}
         />
       </points>
 
@@ -249,9 +278,9 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
           transparent
           depthWrite={false}
           blending={AdditiveBlending}
-          vertexShader={vertexShader}
-          fragmentShader={coreFragmentShader}
-          uniforms={{ uColor: { value: color }, uAccent: { value: accent } }}
+          vertexShader={ENTROPIC_TRAIL_VERTEX_SHADER}
+          fragmentShader={ENTROPIC_CORE_FRAGMENT_SHADER}
+          uniforms={uniforms}
         />
       </points>
     </>

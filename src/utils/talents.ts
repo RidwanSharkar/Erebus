@@ -258,6 +258,31 @@ export const TALENT_ACID_RAIN = 'ACID_RAIN' as const;
 /** Duo boon (blue + purple) — killing with stagger lightning or blizzard restores 1 dash charge. */
 export const TALENT_SPELL_THIEF = 'SPELL_THIEF' as const;
 
+/** Ultimate talent (purple) — Aegis invulnerability procs spawn an Arctic Blizzard on an enemy in front. */
+export const TALENT_DIVINE_COLD = 'DIVINE_COLD' as const;
+/** Ultimate talent (red) — inflicting Ignite also calls a Meteor at the target. */
+export const TALENT_PYROMANIA = 'PYROMANIA' as const;
+/** Ultimate talent (green) — raises Concentrated Venom max stacks from 5 to 10. */
+export const TALENT_LETHAL_INJECTION = 'LETHAL_INJECTION' as const;
+/** Ultimate talent (blue) — stagger lightning procs restore shield. */
+export const TALENT_STORM_SHIELD = 'STORM_SHIELD' as const;
+
+/** LETHAL INJECTION — max Concentrated Venom stacks when ultimate is owned. */
+export const LETHAL_INJECTION_CONCENTRATED_VENOM_MAX_STACKS = 10;
+/** STORM SHIELD — base shield restored per stagger lightning proc. */
+export const STORM_SHIELD_BASE_RESTORE = 20;
+/** STORM SHIELD — additional shield per Agility point per stagger lightning proc. */
+export const STORM_SHIELD_AGILITY_PER_POINT = 5;
+
+/** DIVINE COLD — min ms between blizzard procs from Aegis invulnerability. */
+export const DIVINE_COLD_BLIZZARD_ICD_MS = 2000;
+/** PYROMANIA — min ms between meteors from fresh Ignite applications. */
+export const PYROMANIA_METEOR_ICD_MS = 1000;
+/** DIVINE COLD — max range to find an enemy in the forward cone. */
+export const DIVINE_COLD_FORWARD_RANGE = 20;
+/** DIVINE COLD — half-angle of the forward cone (degrees). */
+export const DIVINE_COLD_FORWARD_CONE_HALF_ANGLE_DEG = 60;
+
 /** TYRANT'S CLOAK — min seconds between counter-strike stagger lightning procs when taking damage. */
 export const TYRANTS_CLOAK_ICD_SEC = 3;
 /** TYRANT'S CLOAK — stagger added per Ignite DoT tick. */
@@ -341,7 +366,7 @@ export const ORB_SHIELD_BASE_HEAL = 50;
 export const ORB_SHIELD_ICD_SEC = 3;
 export const GLACIAL_DASH_RADIUS = 3.0;
 export const GLACIAL_DASH_FREEZE_DURATION_MS = 3000;
-export const GLACIAL_DASH_COOLDOWN_MS = 1000;
+export const GLACIAL_DASH_COOLDOWN_MS = 2000;
 export const MENDING_DASH_COOLDOWN_MS = 7000;
 export const STAGGERING_DASH_RANGE = 10;
 export const STAGGERING_DASH_MIN_DAMAGE = 100;
@@ -351,7 +376,7 @@ export const STAGGERING_DASH_MAX_STAGGER = 135;
 export const STAGGERING_DASH_COOLDOWN_MS = 200;
 /** Blue room Lightning Bolt (`SPEAR_R`) — base hit damage and stagger. */
 export const LIGHTNING_BOLT_ROOM_DAMAGE = 117;
-export const LIGHTNING_BOLT_ROOM_DAMAGE_PER_AGILITY = 4;
+export const LIGHTNING_BOLT_ROOM_DAMAGE_PER_AGILITY = 20;
 export const LIGHTNING_BOLT_ROOM_STAGGER = 75;
 /** GUARDBREAK room boon — stagger lightning proc damage (base is `STAGGER_PROC_DAMAGE`). */
 export const GUARDBREAK_STAGGER_PROC_DAMAGE = 300;
@@ -383,6 +408,12 @@ export const CROSSENTROPY_PLAGUE_DAMAGE = 500;
 export const CROSSENTROPY_PLAGUE_VENOM_MS = 2000;
 /** PLAGUE Crossentropy — Concentrated Venom stacks applied per direct hit (Wyvern Bite uses 1). */
 export const CROSSENTROPY_PLAGUE_VENOM_STACKS = 3;
+/** Green Infested talents — Concentrated Venom stacks per direct hit (Plague uses 3). */
+export const INFESTED_TALENT_CONCENTRATED_VENOM_STACKS = 1;
+/** Infested Combo — chance per Runeblade basic attack hit to apply Concentrated Venom. */
+export const INFESTED_COMBO_VENOM_PROC_CHANCE = 0.30;
+/** Infested Blades — chance per Sabres basic attack hit to apply Concentrated Venom. */
+export const INFESTING_SABRES_SWIPES_VENOM_PROC_CHANCE = 0.15;
 /** TEMPEST boon: stagger added per Crossentropy hit. */
 export const CROSSENTROPY_TEMPEST_STAGGER = 100;
 /** METEOR talent — weighted strike count on each eligible Crossentropy impact. */
@@ -559,7 +590,7 @@ export const CROSSENTROPY_MAX_TRAVEL_DISTANCE = 20;
 /** Arctic Shards — Entropic hit chance to spawn concentrated blizzard. */
 export const ARCTIC_SHARDS_PROC_CHANCE = 0.15;
 /** Arctic Shards — fixed entropic bolt damage (purple room LMB line). */
-export const ARCTIC_ENTROPIC_BOLT_DAMAGE = 36;
+export const ARCTIC_ENTROPIC_BOLT_DAMAGE = 47;
 /** Arctic / Glacial ground blizzard — duration at fixed point (seconds). */
 export const ARCTIC_BLIZZARD_DURATION_SEC = 6;
 /** Damage tick interval for concentrated arctic blizzard (ms). */
@@ -758,7 +789,11 @@ export type TalentId =
   | typeof TALENT_STORM_WITCH
   | typeof TALENT_DUALITY
   | typeof TALENT_ACID_RAIN
-  | typeof TALENT_SPELL_THIEF;
+  | typeof TALENT_SPELL_THIEF
+  | typeof TALENT_DIVINE_COLD
+  | typeof TALENT_PYROMANIA
+  | typeof TALENT_LETHAL_INJECTION
+  | typeof TALENT_STORM_SHIELD;
 
 /** Crossentropy bolt / explosion palette (Inferno overrides Glacial / Tempest / Plague). */
 export type CrossentropyVisualTheme = 'default' | 'inferno' | 'tempest' | 'plague' | 'glacial';
@@ -773,11 +808,13 @@ export type EntropicBoltBoonKind = 'wrathful' | 'staggering' | 'infesting' | 'ar
 export const WRAITH_STRIKE_COOLDOWN_SEC = 4.5;
 /** Double Strike — max stored Wraith Strike uses; recharges one charge at a time at `WRAITH_STRIKE_COOLDOWN_SEC`. */
 export const WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES = 2;
+/** Double Strike — minimum gap between spending charges (same staggered pattern as Double Stab). */
+export const WRAITH_STRIKE_DOUBLE_STRIKE_INTERNAL_COOLDOWN_SEC = 1.0;
 
 /** SHAMAN — max stored Mantra (`SCYTHE_F`) uses; recharges one charge at a time at summon totem cooldown (see ControlSystem `summonTotemFireRate`). */
 export const MANTRA_SHAMAN_MAX_CHARGES = 2;
 /** SHAMAN — minimum delay between spending stored Mantra charges. */
-export const MANTRA_SHAMAN_INTERNAL_COOLDOWN_SEC = 0.75;
+export const MANTRA_SHAMAN_INTERNAL_COOLDOWN_SEC = 1.0;
 /** Superconductor — bonus Mantra totem lightning damage. */
 export const SUPERCONDUCTOR_TOTEM_DAMAGE = 90;
 /** Superconductor + Infesting Totem — shock base damage before crit. */
@@ -847,7 +884,7 @@ export const REAPING_TALONS_COOLDOWN_SEC = 7.0;
 /** Double Talons — max stored Reaping Talons uses; recharges one charge at a time at `REAPING_TALONS_COOLDOWN_SEC`. */
 export const REAPING_TALONS_DOUBLE_TALONS_MAX_CHARGES = 2;
 /** Double Talons — minimum gap between spending charges (same staggered pattern as SHAMAN Mantra). */
-export const REAPING_TALONS_DOUBLE_TALONS_INTERNAL_COOLDOWN_SEC = 0.75;
+export const REAPING_TALONS_DOUBLE_TALONS_INTERNAL_COOLDOWN_SEC = 1.75;
 
 /** Bow LMB tap (uncharged primary) base damage without Trigger Finger. */
 export const BOW_UNCHARGED_PROJECTILE_DAMAGE = 10;
@@ -965,6 +1002,8 @@ export const MORTAL_STRIKE_GUARD_DAMAGE = 240;
 
 export type MortalStrikeTheme = 'default' | 'wrathful' | 'staggering' | 'infested' | 'wraith_guard';
 
+export type WraithStrikeTheme = 'default' | 'wrathful' | 'infested' | 'guard' | 'staggering';
+
 /** Staggering Strike — Wraith Strike (`RUNEBLADE_E`) builds stagger; at 100, proc lightning + damage + stun. */
 export const STAGGERING_STRIKE_WRAITH_STAGGER_ADD = 80;
 /** Non-boss PvE: stagger needed for lightning proc + stun (co-op server must match). */
@@ -1040,10 +1079,12 @@ export const STAGGERING_ENTROPIC_BEAM_STAGGER_PER_TICK = 5;
 /** Infesting Entropic — bolt base damage when talent active; beam heal on kill. */
 export const INFESTING_ENTROPIC_BOLT_DAMAGE = 53;
 export const INFESTED_ENTROPIC_BEAM_KILL_HEAL = 5;
+/** Scythe LMB — wind-up before first bolt/beam in a hold stream (seconds). */
+export const SCYTHE_LMB_WINDUP_SEC = 0.25;
 /** Entropic Bolt — default LMB fire interval (seconds between bolts). */
 export const ENTROPIC_BOLT_FIRE_RATE_SEC = 0.725;
 /** Arcane Synergy — faster Entropic Bolt fire interval. */
-export const ARCANE_SYNERGY_ENTROPIC_BOLT_FIRE_RATE_SEC = 0.5;
+export const ARCANE_SYNERGY_ENTROPIC_BOLT_FIRE_RATE_SEC = 0.55;
 /** Arcane Synergy — additive base damage per effective Intellect on Entropic Bolt. */
 export const ARCANE_SYNERGY_ENTROPIC_BOLT_DAMAGE_PER_INTELLECT = 2;
 /** Staggering Totem — stagger per bolt hit (`enemy-damage` entropic stagger path). */
@@ -1085,7 +1126,7 @@ export const infestedStrikeTalentDefinition: TalentDefinition = {
   id: TALENT_INFESTED_STRIKE,
   name: 'Infested Strike',
   description:
-    'Wraith Strike gains increased base damage; killing an enemy with Wraith Strike raises a ZOMBIE ally for 30s (max 3).',
+    `Wraith Strike gains increased base damage and applies ${INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} stack of Concentrated Venom per hit; killing an enemy with Wraith Strike raises a ZOMBIE ally for 30s (max 3).`,
   modifiesAbilityId: 'Wraith Strike (E)',
 };
 
@@ -1285,7 +1326,7 @@ export const infestedComboTalentDefinition: TalentDefinition = {
   id: TALENT_INFESTED_COMBO,
   name: 'Infested Combo',
   description:
-    'Your Runeblade basic attacks now heal you for 10% of damage dealt. Killing an enemy with these attacks raises a ZOMBIE ally for 30s (max 3).',
+    `Your Runeblade basic attacks now heal you for 10% of damage dealt and have a ${INFESTED_COMBO_VENOM_PROC_CHANCE * 100}% chance per hit to apply ${INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} stack of Concentrated Venom. Killing an enemy with these attacks raises a ZOMBIE ally for 30s (max 3).`,
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 
@@ -1341,7 +1382,7 @@ export const infestedBackstabTalentDefinition: TalentDefinition = {
   id: TALENT_INFESTED_BACKSTAB,
   name: 'Infested Stab',
   description:
-    'Killing an enemy with Backstab raises a ZOMBIE ally for 30s (max 3).',
+    `Backstab applies ${INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} stack of Concentrated Venom per hit; killing an enemy with Backstab raises a ZOMBIE ally for 30s (max 3).`,
   modifiesAbilityId: 'Backstab (Q)',
 };
 
@@ -1458,8 +1499,8 @@ export const glacialDashTalentDefinition: TalentDefinition = {
   id: TALENT_GLACIAL_DASH,
   name: 'Glacial Dash',
   description:
-    'Backward dashes leave a Frost Nova at your origin, applying FREEZE to enemies in the area for 3 seconds.',
-  modifiesAbilityId: 'Backward Dash (double-tap S)',
+    'Forward dashes summon a concentrated Arctic BLIZZARD at your destination that deals 30 damage every 0.5s to enemies within. Each tick applies CHILL; at 5 stacks the target is FROZEN for 4 seconds. Backward dashes leave a Frost Nova at your origin, applying FREEZE to enemies in the area for 3 seconds. These effects share a 2 second cooldown.',
+  modifiesAbilityId: 'Dash (double-tap W/S)',
 };
 
 export const mendingDashTalentDefinition: TalentDefinition = {
@@ -1766,6 +1807,38 @@ export const spellThiefTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'Duo Boons',
 };
 
+export const divineColdTalentDefinition: TalentDefinition = {
+  id: TALENT_DIVINE_COLD,
+  name: 'Divine Cold',
+  description:
+    'Whenever Aegis INVULNERABILITY procs (Aegis, Colossus Guard, Divine Combo, etc.), summon an Arctic BLIZZARD on 1 enemy in front of you. Once every 2 seconds.',
+  modifiesAbilityId: 'Ultimate Talents',
+};
+
+export const pyromaniaTalentDefinition: TalentDefinition = {
+  id: TALENT_PYROMANIA,
+  name: 'Pyromania',
+  description:
+    'Inflicting IGNITE on an enemy also calls a METEOR down on their position (Meteor Strike / Crossentropy style). Once every 1 second.',
+  modifiesAbilityId: 'Ultimate Talents',
+};
+
+export const lethalInjectionTalentDefinition: TalentDefinition = {
+  id: TALENT_LETHAL_INJECTION,
+  name: 'Lethal Injection',
+  description:
+    'Increases the maximum CONCENTRATED VENOM stacks you can apply to an enemy from 5 to 10.',
+  modifiesAbilityId: 'Ultimate Talents',
+};
+
+export const stormShieldTalentDefinition: TalentDefinition = {
+  id: TALENT_STORM_SHIELD,
+  name: 'Storm Shield',
+  description:
+    'Whenever your STAGGER lightning bolt procs on an enemy, restore 20 shield plus 5 shield for each point of Agility you have.',
+  modifiesAbilityId: 'Ultimate Talents',
+};
+
 export const wrathfulSabresSwipesTalentDefinition: TalentDefinition = {
   id: TALENT_WRATHFUL_SABRES_SWIPES,
   name: 'Wrathful Blades',
@@ -1778,7 +1851,7 @@ export const infestingSabresSwipesTalentDefinition: TalentDefinition = {
   id: TALENT_INFESTING_SABRES_SWIPES,
   name: 'Infested Blades',
   description:
-    'Sabres basic attacks gain increased base damage. Killing an enemy with these attacks raises a ZOMBIE ally for 30s (max 3).',
+    `Sabres basic attacks gain increased base damage and have a ${INFESTING_SABRES_SWIPES_VENOM_PROC_CHANCE * 100}% chance per hit to apply ${INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} stack of Concentrated Venom. Killing an enemy with these attacks raises a ZOMBIE ally for 30s (max 3).`,
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 
@@ -1802,7 +1875,7 @@ export const infestedFlourishTalentDefinition: TalentDefinition = {
   id: TALENT_INFESTED_FLOURISH,
   name: 'Infested Flourish',
   description:
-    'Killing an enemy with Flourish raises a ZOMBIE ally for 30s (max 3).',
+    `Flourish applies ${INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} stack of Concentrated Venom per hit; killing an enemy with Flourish raises a ZOMBIE ally for 30s (max 3).`,
   modifiesAbilityId: 'Flourish (E)',
 };
 
@@ -2368,6 +2441,14 @@ export interface TalentLoadout {
   acidRainRoom: boolean;
   /** Duo boon (blue + purple) — stagger lightning or blizzard kills restore 1 dash charge. */
   spellThiefRoom: boolean;
+  /** Ultimate talent (purple) — Aegis invulnerability procs spawn an Arctic Blizzard in front. */
+  divineColdRoom: boolean;
+  /** Ultimate talent (red) — fresh Ignite applications also call a Meteor. */
+  pyromaniaRoom: boolean;
+  /** Ultimate talent (green) — Concentrated Venom max stacks raised to 10. */
+  lethalInjectionRoom: boolean;
+  /** Ultimate talent (blue) — stagger lightning procs restore shield. */
+  stormShieldRoom: boolean;
 }
 
 export function createDefaultTalentLoadout(): TalentLoadout {
@@ -2508,6 +2589,10 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     dualityRoom: false,
     acidRainRoom: false,
     spellThiefRoom: false,
+    divineColdRoom: false,
+    pyromaniaRoom: false,
+    lethalInjectionRoom: false,
+    stormShieldRoom: false,
   };
 }
 
@@ -3158,6 +3243,38 @@ export function shouldApplySpellThiefTalent(talentLoadout: TalentLoadout | null 
   return !!talentLoadout?.spellThiefRoom;
 }
 
+/** DIVINE COLD (ultimate: purple) — Aegis invulnerability procs spawn an Arctic Blizzard in front. */
+export function shouldApplyDivineColdTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.divineColdRoom;
+}
+
+/** PYROMANIA (ultimate: red) — fresh Ignite applications also call a Meteor. */
+export function shouldApplyPyromaniaTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.pyromaniaRoom;
+}
+
+/** LETHAL INJECTION (ultimate: green) — Concentrated Venom max stacks raised to 10. */
+export function shouldApplyLethalInjectionTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.lethalInjectionRoom;
+}
+
+/** Max Concentrated Venom stacks on enemies (5 base, 10 with Lethal Injection). */
+export function getConcentratedVenomMaxStacks(talentLoadout: TalentLoadout | null | undefined): number {
+  return shouldApplyLethalInjectionTalent(talentLoadout)
+    ? LETHAL_INJECTION_CONCENTRATED_VENOM_MAX_STACKS
+    : WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS;
+}
+
+/** STORM SHIELD (ultimate: blue) — stagger lightning procs restore shield. */
+export function shouldApplyStormShieldTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.stormShieldRoom;
+}
+
+/** Shield restored per stagger lightning proc with Storm Shield. */
+export function getStormShieldRestoreAmount(agility: number): number {
+  return STORM_SHIELD_BASE_RESTORE + STORM_SHIELD_AGILITY_PER_POINT * Math.max(0, agility);
+}
+
 /** EXECUTIONER — post-dash empowered Runeblade LMB; talent toggle only. */
 export function shouldApplyExecutionerTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.executioner;
@@ -3671,6 +3788,31 @@ export type MortalStrikeDamageBundle = {
   infestedCombo?: boolean;
 };
 
+export function resolveWraithStrikeTheme(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout?: AbilityLoadout | null,
+): WraithStrikeTheme {
+  if (!isWraithStrikeInLoadout(abilityLoadout)) return 'default';
+  if (talentLoadout?.wrathStrike) return 'wrathful';
+  if (talentLoadout?.infestedStrike) return 'infested';
+  if (talentLoadout?.wraithGuard) return 'guard';
+  if (talentLoadout?.staggeringStrike) return 'staggering';
+  return 'default';
+}
+
+export function resolveWraithStrikeThemeFromMeta(meta?: {
+  wrathfulStrike?: boolean;
+  infestedStrike?: boolean;
+  wraithGuard?: boolean;
+  staggeringStrike?: boolean;
+}): WraithStrikeTheme {
+  if (meta?.wrathfulStrike) return 'wrathful';
+  if (meta?.infestedStrike) return 'infested';
+  if (meta?.wraithGuard) return 'guard';
+  if (meta?.staggeringStrike) return 'staggering';
+  return 'default';
+}
+
 export function resolveMortalStrikeDamageBundle(
   talentLoadout: TalentLoadout | null | undefined,
 ): MortalStrikeDamageBundle {
@@ -3783,6 +3925,7 @@ export function expandUniversalGreenZombieBoonIdsAfterPick(picked: TalentId): Ta
 }
 
 export const ROOM_BOOM_DASH_BOON_MUTEX_GROUP: readonly TalentId[] = [
+  TALENT_DASH_GUARD,
   TALENT_INFERNAL_DASH,
   TALENT_GLACIAL_DASH,
   TALENT_MENDING_DASH,
@@ -3860,6 +4003,14 @@ export interface CoopStaggerRoomBoonsPayload {
   acidRain: boolean;
   /** Duo boon (blue + purple) — stagger lightning or blizzard kills restore a dash charge. */
   spellThief: boolean;
+  /** Ultimate talent (purple) — Aegis invulnerability procs spawn an Arctic Blizzard in front. */
+  divineCold: boolean;
+  /** Ultimate talent (red) — fresh Ignite applications also call a Meteor. */
+  pyromania: boolean;
+  /** Ultimate talent (green) — Concentrated Venom max stacks raised to 10. */
+  lethalInjection: boolean;
+  /** Ultimate talent (blue) — stagger lightning procs restore shield. */
+  stormShield: boolean;
   /** Effective Stamina from all sources (Relentless Backstab kill heal on server). */
   stamina?: number;
   agility?: number;
@@ -3894,10 +4045,14 @@ export function getCoopStaggerRoomBoonsPayload(
     duality: !!loadout.dualityRoom,
     acidRain: !!loadout.acidRainRoom,
     spellThief: !!loadout.spellThiefRoom,
+    divineCold: !!loadout.divineColdRoom,
+    pyromania: !!loadout.pyromaniaRoom,
+    lethalInjection: !!loadout.lethalInjectionRoom,
+    stormShield: !!loadout.stormShieldRoom,
   };
   if (combatSnapshot) {
     payload.stamina = Math.max(0, combatSnapshot.stamina);
-    // FORCE OF NATURE also needs Agility even without Unstable Energy enabled.
+    // FORCE OF NATURE / STORM SHIELD also need Agility even without Unstable Energy enabled.
     payload.agility = Math.max(0, combatSnapshot.agility);
     if (typeof combatSnapshot.intellect === 'number') {
       payload.intellect = Math.max(0, combatSnapshot.intellect);
@@ -4325,6 +4480,7 @@ function buildPrioritizedRoomBoonIdsForLoadout(
   for (const group of getOrderedWeaponAbilityRoomBoonMutexGroups(weapon, abilityLoadout)) {
     appendAvailableTalentIds(priority, available, group);
   }
+  appendAvailableTalentIds(priority, available, ROOM_BOOM_DASH_BOON_MUTEX_GROUP);
   return priority;
 }
 
@@ -4797,6 +4953,18 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_SPELL_THIEF:
       next.spellThiefRoom = true;
       return next;
+    case TALENT_DIVINE_COLD:
+      next.divineColdRoom = true;
+      return next;
+    case TALENT_PYROMANIA:
+      next.pyromaniaRoom = true;
+      return next;
+    case TALENT_LETHAL_INJECTION:
+      next.lethalInjectionRoom = true;
+      return next;
+    case TALENT_STORM_SHIELD:
+      next.stormShieldRoom = true;
+      return next;
     default:
       return next;
   }
@@ -4939,6 +5107,10 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_DUALITY]: dualityTalentDefinition,
   [TALENT_ACID_RAIN]: acidRainTalentDefinition,
   [TALENT_SPELL_THIEF]: spellThiefTalentDefinition,
+  [TALENT_DIVINE_COLD]: divineColdTalentDefinition,
+  [TALENT_PYROMANIA]: pyromaniaTalentDefinition,
+  [TALENT_LETHAL_INJECTION]: lethalInjectionTalentDefinition,
+  [TALENT_STORM_SHIELD]: stormShieldTalentDefinition,
 };
 
 /** Official room-type icons used as defaults when a room boon has no dedicated asset. */
@@ -4995,7 +5167,7 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_WRATHFUL_COMBO]: '/icons/combo.svg',
   [TALENT_INFESTED_COMBO]: '/icons/combo.svg',
   [TALENT_GUARD_COMBO]: '/icons/combo.svg',
-  [TALENT_DASH_GUARD]: null,
+  [TALENT_DASH_GUARD]: '/icons/dash.svg',
   [TALENT_EXECUTIONER]: '/icons/executioner.svg',
   [TALENT_DOUBLE_STRIKE]: '/icons/doubleStrike.svg',
   [TALENT_CRUSADER]: '/icons/crusader.svg',
@@ -5050,10 +5222,10 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_BERSERKER_STRAIN]: '/icons/berserkerStrain.svg',
   [TALENT_JUGGERNAUT_STRAIN]: '/icons/juggernautStrain.svg',
   [TALENT_EXPLODER_STRAIN]: '/icons/exploderStrain.svg',
-  [TALENT_INFERNAL_DASH]: null,
-  [TALENT_GLACIAL_DASH]: null,
-  [TALENT_MENDING_DASH]: null,
-  [TALENT_STAGGERING_DASH]: null,
+  [TALENT_INFERNAL_DASH]: '/icons/dash.svg',
+  [TALENT_GLACIAL_DASH]: '/icons/dash.svg',
+  [TALENT_MENDING_DASH]: '/icons/dash.svg',
+  [TALENT_STAGGERING_DASH]: '/icons/dash.svg',
   [TALENT_GUARDBREAK]: '/icons/guardbreak.svg',
   [TALENT_OVERSHOCK]: '/icons/paralysis.svg',
   [TALENT_UNSTABLE_ENERGY]: '/icons/unstablePlasma.svg',
@@ -5090,6 +5262,10 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_DUALITY]: '/icons/duality.svg',
   [TALENT_ACID_RAIN]: '/icons/acidRain.svg',
   [TALENT_SPELL_THIEF]: '/icons/spellThief.svg',
+  [TALENT_DIVINE_COLD]: '/icons/duality.svg',
+  [TALENT_PYROMANIA]: '/icons/meteorStrike.svg',
+  [TALENT_LETHAL_INJECTION]: '/icons/cloudkill.svg',
+  [TALENT_STORM_SHIELD]: '/icons/orbShield.svg',
 };
 
 const COOP_ROOM_COLOR_BY_TALENT: Partial<Record<TalentId, CoopRoomColor>> = (() => {
@@ -5103,11 +5279,15 @@ const COOP_ROOM_COLOR_BY_TALENT: Partial<Record<TalentId, CoopRoomColor>> = (() 
       }
     }
   }
+  map[TALENT_DIVINE_COLD] = 'purple';
+  map[TALENT_PYROMANIA] = 'red';
+  map[TALENT_LETHAL_INJECTION] = 'green';
+  map[TALENT_STORM_SHIELD] = 'blue';
   return map;
 })();
 
 export function getCoopRoomColorForTalent(id: TalentId): CoopRoomColor | null {
-  return COOP_ROOM_COLOR_BY_TALENT[id] ?? null;
+  return COOP_ROOM_COLOR_BY_TALENT[id] ?? getUltimateBoonColor(id);
 }
 
 export interface CoopRoomColorHudSlotStyle {
@@ -5305,6 +5485,10 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.dualityRoom) out.push(TALENT_DUALITY);
   if (loadout.acidRainRoom) out.push(TALENT_ACID_RAIN);
   if (loadout.spellThiefRoom) out.push(TALENT_SPELL_THIEF);
+  if (loadout.divineColdRoom) out.push(TALENT_DIVINE_COLD);
+  if (loadout.pyromaniaRoom) out.push(TALENT_PYROMANIA);
+  if (loadout.lethalInjectionRoom) out.push(TALENT_LETHAL_INJECTION);
+  if (loadout.stormShieldRoom) out.push(TALENT_STORM_SHIELD);
   return out;
 }
 
@@ -5342,6 +5526,83 @@ export function getDuoBoonColors(id: TalentId): readonly [CoopRoomColor, CoopRoo
   return DUO_BOONS.find((d) => d.id === id)?.colors ?? null;
 }
 
+interface UltimateBoonDef {
+  id: TalentId;
+  color: CoopRoomColor;
+}
+
+/** Same-color ultimate boons — unlocked once the player owns 2+ mutex-group room boons of that color. */
+const ULTIMATE_BOONS: readonly UltimateBoonDef[] = [
+  { id: TALENT_DIVINE_COLD, color: 'purple' },
+  { id: TALENT_PYROMANIA, color: 'red' },
+  { id: TALENT_LETHAL_INJECTION, color: 'green' },
+  { id: TALENT_STORM_SHIELD, color: 'blue' },
+];
+
+export const ULTIMATE_BOON_IDS: readonly TalentId[] = ULTIMATE_BOONS.map((d) => d.id);
+
+/** Minimum same-color mutex-group room boons required to unlock an ultimate talent. */
+export const ULTIMATE_BOON_REQUIRED_SAME_COLOR_COUNT = 2;
+
+export function isUltimateBoonTalent(id: TalentId): boolean {
+  return ULTIMATE_BOON_IDS.includes(id);
+}
+
+/** Room color for an ultimate boon (null if not an ultimate boon). */
+export function getUltimateBoonColor(id: TalentId): CoopRoomColor | null {
+  return ULTIMATE_BOONS.find((d) => d.id === id)?.color ?? null;
+}
+
+/** Enabled LMB / Q / E room boons plus optional dash boon (four mutex slots). */
+export function getEnabledMutexGroupRoomBoonIds(
+  loadout: TalentLoadout,
+  weapon: WeaponType,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): TalentId[] {
+  const dashBoon = getEnabledColoredRoomDashBoonId(loadout);
+  return [
+    ...getEnabledPrimaryWeaponRoomBoonIds(loadout, weapon, abilityLoadout),
+    ...(dashBoon ? [dashBoon] : []),
+  ];
+}
+
+/** Count enabled mutex-group room boons of a given color. */
+export function countOwnedRoomBoonsForColor(
+  color: CoopRoomColor,
+  loadout: TalentLoadout,
+  weapon: WeaponType,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): number {
+  return getEnabledMutexGroupRoomBoonIds(loadout, weapon, abilityLoadout).filter(
+    (id) => getCoopRoomColorForTalent(id) === color,
+  ).length;
+}
+
+/** Enabled ultimate boons (weapon-agnostic). */
+export function getEnabledUltimateBoonIds(loadout: TalentLoadout): TalentId[] {
+  const enabled = new Set(getEnabledTalentIds(loadout));
+  return ULTIMATE_BOON_IDS.filter((id) => enabled.has(id));
+}
+
+/**
+ * Ultimate boons eligible in a given colored room: the player must own at least
+ * `ULTIMATE_BOON_REQUIRED_SAME_COLOR_COUNT` mutex-group room boons of that color,
+ * the room must match the ultimate's color, and the player must not already own it.
+ */
+export function getEligibleUltimateBoonsForColor(
+  color: CoopRoomColor,
+  loadout: TalentLoadout | null | undefined,
+  weapon: WeaponType,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): TalentId[] {
+  if (!loadout) return [];
+  if (countOwnedRoomBoonsForColor(color, loadout, weapon, abilityLoadout) < ULTIMATE_BOON_REQUIRED_SAME_COLOR_COUNT) {
+    return [];
+  }
+  const enabled = new Set(getEnabledTalentIds(loadout));
+  return ULTIMATE_BOONS.filter((d) => d.color === color && !enabled.has(d.id)).map((d) => d.id);
+}
+
 /** All talent ids that can belong to a weapon (class boons + room boons across colors + duo boons). */
 export function buildWeaponTalentIdSet(
   weapon: WeaponType,
@@ -5357,6 +5618,9 @@ export function buildWeaponTalentIdSet(
     }
   }
   for (const id of DUO_BOON_IDS) {
+    set.add(id);
+  }
+  for (const id of ULTIMATE_BOON_IDS) {
     set.add(id);
   }
   return set;
@@ -5390,6 +5654,15 @@ export function getEnabledPrimaryWeaponRoomBoonIds(
   return out;
 }
 
+/** Enabled colored-room dash boon (at most one per run; mutex with other dash room picks). */
+export function getEnabledColoredRoomDashBoonId(loadout: TalentLoadout): TalentId | null {
+  const enabled = new Set(getEnabledTalentIds(loadout));
+  for (const id of ROOM_BOOM_DASH_BOON_MUTEX_GROUP) {
+    if (enabled.has(id)) return id;
+  }
+  return null;
+}
+
 /** Enabled class boons for the currently equipped weapon. */
 export function getEnabledClassBoonIdsForWeapon(
   loadout: TalentLoadout,
@@ -5411,21 +5684,27 @@ export interface HudTalentPartition {
   otherRoomBoons: TalentId[];
   classTalents: TalentId[];
   duoBoons: TalentId[];
+  ultimateBoons: TalentId[];
 }
 
-/** Split HUD talents into room boons (bottom bar), class boons, and duo boons (vertical panel). */
+/** Split HUD talents into room boons (bottom bar), class boons, duo boons, and ultimate boons (vertical panel). */
 export function partitionTalentsForHud(
   loadout: TalentLoadout,
   weapon: WeaponType,
   abilityLoadout: AbilityLoadout | null | undefined,
 ): HudTalentPartition {
   const all = getEnabledTalentIdsForWeapon(loadout, weapon, loadout);
-  const primaryRoomBoons = getEnabledPrimaryWeaponRoomBoonIds(loadout, weapon, abilityLoadout);
+  const dashRoomBoon = getEnabledColoredRoomDashBoonId(loadout);
+  const primaryRoomBoons = [
+    ...getEnabledPrimaryWeaponRoomBoonIds(loadout, weapon, abilityLoadout),
+    ...(dashRoomBoon ? [dashRoomBoon] : []),
+  ];
   const classTalents = getEnabledClassBoonIdsForWeapon(loadout, weapon);
   const duoBoons = getEnabledDuoBoonIds(loadout);
-  const excluded = new Set([...primaryRoomBoons, ...classTalents, ...duoBoons]);
+  const ultimateBoons = getEnabledUltimateBoonIds(loadout);
+  const excluded = new Set([...primaryRoomBoons, ...classTalents, ...duoBoons, ...ultimateBoons]);
   const otherRoomBoons = all.filter((id) => !excluded.has(id));
-  return { primaryRoomBoons, otherRoomBoons, classTalents, duoBoons };
+  return { primaryRoomBoons, otherRoomBoons, classTalents, duoBoons, ultimateBoons };
 }
 
 /** @deprecated Use partitionTalentsForHud */

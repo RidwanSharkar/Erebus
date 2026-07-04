@@ -1,20 +1,31 @@
 'use client';
+import { positionScratch, type Position3 } from '@/utils/position3';
 
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useLayoutEffect } from 'react';
 import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
 
-import { Group, Vector3 } from 'three';
+import { Group, Mesh, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
-import { Billboard, Text } from '@react-three/drei';
+import { Billboard } from '@react-three/drei';
 import WeaverModel from './WeaverModel';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
+import {
+  ENEMY_HP_BAR_WIDTH,
+  ENEMY_HP_BAR_HEIGHT,
+  ENEMY_HP_BAR_FILL_HEIGHT,
+  ENEMY_HP_BAR_FILL_Z, ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO,
+  applyEnemyHealthBarFill,
+  syncEnemyHealthBarFillFromRef,
+  syncEnemyHealthBarNumericTextFromRef,
+} from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
+import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 
 interface WeaverRendererProps {
   id: string;
-  position: Vector3;
+  position: Position3;
   rotation: number;
   health: number;
   maxHealth: number;
@@ -54,8 +65,10 @@ function WeaverRenderer({
   const auraDisc = isBlue
     ? { color: '#3388dd', emissive: '#1a50aa' }
     : { color: '#00cc44', emissive: '#00aa22' };
-  const { socket, enemyTransformsRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
+  const hpFillRef = useRef<Mesh>(null);
+  const hpTextRef = useRef<any>(null);
 
   const [isCastingHeal,   setIsCastingHeal]   = useState(false);
   const [isCastingSummon, setIsCastingSummon] = useState(false);
@@ -64,7 +77,7 @@ function WeaverRenderer({
   const [isImpacting,     setIsImpacting]     = useState(false);
   const [impactPlayKey,   setImpactPlayKey]   = useState(0);
 
-  const targetPosition   = useRef(position.clone());
+  const targetPosition   = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation   = useRef(rotation);
   const isCastingRef     = useRef(false);
   const isCastingSummonRef = useRef(false);
@@ -105,13 +118,13 @@ function WeaverRenderer({
 
   // Keep spawn snap in sync with React position prop updates.
   useEffect(() => {
-    const dist = targetPosition.current.distanceTo(position);
+    const dist = targetPosition.current.distanceTo(positionScratch.set(position.x, position.y, position.z));
     const isCastLocked = isCastingRef.current;
     if (!isCastLocked) {
-      targetPosition.current.copy(position);
+      targetPosition.current.set(position.x, position.y, position.z);
     }
     if (dist > 8.0 && groupRef.current && !isCastLocked) {
-      groupRef.current.position.copy(position);
+      groupRef.current.position.set(position.x, position.y, position.z);
     }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -225,9 +238,17 @@ function WeaverRenderer({
     return () => { socket.off('weaver-lightning-telegraph', handleLightningTelegraph); };
   }, [id, socket, trackTimeout]);
 
+  useLayoutEffect(() => {
+    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth, ENEMY_HP_BAR_WIDTH);
+  }, [health, maxHealth]);
+
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, ENEMY_HP_BAR_WIDTH);
+    syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
+
     const isCastLocked = isCastingRef.current;
 
     const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
@@ -281,10 +302,10 @@ function WeaverRenderer({
     }
 
     // Aura is a scene-level sibling group — mirror the weaver's XZ, stay at ground Y
-    if (auraGroupRef.current && !isDying) {
+    if (auraGroupRef.current && !isDying && opacity.current > 0) {
       const pos = group.position;
       auraGroupRef.current.position.set(pos.x, 0.2, pos.z);
-      auraGroupRef.current.rotation.y += 0.15 * 0.008;
+      auraGroupRef.current.rotation.y += delta * 0.15;
     }
   });
 
@@ -298,10 +319,8 @@ function WeaverRenderer({
             {[0, Math.PI / 2, Math.PI, Math.PI * 1.5].map((rot, i) => (
               <mesh key={i} rotation={[-Math.PI / 2, 0, rot]}>
                 <ringGeometry args={[0.85, 1.0, 3]} />
-                <meshStandardMaterial
+                <meshBasicMaterial
                   color={auraRing.color}
-                  emissive={auraRing.emissive}
-                  emissiveIntensity={2}
                   transparent
                   opacity={0.6}
                   depthWrite={false}
@@ -313,10 +332,8 @@ function WeaverRenderer({
           {/* Disc beneath the rings */}
           <mesh rotation={[-Math.PI / 2, 0, 0]}>
             <circleGeometry args={[0.925, 32]} />
-            <meshStandardMaterial
+            <meshBasicMaterial
               color={auraDisc.color}
-              emissive={auraDisc.emissive}
-              emissiveIntensity={1}
               transparent
               opacity={0.45}
               depthWrite={false}
@@ -324,8 +341,8 @@ function WeaverRenderer({
             />
           </mesh>
 
-          <EnemyDynamicLight color="auraRing.color" intensity={0.5} distance={12} decay={6} position={[0, 2, -0.5]} />
-          <EnemyDynamicLight color="auraDisc.color" intensity={3} distance={8} decay={2} position={[0, 1, 0]} />
+          <EnemyDynamicLight color={auraRing.color} intensity={0.5} distance={12} decay={6} position={[0, 2, -0.5]} />
+          <EnemyDynamicLight color={auraDisc.color} intensity={3} distance={8} decay={2} position={[0, 1, 0]} />
         </group>
       )}
 
@@ -344,25 +361,27 @@ function WeaverRenderer({
         {health > 0 && !isDying && (
           <>
             <mesh position={[0, 0, 0]}>
-              <planeGeometry args={[2.0, 0.25]} />
+              <primitive object={ENEMY_HP_BAR_BG_GEO} attach="geometry" />
               <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
             </mesh>
 
-            <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
-              <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
+            <mesh
+              ref={hpFillRef}
+              position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
+              scale={[1, 1, 1]}
+            >
+              <primitive object={ENEMY_HP_BAR_FILL_GEO} attach="geometry" />
               <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
             </mesh>
 
-            <Text
-              position={[0, 0, 0.002]}
+            <EnemyHealthBarTextLabel
+              leading="🧵"
+              numericRef={hpTextRef}
+              health={health}
+              maxHealth={maxHealth}
               fontSize={0.18}
               color={theme.text}
-              anchorX="center"
-              anchorY="middle"
-              fontWeight="bold"
-            >
-              {`🧵 ${Math.ceil(health)}/${maxHealth}`}
-            </Text>
+            />
             <EnemyStaggerBar stagger={staggerBuildup} />
           </>
         )}

@@ -147,6 +147,9 @@ export class Health extends Component {
     this.isInvulnerable = true;
     this.invulnerabilityTimer = duration;
     this.invulnerabilitySource = source;
+    if (source === 'aegis' && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('aegis-invuln-granted'));
+    }
   }
 
   /** Add to remaining invulnerability time, or start invuln if not active. */
@@ -156,6 +159,9 @@ export class Health extends Component {
     this.invulnerabilityTimer += seconds;
     if (extendAegis) {
       this.invulnerabilitySource = 'aegis';
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('aegis-invuln-granted'));
+      }
     }
   }
 

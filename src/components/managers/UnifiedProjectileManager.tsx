@@ -847,21 +847,19 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
 
       <FanOfKnivesDagger
         projectiles={projectileData.fanOfKnives.map((knife) => {
-          // Distance/start-position info is cached from the ECS projectile component during the useFrame tick above
-          const distanceTraveled = knife.distanceTraveled ?? 0;
           const maxDistance =
             knife.maxDistance != null && knife.maxDistance !== Infinity
               ? knife.maxDistance
               : 7;
-          const startPos = knife.cachedStartPosition != null ? knife.cachedStartPosition.clone() : knife.position.clone();
+          const startPos = knife.cachedStartPosition ?? knife.position;
           const tint = knife.fanOfKnivesFlourishTint ?? 'default';
           return {
             id: knife.id,
             position: knife.position,
-            direction: knife.direction.clone(),
+            direction: knife.direction,
             startPosition: startPos,
             maxDistance,
-            distanceTraveled,
+            distanceTraveled: knife.distanceTraveled ?? 0,
             colors: getFanOfKnivesDaggerColorsFromTint(tint),
           };
         })}

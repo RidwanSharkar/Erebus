@@ -65,7 +65,7 @@ const CoopTentacleSpineLayer = memo(forwardRef<CoopTentacleSpineLayerHandle, Coo
             <TentacleSpineRenderer
               key={enemy.id}
               id={enemy.id}
-              position={new Vector3(enemy.position.x, enemy.position.y, enemy.position.z)}
+              position={enemy.position}
               rotation={enemy.rotation || 0}
               isDying={!!enemy.isDying}
               windSeq={fx?.windSeq ?? 0}

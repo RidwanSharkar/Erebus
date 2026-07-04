@@ -699,7 +699,7 @@ export default function Runeblade({
 
     // Handle WraithStrike animation (uses 2nd swing animation)
     if (isWraithStriking) {
-      wraithStrikeProgress.current += delta * 8; // Same speed as regular swing
+      wraithStrikeProgress.current += delta * 10; // Same speed as regular swing
       const swingPhase = Math.min(wraithStrikeProgress.current / Math.PI/1.5, 1);
 
       // Use the exact 2nd swing animation logic

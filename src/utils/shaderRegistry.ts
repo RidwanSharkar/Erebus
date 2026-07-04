@@ -4,6 +4,7 @@ import { ShaderMaterial, Color, Vector3, AdditiveBlending } from './three-export
 class ShaderRegistry {
   private static instance: ShaderRegistry;
   private compiledShaders: Map<string, ShaderMaterial> = new Map();
+  private shaderPools: Map<string, ShaderMaterial[]> = new Map();
 
   private constructor() {
     this.precompileShaders();
@@ -538,6 +539,22 @@ class ShaderRegistry {
 
     // Clone the shader to avoid sharing uniforms between instances
     return shader.clone();
+  }
+
+  /** Reuse pooled clones to avoid unbounded Program growth from short-lived VFX. */
+  acquireShader(name: string): ShaderMaterial | null {
+    const pool = this.shaderPools.get(name);
+    if (pool && pool.length > 0) {
+      return pool.pop()!;
+    }
+    return this.getShader(name);
+  }
+
+  releaseShader(name: string, material: ShaderMaterial): void {
+    if (!this.shaderPools.has(name)) {
+      this.shaderPools.set(name, []);
+    }
+    this.shaderPools.get(name)!.push(material);
   }
 
   // Create a fresh shader material with specific uniforms

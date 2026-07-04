@@ -1,17 +1,31 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Billboard, Text } from '@react-three/drei';
+import React, { useRef, useEffect, useState, useCallback, useLayoutEffect } from 'react';
+import { positionScratch, type Position3 } from '@/utils/position3';
+import { Billboard } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, Group } from '@/utils/three-exports';
+import { Vector3, Group, Mesh } from '@/utils/three-exports';
 import { World } from '@/ecs/World';
 import BossGlbModel from './BossGlbModel';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyMeleeAttackRangeRing, { BOSS_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
+import {
+  ENEMY_HP_BAR_WIDTH,
+  ENEMY_HP_BAR_HEIGHT,
+  ENEMY_HP_BAR_FILL_HEIGHT,
+  ENEMY_HP_BAR_FILL_Z, ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO,
+  applyEnemyHealthBarFill,
+  syncEnemyHealthBarFillFromRef,
+  syncEnemyHealthBarNumericTextFromRef,
+} from '@/utils/enemyHealthBar';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
+import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 
 const WALK_STOP_DELAY = 250;
+const LERP_SPEED = 12;
+/** Matches `BOSS_LEAP_DURATION_MS` in backend `enemyAI.js`. */
+const DEFAULT_BOSS_LEAP_DURATION_MS = 1325;
 /** Matches `BOSS_MELEE_ATTACK_LOCK_MS` in backend `enemyAI.js`. */
 const ATTACK_DURATION = 1200;
 /** Fallback if `boss-throw-start` omits `moveLockMs` — keep in sync with `BOSS_THROW_MOVE_LOCK_MS` in backend `enemyAI.js`. */
@@ -20,7 +34,7 @@ const DEFAULT_BOSS_THROW_MOVE_LOCK_MS = 2000;
 interface BossRendererProps {
   id: string;
   entityId: number;
-  position: Vector3;
+  position: Position3;
   world: World;
   health: number;
   maxHealth: number;
@@ -45,8 +59,10 @@ function BossRenderer({
   staggerBuildup = 0,
 }: BossRendererProps) {
   const theme = campHpTheme('red');
-  const { socket, enemyTransformsRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group>(null);
+  const hpFillRef = useRef<Mesh>(null);
+  const hpTextRef = useRef<any>(null);
   const currentRotationRef = useRef(0);
   const [isWalking, setIsWalking] = useState(false);
   const isWalkingRef = useRef(false);
@@ -59,37 +75,40 @@ function BossRenderer({
   const [impactPlayKey, setImpactPlayKey] = useState(0);
   const [isThrowCasting, setIsThrowCasting] = useState(false);
   const [isAttacking, setIsAttacking] = useState(false);
-  const targetPosition = useRef(position.clone());
+  const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation = useRef(rotation ?? 0);
-  const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastMoveTimeRef = useRef(0);
   const throwCastSafetyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLeapingRef = useRef(false);
   const isThrowCastingRef = useRef(false);
   const isAttackingRef = useRef(false);
   const attackEndTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const leapTravelRef = useRef<{
+    start: Vector3;
+    end: Vector3;
+    startedAt: number;
+    duration: number;
+  } | null>(null);
+  const leapStartScratch = useRef(new Vector3());
+  const leapEndScratch = useRef(new Vector3());
 
   useEffect(() => {
-    const dist = targetPosition.current.distanceTo(position);
+    const dist = targetPosition.current.distanceTo(positionScratch.set(position.x, position.y, position.z));
     const isLocked = isLeapingRef.current || isThrowCastingRef.current || isAttackingRef.current;
     if (!isLocked) {
-      targetPosition.current.copy(position);
+      targetPosition.current.set(position.x, position.y, position.z);
     }
-    if (dist > 0.01 && !isLocked && !isDying) {
-      if (!isWalkingRef.current) {
-        isWalkingRef.current = true;
-        setIsWalking(true);
-      }
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
-      walkStopTimer.current = setTimeout(() => {
-        isWalkingRef.current = false;
-        setIsWalking(false);
-      }, WALK_STOP_DELAY);
+    if (dist > 5.0 && groupRef.current && !isLocked) {
+      groupRef.current.position.set(position.x, position.y, position.z);
     }
-  }, [position.x, position.y, position.z, isDying]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    targetRotation.current = rotation ?? 0;
+  }, [rotation]);
 
   useEffect(
     () => () => {
-      if (walkStopTimer.current) clearTimeout(walkStopTimer.current);
       if (throwCastSafetyTimer.current) clearTimeout(throwCastSafetyTimer.current);
       if (attackEndTimer.current) clearTimeout(attackEndTimer.current);
     },
@@ -131,13 +150,56 @@ function BossRenderer({
         throwCastSafetyTimer.current = null;
       }, lockMs + 150);
     };
-    const onLeapStart = (data: { bossId: string }) => {
+    const onLeapStart = (data: {
+      bossId: string;
+      startPosition?: { x: number; y: number; z: number };
+      landPosition?: { x: number; y: number; z: number };
+      durationMs?: number;
+    }) => {
       if (data.bossId !== id) return;
+
+      const startPos = leapStartScratch.current;
+      const endPos = leapEndScratch.current;
+      if (data.startPosition) {
+        startPos.set(data.startPosition.x, data.startPosition.y, data.startPosition.z);
+      } else {
+        startPos.copy(targetPosition.current);
+      }
+      if (data.landPosition) {
+        endPos.set(data.landPosition.x, data.landPosition.y, data.landPosition.z);
+      } else {
+        endPos.copy(targetPosition.current);
+      }
+
+      const duration = data.durationMs ?? DEFAULT_BOSS_LEAP_DURATION_MS;
+      leapTravelRef.current = {
+        start: startPos.clone(),
+        end: endPos.clone(),
+        startedAt: performance.now(),
+        duration,
+      };
+      targetPosition.current.copy(endPos);
+      targetRotation.current = Math.atan2(endPos.x - startPos.x, endPos.z - startPos.z);
+
+      if (groupRef.current) {
+        groupRef.current.position.copy(startPos);
+        groupRef.current.rotation.y = targetRotation.current;
+      }
+
       setIsLeaping(true);
       isLeapingRef.current = true;
+      isWalkingRef.current = false;
+      setIsWalking(false);
     };
-    const onLeapLand = (data: { bossId: string }) => {
+    const onLeapLand = (data: { bossId: string; landPosition?: { x: number; y: number; z: number } }) => {
       if (data.bossId !== id) return;
+      leapTravelRef.current = null;
+      if (data.landPosition) {
+        targetPosition.current.set(data.landPosition.x, data.landPosition.y, data.landPosition.z);
+        if (groupRef.current) {
+          groupRef.current.position.set(data.landPosition.x, data.landPosition.y, data.landPosition.z);
+        }
+      }
       setIsLeaping(false);
       isLeapingRef.current = false;
     };
@@ -189,21 +251,53 @@ function BossRenderer({
     }
   }, []);
 
+  useLayoutEffect(() => {
+    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth, ENEMY_HP_BAR_WIDTH);
+  }, [health, maxHealth]);
+
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
 
-    syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
-    group.position.copy(targetPosition.current);
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, ENEMY_HP_BAR_WIDTH);
+    syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
+
+    const leapTravel = leapTravelRef.current;
+    const isLocked = isAttackingRef.current || isThrowCastingRef.current || isLeapingRef.current;
+
+    let dist = 0;
+    if (!leapTravel) {
+      dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    }
+
+    if (leapTravel) {
+      const t = Math.min(1, (performance.now() - leapTravel.startedAt) / leapTravel.duration);
+      const su = t * t * (3 - 2 * t);
+      group.position.lerpVectors(leapTravel.start, leapTravel.end, su);
+    } else {
+      if (dist > 5.0 && !isLocked) {
+        group.position.copy(targetPosition.current);
+      }
+
+      updateEnemyWalkStateFromMoveDist(
+        dist,
+        isLocked,
+        isDying,
+        WALK_STOP_DELAY,
+        lastMoveTimeRef,
+        isWalkingRef,
+        setIsWalking,
+      );
+
+      group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
+    }
 
     if (isStunned) return;
 
-    const ROTATION_SPEED = 6.0;
-    const currentRotationY = group.rotation.y;
-    let rotationDiff = targetRotation.current - currentRotationY;
-    while (rotationDiff > Math.PI) rotationDiff -= Math.PI * 2;
-    while (rotationDiff < -Math.PI) rotationDiff += Math.PI * 2;
-    group.rotation.y += rotationDiff * Math.min(1, ROTATION_SPEED * delta);
+    let deltaAngle = targetRotation.current - group.rotation.y;
+    while (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2;
+    while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
+    group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
     currentRotationRef.current = group.rotation.y;
 
     const entity = world.getEntity(entityId);
@@ -233,6 +327,7 @@ function BossRenderer({
         impactPlayKey={impactPlayKey}
         onImpactFinished={handleImpactFinished}
         onLeapFinished={() => {
+          leapTravelRef.current = null;
           setIsLeaping(false);
           isLeapingRef.current = false;
         }}
@@ -249,23 +344,25 @@ function BossRenderer({
         {health > 0 && !isDying && (
           <>
             <mesh position={[0, 0, 0]}>
-              <planeGeometry args={[2.0, 0.25]} />
+              <primitive object={ENEMY_HP_BAR_BG_GEO} attach="geometry" />
               <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
             </mesh>
-            <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
-              <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
+            <mesh
+              ref={hpFillRef}
+              position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
+              scale={[1, 1, 1]}
+            >
+              <primitive object={ENEMY_HP_BAR_FILL_GEO} attach="geometry" />
               <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
             </mesh>
-            <Text
-              position={[0, 0, 0.002]}
+            <EnemyHealthBarTextLabel
+              leading="HATE"
+              numericRef={hpTextRef}
+              health={health}
+              maxHealth={maxHealth}
               fontSize={0.18}
               color={theme.text}
-              anchorX="center"
-              anchorY="middle"
-              fontWeight="bold"
-            >
-              {`HATE ${Math.ceil(health)}/${maxHealth}`}
-            </Text>
+            />
             <EnemyStaggerBar stagger={staggerBuildup} staggerMax={STAGGER_MAX_BOSS} />
           </>
         )}

@@ -1,12 +1,23 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { Group, Vector3 } from 'three';
+import React, { useRef, useState, useEffect, useLayoutEffect } from 'react';
+import { positionScratch, type Position3 } from '@/utils/position3';
+import { Group, Mesh, Vector3 } from 'three';
 import { Billboard, Text } from '@react-three/drei';
+import { useFrame } from '@react-three/fiber';
 import CustomSkeleton from '@/components/environment/CustomSkeleton';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
+import {
+  ENEMY_HP_BAR_WIDTH,
+  ENEMY_HP_BAR_HEIGHT,
+  ENEMY_HP_BAR_FILL_HEIGHT,
+  ENEMY_HP_BAR_FILL_Z, ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO,
+  applyEnemyHealthBarFill,
+  syncEnemyHealthBarFillFromRef,
+  syncEnemyHealthBarTextFromRef,
+} from '@/utils/enemyHealthBar';
 
 interface SummonedBossSkeletonProps {
   id: string;
-  position: Vector3;
+  position: Position3;
   rotation: number;
   health: number;
   maxHealth: number;
@@ -23,16 +34,18 @@ export default function SummonedBossSkeleton({
   isDying = false,
   onPositionUpdate
 }: SummonedBossSkeletonProps) {
-  const { socket } = useMultiplayerActions();
+  const { socket, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group>(null);
+  const hpFillRef = useRef<Mesh>(null);
+  const hpTextRef = useRef<any>(null);
   const [isAttacking, setIsAttacking] = useState(false);
   const [isWalking, setIsWalking] = useState(false);
   const isWalkingRef = useRef(false);
   const walkStopTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   
-  const currentPosition = useRef(position.clone());
+  const currentPosition = useRef(new Vector3(position.x, position.y, position.z));
   const currentRotation = useRef(rotation);
-  const lastServerPosition = useRef(position.clone());
+  const lastServerPosition = useRef(new Vector3(position.x, position.y, position.z));
 
   // Constants
   const ATTACK_DURATION = 1000; // milliseconds
@@ -41,12 +54,17 @@ export default function SummonedBossSkeleton({
 
   // Sync position from server
   useEffect(() => {
-    if (position && !currentPosition.current.equals(position)) {
-      const distance = currentPosition.current.distanceTo(position);
+    if (
+      position &&
+      (currentPosition.current.x !== position.x ||
+        currentPosition.current.y !== position.y ||
+        currentPosition.current.z !== position.z)
+    ) {
+      const distance = currentPosition.current.distanceTo(positionScratch.set(position.x, position.y, position.z));
       
       // Only update if distance is reasonable (prevents teleporting)
       if (distance < 5.0) {
-        currentPosition.current.copy(position);
+        currentPosition.current.set(position.x, position.y, position.z);
         if (groupRef.current) {
           groupRef.current.position.copy(currentPosition.current);
         }
@@ -56,8 +74,8 @@ export default function SummonedBossSkeleton({
 
   // Derive walking state from server position deltas (not useFrame sampling).
   useEffect(() => {
-    const dist = lastServerPosition.current.distanceTo(position);
-    lastServerPosition.current.copy(position);
+    const dist = lastServerPosition.current.distanceTo(positionScratch.set(position.x, position.y, position.z));
+    lastServerPosition.current.set(position.x, position.y, position.z);
 
     if (dist > MOVEMENT_THRESHOLD && !isAttacking && !isDying) {
       if (!isWalkingRef.current) {
@@ -168,6 +186,15 @@ export default function SummonedBossSkeleton({
     };
   }, [id, socket]);
 
+  useLayoutEffect(() => {
+    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth, ENEMY_HP_BAR_WIDTH);
+  }, [health, maxHealth]);
+
+  useFrame(() => {
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, ENEMY_HP_BAR_WIDTH);
+    syncEnemyHealthBarTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
+  });
+
   return (
     <>
       <group
@@ -194,14 +221,19 @@ export default function SummonedBossSkeleton({
           {health > 0 && (
             <>
               <mesh position={[0, 0, 0]}>
-                <planeGeometry args={[2.0, 0.25]} />
+                <primitive object={ENEMY_HP_BAR_BG_GEO} attach="geometry" />
                 <meshBasicMaterial color="#333333" opacity={0.8} transparent />
               </mesh>
-              <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
-                <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
+              <mesh
+                ref={hpFillRef}
+                position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
+                scale={[1, 1, 1]}
+              >
+                <primitive object={ENEMY_HP_BAR_FILL_GEO} attach="geometry" />
                 <meshBasicMaterial color="#ff3333" opacity={0.9} transparent />
               </mesh>
               <Text
+                ref={hpTextRef}
                 position={[0, 0, 0.002]}
                 fontSize={0.2}
                 color="#ffffff"

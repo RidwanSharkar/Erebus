@@ -12,6 +12,7 @@ import type { TalentId, TalentLoadout } from '@/utils/talents';
 import { partitionTalentsForHud } from '@/utils/talents';
 import { getWeaponHudIconSrc } from '@/utils/weaponIcons';
 import {
+  AbilityIcon,
   HotkeyTooltip,
   TalentSlot,
   TALENT_SLOT_PX,
@@ -323,7 +324,7 @@ export default function HotkeyPanel({
 
   return (
     <>
-      <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-40">
+      <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-40" data-block-game-input>
         <div
           className="backdrop-blur-md px-4 pt-5 pb-3"
           style={{
@@ -491,11 +492,12 @@ export default function HotkeyPanel({
                 >
                   P
                 </div>
-                <div
-                  className="w-7 h-7 rounded flex items-center justify-center text-base font-bold"
-                  style={{ color: '#c4b5fd', filter: 'drop-shadow(0 0 5px rgba(167,139,250,0.6))' }}
-                >
-                  {passiveAbility.icon}
+                <div className="flex h-7 w-7 items-center justify-center">
+                  <AbilityIcon
+                    icon={passiveAbility.icon}
+                    color="#c4b5fd"
+                    filter="drop-shadow(0 0 5px rgba(167,139,250,0.6))"
+                  />
                 </div>
               </div>
             )}
@@ -616,16 +618,23 @@ export default function HotkeyPanel({
                   )}
 
                   {/* Ability icon */}
-                  <div
-                    className="w-7 h-7 rounded flex items-center justify-center text-base font-bold"
-                    style={{
-                      color: abilityIconColor,
-                      filter: ability && !isOnCooldown
-                        ? 'drop-shadow(0 0 4px rgba(52,211,153,0.5))'
-                        : undefined,
-                    }}
-                  >
-                    {ability ? ability.icon : '·'}
+                  <div className="flex h-7 w-7 items-center justify-center">
+                    {ability ? (
+                      <AbilityIcon
+                        icon={ability.icon}
+                        color={abilityIconColor}
+                        filter={
+                          !isOnCooldown
+                            ? 'drop-shadow(0 0 4px rgba(52,211,153,0.5))'
+                            : undefined
+                        }
+                        isOnCooldown={isOnCooldown}
+                      />
+                    ) : (
+                      <span className="text-base font-bold" style={{ color: abilityIconColor }}>
+                        ·
+                      </span>
+                    )}
                   </div>
 
                   {/* Cooldown overlay + number */}

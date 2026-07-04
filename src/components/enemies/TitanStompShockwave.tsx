@@ -259,6 +259,7 @@ function ExpandingWedge({
   const spawnAcc = useRef(0);
   const puffSpawnAcc = useRef(0);
   const doneRef = useRef(false);
+  const dustScratchColor = useRef(new Color());
   const { origin, direction, maxRange, travelMs } = burst;
 
   const palette = useMemo(
@@ -427,7 +428,7 @@ function ExpandingWedge({
     const pool = dustParticles.current;
     const fadeEnd = TRAIL_LENGTH + 0.5;
     const fadeStart = TRAIL_LENGTH * 0.25;
-    const scratchColor = new Color();
+    const scratchColor = dustScratchColor.current;
 
     for (let i = 0; i < DUST_COUNT; i++) {
       const p = pool[i];

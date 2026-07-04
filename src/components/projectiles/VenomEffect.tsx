@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useRef, memo, useEffect } from 'react';
+import React, { useRef, memo, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3, Mesh, MeshStandardMaterial, AdditiveBlending, Material } from '@/utils/three-exports';
+import { Group, Vector3, Mesh, MeshStandardMaterial, AdditiveBlending, Material, SphereGeometry } from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 interface VenomEffectProps {
@@ -21,6 +21,11 @@ interface VenomEffectProps {
   }>;
 }
 
+const VENOM_CLOUD_GEO = new SphereGeometry(0.2, 16, 16);
+const VENOM_CORE_GEO = new SphereGeometry(0.15, 12, 12);
+const VENOM_TENDRIL_GEO = new SphereGeometry(0.18, 8, 8);
+const VENOM_PARTICLE_GEO = new SphereGeometry(0.06, 6, 6);
+
 const VenomEffectComponent = memo(function VenomEffect({
   position,
   onComplete,
@@ -35,6 +40,40 @@ const VenomEffectComponent = memo(function VenomEffect({
   // Borrow a pooled light instead of mounting a <pointLight> (avoids lit-shader recompiles).
   const venomLight = useDynamicLight({ color: '#00FF44', distance: 3, decay: 2, priority: 1 });
 
+  const tendrilLayout = useMemo(
+    () =>
+      Array.from({ length: 6 }, (_, i) => {
+        const angle = (i / 6) * Math.PI * 2;
+        const radiusX = 0.2 + Math.random() * 0.2;
+        const radiusZ = 0.2 + Math.random() * 0.2;
+        return {
+          position: [
+            Math.cos(angle) * radiusX,
+            Math.random() * 0.4 - 0.2,
+            Math.sin(angle) * radiusZ,
+          ] as [number, number, number],
+        };
+      }),
+    [],
+  );
+
+  const particleLayout = useMemo(
+    () =>
+      Array.from({ length: 10 }, (_, i) => {
+        const angle = Math.random() * Math.PI * 2;
+        const radius = Math.random() * 0.35;
+        return {
+          position: [Math.cos(angle) * radius, Math.random() * 0.4 - 0.2, Math.sin(angle) * radius] as [
+            number,
+            number,
+            number,
+          ],
+          color: i % 2 === 0 ? '#00FF44' : '#55FF00',
+        };
+      }),
+    [],
+  );
+
   useFrame(() => {
     if (!groupRef.current) return;
 
@@ -47,10 +86,7 @@ const VenomEffectComponent = memo(function VenomEffect({
       const target = enemyData.find(enemy => enemy.id === enemyId);
 
       if (target && target.health > 0 && !target.isDying && !target.deathStartTime) {
-        // Update the group position to follow the enemy
-        const targetPosition = target.position.clone();
-        targetPosition.y += 1; // Keep the same Y offset as originally set
-        groupRef.current.position.copy(targetPosition);
+        groupRef.current.position.set(target.position.x, target.position.y + 1, target.position.z);
       }
     }
 
@@ -86,15 +122,12 @@ const VenomEffectComponent = memo(function VenomEffect({
     }
   });
 
-  // MEMORY FIX: Cleanup geometries and materials on unmount
+  // MEMORY FIX: Dispose per-instance materials on unmount (geometries are module-shared).
   useEffect(() => {
     return () => {
       if (groupRef.current) {
         groupRef.current.traverse((child) => {
           if (child instanceof Mesh) {
-            if (child.geometry) {
-              child.geometry.dispose();
-            }
             if (child.material) {
               if (Array.isArray(child.material)) {
                 child.material.forEach((mat: Material) => mat.dispose());
@@ -118,8 +151,7 @@ const VenomEffectComponent = memo(function VenomEffect({
       rotation={[0, randomRotation.current, 0]}
     >
       {/* Main venom cloud */}
-      <mesh>
-        <sphereGeometry args={[0.2, 16, 16]} />
+      <mesh geometry={VENOM_CLOUD_GEO}>
         <meshStandardMaterial 
           color="#00FF44"
           emissive="#00FF44"
@@ -132,8 +164,7 @@ const VenomEffectComponent = memo(function VenomEffect({
       </mesh>
       
       {/* Inner toxic core */}
-      <mesh>
-        <sphereGeometry args={[0.15, 12, 12]} />
+      <mesh geometry={VENOM_CORE_GEO}>
         <meshStandardMaterial 
           color="#33FF33"
           emissive="#33FF33"
@@ -146,20 +177,8 @@ const VenomEffectComponent = memo(function VenomEffect({
       </mesh>
       
       {/* Toxic tendrils */}
-      {[...Array(6)].map((_, i) => {
-        const angle = (i / 6) * Math.PI * 2;
-        const radiusX = 0.2 + Math.random() * 0.2;
-        const radiusZ = 0.2 + Math.random() * 0.2;
-        return (
-          <mesh 
-            key={i}
-            position={[
-              Math.cos(angle) * radiusX,
-              Math.random() * 0.4 - 0.2,
-              Math.sin(angle) * radiusZ
-            ]}
-          >
-            <sphereGeometry args={[0.15 + Math.random() * 0.1, 8, 8]} />
+      {tendrilLayout.map((t, i) => (
+          <mesh key={i} position={t.position} geometry={VENOM_TENDRIL_GEO}>
             <meshStandardMaterial 
               color="#00BB33"
               emissive="#00BB33"
@@ -170,27 +189,14 @@ const VenomEffectComponent = memo(function VenomEffect({
               blending={AdditiveBlending}
             />
           </mesh>
-        );
-      })}
+      ))}
       
       {/* Toxic particles */}
-      {[...Array(10)].map((_, i) => {
-        const angle = Math.random() * Math.PI * 2;
-        const radius = Math.random() * 0.35;
-        const height = Math.random() * 0.4 - 0.2;
-        return (
-          <mesh 
-            key={`particle-${i}`}
-            position={[
-              Math.cos(angle) * radius,
-              height,
-              Math.sin(angle) * radius
-            ]}
-          >
-            <sphereGeometry args={[0.05 + Math.random() * 0.04, 6, 6]} />
+      {particleLayout.map((p, i) => (
+          <mesh key={`particle-${i}`} position={p.position} geometry={VENOM_PARTICLE_GEO}>
             <meshStandardMaterial 
-              color={i % 2 === 0 ? "#00FF44" : "#55FF00"}
-              emissive={i % 2 === 0 ? "#00FF44" : "#55FF00"}
+              color={p.color}
+              emissive={p.color}
               emissiveIntensity={2}
               transparent
               opacity={0.8}
@@ -198,8 +204,7 @@ const VenomEffectComponent = memo(function VenomEffect({
               blending={AdditiveBlending}
             />
           </mesh>
-        );
-      })}
+      ))}
     </group>
   );
 }, (prevProps, nextProps) => {

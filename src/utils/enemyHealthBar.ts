@@ -7,6 +7,8 @@ export const ENEMY_HP_BAR_HEIGHT = 0.25;
 export const ENEMY_HP_BAR_FILL_HEIGHT = 0.23;
 export const ENEMY_HP_BAR_FILL_Z = 0.001;
 
+export { ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO } from './sharedEnemyUiGeometry';
+
 export function enemyHealthRatio(health: number, maxHealth: number): number {
   if (maxHealth <= 0) return 0;
   return Math.max(0, Math.min(1, health / maxHealth));
@@ -46,4 +48,45 @@ export function syncEnemyHealthBarFillFromRef(
   const health = readLiveEnemyHealth(enemiesRef, enemyId, fallbackHealth);
   applyEnemyHealthBarFill(fillRef.current, health, maxHealth, barWidth);
   return health;
+}
+
+type TroikaTextMesh = {
+  text?: string;
+  sync?: () => void;
+};
+
+/** Numeric HP label only (no emoji/prefix) — safe for per-tick Troika sync. */
+export function formatEnemyHealthNumeric(hp: number, max: number): string {
+  return `${Math.ceil(hp)}/${max}`;
+}
+
+/** Sync drei Text label from live ref (no React re-render). */
+export function syncEnemyHealthBarTextFromRef(
+  textRef: RefObject<TroikaTextMesh | null>,
+  enemiesRef: MutableRefObject<Map<string, { health?: number }>> | undefined,
+  enemyId: string,
+  fallbackHealth: number,
+  maxHealth: number,
+  format: (hp: number, max: number) => string = formatEnemyHealthNumeric,
+): void {
+  const t = textRef.current;
+  if (!t) return;
+  const hp = readLiveEnemyHealth(enemiesRef, enemyId, fallbackHealth);
+  const next = format(hp, maxHealth);
+  if (t.text !== next) {
+    t.text = next;
+    t.sync?.();
+  }
+}
+
+/** Sync numeric-only HP text (leading emoji/prefix rendered separately). */
+export function syncEnemyHealthBarNumericTextFromRef(
+  textRef: RefObject<TroikaTextMesh | null>,
+  enemiesRef: MutableRefObject<Map<string, { health?: number }>> | undefined,
+  enemyId: string,
+  fallbackHealth: number,
+  maxHealth: number,
+  format: (hp: number, max: number) => string = formatEnemyHealthNumeric,
+): void {
+  syncEnemyHealthBarTextFromRef(textRef, enemiesRef, enemyId, fallbackHealth, maxHealth, format);
 }

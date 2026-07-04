@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { WeaponType } from '@/components/dragon/weapons';
 import type { TalentId } from '@/utils/talents';
-import { getTalentBoonDefinition, getTalentIconSrc } from '@/utils/talents';
+import { getTalentBoonDefinition, getTalentIconSrc, isDuoBoonTalent, isUltimateBoonTalent } from '@/utils/talents';
 
 export type CoopBoonKind = 'class' | 'room';
 
@@ -131,6 +131,7 @@ const ABILITY_LABELS: Record<string, string> = {
   COOP_BLUE_ROOM:  'Tempest',
   COOP_PURPLE_ROOM:'Abyssal',
   'Duo Boons':      'Duo Boon',
+  'Ultimate Talents': 'Ultimate Talent',
 };
 
 const FLAVOR_SUBTITLES: Record<string, string> = {
@@ -155,11 +156,17 @@ interface RarityStyle {
   text: string;
 }
 
-function getRarity(kind: CoopBoonKind, roomColor?: string | null): RarityStyle {
-  if (kind === 'room' && String(roomColor ?? '').toLowerCase() === 'red') {
-    return { label: 'Epic', text: 'text-violet-300' };
+function getBoonTypeLabel(id: TalentId, kind: CoopBoonKind): RarityStyle {
+  if (isUltimateBoonTalent(id)) {
+    return { label: 'Ultimate', text: 'text-amber-300' };
   }
-  return { label: 'Rare', text: 'text-sky-300' };
+  if (isDuoBoonTalent(id)) {
+    return { label: 'Duo', text: 'text-violet-300' };
+  }
+  if (kind === 'class') {
+    return { label: 'Talent', text: 'text-sky-300' };
+  }
+  return { label: 'Boon', text: 'text-sky-300' };
 }
 
 function DiamondFrame({
@@ -246,8 +253,6 @@ export default function CoopBoonPickerModal({
       ? ROOM_ACCENT[rc]!
       : WEAPON_ACCENT[weapon] ?? WEAPON_ACCENT[WeaponType.RUNEBLADE];
 
-  const rarity = getRarity(kind, roomColor);
-
   const weaponName = WEAPON_NAMES[weapon] ?? 'Warrior';
   const emblem = WEAPON_EMBLEMS[weapon] ?? '⚔';
   const title =
@@ -296,6 +301,7 @@ export default function CoopBoonPickerModal({
   return (
     <div
       className="fixed inset-0 z-[200] flex items-center justify-center px-4 py-6"
+      data-block-game-input
       style={{
         background:
           'radial-gradient(ellipse at 50% 40%, rgba(0,0,0,0.72) 0%, rgba(0,0,0,0.96) 100%)',
@@ -407,6 +413,7 @@ export default function CoopBoonPickerModal({
               const abilityLabel = ABILITY_LABELS[abilityId] ?? abilityId;
               const isHovered = hoveredIdx === idx;
               const isLast = idx === options.length - 1;
+              const cardRarity = getBoonTypeLabel(id, kind);
 
               return (
                 <button
@@ -450,8 +457,8 @@ export default function CoopBoonPickerModal({
                       <span className={`text-sm font-bold tracking-[0.18em] uppercase leading-snug ${isHovered ? accent.text : 'text-gray-200'} transition-colors duration-150`}>
                         {name}
                       </span>
-                      <span className={`text-xs font-bold tracking-widest uppercase shrink-0 ${rarity.text}`}>
-                        {rarity.label}
+                      <span className={`text-xs font-bold tracking-widest uppercase shrink-0 ${cardRarity.text}`}>
+                        {cardRarity.label}
                       </span>
                     </div>
 

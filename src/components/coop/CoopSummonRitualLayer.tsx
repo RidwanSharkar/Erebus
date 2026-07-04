@@ -7,6 +7,7 @@ import InfestedZombieRiseVFX from '@/components/enemies/InfestedZombieRiseVFX';
 import VenomEffect from '@/components/projectiles/VenomEffect';
 import EnemySummonFlameVFX from '@/components/enemies/EnemySummonFlameVFX';
 import WeaverHealEffect from '@/components/enemies/WeaverHealEffect';
+import WeaverHealZap from '@/components/enemies/WeaverHealZap';
 import { CROSSENTROPY_PLAGUE_VENOM_MS } from '@/utils/talents';
 import type {
   EnemySummonFlameVfxState,
@@ -15,6 +16,7 @@ import type {
   InfestedZombieSummonVfxState,
   KnightDeathVortexState,
   WeaverHealEffectState,
+  WeaverHealZapState,
 } from '@/components/coop/coopVfxLayerTypes';
 
 export type CoopSummonRitualLayerHandle = {
@@ -25,6 +27,7 @@ export type CoopSummonRitualLayerHandle = {
   addExploderStrainVenomVfx: (fx: ExploderStrainVenomVfxState) => void;
   addEnemySummonFlameVfx: (fx: EnemySummonFlameVfxState) => void;
   addWeaverHealEffect: (effect: WeaverHealEffectState) => void;
+  addWeaverHealZap: (zap: WeaverHealZapState) => void;
 };
 
 const CoopSummonRitualLayer = memo(forwardRef<CoopSummonRitualLayerHandle, object>(
@@ -35,6 +38,7 @@ const CoopSummonRitualLayer = memo(forwardRef<CoopSummonRitualLayerHandle, objec
     const [exploderStrainVenomVfx, setExploderStrainVenomVfx] = useState<ExploderStrainVenomVfxState[]>([]);
     const [enemySummonFlameVfx, setEnemySummonFlameVfx] = useState<EnemySummonFlameVfxState[]>([]);
     const [weaverHealEffects, setWeaverHealEffects] = useState<WeaverHealEffectState[]>([]);
+    const [weaverHealZaps, setWeaverHealZaps] = useState<WeaverHealZapState[]>([]);
 
     const clearAll = useCallback(() => {
       setKnightDeathVortices([]);
@@ -43,6 +47,7 @@ const CoopSummonRitualLayer = memo(forwardRef<CoopSummonRitualLayerHandle, objec
       setExploderStrainVenomVfx([]);
       setEnemySummonFlameVfx([]);
       setWeaverHealEffects([]);
+      setWeaverHealZaps([]);
     }, []);
 
     const addKnightDeathVortex = useCallback((vortex: KnightDeathVortexState) => {
@@ -69,6 +74,10 @@ const CoopSummonRitualLayer = memo(forwardRef<CoopSummonRitualLayerHandle, objec
       setWeaverHealEffects((prev) => [...prev, effect]);
     }, []);
 
+    const addWeaverHealZap = useCallback((zap: WeaverHealZapState) => {
+      setWeaverHealZaps((prev) => [...prev, zap]);
+    }, []);
+
     useImperativeHandle(ref, () => ({
       clearAll,
       addKnightDeathVortex,
@@ -77,6 +86,7 @@ const CoopSummonRitualLayer = memo(forwardRef<CoopSummonRitualLayerHandle, objec
       addExploderStrainVenomVfx,
       addEnemySummonFlameVfx,
       addWeaverHealEffect,
+      addWeaverHealZap,
     }), [
       clearAll,
       addKnightDeathVortex,
@@ -85,6 +95,7 @@ const CoopSummonRitualLayer = memo(forwardRef<CoopSummonRitualLayerHandle, objec
       addExploderStrainVenomVfx,
       addEnemySummonFlameVfx,
       addWeaverHealEffect,
+      addWeaverHealZap,
     ]);
 
     return (
@@ -131,6 +142,16 @@ const CoopSummonRitualLayer = memo(forwardRef<CoopSummonRitualLayerHandle, objec
             key={fx.id}
             position={fx.position}
             onComplete={() => setEnemySummonFlameVfx(prev => prev.filter(e => e.id !== fx.id))}
+          />
+        ))}
+
+        {weaverHealZaps.map(zap => (
+          <WeaverHealZap
+            key={zap.id}
+            from={zap.from}
+            to={zap.to}
+            variant={zap.variant}
+            onComplete={() => setWeaverHealZaps(prev => prev.filter(z => z.id !== zap.id))}
           />
         ))}
 

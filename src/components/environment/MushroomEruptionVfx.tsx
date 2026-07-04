@@ -126,8 +126,8 @@ const MushroomEruptionVfx: React.FC<MushroomEruptionVfxProps> = ({ origin, onDon
   }, []);
 
   const { volcMat, splashMat } = useMemo(() => {
-    const volcMat = shaderRegistry.getShader('volcanicEruption') as ShaderMaterial | null;
-    const splashMat = shaderRegistry.getShader('groundSplash') as ShaderMaterial | null;
+    const volcMat = shaderRegistry.acquireShader('volcanicEruption');
+    const splashMat = shaderRegistry.acquireShader('groundSplash');
     if (volcMat) {
       volcMat.uniforms.uDuration.value = ERUPTION_DURATION;
       volcMat.uniforms.uEruptionOrigin.value.set(origin.x, origin.y, origin.z);
@@ -155,8 +155,8 @@ const MushroomEruptionVfx: React.FC<MushroomEruptionVfxProps> = ({ origin, onDon
 
   useEffect(() => {
     return () => {
-      volcMat?.dispose();
-      splashMat?.dispose();
+      if (volcMat) shaderRegistry.releaseShader('volcanicEruption', volcMat);
+      if (splashMat) shaderRegistry.releaseShader('groundSplash', splashMat);
       particleGeo.dispose();
       splashGeo.dispose();
     };

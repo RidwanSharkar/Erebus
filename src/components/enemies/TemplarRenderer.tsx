@@ -1,21 +1,32 @@
 'use client';
+import { positionScratch, type Position3 } from '@/utils/position3';
 
-import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Group, Vector3 } from 'three';
+import React, { useRef, useState, useEffect, useCallback, useLayoutEffect } from 'react';
+import { Group, Mesh, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
-import { Billboard, Text } from '@react-three/drei';
+import { Billboard } from '@react-three/drei';
 import TemplarModel from './TemplarModel';
 import EnemyAbilityChargeTelegraph from './EnemyAbilityChargeTelegraph';
 import EnemyMeleeAttackRangeRing, { TEMPLAR_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
+import {
+  ENEMY_HP_BAR_WIDTH,
+  ENEMY_HP_BAR_HEIGHT,
+  ENEMY_HP_BAR_FILL_HEIGHT,
+  ENEMY_HP_BAR_FILL_Z, ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO,
+  applyEnemyHealthBarFill,
+  syncEnemyHealthBarFillFromRef,
+  syncEnemyHealthBarNumericTextFromRef,
+} from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
+import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 import TemplarSoulCrest from './TemplarSoulCrest';
 
 interface TemplarRendererProps {
   id: string;
-  position: Vector3;
+  position: Position3;
   rotation: number;
   health: number;
   maxHealth: number;
@@ -47,8 +58,10 @@ function TemplarRenderer({
   showMeleeRangeRing = true,
 }: TemplarRendererProps) {
   const theme = campHpTheme(campType);
-  const { socket, enemyTransformsRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
+  const hpFillRef = useRef<Mesh>(null);
+  const hpTextRef = useRef<any>(null);
 
   const [isAttacking,   setIsAttacking]   = useState(false);
   const [isWalking,     setIsWalking]     = useState(false);
@@ -63,8 +76,8 @@ function TemplarRenderer({
   const isLeapingRef    = useRef(false);
   const isAbilityRef    = useRef(false);
 
-  const targetPosition  = useRef(position.clone());
-  const serverPositionRef = useRef(position.clone());
+  const targetPosition  = useRef(new Vector3(position.x, position.y, position.z));
+  const serverPositionRef = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation  = useRef(rotation);
   const isAttackingRef  = useRef(false);
   const isWalkingRef    = useRef(false);
@@ -105,7 +118,7 @@ function TemplarRenderer({
   }, []);
 
   useEffect(() => {
-    serverPositionRef.current.copy(position);
+    serverPositionRef.current.set(position.x, position.y, position.z);
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialise the group at the exact server position before the first frame.
@@ -119,18 +132,18 @@ function TemplarRenderer({
 
   // Derive walking state from server position deltas.
   useEffect(() => {
-    const dist = targetPosition.current.distanceTo(position);
+    const dist = targetPosition.current.distanceTo(positionScratch.set(position.x, position.y, position.z));
     const locked = isAnimLocked();
 
     // While executing an attack or ability, ignore position updates entirely.
     // The backend locks the templar during these windows; syncing the lerp target
     // during the lock would swallow post-ability deltas and prevent walk re-trigger.
     if (!locked) {
-      targetPosition.current.copy(position);
+      targetPosition.current.set(position.x, position.y, position.z);
     }
 
     if (dist > 5.0 && groupRef.current && !locked) {
-      groupRef.current.position.copy(position);
+      groupRef.current.position.set(position.x, position.y, position.z);
     }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -318,9 +331,16 @@ function TemplarRenderer({
     };
   }, [id, socket, flushServerPosition]);
 
+  useLayoutEffect(() => {
+    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth, ENEMY_HP_BAR_WIDTH);
+  }, [health, maxHealth]);
+
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, ENEMY_HP_BAR_WIDTH);
+    syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
 
     const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
     updateEnemyWalkStateFromMoveDist(
@@ -395,25 +415,27 @@ function TemplarRenderer({
         {health > 0 && !isDying && (
           <>
             <mesh position={[0, 0, 0]}>
-              <planeGeometry args={[2.0, 0.25]} />
+              <primitive object={ENEMY_HP_BAR_BG_GEO} attach="geometry" />
               <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
             </mesh>
 
-            <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
-              <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
+            <mesh
+              ref={hpFillRef}
+              position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
+              scale={[1, 1, 1]}
+            >
+              <primitive object={ENEMY_HP_BAR_FILL_GEO} attach="geometry" />
               <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
             </mesh>
 
-            <Text
-              position={[0, 0, 0.002]}
+            <EnemyHealthBarTextLabel
+              leading="🛡"
+              numericRef={hpTextRef}
+              health={health}
+              maxHealth={maxHealth}
               fontSize={0.18}
               color={theme.text}
-              anchorX="center"
-              anchorY="middle"
-              fontWeight="bold"
-            >
-              {`🛡 ${Math.ceil(health)}/${maxHealth}`}
-            </Text>
+            />
             <EnemyStaggerBar stagger={staggerBuildup} />
           </>
         )}

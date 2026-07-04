@@ -202,6 +202,8 @@ export class CameraSystem extends System {
   }
 
   private handleMouseInput(): void {
+    if (this.inputManager.isGameInputBlocked()) return;
+
     const mouseDelta = this.inputManager.getMouseDelta();
 
     // Only rotate camera when right mouse button is held down AND camera rotation is not disabled

@@ -288,7 +288,7 @@ export default function GameUI({
   return (
     <>
       {/* Rune Counter - positioned in right corner */}
-      <div className="fixed bottom-4 right-4 z-50">
+      <div className="fixed bottom-4 right-4 z-50" data-block-game-input>
         <RuneCounter
           criticalRuneCount={criticalRuneCount}
           critDamageRuneCount={critDamageRuneCount}
@@ -298,7 +298,7 @@ export default function GameUI({
       </div>
 
       {/* Main UI Panel - positioned above the hotkey panel */}
-      <div className="fixed bottom-32 left-1/2 transform -translate-x-1/2 z-50">
+      <div className="fixed bottom-32 left-1/2 transform -translate-x-1/2 z-50" data-block-game-input>
         {/* Outer wrapper for corner ornaments */}
         <div style={{ position: 'relative', minWidth: '360px' }}>
           {/* Corner bracket ornaments - REMOVED */}

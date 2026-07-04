@@ -4,6 +4,8 @@ import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { WeaponType, WeaponSubclass } from '../components/dragon/weapons';
 import { Camera } from '../utils/three-exports';
+import { ENABLE_REALTIME_SHADOWS } from '../utils/renderConfig';
+import { isDevPerformanceHudEnabled } from '../utils/isDevPerformanceHudEnabled';
 import type { DamageNumberData } from '../components/DamageNumbers';
 import CombatOverlay, { type CombatOverlayCallbacks } from '../components/ui/CombatOverlay';
 import GameUI from '../components/ui/GameUI';
@@ -42,6 +44,7 @@ import {
   excludeOwnedTalentsFromBoonPool,
   filterTalentIdsByExclusionSet,
   getEligibleDuoBoonsForColor,
+  getEligibleUltimateBoonsForColor,
   isCoopRoomColor,
   pickPrioritizedRoomBoonOptions,
   pickRandomDistinctFromPool,
@@ -58,10 +61,16 @@ import { getDefaultLoadoutForWeapon } from '../utils/weaponAbilities';
 import {
   buildRoomTitleAnnouncement,
   BOON_REROLL_GOLD_COST,
+  BOSS_SLAIN_ANNOUNCEMENTS,
+  GUIDE_ANNOUNCEMENTS,
   REWARD_ANNOUNCEMENT_COLORS,
+  ROOM_TITLE_ANNOUNCEMENT_MS,
   STAT_ROOM_PEDESTAL_POINTS,
   TRIAL_ROOM_PEDESTAL_GOLD,
+  type BossSlainLabel,
 } from '../utils/coopRoomTitles';
+import { useAnnouncementQueue } from '../utils/announcementQueue';
+import { ITEM_RARITY_COLORS, isItemRarity } from '../utils/itemRarity';
 import { DpsTracker, type DpsSnapshot } from '../utils/DpsTracker';
 
 // Extend Window interface to include audioSystem
@@ -82,6 +91,10 @@ const Canvas = dynamic(() => import('@react-three/fiber').then(mod => ({ default
 const CoopGameScene = dynamic(() => import('../components/CoopGameScene').then(mod => ({ default: mod.CoopGameScene })), {
   ssr: false,
   loading: () => null
+});
+
+const DevPerformanceMeter = dynamic(() => import('../components/ui/DevPerformanceMeter'), {
+  ssr: false,
 });
 
 /** Prevents double bootstrap in React Strict Mode (ref resets on remount). */
@@ -155,21 +168,34 @@ function rollRoomBoonOptions(
 ): TalentId[] {
   const TOTAL_OPTIONS = 3;
   const lowerColor = String(color ?? '').toLowerCase();
-  // Duo boons are guaranteed slots (up to TOTAL_OPTIONS) once both required colors are owned.
-  const duoBoons: TalentId[] = isCoopRoomColor(lowerColor)
-    ? getEligibleDuoBoonsForColor(
-        lowerColor as CoopRoomColor,
-        talentLoadout,
-        primaryWeapon,
-        abilityLoadout,
-      ).slice(0, TOTAL_OPTIONS)
-    : [];
-  const remainingCount = TOTAL_OPTIONS - duoBoons.length;
-  if (remainingCount <= 0) return duoBoons;
 
-  const pool = filterRoomBoonPool(color, primaryWeapon, talentLoadout, exclusions);
-  const rest = pickPrioritizedRoomBoonOptions(pool, color, primaryWeapon, abilityLoadout, remainingCount);
-  return [...duoBoons, ...rest];
+  const regularPool = filterRoomBoonPool(color, primaryWeapon, talentLoadout, exclusions);
+
+  const eligibleSpecials = isCoopRoomColor(lowerColor)
+    ? [
+        ...getEligibleDuoBoonsForColor(
+          lowerColor as CoopRoomColor,
+          talentLoadout,
+          primaryWeapon,
+          abilityLoadout,
+        ),
+        ...getEligibleUltimateBoonsForColor(
+          lowerColor as CoopRoomColor,
+          talentLoadout,
+          primaryWeapon,
+          abilityLoadout,
+        ),
+      ]
+    : [];
+
+  const combinedPool = Array.from(new Set([...regularPool, ...eligibleSpecials]));
+  return pickPrioritizedRoomBoonOptions(
+    combinedPool,
+    color,
+    primaryWeapon,
+    abilityLoadout,
+    TOTAL_OPTIONS,
+  );
 }
 
 const DEV_TALENT_MODAL =
@@ -213,8 +239,11 @@ function HomeContent() {
     purchaseMerchantItem,
     purchaseMerchantHeal,
     registerMerchantPurchaseSuccessHandler,
+    registerBossDefeatedHandler,
+    registerBossItemPickupHandler,
     clearCoopClearedRoomColor,
     hideCoopPortalTransition,
+    confirmCoopPortalTransitionComplete,
     setSelectedWeapons,
     clearLateJoinCombatLoadout,
   } = useMultiplayerActions();
@@ -387,6 +416,10 @@ function HomeContent() {
     });
   }, []);
 
+  const { enqueueAnnouncement, enqueueAnnouncementAfter } = useAnnouncementQueue(
+    queueOverlayAnnouncement,
+  );
+
   const queueRoomTitleAnnouncement = useCallback((
     kind: CoopRoomKind | 'throne',
     visitIndex?: number | null,
@@ -394,12 +427,31 @@ function HomeContent() {
   ) => {
     const announcement = buildRoomTitleAnnouncement(kind, visitIndex);
     if (!announcement) return;
-    queueOverlayAnnouncement(
+    enqueueAnnouncement(
       announcement.title,
       announcement.color,
       triggerKey ?? `${kind}-${visitIndex ?? 'none'}-${Date.now()}`,
     );
-  }, [queueOverlayAnnouncement]);
+  }, [enqueueAnnouncement]);
+
+  const throneEnterPortalAnnouncedRef = useRef(false);
+  const claimRewardAnnouncedSeqRef = useRef(-1);
+  const chooseGatewayAnnouncedSeqRef = useRef(-1);
+  const prevPortalsUnlockedRef = useRef(false);
+
+  const announceThroneEnterPortal = useCallback(() => {
+    if (throneEnterPortalAnnouncedRef.current || combatArenaActiveRef.current) return;
+    throneEnterPortalAnnouncedRef.current = true;
+    const { title, color } = GUIDE_ANNOUNCEMENTS.enterPortal;
+    enqueueAnnouncement(title, color, 'throne-enter-portal');
+  }, [enqueueAnnouncement]);
+
+  const announceChooseGateway = useCallback((intermissionSeq: number) => {
+    if (chooseGatewayAnnouncedSeqRef.current === intermissionSeq) return;
+    chooseGatewayAnnouncedSeqRef.current = intermissionSeq;
+    const { title, color } = GUIDE_ANNOUNCEMENTS.chooseGateway;
+    enqueueAnnouncement(title, color, `gateway-${intermissionSeq}`);
+  }, [enqueueAnnouncement]);
 
   const bootstrapWeaponsRef = useRef(selectedWeapons);
   const [playerExperience, setPlayerExperience] = useState(0);
@@ -561,6 +613,7 @@ function HomeContent() {
     lastArenaEnterSeqRef.current = coopCombatArenaEnterSeq;
     setPedestalInteracted(false);
     setPortalsUnlocked(false);
+    prevPortalsUnlockedRef.current = false;
   }, [coopCombatArenaEnterSeq]);
 
   /** New wave-clear intermission: ensure pedestal aura / X-interact isn't stuck behind prior `pedestalInteracted`. */
@@ -635,7 +688,7 @@ function HomeContent() {
           );
         }
         classBoonPickedWeaponsRef.current.add(w);
-        queueOverlayAnnouncement('UNLOCKED', REWARD_ANNOUNCEMENT_COLORS.unlocked, `boon-${boonId}`);
+        enqueueAnnouncement('UNLOCKED', REWARD_ANNOUNCEMENT_COLORS.unlocked, `boon-${boonId}`);
         window.audioSystem?.playUIInterface3Sound?.();
       });
 
@@ -650,7 +703,7 @@ function HomeContent() {
     setAbilityLoadout,
     setTalentLoadout,
     clearLateJoinCombatLoadout,
-    queueOverlayAnnouncement,
+    enqueueAnnouncement,
   ]);
 
   /**
@@ -685,7 +738,7 @@ function HomeContent() {
       playPedestalInteractAndDelay(() => {
         grantStatPoints(STAT_ROOM_PEDESTAL_POINTS);
         window.audioSystem?.playUIInterface3Sound?.();
-        queueOverlayAnnouncement(
+        enqueueAnnouncement(
           `+${STAT_ROOM_PEDESTAL_POINTS} STAT POINTS`,
           REWARD_ANNOUNCEMENT_COLORS.stat,
           `stat-points-${coopMainArenaIntermissionSeq}`,
@@ -707,7 +760,7 @@ function HomeContent() {
       playPedestalInteractAndDelay(() => {
         if (socket?.id) updatePlayerGold(socket.id, TRIAL_ROOM_PEDESTAL_GOLD);
         window.audioSystem?.playUIGoldPickupSound?.();
-        queueOverlayAnnouncement(
+        enqueueAnnouncement(
           `+${TRIAL_ROOM_PEDESTAL_GOLD} GOLD`,
           REWARD_ANNOUNCEMENT_COLORS.gold,
           `trial-gold-${coopMainArenaIntermissionSeq}`,
@@ -766,21 +819,27 @@ function HomeContent() {
     talentLoadout,
     abilityLoadout,
     socket?.id,
-    queueOverlayAnnouncement,
+    enqueueAnnouncement,
     playPedestalInteractAndDelay,
   ]);
 
   const handleThroneWeaponEquipped = useCallback(
     (weapon: WeaponType) => {
       if (combatArenaActive) return;
-      if (classBoonPickedWeaponsRef.current.has(weapon)) return;
+      if (classBoonPickedWeaponsRef.current.has(weapon)) {
+        announceThroneEnterPortal();
+        return;
+      }
       const options = rollClassBoonOptions(weapon, talentLoadout);
-      if (options.length === 0) return;
+      if (options.length === 0) {
+        announceThroneEnterPortal();
+        return;
+      }
       playPedestalInteractAndDelay(() => {
         setCoopBoon({ kind: 'class', options, weaponForPick: weapon });
       });
     },
-    [combatArenaActive, talentLoadout, playPedestalInteractAndDelay],
+    [combatArenaActive, talentLoadout, playPedestalInteractAndDelay, announceThroneEnterPortal],
   );
 
   const handleCoopBoonReroll = useCallback(() => {
@@ -882,21 +941,23 @@ function HomeContent() {
         if (coopMainArenaPortalPhase !== null) {
           clearCoopClearedRoomColor();
           setPortalsUnlocked(true);
+        } else if (!combatArenaActive) {
+          announceThroneEnterPortal();
         }
       }
-      queueOverlayAnnouncement('UNLOCKED', REWARD_ANNOUNCEMENT_COLORS.unlocked, `boon-${id}`);
+      enqueueAnnouncement('UNLOCKED', REWARD_ANNOUNCEMENT_COLORS.unlocked, `boon-${id}`);
       window.audioSystem?.playUIInterface3Sound?.();
       setCoopBoon(null);
     },
-    [clearCoopClearedRoomColor, coopMainArenaPortalPhase, setTalentLoadout, setAbilityLoadout, abilityLoadout, queueOverlayAnnouncement],
+    [clearCoopClearedRoomColor, coopMainArenaPortalPhase, combatArenaActive, setTalentLoadout, setAbilityLoadout, abilityLoadout, enqueueAnnouncement, announceThroneEnterPortal],
   );
 
   useEffect(() => {
     return registerMerchantPurchaseSuccessHandler(() => {
-      queueOverlayAnnouncement('PURCHASED', REWARD_ANNOUNCEMENT_COLORS.purchased);
+      enqueueAnnouncement('PURCHASED', REWARD_ANNOUNCEMENT_COLORS.purchased);
       window.audioSystem?.playUIInterface2Sound?.();
     });
-  }, [registerMerchantPurchaseSuccessHandler, queueOverlayAnnouncement]);
+  }, [registerMerchantPurchaseSuccessHandler, enqueueAnnouncement]);
 
   useEffect(() => {
     return registerMerchantPurchaseSuccessHandler((payload) => {
@@ -1083,6 +1144,11 @@ function HomeContent() {
       coopMainArenaPortalPhase !== null
     ) {
       audio?.playCoopRoomClearFinish?.();
+      if (claimRewardAnnouncedSeqRef.current !== coopMainArenaIntermissionSeq) {
+        claimRewardAnnouncedSeqRef.current = coopMainArenaIntermissionSeq;
+        const { title, color } = GUIDE_ANNOUNCEMENTS.claimReward;
+        enqueueAnnouncement(title, color, `claim-${coopMainArenaIntermissionSeq}`);
+      }
     }
 
     prevCoopMainArenaPortalPhaseRef.current = coopMainArenaPortalPhase;
@@ -1091,7 +1157,56 @@ function HomeContent() {
     gameStarted,
     combatArenaActive,
     coopMainArenaPortalPhase,
+    coopMainArenaIntermissionSeq,
+    enqueueAnnouncement,
   ]);
+
+  useEffect(() => {
+    const wasUnlocked = prevPortalsUnlockedRef.current;
+    prevPortalsUnlockedRef.current = portalsUnlocked;
+    if (
+      sessionGameMode === 'coop' &&
+      combatArenaActive &&
+      !wasUnlocked &&
+      portalsUnlocked &&
+      coopMainArenaIntermissionSeq > 0
+    ) {
+      announceChooseGateway(coopMainArenaIntermissionSeq);
+    }
+  }, [
+    portalsUnlocked,
+    combatArenaActive,
+    sessionGameMode,
+    coopMainArenaIntermissionSeq,
+    announceChooseGateway,
+  ]);
+
+  useEffect(() => {
+    return registerBossDefeatedHandler((payload) => {
+      const label = payload.slainLabel;
+      if (!label || !(label in BOSS_SLAIN_ANNOUNCEMENTS)) return;
+      const announcement = BOSS_SLAIN_ANNOUNCEMENTS[label as BossSlainLabel];
+      enqueueAnnouncement(
+        announcement.title,
+        announcement.color,
+        `slain-${label}-${payload.bossId ?? Date.now()}`,
+      );
+    });
+  }, [registerBossDefeatedHandler, enqueueAnnouncement]);
+
+  useEffect(() => {
+    return registerBossItemPickupHandler(({ label, rarity }) => {
+      const color =
+        rarity && isItemRarity(rarity)
+          ? ITEM_RARITY_COLORS[rarity]
+          : '#eab308';
+      enqueueAnnouncement(
+        `PICKED UP ${label.toUpperCase()}`,
+        color,
+        `pickup-${label}-${Date.now()}`,
+      );
+    });
+  }, [registerBossItemPickupHandler, enqueueAnnouncement]);
 
   const pvpMerchantItems = [
     {
@@ -1152,12 +1267,21 @@ function HomeContent() {
     showMerchantUI &&
     (coopClearedRoomKind === 'merchant' || coopCurrentRoomKind === 'merchant');
 
+  const uiBlocksGameInput =
+    showMerchantUI ||
+    showRulesPanel ||
+    defeatDialogOpen ||
+    throneAbilityWeapon !== null ||
+    throneTalentWeapon !== null ||
+    coopBoon !== null;
+
   return (
       <main className="w-full h-screen bg-black relative">
         {/* Rules Panel */}
         {showRulesPanel && (
           <div
             className="absolute inset-0 bg-black/80 flex items-center justify-center z-50"
+            data-block-game-input
             onClick={() => setShowRulesPanel(false)}
           >
             <div
@@ -1219,7 +1343,7 @@ function HomeContent() {
         {showCanvas && (
           <Canvas
             camera={CANVAS_CAMERA}
-            shadows
+            {...(ENABLE_REALTIME_SHADOWS ? { shadows: true as const } : {})}
             dpr={[1, 1.5]}
             gl={CANVAS_GL}
           >
@@ -1244,6 +1368,7 @@ function HomeContent() {
                   throneAbilityModalOpen={
                     throneAbilityWeapon !== null || throneTalentWeapon !== null || coopBoon !== null
                   }
+                  uiBlocksGameInput={uiBlocksGameInput}
                   onRequestThroneAbilityModal={handleRequestThroneAbilityModal}
                   onRequestThroneTalentModal={handleRequestThroneTalentModal}
                   onThroneWeaponEquipped={handleThroneWeaponEquipped}
@@ -1265,7 +1390,7 @@ function HomeContent() {
         {gameMode !== 'menu' && (
           <>
             <div id="dps-meter-hud" className="absolute top-4 left-4 text-white font-mono text-sm pointer-events-none">
-              <div className="rounded-md bg-black/45 px-3 py-2 shadow-lg backdrop-blur-sm">
+              <div className="rounded-md bg-black/45 px-3 py-2 shadow-lg backdrop-blur-sm" data-block-game-input>
                 <div className="text-yellow-300 font-semibold">
                   DPS: {Math.round(dpsSnapshot.currentDps).toLocaleString()}
                 </div>
@@ -1282,7 +1407,7 @@ function HomeContent() {
               </div>
             </div>
 
-            <div className="fixed bottom-16 right-1 z-40 flex items-center gap-2">
+            <div className="fixed bottom-16 right-1 z-40 flex items-center gap-2" data-block-game-input>
               <HudActionButtons
                 onOpenRulebook={() => setShowRulesPanel(true)}
               />
@@ -1295,8 +1420,9 @@ function HomeContent() {
             </div>
             
             {/* Performance Stats */}
-            <div className="absolute top-4 right-4 text-white font-mono text-sm">
-              <div id="fps-counter">FPS: --</div>
+            <div className="absolute top-4 right-4 flex flex-col items-end text-white font-mono text-sm" data-block-game-input>
+              <div id="fps-counter" className="text-right">FPS: --</div>
+              {isDevPerformanceHudEnabled() && <DevPerformanceMeter />}
 
               {sessionGameMode === 'coop' && (
                 <button
@@ -1310,7 +1436,7 @@ function HomeContent() {
               )}
 
               {gameMode === 'pvp' && (
-                <div className="mt-2 text-red-400">
+                <div className="mt-2 text-right text-red-400">
                   <div>PVP Mode</div>
                 </div>
               )}
@@ -1322,7 +1448,7 @@ function HomeContent() {
             <DefeatRetryDialog open={defeatDialogOpen} />
 
             {/* Game UI - Outside Canvas */}
-            <div className="absolute bottom-4 left-4">
+            <div className="absolute bottom-4 left-4" data-block-game-input>
               <GameUI
                 key={`gameui-${localPurchasedItems.length}-${localPurchasedItems.join(',')}`}
                 currentWeapon={controlSystem?.getCurrentWeapon() || selectedWeapons.primary || gameState.currentWeapon}
@@ -1482,8 +1608,15 @@ function HomeContent() {
           sceneBootstrapReady={loadingSceneBootstrapReady}
           onFadeComplete={() => {
             setIsGameLoading(false);
-            if (sessionGameMode === 'coop' && !combatArenaActiveRef.current) {
+            if (sessionGameMode === 'coop' && !combatArenaActiveRef.current && !lateJoinLoadoutHandledRef.current) {
               queueRoomTitleAnnouncement('throne', null, 'throne-start');
+              const { title, color } = GUIDE_ANNOUNCEMENTS.chooseWeapon;
+              enqueueAnnouncementAfter(
+                ROOM_TITLE_ANNOUNCEMENT_MS,
+                title,
+                color,
+                'throne-choose-weapon',
+              );
               setControlsTutorialAutoDismiss(true);
               setControlsTutorialVisible(true);
             }
@@ -1495,6 +1628,7 @@ function HomeContent() {
           triggerSeq={coopPortalBlinkSeq}
           sceneReadySeq={coopCombatArenaEnterSeq}
           onComplete={() => {
+            confirmCoopPortalTransitionComplete();
             hideCoopPortalTransition();
             const roomKind = coopCurrentRoomKindRef.current;
             if (roomKind) {

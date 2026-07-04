@@ -29,6 +29,14 @@ const FORCE_OF_NATURE_PALETTE: DirectionalProcLightningPalette = {
   light: '#86efac',
 };
 
+/** Storm Shield (ultimate: blue) — cyan shield recolor of the stagger lightning bolt. */
+const STORM_SHIELD_PALETTE: DirectionalProcLightningPalette = {
+  core: '#ecfeff',
+  glow: '#06b6d4',
+  halo: '#0891b2',
+  light: '#67e8f9',
+};
+
 interface StaggerProcLightningProps {
   position: Vector3;
   onComplete: () => void;
@@ -36,6 +44,8 @@ interface StaggerProcLightningProps {
   magmaCurrent?: boolean;
   /** True when the proc that spawned this bolt has the Force of Nature duo boon active. */
   forceOfNature?: boolean;
+  /** True when the proc that spawned this bolt has the Storm Shield ultimate active. */
+  stormShield?: boolean;
 }
 
 export default function StaggerProcLightning({
@@ -43,13 +53,20 @@ export default function StaggerProcLightning({
   onComplete,
   magmaCurrent = false,
   forceOfNature = false,
+  stormShield = false,
 }: StaggerProcLightningProps) {
   const from = useMemo(
     () => new Vector3(position.x, position.y + SKY_Y, position.z),
     [position.x, position.y, position.z],
   );
 
-  const palette = magmaCurrent ? MAGMA_PALETTE : forceOfNature ? FORCE_OF_NATURE_PALETTE : BLUE_PALETTE;
+  const palette = magmaCurrent
+    ? MAGMA_PALETTE
+    : forceOfNature
+      ? FORCE_OF_NATURE_PALETTE
+      : stormShield
+        ? STORM_SHIELD_PALETTE
+        : BLUE_PALETTE;
 
   return (
     <DirectionalProcLightning

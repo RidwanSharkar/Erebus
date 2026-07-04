@@ -1,13 +1,23 @@
 'use client';
+import type { Position3 } from '@/utils/position3';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Billboard, Text } from '@react-three/drei';
+import { Billboard } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3 } from 'three';
+import { Group, Mesh, Vector3 } from 'three';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
+import {
+  ENEMY_HP_BAR_WIDTH,
+  ENEMY_HP_BAR_HEIGHT,
+  ENEMY_HP_BAR_FILL_HEIGHT,
+  ENEMY_HP_BAR_FILL_Z, ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO,
+  syncEnemyHealthBarFillFromRef,
+  syncEnemyHealthBarNumericTextFromRef,
+} from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
+import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 import GreedModel, { GreedAbilityClip } from './GreedModel';
 import KnightSoulEffect from './KnightSoulEffect';
 
@@ -15,7 +25,7 @@ export type GreedSoulType = 'green' | 'red' | 'blue' | 'purple';
 
 interface GreedRendererProps {
   id: string;
-  position: Vector3;
+  position: Position3;
   rotation: number;
   health: number;
   maxHealth: number;
@@ -50,9 +60,11 @@ function GreedRenderer({
   soulType = 'green',
 }: GreedRendererProps) {
   const theme = campHpTheme(soulType);
-  const { socket, enemyTransformsRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
-  const targetPosition = useRef(position.clone());
+  const hpFillRef = useRef<Mesh>(null);
+  const hpTextRef = useRef<any>(null);
+  const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation = useRef(rotation);
   const abilityTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer = useRef(0);
@@ -71,7 +83,7 @@ function GreedRenderer({
   }, []);
 
   useEffect(() => {
-    targetPosition.current.copy(position);
+    targetPosition.current.set(position.x, position.y, position.z);
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -118,6 +130,9 @@ function GreedRenderer({
     while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
 
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth);
+    syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
+
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
@@ -154,25 +169,26 @@ function GreedRenderer({
         {health > 0 && !isDying && (
           <>
             <mesh position={[0, 0, 0]}>
-              <planeGeometry args={[1.8, 0.23]} />
+              <primitive object={ENEMY_HP_BAR_BG_GEO} attach="geometry" />
               <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
             </mesh>
 
-            <mesh position={[-0.9 + (health / maxHealth) * 0.9, 0, 0.001]}>
-              <planeGeometry args={[(health / maxHealth) * 1.8, 0.21]} />
+            <mesh
+              ref={hpFillRef}
+              position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
+            >
+              <primitive object={ENEMY_HP_BAR_FILL_GEO} attach="geometry" />
               <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
             </mesh>
 
-            <Text
-              position={[0, 0, 0.002]}
+            <EnemyHealthBarTextLabel
+              leading="HP"
+              numericRef={hpTextRef}
+              health={health}
+              maxHealth={maxHealth}
               fontSize={0.16}
               color={theme.text}
-              anchorX="center"
-              anchorY="middle"
-              fontWeight="bold"
-            >
-              {`HP ${Math.ceil(health)}/${maxHealth}`}
-            </Text>
+            />
             <EnemyStaggerBar stagger={staggerBuildup} />
           </>
         )}

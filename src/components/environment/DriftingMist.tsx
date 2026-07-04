@@ -2,7 +2,7 @@
 
 import React, { useRef, useMemo } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Mesh, ShaderMaterial, Vector3, Quaternion, DoubleSide } from '@/utils/three-exports';
+import { Mesh, ShaderMaterial, Vector3, Quaternion, DoubleSide, PlaneGeometry } from '@/utils/three-exports';
 
 // Shared simplex-noise + fbm GLSL
 const mistVertexShader = `
@@ -148,22 +148,17 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
-const MistCluster: React.FC<{ params: ClusterParams }> = ({ params }) => {
+const MistCluster: React.FC<{ params: ClusterParams; materialOffset: number }> = ({ params, materialOffset }) => {
   const { camera } = useThree();
   const meshRefs = useRef<(Mesh | null)[]>([]);
-  const matRefs  = useRef<(ShaderMaterial | null)[]>([]);
 
   // Looping sweep position (0→1). Initialised to phase so clusters start staggered.
   const uRef = useRef(params.phase);
 
-  // One uniform set per puff, created once
-  const puffUniforms = useMemo(
-    () => params.puffs.map((p) => ({
-      opacity: { value: params.baseOpacity * p.opacityMul },
-      time:    { value: 0 },
-      seed:    { value: p.seed },
-    })),
-    [params.puffs, params.baseOpacity]
+  // Uniform sets reference module-level materials (stable Programs, no JSX shaderMaterial churn).
+  const puffMaterials = useMemo(
+    () => params.puffs.map((_, i) => MIST_PUFF_MATERIALS[materialOffset + i]),
+    [params.puffs, materialOffset],
   );
 
   useFrame(({ clock }, delta) => {
@@ -197,7 +192,7 @@ const MistCluster: React.FC<{ params: ClusterParams }> = ({ params }) => {
     // Place each chunk relative to the cluster center
     for (let i = 0; i < params.puffs.length; i++) {
       const mesh = meshRefs.current[i];
-      const mat  = matRefs.current[i];
+      const mat = puffMaterials[i];
       if (!mesh || !mat) continue;
 
       const puff = params.puffs[i];
@@ -219,19 +214,10 @@ const MistCluster: React.FC<{ params: ClusterParams }> = ({ params }) => {
         <mesh
           key={i}
           ref={(el) => { meshRefs.current[i] = el; }}
-        >
-          <planeGeometry args={[puff.scale, puff.scale * 0.75, 1, 1]} />
-          <shaderMaterial
-            ref={(el) => { matRefs.current[i] = el; }}
-            vertexShader={mistVertexShader}
-            fragmentShader={mistFragmentShader}
-            uniforms={puffUniforms[i]}
-            transparent
-            depthWrite={false}
-            depthTest={false}
-            side={DoubleSide}
-          />
-        </mesh>
+          scale={[puff.scale, puff.scale * 0.75, 1]}
+          geometry={MIST_PLANE_GEO}
+          material={puffMaterials[i]}
+        />
       ))}
     </group>
   );
@@ -277,12 +263,40 @@ const MIST_CLUSTERS: ClusterParams[] = [
   },
 ];
 
-const DriftingMist: React.FC = () => (
-  <group name="drifting-mist">
-    {MIST_CLUSTERS.map((params, i) => (
-      <MistCluster key={i} params={params} />
-    ))}
-  </group>
+const MIST_PLANE_GEO = new PlaneGeometry(1, 0.75, 1, 1);
+MIST_PLANE_GEO.userData.shared = true;
+
+const MIST_PUFF_MATERIALS: ShaderMaterial[] = MIST_CLUSTERS.flatMap((cluster) =>
+  cluster.puffs.map((puff) =>
+    new ShaderMaterial({
+      vertexShader: mistVertexShader,
+      fragmentShader: mistFragmentShader,
+      uniforms: {
+        opacity: { value: cluster.baseOpacity * puff.opacityMul },
+        time: { value: 0 },
+        seed: { value: puff.seed },
+      },
+      transparent: true,
+      depthWrite: false,
+      depthTest: false,
+      side: DoubleSide,
+    }),
+  ),
 );
+
+let mistMaterialIndex = 0;
+
+const DriftingMist: React.FC = () => {
+  let materialOffset = 0;
+  return (
+    <group name="drifting-mist">
+      {MIST_CLUSTERS.map((params, i) => {
+        const offset = materialOffset;
+        materialOffset += params.puffs.length;
+        return <MistCluster key={i} params={params} materialOffset={offset} />;
+      })}
+    </group>
+  );
+};
 
 export default DriftingMist;

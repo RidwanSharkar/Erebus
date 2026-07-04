@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import type { ReactNode } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { AdditiveBlending, BackSide, Group, MathUtils, MeshBasicMaterial, Vector3 } from '@/utils/three-exports';
+import { AdditiveBlending, BackSide, Group, MathUtils, MeshBasicMaterial, SphereGeometry, TorusGeometry, Vector3 } from '@/utils/three-exports';
 import CustomSky from './CustomSky';
 import type { RoomBorderTheme, SimpleBorderColorTheme } from './SimpleBorderEffects';
 import SimpleBorderEffects from './SimpleBorderEffects';
@@ -19,6 +19,10 @@ import PortalSymbol from './PortalSymbols';
 import ArcaneRitualCircle from './ArcaneRitualCircle';
 import { RITUAL_WORLD_SCALE } from './ritualCircleGeometries';
 import { ThroneCircularCastleWalls } from './CastleWalls';
+
+/** Shared portal ring geometry — reused across all ThronePortalRing instances. */
+const THRONE_PORTAL_RING_TORUS_GEO = new TorusGeometry(2.1, 0.12, 10, 48);
+const THRONE_PORTAL_INNER_SPHERE_GEO = new SphereGeometry(1.35, 24, 24);
 
 /** Original throne staging layout (portals, pedestals, inner pavers); unchanged when expanding grass. */
 export const COOP_THRONE_LAYOUT_RADIUS = 16;
@@ -538,28 +542,46 @@ export function ThronePortalRing({
 
   const portalColor = locked ? '#888888' : THRONE_PORTAL_COLOR_HEX[campType];
 
+  const ringMaterial = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: portalColor,
+        transparent: true,
+        opacity: locked ? 0.45 : 0.85,
+        depthWrite: false,
+      }),
+    [portalColor, locked],
+  );
+
+  const innerMaterial = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: portalColor,
+        transparent: true,
+        opacity: locked ? 0.15 : 0.4,
+        depthWrite: false,
+        side: BackSide,
+        blending: AdditiveBlending,
+      }),
+    [portalColor, locked],
+  );
+
+  useEffect(() => {
+    return () => {
+      ringMaterial.dispose();
+      innerMaterial.dispose();
+    };
+  }, [ringMaterial, innerMaterial]);
+
   return (
     <group>
-      <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[2.1, 0.12, 10, 48]} />
-        <meshBasicMaterial
-          color={portalColor}
-          transparent
-          opacity={locked ? 0.45 : 0.85}
-          depthWrite={false}
-        />
-      </mesh>
-      <mesh ref={innerRef}>
-        <sphereGeometry args={[1.35, 24, 24]} />
-        <meshBasicMaterial
-          color={portalColor}
-          transparent
-          opacity={locked ? 0.15 : 0.4}
-          depthWrite={false}
-          side={BackSide}
-          blending={AdditiveBlending}
-        />
-      </mesh>
+      <mesh
+        ref={ringRef}
+        rotation={[Math.PI / 2, 0, 0]}
+        geometry={THRONE_PORTAL_RING_TORUS_GEO}
+        material={ringMaterial}
+      />
+      <mesh ref={innerRef} geometry={THRONE_PORTAL_INNER_SPHERE_GEO} material={innerMaterial} />
       <pointLight
         color={portalColor}
         intensity={locked ? 0.5 : 2.2}

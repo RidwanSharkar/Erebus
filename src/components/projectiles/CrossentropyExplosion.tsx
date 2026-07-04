@@ -11,6 +11,7 @@ import {
   SphereGeometry,
   TorusGeometry,
   DoubleSide,
+  MeshBasicMaterial,
 } from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import type { CrossentropyVisualTheme } from '@/utils/talents';
@@ -169,6 +170,59 @@ export default function CrossentropyExplosion({
     [geometries],
   );
 
+  const vfxMaterials = useMemo(() => {
+    const base = {
+      transparent: true,
+      depthWrite: false,
+      blending: AdditiveBlending,
+    } as const;
+    return {
+      groundRing: new MeshBasicMaterial({ ...base, color: ringE, opacity: 0.85 }),
+      ringOuter: new MeshBasicMaterial({ ...base, color: c1e, opacity: 0.75 }),
+      ringInner: new MeshBasicMaterial({ ...base, color: c2e, opacity: 0.55 }),
+      core: new MeshBasicMaterial({ ...base, color: c1, opacity: 0.9 }),
+      entropyRings: ENTROPY_RING_SCALES.map((_, i) =>
+        new MeshBasicMaterial({ ...base, color: ringE, opacity: 0.7 - i * 0.12 }),
+      ),
+      expandingRings: EXPANDING_RING_PARAMS.map((_, i) =>
+        new MeshBasicMaterial({
+          ...base,
+          color: i % 3 === 0 ? ringE : i % 3 === 1 ? c1e : ringC,
+          opacity: 0.85 - i * 0.1,
+        }),
+      ),
+      crossPlanes: CROSS_PLANE_ANGLES.map((_, i) =>
+        new MeshBasicMaterial({
+          ...base,
+          color: i % 2 === 0 ? c1e : c2e,
+          opacity: 0.5,
+          side: DoubleSide,
+        }),
+      ),
+      sparks: Array.from({ length: SPARK_COUNT }, (_, i) =>
+        new MeshBasicMaterial({
+          ...base,
+          color: i % 2 === 0 ? sparkMain : sparkMainE,
+          opacity: 0.8,
+        }),
+      ),
+    };
+  }, [c1, c1e, c2, c2e, ringC, ringE, sparkMain, sparkMainE]);
+
+  useEffect(
+    () => () => {
+      vfxMaterials.groundRing.dispose();
+      vfxMaterials.ringOuter.dispose();
+      vfxMaterials.ringInner.dispose();
+      vfxMaterials.core.dispose();
+      vfxMaterials.entropyRings.forEach((m) => m.dispose());
+      vfxMaterials.expandingRings.forEach((m) => m.dispose());
+      vfxMaterials.crossPlanes.forEach((m) => m.dispose());
+      vfxMaterials.sparks.forEach((m) => m.dispose());
+    },
+    [vfxMaterials],
+  );
+
   useFrame((state) => {
     if (!groupRef.current) return;
 
@@ -258,16 +312,6 @@ export default function CrossentropyExplosion({
     });
   });
 
-  const vfxMat = (color: string, opacity: number) => (
-    <meshBasicMaterial
-      color={color}
-      transparent
-      opacity={opacity}
-      depthWrite={false}
-      blending={AdditiveBlending}
-    />
-  );
-
   return (
     <group ref={groupRef} position={[px, py, pz]}>
       <mesh
@@ -275,17 +319,12 @@ export default function CrossentropyExplosion({
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, -0.02, 0]}
         geometry={geometries.groundRing}
-      >
-        {vfxMat(ringE, 0.85)}
-      </mesh>
+        material={vfxMaterials.groundRing}
+      />
 
-      <mesh ref={ringOuterRef} rotation={[Math.PI / 2, 0, 0]} geometry={geometries.torusOuter}>
-        {vfxMat(c1e, 0.75)}
-      </mesh>
+      <mesh ref={ringOuterRef} rotation={[Math.PI / 2, 0, 0]} geometry={geometries.torusOuter} material={vfxMaterials.ringOuter} />
 
-      <mesh ref={ringInnerRef} rotation={[Math.PI / 2, 0, 0.35]} geometry={geometries.torusInner}>
-        {vfxMat(c2e, 0.55)}
-      </mesh>
+      <mesh ref={ringInnerRef} rotation={[Math.PI / 2, 0, 0.35]} geometry={geometries.torusInner} material={vfxMaterials.ringInner} />
 
       {geometries.entropyRings.map((geo, i) => (
         <mesh
@@ -295,9 +334,8 @@ export default function CrossentropyExplosion({
           }}
           geometry={geo}
           rotation={entropyRingRotations[i]}
-        >
-          {vfxMat(ringE, 0.7 - i * 0.12)}
-        </mesh>
+          material={vfxMaterials.entropyRings[i]}
+        />
       ))}
 
       {EXPANDING_RING_PARAMS.map(([, , yOffset, tiltX, tiltZ], i) => (
@@ -309,9 +347,8 @@ export default function CrossentropyExplosion({
           geometry={geometries.expandingRings[i]}
           position={[0, yOffset, 0]}
           rotation={[-Math.PI / 2 + tiltX, 0, tiltZ]}
-        >
-          {vfxMat(i % 3 === 0 ? ringE : i % 3 === 1 ? c1e : ringC, 0.85 - i * 0.1)}
-        </mesh>
+          material={vfxMaterials.expandingRings[i]}
+        />
       ))}
 
       {CROSS_PLANE_ANGLES.map((angle, i) => (
@@ -322,21 +359,11 @@ export default function CrossentropyExplosion({
           }}
           rotation={[0, angle, 0]}
           geometry={geometries.crossPlane}
-        >
-          <meshBasicMaterial
-            color={i % 2 === 0 ? c1e : c2e}
-            transparent
-            opacity={0.5}
-            depthWrite={false}
-            blending={AdditiveBlending}
-            side={DoubleSide}
-          />
-        </mesh>
+          material={vfxMaterials.crossPlanes[i]}
+        />
       ))}
 
-      <mesh ref={coreRef} geometry={geometries.core}>
-        {vfxMat(c1, 0.9)}
-      </mesh>
+      <mesh ref={coreRef} geometry={geometries.core} material={vfxMaterials.core} />
 
       {Array.from({ length: SPARK_COUNT }).map((_, i) => (
         <mesh
@@ -345,9 +372,8 @@ export default function CrossentropyExplosion({
             sparkRefs.current[i] = el;
           }}
           geometry={geometries.spark}
-        >
-          {vfxMat(i % 2 === 0 ? sparkMain : sparkMainE, 0.8)}
-        </mesh>
+          material={vfxMaterials.sparks[i]}
+        />
       ))}
     </group>
   );

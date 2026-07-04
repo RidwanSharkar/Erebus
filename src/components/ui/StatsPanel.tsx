@@ -224,7 +224,7 @@ export default function StatsPanel({
   const hasPoints = statPoints > 0;
 
   return (
-    <div className="fixed bottom-4 left-4 z-40 select-none" style={{ width: 228 }}>
+    <div className="fixed bottom-4 left-4 z-40 select-none" style={{ width: 228 }} data-block-game-input>
       <div className="rounded-xl border border-white/15 bg-gray-950/92 backdrop-blur-md shadow-2xl overflow-hidden">
 
         {/* ── Header / toggle ── */}

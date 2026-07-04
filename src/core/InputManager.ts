@@ -1,5 +1,6 @@
 // Centralized input handling system
 import { EventEmitter } from '@/utils/EventEmitter';
+import { isEventOverGameUi } from '@/utils/gameUiInput';
 
 export interface InputEvents {
   keyDown: { key: string; code: string };
@@ -45,6 +46,9 @@ export class InputManager extends EventEmitter {
 
   // Flag to allow all keyboard input (used for chat)
   private allowAllInput = false;
+
+  /** When true, mouse input is suppressed (modals / full-screen UI). */
+  private gameInputBlocked = false;
 
   // Double-tap detection for dash system
   private keyTimings = new Map<string, { 
@@ -125,6 +129,19 @@ export class InputManager extends EventEmitter {
 
   public setAllowAllInput(allow: boolean): void {
     this.allowAllInput = allow;
+  }
+
+  public setGameInputBlocked(blocked: boolean): void {
+    this.gameInputBlocked = blocked;
+    if (blocked) {
+      this.mouseButtons.clear();
+      this.mouseDelta.x = 0;
+      this.mouseDelta.y = 0;
+    }
+  }
+
+  public isGameInputBlocked(): boolean {
+    return this.gameInputBlocked;
   }
 
   public checkDoubleTap(key: string): boolean {
@@ -317,6 +334,7 @@ export class InputManager extends EventEmitter {
   }
 
   private onMouseDown(event: MouseEvent): void {
+    if (this.gameInputBlocked || isEventOverGameUi(event)) return;
     this.mouseButtons.add(event.button);
     this.emit('mouseDown', {
       button: event.button,
@@ -326,6 +344,7 @@ export class InputManager extends EventEmitter {
   }
 
   private onMouseUp(event: MouseEvent): void {
+    if (this.gameInputBlocked || isEventOverGameUi(event)) return;
     this.mouseButtons.delete(event.button);
     this.emit('mouseUp', {
       button: event.button,
@@ -335,24 +354,26 @@ export class InputManager extends EventEmitter {
   }
 
   private onMouseMove(event: MouseEvent): void {
-    if (this.isPointerLocked) {
-      // Use movement deltas when pointer is locked
-      this.mouseDelta.x += event.movementX;
-      this.mouseDelta.y += event.movementY;
-    } else {
-      // Use absolute position when not locked
-      this.previousMousePosition.x = this.mousePosition.x;
-      this.previousMousePosition.y = this.mousePosition.y;
-      this.mousePosition.x = event.clientX;
-      this.mousePosition.y = event.clientY;
-      
-      // Calculate delta from previous position
-      const deltaX = this.mousePosition.x - this.previousMousePosition.x;
-      const deltaY = this.mousePosition.y - this.previousMousePosition.y;
-      
-      // Accumulate delta for this frame
-      this.mouseDelta.x += deltaX;
-      this.mouseDelta.y += deltaY;
+    if (!this.gameInputBlocked) {
+      if (this.isPointerLocked) {
+        // Use movement deltas when pointer is locked
+        this.mouseDelta.x += event.movementX;
+        this.mouseDelta.y += event.movementY;
+      } else {
+        // Use absolute position when not locked
+        this.previousMousePosition.x = this.mousePosition.x;
+        this.previousMousePosition.y = this.mousePosition.y;
+        this.mousePosition.x = event.clientX;
+        this.mousePosition.y = event.clientY;
+
+        // Calculate delta from previous position
+        const deltaX = this.mousePosition.x - this.previousMousePosition.x;
+        const deltaY = this.mousePosition.y - this.previousMousePosition.y;
+
+        // Accumulate delta for this frame
+        this.mouseDelta.x += deltaX;
+        this.mouseDelta.y += deltaY;
+      }
     }
 
     this.emit('mouseMove', {

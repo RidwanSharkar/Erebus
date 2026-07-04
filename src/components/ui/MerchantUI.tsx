@@ -85,6 +85,7 @@ export default function MerchantUI({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-md"
+      data-block-game-input
       style={{
         background: 'radial-gradient(ellipse at 50% 40%, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.92) 100%)',
       }}

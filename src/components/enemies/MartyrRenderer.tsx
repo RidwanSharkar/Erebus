@@ -1,17 +1,25 @@
 'use client';
+import { positionScratch, type Position3 } from '@/utils/position3';
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Group, Vector3 } from 'three';
+import { Group, Mesh, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
-import { Billboard, Text } from '@react-three/drei';
+import { Billboard } from '@react-three/drei';
 import MartyrModel from './MartyrModel';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import {
+  ENEMY_HP_BAR_FILL_HEIGHT,
+  ENEMY_HP_BAR_FILL_Z,
+  syncEnemyHealthBarFillFromRef,
+  syncEnemyHealthBarNumericTextFromRef,
+} from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
+import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 
 interface MartyrRendererProps {
   id: string;
-  position: Vector3;
+  position: Position3;
   rotation: number;
   health: number;
   maxHealth: number;
@@ -32,12 +40,14 @@ function MartyrRenderer({
   isDying = false,
   staggerBuildup = 0,
 }: MartyrRendererProps) {
-  const { socket, enemyTransformsRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
+  const hpFillRef = useRef<Mesh>(null);
+  const hpTextRef = useRef<any>(null);
   const [isWalking, setIsWalking] = useState(false);
   const isWalkingRef = useRef(false);
   const [isPrimming, setIsPrimming] = useState(false);
-  const targetPosition = useRef(position.clone());
+  const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation = useRef(rotation);
   const lastMoveTimeRef = useRef(0);
   const fadeTimer = useRef(0);
@@ -82,11 +92,11 @@ function MartyrRenderer({
   }, [rotation]);
 
   useEffect(() => {
-    const dist = targetPosition.current.distanceTo(position);
-    targetPosition.current.copy(position);
+    const dist = targetPosition.current.distanceTo(positionScratch.set(position.x, position.y, position.z));
+    targetPosition.current.set(position.x, position.y, position.z);
 
     if (dist > 8.0 && groupRef.current) {
-      groupRef.current.position.copy(position);
+      groupRef.current.position.set(position.x, position.y, position.z);
     }
   }, [position.x, position.y, position.z]);
 
@@ -111,6 +121,9 @@ function MartyrRenderer({
     while (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2;
     while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
+
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, 1.6);
+    syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
 
     if (isDying) {
       fadeTimer.current += delta;
@@ -149,20 +162,18 @@ function MartyrRenderer({
               <planeGeometry args={[1.6, 0.2]} />
               <meshBasicMaterial color="#1a0a0a" opacity={0.9} transparent />
             </mesh>
-            <mesh position={[-0.8 + (health / maxHealth) * 0.8, 0, 0.001]}>
-              <planeGeometry args={[(health / maxHealth) * 1.6, 0.18]} />
+            <mesh position={[-0.8, 0, ENEMY_HP_BAR_FILL_Z]} ref={hpFillRef}>
+              <planeGeometry args={[1.6, ENEMY_HP_BAR_FILL_HEIGHT]} />
               <meshBasicMaterial color="#cc2200" opacity={0.95} transparent />
             </mesh>
-            <Text
-              position={[0, 0, 0.002]}
+            <EnemyHealthBarTextLabel
+              leading="💣"
+              numericRef={hpTextRef}
+              health={health}
+              maxHealth={maxHealth}
               fontSize={0.15}
               color="#ffcc99"
-              anchorX="center"
-              anchorY="middle"
-              fontWeight="bold"
-            >
-              {`💣 ${Math.ceil(health)}/${maxHealth}`}
-            </Text>
+            />
             <EnemyStaggerBar stagger={staggerBuildup} />
           </>
         )}

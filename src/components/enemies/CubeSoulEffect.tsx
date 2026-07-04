@@ -12,6 +12,8 @@ interface CubeSoulEffectProps {
   color: CubeColor;
   /** Y-position of the floating soul above the model origin (default 2.0) */
   posY?: number;
+  /** When false, skips animation and hides the effect (e.g. camera distance cull). */
+  enabledRef?: React.RefObject<boolean>;
 }
 
 const CUBE_COLORS: Record<CubeColor, { core: string; glow: string; light: string }> = {
@@ -25,7 +27,7 @@ const CUBE_COLORS: Record<CubeColor, { core: string; glow: string; light: string
 const ORBIT_COUNT  = 6;
 const ORBIT_RADIUS = 0.55;
 
-export default function CubeSoulEffect({ color, posY = 2.0 }: CubeSoulEffectProps) {
+export default function CubeSoulEffect({ color, posY = 2.0, enabledRef }: CubeSoulEffectProps) {
   const groupRef      = useRef<Group>(null);
   const coreRef       = useRef<Mesh>(null);
   const glowRef       = useRef<Mesh>(null);
@@ -38,6 +40,12 @@ export default function CubeSoulEffect({ color, posY = 2.0 }: CubeSoulEffectProp
   const phaseOffset = useMemo(() => Math.random() * Math.PI * 2, []);
 
   useFrame(({ clock }) => {
+    if (enabledRef && !enabledRef.current) {
+      if (groupRef.current) groupRef.current.visible = false;
+      return;
+    }
+    if (groupRef.current) groupRef.current.visible = true;
+
     const t = clock.getElapsedTime() + phaseOffset;
 
     // Float the soul up and down

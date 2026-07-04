@@ -1,15 +1,17 @@
 'use client';
+import { positionScratch, type Position3 } from '@/utils/position3';
 
 import React, { useRef, useState, useEffect, useCallback, useLayoutEffect } from 'react';
 import { Group, Vector3, Mesh } from 'three';
 import { useFrame } from '@react-three/fiber';
-import { Billboard, Text } from '@react-three/drei';
+import { Billboard } from '@react-three/drei';
 import KnightModel, { type KnightAbilityClip } from './KnightModel';
 import KnightBlockShield from './KnightBlockShield';
 import KnightSoulEffect from './KnightSoulEffect';
 import EnemyMeleeAttackRangeRing, { KNIGHT_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyAbilityChargeTelegraph from './EnemyAbilityChargeTelegraph';
+import { registerKnightAnimationHandlers } from '@/utils/knightAnimationDispatch';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
@@ -17,10 +19,12 @@ import {
   ENEMY_HP_BAR_WIDTH,
   ENEMY_HP_BAR_HEIGHT,
   ENEMY_HP_BAR_FILL_HEIGHT,
-  ENEMY_HP_BAR_FILL_Z,
+  ENEMY_HP_BAR_FILL_Z, ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO,
   applyEnemyHealthBarFill,
   syncEnemyHealthBarFillFromRef,
+  syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
+import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 import { KNIGHT_CAST_ABILITY_LOCK_MS, KNIGHT_STORM_LASH_DURATION_MS } from '@/utils/knightCoopAbilitiesConstants';
 import GhostTrail from '../dragon/GhostTrail';
 import { WeaponType } from '../dragon/weapons';
@@ -28,7 +32,7 @@ import ChargedOrbitals, { DashChargeStatus } from '../dragon/ChargedOrbitals';
 
 interface KnightRendererProps {
   id: string;
-  position: Vector3;
+  position: Position3;
   rotation: number;
   health: number;
   maxHealth: number;
@@ -55,7 +59,12 @@ interface KnightRendererProps {
   forceFastWalk?: boolean;
   /** Visual scale multiplier (e.g. Boss1 elite knights). */
   visualScale?: number;
+  /** Co-op hit-react: training dummy always (1s CD), enemy only on stun or >400 dmg, off for allies. */
+  impactHitReactMode?: 'training-dummy' | 'enemy' | 'off';
 }
+
+const TRAINING_DUMMY_IMPACT_COOLDOWN_MS = 1000;
+const KNIGHT_ENEMY_IMPACT_DAMAGE_THRESHOLD = 400;
 
 const ATTACK_DURATION = 1200; // ms — matches Mixamo attack clip length
 // Ability animation durations — must match the backend meleeLockUntil windows
@@ -109,12 +118,14 @@ function KnightRenderer({
   orbitalYOffset = 2.1,
   forceFastWalk = false,
   visualScale = 1,
+  impactHitReactMode = 'off',
 }: KnightRendererProps) {
   const theme = campHpTheme(campType);
-  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
+  const { enemyTransformsRef, enemiesRef, subscribeEnemyDamage } = useMultiplayerActions();
   const spinChargeColor = soulType ? SPIN_CHARGE_COLORS[soulType] : DEFAULT_SPIN_CHARGE_COLOR;
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
+  const hpTextRef = useRef<any>(null);
 
   const [isAttacking, setIsAttacking] = useState(false);
   const [isWalking, setIsWalking] = useState(false);
@@ -128,13 +139,15 @@ function KnightRenderer({
   const [impactVariant, setImpactVariant] = useState<1 | 2>(1);
   const [impactPlayKey, setImpactPlayKey] = useState(0);
 
-  const prevHealthRef = useRef(health);
   const nextImpactVariantRef = useRef<1 | 2>(1);
   const nextAttackVariantRef = useRef<1 | 2>(1);
+  const lastImpactAtRef = useRef(0);
+  const isDyingRef = useRef(isDying);
+  const abilityClipRef = useRef<KnightAbilityClip | null>(abilityClip);
 
   // Server-authoritative targets — updated when props change (single source of truth).
   // The group is NEVER written to from effects; only useFrame lerps toward these refs.
-  const targetPosition = useRef(position.clone());
+  const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation = useRef(rotation);
 
   const isAttackingRef = useRef(false);
@@ -172,19 +185,19 @@ function KnightRenderer({
   // Walking state is derived here from server deltas — deterministic and immune to
   // lerp timing — instead of sampling the rendered position in useFrame.
   useEffect(() => {
-    const dist = targetPosition.current.distanceTo(position);
+    const dist = targetPosition.current.distanceTo(positionScratch.set(position.x, position.y, position.z));
 
     // While executing an attack or ability, ignore position updates entirely.
     // The backend locks the knight in place during these windows; any in-flight
     // packets that arrive during the animation should not cause sliding.
     const isLocked = isAttackingRef.current || isAbilityRef.current || isDashingRef.current;
     if (!isLocked) {
-      targetPosition.current.copy(position);
+      targetPosition.current.set(position.x, position.y, position.z);
     }
 
     if (dist > 5.0 && groupRef.current && !isLocked) {
       // Actual teleport (spawn, respawn) — snap so the knight doesn't swim the map.
-      groupRef.current.position.copy(position);
+      groupRef.current.position.set(position.x, position.y, position.z);
     }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -207,24 +220,61 @@ function KnightRenderer({
     setIsImpacting(false);
   }, []);
 
-  // Hit-react: server health drop while idle (not walk / attack / ability).
-  useEffect(() => {
-    if (
-      health < prevHealthRef.current &&
-      !isDying &&
-      !isWalking &&
-      !isAttacking &&
-      !isDashing &&
-      !abilityClip
-    ) {
-      const v = nextImpactVariantRef.current;
-      nextImpactVariantRef.current = v === 1 ? 2 : 1;
-      setImpactVariant(v);
-      setIsImpacting(true);
-      setImpactPlayKey(k => k + 1);
+  const handleBlockStartFinished = useCallback(() => {
+    if (abilityClipRef.current === 'StartBlock') {
+      setAbilityClip('IdleBlock');
     }
-    prevHealthRef.current = health;
-  }, [health, isDying, isWalking, isAttacking, isDashing, abilityClip]);
+  }, []);
+
+  useEffect(() => {
+    isDyingRef.current = isDying;
+  }, [isDying]);
+
+  useEffect(() => {
+    abilityClipRef.current = abilityClip;
+  }, [abilityClip]);
+
+  const playImpact = useCallback(() => {
+    if (isDyingRef.current) return;
+    if (
+      isWalkingRef.current ||
+      isAttackingRef.current ||
+      isDashingRef.current ||
+      abilityClipRef.current
+    ) {
+      return;
+    }
+    const v = nextImpactVariantRef.current;
+    nextImpactVariantRef.current = v === 1 ? 2 : 1;
+    setImpactVariant(v);
+    setIsImpacting(true);
+    setImpactPlayKey((k) => k + 1);
+  }, []);
+
+  // Hit-react from confirmed server damage (React health prop is ref-only in co-op).
+  useEffect(() => {
+    if (impactHitReactMode === 'off') return;
+
+    return subscribeEnemyDamage((event) => {
+      if (event.enemyId !== id || event.damage <= 0) return;
+
+      const now = Date.now();
+
+      if (impactHitReactMode === 'training-dummy') {
+        if (now - lastImpactAtRef.current < TRAINING_DUMMY_IMPACT_COOLDOWN_MS) return;
+        lastImpactAtRef.current = now;
+        playImpact();
+        return;
+      }
+
+      const enemy = enemiesRef.current.get(id);
+      const stunnedUntil = enemy?.stunnedUntilMs ?? 0;
+      const isStunned = now < stunnedUntil;
+      if (!isStunned && event.damage <= KNIGHT_ENEMY_IMPACT_DAMAGE_THRESHOLD) return;
+
+      playImpact();
+    });
+  }, [id, impactHitReactMode, subscribeEnemyDamage, enemiesRef, playImpact]);
 
   // Higher-priority states interrupt impact (e.g. attack telegraph) so `isImpacting` cannot get stuck
   // if the mixer never fires `finished` for a faded-out impact.
@@ -234,12 +284,9 @@ function KnightRenderer({
     }
   }, [isWalking, isAttacking, isDashing, abilityClip]);
 
-  // Attack animation trigger from server.
+  // Animation telegraphs — registered centrally via knightAnimationDispatch (one socket listener per event).
   useEffect(() => {
-    if (!socket) return;
-
-    const handleKnightTelegraph = (data: any) => {
-      if (data.knightId !== id) return;
+    const handleKnightTelegraph = () => {
       if (alternateAttackVariants) {
         const variant = nextAttackVariantRef.current;
         nextAttackVariantRef.current = variant === 1 ? 2 : 1;
@@ -257,23 +304,12 @@ function KnightRenderer({
       }, ATTACK_DURATION);
     };
 
-    socket.on(attackTelegraphEvent, handleKnightTelegraph);
-    return () => { socket.off(attackTelegraphEvent, handleKnightTelegraph); };
-  }, [id, socket, attackTelegraphEvent, alternateAttackVariants, attackVariantOneChance]);
-
-  // Post-boss mobility: server-authoritative dash, visually matched to player dash timing.
-  useEffect(() => {
-    if (!socket) return;
-
     const handleKnightDash = (data: {
-      knightId: string;
       startPosition: { x: number; y: number; z: number };
       endPosition: { x: number; y: number; z: number };
       rotation: number;
       durationMs?: number;
     }) => {
-      if (data.knightId !== id) return;
-
       const startPos = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
       const endPos = new Vector3(data.endPosition.x, data.endPosition.y, data.endPosition.z);
       const duration = data.durationMs ?? DASH_DURATION;
@@ -309,22 +345,11 @@ function KnightRenderer({
       }, duration);
     };
 
-    socket.on('knight-dash', handleKnightDash);
-    return () => { socket.off('knight-dash', handleKnightDash); };
-  }, [id, socket]);
-
-  // Spinning sword attack: server-authoritative charge, then timed travel.
-  useEffect(() => {
-    if (!socket) return;
-
     const handleKnightSpinCharge = (data: {
-      knightId: string;
       position?: { x: number; y: number; z: number };
       rotation: number;
       chargeMs?: number;
     }) => {
-      if (data.knightId !== id) return;
-
       if (dashTimer.current) clearTimeout(dashTimer.current);
       if (spinChargeTimer.current) clearTimeout(spinChargeTimer.current);
       spinTravelRef.current = null;
@@ -353,14 +378,11 @@ function KnightRenderer({
     };
 
     const handleKnightSpinDash = (data: {
-      knightId: string;
       startPosition: { x: number; y: number; z: number };
       endPosition: { x: number; y: number; z: number };
       rotation: number;
       durationMs?: number;
     }) => {
-      if (data.knightId !== id) return;
-
       const startPos = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
       const endPos = new Vector3(data.endPosition.x, data.endPosition.y, data.endPosition.z);
       const duration = data.durationMs ?? SPIN_DURATION;
@@ -403,21 +425,7 @@ function KnightRenderer({
       }, duration);
     };
 
-    socket.on('knight-spin-charge', handleKnightSpinCharge);
-    socket.on('knight-spin-dash', handleKnightSpinDash);
-    return () => {
-      socket.off('knight-spin-charge', handleKnightSpinCharge);
-      socket.off('knight-spin-dash', handleKnightSpinDash);
-    };
-  }, [id, socket]);
-
-  // Ability animation triggers from server — one handler per soul-type ability.
-  useEffect(() => {
-    if (!socket) return;
-
-    // Red Knight — Smite
-    const handleSmiteTelegraph = (data: any) => {
-      if (data.knightId !== id) return;
+    const handleSmiteTelegraph = () => {
       isAbilityRef.current = true;
       setAbilityClip('Smite');
       if (abilityTimerRef.current) clearTimeout(abilityTimerRef.current);
@@ -428,9 +436,7 @@ function KnightRenderer({
       }, SMITE_DURATION);
     };
 
-    // Green Knight — Aggro Shout (self-heal)
-    const handleHealTelegraph = (data: any) => {
-      if (data.knightId !== id) return;
+    const handleHealTelegraph = () => {
       const soundPos = groupRef.current?.position.clone() ?? targetPosition.current.clone();
       (window as any).audioSystem?.playKnightAggroSound?.(soundPos);
       isAbilityRef.current = true;
@@ -443,9 +449,7 @@ function KnightRenderer({
       }, HEAL_DURATION);
     };
 
-    // Purple Knight — Frost Ray
-    const handleFrostTelegraph = (data: any) => {
-      if (data.knightId !== id) return;
+    const handleFrostTelegraph = () => {
       isAbilityRef.current = true;
       setAbilityClip('Cast');
       if (abilityTimerRef.current) clearTimeout(abilityTimerRef.current);
@@ -456,9 +460,7 @@ function KnightRenderer({
       }, CAST_ABILITY_MS);
     };
 
-    // Blue Knight — Storm Lash (restart Cast on each lightning zap)
-    const handleStormLashTelegraph = (data: any) => {
-      if (data.knightId !== id) return;
+    const handleStormLashTelegraph = () => {
       isAbilityRef.current = true;
       setAbilityClip('Cast');
       setAbilityPlayKey(k => k + 1);
@@ -470,14 +472,11 @@ function KnightRenderer({
       }, KNIGHT_STORM_LASH_DURATION_MS);
     };
 
-    const handleStormLashZap = (data: { knightId: string }) => {
-      if (data.knightId !== id) return;
+    const handleStormLashZap = () => {
       setAbilityPlayKey(k => k + 1);
     };
 
-    // Red / Green — Death Grasp (same cast clip as frost)
-    const handleDeathGraspTelegraph = (data: any) => {
-      if (data.knightId !== id) return;
+    const handleDeathGraspTelegraph = () => {
       isAbilityRef.current = true;
       setAbilityClip('Cast');
       if (abilityTimerRef.current) clearTimeout(abilityTimerRef.current);
@@ -488,11 +487,10 @@ function KnightRenderer({
       }, CAST_ABILITY_MS);
     };
 
-    // All knights — Block (looping idle block pose for full invuln window)
-    const handleBlockTelegraph = (data: { knightId: string; durationMs: number }) => {
-      if (data.knightId !== id) return;
+    const handleBlockTelegraph = (data: { durationMs: number; startBlockMs?: number }) => {
       isAbilityRef.current = true;
-      setAbilityClip('Block');
+      setIsImpacting(false);
+      setAbilityClip('StartBlock');
       if (abilityTimerRef.current) clearTimeout(abilityTimerRef.current);
       abilityTimerRef.current = setTimeout(() => {
         setAbilityClip(null);
@@ -501,23 +499,20 @@ function KnightRenderer({
       }, data.durationMs);
     };
 
-    socket.on('knight-smite-telegraph', handleSmiteTelegraph);
-    socket.on('knight-heal-telegraph',  handleHealTelegraph);
-    socket.on('knight-frost-telegraph', handleFrostTelegraph);
-    socket.on('knight-stormlash-telegraph', handleStormLashTelegraph);
-    socket.on('knight-storm-lash-zap', handleStormLashZap);
-    socket.on('knight-deathgrasp-telegraph', handleDeathGraspTelegraph);
-    socket.on('knight-block-telegraph', handleBlockTelegraph);
-    return () => {
-      socket.off('knight-smite-telegraph', handleSmiteTelegraph);
-      socket.off('knight-heal-telegraph',  handleHealTelegraph);
-      socket.off('knight-frost-telegraph', handleFrostTelegraph);
-      socket.off('knight-stormlash-telegraph', handleStormLashTelegraph);
-      socket.off('knight-storm-lash-zap', handleStormLashZap);
-      socket.off('knight-deathgrasp-telegraph', handleDeathGraspTelegraph);
-      socket.off('knight-block-telegraph', handleBlockTelegraph);
-    };
-  }, [id, socket]);
+    return registerKnightAnimationHandlers(id, {
+      onAttackTelegraph: handleKnightTelegraph,
+      onDash: handleKnightDash,
+      onSpinCharge: handleKnightSpinCharge,
+      onSpinDash: handleKnightSpinDash,
+      onSmiteTelegraph: handleSmiteTelegraph,
+      onHealTelegraph: handleHealTelegraph,
+      onFrostTelegraph: handleFrostTelegraph,
+      onStormLashTelegraph: handleStormLashTelegraph,
+      onStormLashZap: handleStormLashZap,
+      onDeathGraspTelegraph: handleDeathGraspTelegraph,
+      onBlockTelegraph: handleBlockTelegraph,
+    });
+  }, [id, alternateAttackVariants, attackVariantOneChance]);
 
   useLayoutEffect(() => {
     applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth);
@@ -534,6 +529,7 @@ function KnightRenderer({
       health,
       maxHealth,
     );
+    syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
 
     const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
     const isLocked = isAttackingRef.current || isAbilityRef.current || isDashingRef.current;
@@ -635,10 +631,11 @@ function KnightRenderer({
         impactVariant={impactVariant}
         impactPlayKey={impactPlayKey}
         onImpactFinished={handleImpactFinished}
+        onBlockStartFinished={handleBlockStartFinished}
       />
 
       <KnightBlockShield
-        active={abilityClip === 'Block' && !isDying}
+        active={abilityClip === 'IdleBlock' && !isDying}
         visualScale={visualScale}
       />
 
@@ -652,7 +649,7 @@ function KnightRenderer({
         {health > 0 && !isDying && (
           <>
             <mesh position={[0, 0, 0]}>
-              <planeGeometry args={[ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_HEIGHT]} />
+              <primitive object={ENEMY_HP_BAR_BG_GEO} attach="geometry" />
               <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
             </mesh>
 
@@ -661,20 +658,18 @@ function KnightRenderer({
               position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
               scale={[1, 1, 1]}
             >
-              <planeGeometry args={[ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_FILL_HEIGHT]} />
+              <primitive object={ENEMY_HP_BAR_FILL_GEO} attach="geometry" />
               <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
             </mesh>
 
-            <Text
-              position={[0, 0, 0.002]}
+            <EnemyHealthBarTextLabel
+              leading="⚔"
+              numericRef={hpTextRef}
+              health={health}
+              maxHealth={maxHealth}
               fontSize={0.18}
               color={theme.text}
-              anchorX="center"
-              anchorY="middle"
-              fontWeight="bold"
-            >
-              {`⚔ ${Math.ceil(health)}/${maxHealth}`}
-            </Text>
+            />
             <EnemyStaggerBar stagger={staggerBuildup} />
           </>
         )}

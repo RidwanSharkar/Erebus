@@ -22,66 +22,66 @@ export default function RegularArrowManager({ world }: RegularArrowManagerProps)
   const [activeArrows, setActiveArrows] = useState<RegularArrowData[]>([]);
   const arrowIdCounter = useRef(0);
   const lastUpdateTime = useRef(0);
+  const arrowByEntityRef = useRef(new Map<number, RegularArrowData>());
+  const renderListRef = useRef<RegularArrowData[]>([]);
 
   useFrame((state) => {
-    // Throttle updates to avoid excessive re-renders
     const currentTime = state.clock.getElapsedTime();
-    if (currentTime - lastUpdateTime.current < 0.016) return; // ~60fps
+    if (currentTime - lastUpdateTime.current < 0.016) return;
     lastUpdateTime.current = currentTime;
 
     if (!world) return;
 
     const projectileEntities = world.queryEntities([Transform, Projectile, Renderer]);
-    const newArrows: RegularArrowData[] = [];
+    const map = arrowByEntityRef.current;
+    const seen = new Set<number>();
+    let rosterChanged = false;
 
     for (const entity of projectileEntities) {
       const renderer = entity.getComponent(Renderer);
       const transform = entity.getComponent(Transform);
       const projectile = entity.getComponent(Projectile);
 
-      if (renderer?.mesh?.userData?.isRegularArrow && transform && projectile) {
-        // Check if this arrow already exists
-        const existingArrow = activeArrows.find(arrow => arrow.entityId === entity.id);
-        
-        if (existingArrow) {
-          // Update existing arrow position - this ensures the visual follows the ECS entity
-          existingArrow.position.copy(transform.position);
-          newArrows.push(existingArrow);
-        } else {
-          // Create new arrow
-          const direction = renderer.mesh.userData.direction || projectile.velocity.clone().normalize();
-          newArrows.push({
-            id: arrowIdCounter.current++, 
-            position: transform.position.clone(),
-            direction: direction.clone(),
-            entityId: entity.id
-          });
-        }
+      if (!renderer?.mesh?.userData?.isRegularArrow || !transform || !projectile) continue;
+
+      seen.add(entity.id);
+      let arrow = map.get(entity.id);
+      if (arrow) {
+        arrow.position.copy(transform.position);
+      } else {
+        arrow = {
+          id: arrowIdCounter.current++,
+          position: transform.position.clone(),
+          direction: projectile.velocity.clone().normalize(),
+          entityId: entity.id,
+        };
+        map.set(entity.id, arrow);
+        rosterChanged = true;
       }
     }
 
-    // Update state if arrows have changed
-    if (newArrows.length !== activeArrows.length || 
-        newArrows.some(arrow => !activeArrows.find(existing => existing.entityId === arrow.entityId))) {
-      setActiveArrows(newArrows);
+    Array.from(map.keys()).forEach((entityId) => {
+      if (!seen.has(entityId)) {
+        map.delete(entityId);
+        rosterChanged = true;
+      }
+    });
+
+    if (rosterChanged) {
+      renderListRef.current = Array.from(map.values());
+      setActiveArrows(renderListRef.current);
     }
   });
 
-  const handleArrowImpact = (arrowId: number) => {
-   // console.log(`🏹 RegularArrow ${arrowId} impact handled`);
-    // Impact effects could be added here
-  };
-
   return (
-    <group name="regular-arrow-manager">
-      {activeArrows.map((arrowData) => (
+    <>
+      {activeArrows.map((arrow) => (
         <RegularArrow
-          key={arrowData.id}
-          position={arrowData.position}
-          direction={arrowData.direction}
-          onImpact={() => handleArrowImpact(arrowData.id)}
+          key={arrow.id}
+          position={arrow.position}
+          direction={arrow.direction}
         />
       ))}
-    </group>
+    </>
   );
 }

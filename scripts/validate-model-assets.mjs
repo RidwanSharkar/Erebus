@@ -67,16 +67,25 @@ function collectDocumentStats(document) {
   };
 }
 
-async function readOriginalDocument(relativePath) {
-  const { stdout } = await execFileAsync('git', ['show', `HEAD:${relativePath}`], {
-    cwd: root,
-    encoding: 'buffer',
-    maxBuffer: 64 * 1024 * 1024,
-  });
-  return {
-    bytes: stdout.length,
-    document: await io.readBinary(new Uint8Array(stdout)),
-  };
+async function readOriginalDocument(relativePath, filePath) {
+  try {
+    const { stdout } = await execFileAsync('git', ['show', `HEAD:${relativePath}`], {
+      cwd: root,
+      encoding: 'buffer',
+      maxBuffer: 64 * 1024 * 1024,
+    });
+    return {
+      bytes: stdout.length,
+      document: await io.readBinary(new Uint8Array(stdout)),
+    };
+  } catch {
+    // New assets not yet in git HEAD — use on-disk file as baseline.
+    const buffer = await readFile(filePath);
+    return {
+      bytes: buffer.length,
+      document: await io.readBinary(new Uint8Array(buffer)),
+    };
+  }
 }
 
 async function parseWithThree(filePath) {
@@ -139,7 +148,7 @@ for (const filePath of files) {
   const relativePath = path.relative(root, filePath).replaceAll(path.sep, '/');
   const isBaseScene = BASE_SCENE_FILES.has(filename);
 
-  const original = await readOriginalDocument(relativePath);
+  const original = await readOriginalDocument(relativePath, filePath);
   const optimizedDocument = await io.read(filePath);
   const originalStats = collectDocumentStats(original.document);
   const optimizedStats = collectDocumentStats(optimizedDocument);

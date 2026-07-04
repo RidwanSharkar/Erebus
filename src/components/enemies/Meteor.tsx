@@ -30,6 +30,7 @@ const warningRingGeometry = new RingGeometry(DAMAGE_RADIUS - 0.2, DAMAGE_RADIUS,
 const pulsingRingGeometry = new RingGeometry(DAMAGE_RADIUS - 0.8, DAMAGE_RADIUS - 0.6, WARNING_RING_SEGMENTS);
 const outerGlowGeometry = new RingGeometry(DAMAGE_RADIUS - 0.25, DAMAGE_RADIUS, WARNING_RING_SEGMENTS);
 const particleGeometry = new SphereGeometry(0.1, 8, 8);
+const METEOR_TRAIL_COLOR = new Color('#BA55D3');
 
 // Reusable vectors to avoid allocations
 const tempTargetGroundPos = new Vector3();
@@ -115,7 +116,7 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
 
   // One pooled light serves the whole effect: it follows the falling meteor, then
   // fades at the impact point (replaces 1 falling + 2 impact <pointLight>s → 1 pooled).
-  const meteorLight = useDynamicLight({ color: new Color('#BA55D3'), distance: 12, decay: 2, priority: 2 });
+  const meteorLight = useDynamicLight({ color: new Color('#BA55D3'), distance: 12, decay: 2, priority: 1 });
 
   // useMemo for initial calculations
   const [initialTargetPos, startPos, trajectory, trailBackward] = useMemo(() => {
@@ -199,7 +200,7 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
 
   return (
     <>
-      <group position={[initialTargetPos.x, 0.01, initialTargetPos.z]}>
+      <group position={[initialTargetPos.x, 0.125, initialTargetPos.z]}>
         {/* Warning rings using shared geometries */}
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.325, 0]}>
           <primitive object={warningRingGeometry} />
@@ -250,7 +251,7 @@ export default function Meteor({ targetPosition, onImpact, onComplete, timestamp
             <primitive object={meteorMaterial} />
             <MeteorTrail
               meshRef={meteorMeshRef}
-              color={new Color("#BA55D3")}
+              color={METEOR_TRAIL_COLOR}
               size={0.05}
               {...(startPosition ? { backwardDir: trailBackward } : {})}
             />

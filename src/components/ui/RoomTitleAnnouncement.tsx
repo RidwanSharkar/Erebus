@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { ROOM_TITLE_ANNOUNCEMENT_MS } from '@/utils/coopRoomTitles';
 
-const TOTAL_MS = 4100;
+const TOTAL_MS = ROOM_TITLE_ANNOUNCEMENT_MS;
 const ENTER_MS = 600;
 const HOLD_MS = 2800;
 

@@ -59,7 +59,7 @@ export default function ShadeDaggerProjectile({
   const positionScratch = useRef(new Vector3());
 
   // One pooled light follows the dagger (replaces a mounted <pointLight>).
-  const daggerLight = useDynamicLight({ color: new Color(colors.dagger), distance: 3.5, decay: 2, priority: 2 });
+  const daggerLight = useDynamicLight({ color: new Color(colors.dagger), distance: 3.5, decay: 2, priority: 1 });
 
   // `targetPosition` is the aim point; the dagger always travels `VIPER_ARROW_MAX_RANGE` along that ray.
   const { direction, totalDist, duration, yaw, pitch } = useMemo(() => {

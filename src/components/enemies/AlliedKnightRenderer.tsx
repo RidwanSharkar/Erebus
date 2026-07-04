@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useMemo } from 'react';
+import type { Position3 } from '@/utils/position3';
 import { Vector3 } from 'three';
 import KnightRenderer from './KnightRenderer';
 import { DashChargeStatus } from '../dragon/ChargedOrbitals';
 
 interface AlliedKnightRendererProps {
   id: string;
-  position: Vector3;
+  position: Position3;
   rotation: number;
   health: number;
   maxHealth: number;
@@ -53,6 +54,7 @@ function AlliedKnightRenderer({
       orbitalInactiveColor="#3a2a09"
       orbitalYOffset={2.1}
       forceFastWalk={fastWalk}
+      impactHitReactMode="off"
     />
   );
 }

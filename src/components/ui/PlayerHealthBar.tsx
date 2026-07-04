@@ -1,11 +1,12 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
+import type { Position3 } from '@/utils/position3';
 import { Vector3, Color, Mesh, PlaneGeometry, MeshBasicMaterial, Group } from '@/utils/three-exports';
 
 interface PlayerHealthBarProps {
   playerId: string;
   playerName: string;
-  position: Vector3;
+  position: Position3;
   health: number;
   maxHealth: number;
   shield?: number;
@@ -42,6 +43,7 @@ export default function PlayerHealthBar({
   const barHeight = 0.15;
   const barOffset = new Vector3(0, 3.0, 0); // Position above player
   const shieldOffset = 0.2; // Distance between health and shield bars
+  const worldPositionScratch = useRef(new Vector3());
 
   // Create geometries and materials
   useEffect(() => {
@@ -128,7 +130,11 @@ export default function PlayerHealthBar({
     if (!groupRef.current || !camera) return;
 
     // Calculate distance to camera
-    const worldPosition = position.clone().add(barOffset);
+    const worldPosition = worldPositionScratch.current.set(
+      position.x + barOffset.x,
+      position.y + barOffset.y,
+      position.z + barOffset.z,
+    );
     const distance = camera.position.distanceTo(worldPosition);
 
     // Show/hide based on distance and health status

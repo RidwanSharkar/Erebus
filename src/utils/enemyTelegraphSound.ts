@@ -91,8 +91,13 @@ function playFromPayload(
 const BOSS1_TELEGRAPH_EVENTS = [
   'boss-attack-telegraph',
   'boss-throw-start',
-  'boss-tectonic-spike-telegraph',
   'boss-tectonic-jump',
+] as const;
+
+/** Tectonic spike / Weaver impale ground telegraphs — quake rumble at indicator. */
+const QUAKE_TELEGRAPH_EVENTS = [
+  'boss-tectonic-spike-telegraph',
+  'weaver-impale-spike-telegraph',
 ] as const;
 
 /** Templar blink smite windup — dedicated telegraph before the teleport. */
@@ -101,13 +106,12 @@ const TEMPLAR_BLINK_TELEGRAPH_EVENTS = ['templar-blink-smite-charge'] as const;
 /** Martyr self-detonation windup — bomb arming SFX while the ground ring is active. */
 const MARTYR_ARMING_TELEGRAPH_EVENTS = ['martyr-detonation-telegraph'] as const;
 
-/** High-impact windups only — Knight spin, Warlock casts, Weaver lightning/impale. */
+/** High-impact windups only — Knight spin, Warlock casts, Weaver lightning. */
 const TELEGRAPH_EVENTS = [
   'knight-spin-charge',
   'warlock-attack-telegraph',
   'warlock-archon-shock',
   'weaver-lightning-telegraph',
-  'weaver-impale-spike-telegraph',
 ] as const;
 
 export interface RegisterEnemyTelegraphSoundsOptions {
@@ -142,6 +146,12 @@ export function registerEnemyAttackTelegraphSounds(
     });
   };
 
+  const quakeHandler = (data: TelegraphPayload) => {
+    playFromPayload(data, getEnemyPosition, (pos) => {
+      (window as any).audioSystem?.playBossTectonicQuakeWarnSound(pos);
+    });
+  };
+
   for (const event of TELEGRAPH_EVENTS) {
     socket.on(event, handler);
   }
@@ -158,6 +168,10 @@ export function registerEnemyAttackTelegraphSounds(
     socket.on(event, martyrArmingHandler);
   }
 
+  for (const event of QUAKE_TELEGRAPH_EVENTS) {
+    socket.on(event, quakeHandler);
+  }
+
   return () => {
     for (const event of TELEGRAPH_EVENTS) {
       socket.off(event, handler);
@@ -170,6 +184,9 @@ export function registerEnemyAttackTelegraphSounds(
     }
     for (const event of MARTYR_ARMING_TELEGRAPH_EVENTS) {
       socket.off(event, martyrArmingHandler);
+    }
+    for (const event of QUAKE_TELEGRAPH_EVENTS) {
+      socket.off(event, quakeHandler);
     }
   };
 }

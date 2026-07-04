@@ -1,4 +1,4 @@
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, useState } from 'react';
 import { Vector3, Group } from 'three';
 import { WeaponType } from '@/components/dragon/weapons';
 import { calculateDamage } from '@/core/DamageCalculator';
@@ -14,6 +14,11 @@ import {
   GIANTKILLER_MAX_HP_DAMAGE_FRAC_BOSS,
 } from '@/utils/talents';
 import { spawnArcticGroundBlizzardAtFromReact } from '@/components/weapons/Blizzard/arcticBlizzardSpawnBridge';
+import type { ViperExplosionTarget } from './viperExplosionTargets';
+
+const _viperProj2D = new Vector3();
+const _viperEnemy2D = new Vector3();
+const _viperReturnDir = new Vector3();
 
 interface ViperStingProjectile {
   id: number;
@@ -28,19 +33,13 @@ interface ViperStingProjectile {
   fadeStartTime: number | null;
   isReturning: boolean;
   returnHitEnemies: Set<string>;
-  casterId?: string; // For PVP: remember which player cast this projectile
-  casterPosition?: Vector3; // For PVP: remember the caster's position for return
-  /** Set at spawn: local caster with Wrathful Talons talent (remote spawns omit). */
+  casterId?: string;
+  casterPosition?: Vector3;
   wrathfulTalonsReturnCrit?: boolean;
-  /** Set at spawn: local caster with Wrathful + Explosive Talons (remote spawns omit). */
   wrathfulTalonsExplosionCrit?: boolean;
-  /** EXPLOSIVE TALONS: no return; detonate at max range (from local prop or remote opts). */
   explosiveTalons?: boolean;
-  /** PVP: player AoE from OptimizedPVPViperStingManager applied once per cast. */
   explosiveTalonsPvpAoEDone?: boolean;
-  /** EXECUTE: after first forward hit resolution (consume attempt once per cast). */
   forwardExecuteResolved: boolean;
-  /** Glacial Talons: concentrated blizzard spawned on first forward hit this cast. */
   glacialBlizzardSpawned?: boolean;
 }
 
@@ -98,35 +97,30 @@ interface UseViperStingProps {
     available: boolean;
     cooldownStartTime: number | null;
   }>>>;
-  localSocketId?: string; // Add this to properly identify local player
-  players?: Array<{ // For PVP dynamic targeting
+  localSocketId?: string;
+  players?: Array<{
     id: string;
     position: { x: number; y: number; z: number };
     health: number;
   }>;
-  /** Local Reaping Talons: return-arrow preset crit (stored on projectile at spawn). */
   wrathfulTalonsReturnCrit?: boolean;
-  /** Local Reaping Talons: Explosive end detonation preset crit (Wrathful + Explosive). */
   wrathfulTalonsExplosionCrit?: boolean;
-  /** EXPLOSIVE TALONS: forward-only + end-of-range explosion (local prop; remote via spawn opts). */
   explosiveTalons?: boolean;
-  /** EXECUTE talent: first forward hit only — return bonus damage to add (0 if no dash consumed). */
   onExecuteFirstForwardHit?: () => number;
-  /** GIANTKILLER: extra return-hit damage when forward leg already hit this target (PvE only). */
   giantKiller?: boolean;
-  /** Glacial Talons room boon — deep blue beam VFX. */
   glacialTalonsTheme?: boolean;
-  /** EXPLOSIVE TALONS: one-shot VFX at detonation center (max range). */
   onExplosiveTalonsDetonate?: (position: Vector3) => void;
+  /** Live ECS AoE query for Explosive Talons detonation (co-op). */
+  queryExplosionTargets?: (cx: number, cz: number, radius: number) => ViperExplosionTarget[];
 }
 
 export function useViperSting({
   parentRef,
   onHit,
   enemyData,
-  setDamageNumbers,
-  nextDamageNumberId,
-  onHealthChange,
+  setDamageNumbers: _setDamageNumbers,
+  nextDamageNumberId: _nextDamageNumberId,
+  onHealthChange: _onHealthChange,
   createBeamEffect,
   applyDoT,
   charges,
@@ -140,22 +134,22 @@ export function useViperSting({
   giantKiller = false,
   glacialTalonsTheme = false,
   onExplosiveTalonsDetonate,
+  queryExplosionTargets,
 }: UseViperStingProps) {
   const projectilePool = useRef<ViperStingProjectile[]>([]);
-  const soulStealEffects = useRef<SoulStealEffect[]>([]);
+  const [soulStealEffects, setSoulStealEffects] = useState<SoulStealEffect[]>([]);
   const lastShotTime = useRef(0);
   const nextProjectileId = useRef(0);
   const nextSoulStealId = useRef(0);
-  
+
   const POOL_SIZE = 3;
-  const SHOT_COOLDOWN = 2000; // 7 seconds
-  const PROJECTILE_SPEED = 0.9375; // 50% faster than before
-  const PROJECTILE_RETURN_SPEED = 0.7875; // 50% faster return phase
+  const SHOT_COOLDOWN = 2000;
+  const PROJECTILE_SPEED = 0.9375;
+  const PROJECTILE_RETURN_SPEED = 0.7875;
   const DAMAGE = 91;
   const FADE_DURATION = 350;
-  const SOUL_STEAL_DURATION = 1250; // 1.25 seconds to travel back
+  const SOUL_STEAL_DURATION = 1250;
 
-  // Initialize projectile pool
   useEffect(() => {
     projectilePool.current = Array(POOL_SIZE).fill(null).map((_, index) => ({
       id: index,
@@ -191,27 +185,22 @@ export function useViperSting({
     const now = Date.now();
     if (now - lastShotTime.current < SHOT_COOLDOWN) return false;
 
-    // Use override parameters if provided (for PVP remote player effects)
     let unitPosition: Vector3;
     let direction: Vector3;
-    
+
     if (overridePosition && overrideDirection) {
-      // PVP mode: use provided position and direction from remote player
       unitPosition = overridePosition.clone();
       direction = overrideDirection.clone().normalize();
     } else {
-      // Local mode: use parentRef
       if (!parentRef.current) return false;
-      
+
       unitPosition = parentRef.current.position.clone();
-      unitPosition.y += 0; // Shoot from chest level
+      unitPosition.y += 0;
 
       direction = new Vector3(0, 0, 1);
-      // Check if quaternion exists and is a proper Three.js Quaternion
       if (parentRef.current.quaternion && typeof parentRef.current.quaternion.x === 'number') {
         direction.applyQuaternion(parentRef.current.quaternion);
       } else {
-        // Fallback: use forward direction (for PVP mode where we don't have proper quaternion)
         direction.set(0, 0, 1);
       }
     }
@@ -233,7 +222,6 @@ export function useViperSting({
     projectile.isReturning = false;
     projectile.id = nextProjectileId.current++;
 
-    // Set caster information for PVP return targeting
     projectile.casterId = casterId || localSocketId;
     projectile.casterPosition = unitPosition.clone();
     const isRemoteSpawn = !!(overridePosition && overrideDirection);
@@ -247,7 +235,6 @@ export function useViperSting({
       ? EXPLOSIVE_TALONS_REAPING_TALONS_MAX_TRAVEL_DISTANCE
       : REAPING_TALONS_MAX_TRAVEL_DISTANCE;
 
-    // Create beam effect for forward shot
     if (createBeamEffect) {
       createBeamEffect(unitPosition, direction, false, projectile.maxDistance, glacialTalonsTheme);
     }
@@ -267,27 +254,27 @@ export function useViperSting({
       active: true
     };
 
-    soulStealEffects.current.push(soulSteal);
-    // Note: No need for setActiveEffects since SoulStealEffect components handle rendering
+    setSoulStealEffects((prev) => [...prev, soulSteal]);
   }, [parentRef]);
 
-  // Update projectiles and effects
+  const removeSoulStealEffect = useCallback((id: number) => {
+    setSoulStealEffects((prev) => prev.filter((e) => e.id !== id));
+  }, []);
+
   useEffect(() => {
     let animationFrameId: number;
 
     const updateProjectilesAndEffects = () => {
       const now = Date.now();
 
-      // Update projectiles
       projectilePool.current.forEach(projectile => {
         if (!projectile.active) return;
 
-        // Handle fading
         if (projectile.fadeStartTime) {
           const fadeElapsed = now - projectile.fadeStartTime;
           const fadeProgress = fadeElapsed / FADE_DURATION;
           projectile.opacity = Math.max(0, 1 - fadeProgress);
-          
+
           if (fadeProgress >= 1) {
             projectile.active = false;
             return;
@@ -295,38 +282,20 @@ export function useViperSting({
         }
 
         if (!projectile.isReturning) {
-          // Forward movement phase
           const distanceTraveled = projectile.position.distanceTo(projectile.startPosition);
-          
-          if (distanceTraveled < projectile.maxDistance && !projectile.fadeStartTime) {
-            // Move projectile forward
-            projectile.position.add(
-              projectile.direction.clone().multiplyScalar(PROJECTILE_SPEED)
-            );
 
-            // Check for enemy collisions during forward phase
+          if (distanceTraveled < projectile.maxDistance && !projectile.fadeStartTime) {
+            projectile.position.addScaledVector(projectile.direction, PROJECTILE_SPEED);
+
             for (const enemy of enemyData) {
               if (enemy.isDying || enemy.health <= 0) continue;
               if (projectile.hitEnemies.has(enemy.id)) continue;
+              if (localSocketId && enemy.id === localSocketId) continue;
 
-              // CRITICAL: Prevent self-damage in PVP
-              if (localSocketId && enemy.id === localSocketId) {
-                continue; // Skip local player completely
-              }
+              _viperProj2D.set(projectile.position.x, 0, projectile.position.z);
+              _viperEnemy2D.set(enemy.position.x, 0, enemy.position.z);
 
-              const projectilePos2D = new Vector3(
-                projectile.position.x,
-                0,
-                projectile.position.z
-              );
-              const enemyPos2D = new Vector3(
-                enemy.position.x,
-                0,
-                enemy.position.z
-              );
-
-              if (projectilePos2D.distanceTo(enemyPos2D) < 1.3) {
-                // Mark enemy as hit during forward phase
+              if (_viperProj2D.distanceTo(_viperEnemy2D) < 1.3) {
                 projectile.hitEnemies.add(enemy.id);
 
                 if (glacialTalonsTheme && !projectile.glacialBlizzardSpawned) {
@@ -343,26 +312,12 @@ export function useViperSting({
                   forwardDamage = DAMAGE + bonus;
                 }
 
-                // Apply damage through the onHit callback (which routes to CombatSystem)
                 onHit(enemy.id, forwardDamage, undefined, undefined, undefined, 'forward');
 
-                // Apply DoT effect
                 if (applyDoT) {
                   applyDoT(enemy.id);
                 }
 
-                // Create damage number for visual feedback (like Sword weapon does)
-                if (setDamageNumbers && nextDamageNumberId) {
-                  setDamageNumbers(prev => [...prev, {
-                    id: nextDamageNumberId.current++,
-                    damage: forwardDamage,
-                    position: enemy.position.clone(),
-                    isCritical: false,
-                    isViperSting: true // Flag for Viper Sting specific styling
-                  }]);
-                }
-
-                // Create soul steal effect at enemy position
                 createSoulStealEffect(enemy.position);
               }
             }
@@ -373,12 +328,17 @@ export function useViperSting({
               if (onExplosiveTalonsDetonate) {
                 onExplosiveTalonsDetonate(projectile.position.clone());
               }
-              for (const enemy of enemyData) {
-                if (enemy.isDying || enemy.health <= 0) continue;
-                if (localSocketId && enemy.id === localSocketId) continue;
 
-                const horiz = Math.hypot(enemy.position.x - cx, enemy.position.z - cz);
-                if (horiz > EXPLOSIVE_TALONS_EXPLOSION_RADIUS) continue;
+              const explosionTargets = queryExplosionTargets
+                ? queryExplosionTargets(cx, cz, EXPLOSIVE_TALONS_EXPLOSION_RADIUS)
+                : enemyData.filter((enemy) => {
+                    if (enemy.isDying || enemy.health <= 0) return false;
+                    if (localSocketId && enemy.id === localSocketId) return false;
+                    return Math.hypot(enemy.position.x - cx, enemy.position.z - cz) <= EXPLOSIVE_TALONS_EXPLOSION_RADIUS;
+                  });
+
+              for (const enemy of explosionTargets) {
+                if (localSocketId && enemy.id === localSocketId) continue;
 
                 let explosionDamage = EXPLOSIVE_TALONS_EXPLOSION_DAMAGE;
                 let explosionIsCritical: boolean | undefined = undefined;
@@ -394,20 +354,10 @@ export function useViperSting({
                 if (applyDoT) {
                   applyDoT(enemy.id);
                 }
-                if (setDamageNumbers && nextDamageNumberId) {
-                  setDamageNumbers(prev => [...prev, {
-                    id: nextDamageNumberId.current++,
-                    damage: explosionDamage,
-                    position: enemy.position.clone(),
-                    isCritical: !!explosionIsCritical,
-                    isViperSting: true,
-                  }]);
-                }
                 createSoulStealEffect(enemy.position);
               }
               projectile.fadeStartTime = now;
             } else {
-              // Switch to return mode when max distance reached
               projectile.isReturning = true;
               projectile.direction = new Vector3().subVectors(projectile.startPosition, projectile.position).normalize();
 
@@ -417,17 +367,12 @@ export function useViperSting({
             }
           }
         } else {
-          // Return movement phase - dynamically follow caster's current position
-
-          // Determine the current target position based on caster
           let returnTargetPosition: Vector3;
 
           if (projectile.casterId === localSocketId) {
-            // Local player projectile - use current local position
             if (!parentRef.current) return;
             returnTargetPosition = parentRef.current.position.clone();
           } else if (projectile.casterId && players) {
-            // Remote player projectile - find caster in players array
             const casterPlayer = players.find(p => p.id === projectile.casterId);
             if (casterPlayer) {
               returnTargetPosition = new Vector3(
@@ -436,51 +381,29 @@ export function useViperSting({
                 casterPlayer.position.z
               );
             } else {
-              // Fallback to stored caster position if player not found
               returnTargetPosition = projectile.casterPosition || projectile.startPosition.clone();
             }
           } else {
-            // Fallback for non-PVP or missing data
             returnTargetPosition = projectile.casterPosition || projectile.startPosition.clone();
           }
 
-          returnTargetPosition.y += 0; // Match the chest level used for launching
+          returnTargetPosition.y += 0;
 
           const distanceToTarget = projectile.position.distanceTo(returnTargetPosition);
 
           if (distanceToTarget > 1.5 && !projectile.fadeStartTime) {
-            // Update direction toward caster's current position (dynamic following)
-            projectile.direction = new Vector3().subVectors(returnTargetPosition, projectile.position).normalize();
+            projectile.direction.copy(_viperReturnDir.subVectors(returnTargetPosition, projectile.position).normalize());
+            projectile.position.addScaledVector(projectile.direction, PROJECTILE_RETURN_SPEED);
 
-            // Move projectile back toward caster's current position
-            projectile.position.add(
-              projectile.direction.clone().multiplyScalar(PROJECTILE_RETURN_SPEED)
-            );
-
-            // Check for enemy collisions during return phase (allow hitting different enemies)
             for (const enemy of enemyData) {
               if (enemy.isDying || enemy.health <= 0) continue;
-              // Use separate hit tracking for return phase
               if (projectile.returnHitEnemies.has(enemy.id)) continue;
+              if (localSocketId && enemy.id === localSocketId) continue;
 
-              // CRITICAL: Prevent self-damage in PVP
-              if (localSocketId && enemy.id === localSocketId) {
-                continue; // Skip local player completely
-              }
+              _viperProj2D.set(projectile.position.x, 0, projectile.position.z);
+              _viperEnemy2D.set(enemy.position.x, 0, enemy.position.z);
 
-              const projectilePos2D = new Vector3(
-                projectile.position.x,
-                0,
-                projectile.position.z
-              );
-              const enemyPos2D = new Vector3(
-                enemy.position.x,
-                0,
-                enemy.position.z
-              );
-
-              if (projectilePos2D.distanceTo(enemyPos2D) < 1.3) {
-                // Mark enemy as hit during return phase
+              if (_viperProj2D.distanceTo(_viperEnemy2D) < 1.3) {
                 projectile.returnHitEnemies.add(enemy.id);
 
                 let returnDamage = DAMAGE;
@@ -508,37 +431,19 @@ export function useViperSting({
 
                 onHit(enemy.id, returnDamage, returnIsCritical, undefined, undefined, 'return');
 
-                // Apply DoT effect for return shot as well
                 if (applyDoT) {
                   applyDoT(enemy.id);
                 }
 
-                // Create damage number for visual feedback (like Sword weapon does)
-                if (setDamageNumbers && nextDamageNumberId) {
-                  setDamageNumbers(prev => [...prev, {
-                    id: nextDamageNumberId.current++,
-                    damage: returnDamage,
-                    position: enemy.position.clone(),
-                    isCritical: !!returnIsCritical,
-                    isViperSting: true // Flag for Viper Sting specific styling
-                  }]);
-                }
-
-                // Create soul steal effect at enemy position
                 createSoulStealEffect(enemy.position);
               }
             }
           } else if (!projectile.fadeStartTime) {
-            // Start fading when projectile reaches caster's current position
             projectile.fadeStartTime = now;
           }
         }
       });
 
-      // Soul steal effects are now handled by SoulStealEffect components
-      // No need for duplicate movement logic here
-
-      // Continue animation if there are active projectiles
       if (projectilePool.current.some(p => p.active)) {
         animationFrameId = requestAnimationFrame(updateProjectilesAndEffects);
       }
@@ -549,12 +454,13 @@ export function useViperSting({
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [enemyData, onHit, setDamageNumbers, nextDamageNumberId, onHealthChange, createSoulStealEffect, parentRef, createBeamEffect, applyDoT, localSocketId, players, onExecuteFirstForwardHit, giantKiller, glacialTalonsTheme, onExplosiveTalonsDetonate]);
+  }, [enemyData, onHit, createSoulStealEffect, parentRef, createBeamEffect, applyDoT, localSocketId, players, onExecuteFirstForwardHit, giantKiller, glacialTalonsTheme, onExplosiveTalonsDetonate, queryExplosionTargets]);
 
   return {
     shootViperSting,
     projectilePool,
     soulStealEffects,
-    createSoulStealEffect
+    createSoulStealEffect,
+    removeSoulStealEffect,
   };
 }

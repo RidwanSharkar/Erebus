@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import {
   Vector3,
   AdditiveBlending,
@@ -69,6 +69,13 @@ export default function WeaverHealEffect({ position, onComplete }: WeaverHealEff
       }),
     []
   );
+
+  useEffect(() => {
+    return () => {
+      moteGeo.dispose();
+      moteMat.dispose();
+    };
+  }, [moteGeo, moteMat]);
 
   useFrame((_, delta) => {
     elapsed.current += delta;

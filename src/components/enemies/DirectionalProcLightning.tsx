@@ -6,7 +6,7 @@ import { useFrame } from '@react-three/fiber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 const DEFAULT_DURATION_MS = 620;
-const SEGMENT_COUNT = 20;
+const SEGMENT_COUNT = 12;
 
 export interface DirectionalProcLightningPalette {
   core: string;

@@ -1,4 +1,5 @@
 import React, { useMemo, useRef, useEffect, useLayoutEffect } from 'react';
+import type { Position3 } from '@/utils/position3';
 import { useFrame } from '@react-three/fiber';
 import { Mesh, Group, Quaternion, Vector3, Matrix4 } from '@/utils/three-exports';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
@@ -26,7 +27,7 @@ const SLAM_RBD_SMOOTH = 8;
 
 export interface TentacleSpineRendererProps {
   id: string;
-  position: Vector3;
+  position: Position3;
   rotation: number;
   isDying: boolean;
   windSeq: number;
@@ -56,7 +57,7 @@ const TentacleSpineRenderer: React.FC<TentacleSpineRendererProps> = ({
 }) => {
   const { enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group>(null);
-  const targetPosition = useRef(position.clone());
+  const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation = useRef(rotation);
   const segmentGroupRefs = useRef<(Group | null)[]>([]);
   const shadowRef = useRef<Mesh>(null);

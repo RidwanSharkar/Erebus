@@ -1,8 +1,11 @@
 /**
- * Retarget knight_block animation from flat Mixamo FBX skeleton onto the
+ * Retarget knight block animations from flat Mixamo FBX skeleton onto the
  * Assimp-node track layout used by knight_idle.glb and all other knight clips.
  *
- * Usage: node scripts/retarget-knight-block.mjs
+ * Usage:
+ *   node scripts/retarget-knight-block.mjs <source.fbx> <output.glb>
+ *   node scripts/retarget-knight-block.mjs knight_startblock.fbx knight_startblock.glb
+ *   node scripts/retarget-knight-block.mjs knight_idleblock.fbx knight_idleblock.glb
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -271,128 +274,148 @@ async function exportAnimationGlb(scene, clip, outputPath) {
   writeFileSync(outputPath, glbBuffer);
 }
 
-console.log('Loading reference clip (knight_smite.glb)...');
-const refClip = await loadGltfClip(path.join(modelsDir, 'knight_smite.glb'));
+async function retargetKnightBlockAnimation(sourceFbxName, outputGlbName) {
+  const sourceFbxPath = path.join(modelsDir, sourceFbxName);
+  const outputPath = path.join(modelsDir, outputGlbName);
 
-console.log('Loading idle bind-pose clip (knight_idle.glb)...');
-const idleBindClip = await loadGltfClip(path.join(modelsDir, 'knight_idle.glb'));
-const idleBindTrackMap = new Map(idleBindClip.tracks.map((t) => [t.name, t]));
+  console.log(`\n=== Retargeting ${sourceFbxName} -> ${outputGlbName} ===`);
 
-console.log('Loading target skeleton (knight_smite.glb — animation-only, matches other knight clips)...');
-const smiteBuffer = readFileSync(path.join(modelsDir, 'knight_smite.glb'));
-const smiteGltf = await loader.parseAsync(
-  smiteBuffer.buffer.slice(smiteBuffer.byteOffset, smiteBuffer.byteOffset + smiteBuffer.byteLength),
-  modelsDir,
-);
-const targetScene = smiteGltf.scene.clone(true);
-stripMeshes(targetScene);
+  console.log('Loading reference clip (knight_smite.glb)...');
+  const refClip = await loadGltfClip(path.join(modelsDir, 'knight_smite.glb'));
 
-console.log('Loading source animation (knight_block.fbx)...');
-const sourceScene = loadFbxScene(path.join(modelsDir, 'knight_block.fbx'));
-const sourceClip = sourceScene.animations[0];
-if (!sourceClip) throw new Error('knight_block.fbx has no animation clip');
+  console.log('Loading idle bind-pose clip (knight_idle.glb)...');
+  const idleBindClip = await loadGltfClip(path.join(modelsDir, 'knight_idle.glb'));
+  const idleBindTrackMap = new Map(idleBindClip.tracks.map((t) => [t.name, t]));
 
-const fps = 30;
-const duration = sourceClip.duration;
-const numFrames = Math.max(2, Math.round(duration * fps) + 1);
-const times = Float32Array.from({ length: numFrames }, (_, i) =>
-  Math.min(duration, (i / (numFrames - 1)) * duration),
-);
+  console.log('Loading target skeleton (knight_smite.glb — animation-only, matches other knight clips)...');
+  const smiteBuffer = readFileSync(path.join(modelsDir, 'knight_smite.glb'));
+  const smiteGltf = await loader.parseAsync(
+    smiteBuffer.buffer.slice(smiteBuffer.byteOffset, smiteBuffer.byteOffset + smiteBuffer.byteLength),
+    modelsDir,
+  );
+  const targetScene = smiteGltf.scene.clone(true);
+  stripMeshes(targetScene);
 
-console.log(`Sampling ${numFrames} frames over ${duration.toFixed(3)}s...`);
+  console.log(`Loading source animation (${sourceFbxName})...`);
+  const sourceScene = loadFbxScene(sourceFbxPath);
+  const sourceClip = sourceScene.animations[0];
+  if (!sourceClip) throw new Error(`${sourceFbxName} has no animation clip`);
 
-const sourceMixer = new AnimationMixer(sourceScene);
-const sourceAction = sourceMixer.clipAction(sourceClip);
-sourceAction.play();
+  const fps = 30;
+  const duration = sourceClip.duration;
+  const numFrames = Math.max(2, Math.round(duration * fps) + 1);
+  const times = Float32Array.from({ length: numFrames }, (_, i) =>
+    Math.min(duration, (i / (numFrames - 1)) * duration),
+  );
 
-const blockTrackMap = new Map(sourceClip.tracks.map((t) => [t.name, t]));
+  console.log(`Sampling ${numFrames} frames over ${duration.toFixed(3)}s...`);
 
-const outputTracks = [];
-const resampleWarnings = [];
+  const sourceMixer = new AnimationMixer(sourceScene);
+  const sourceAction = sourceMixer.clipAction(sourceClip);
+  sourceAction.play();
 
-for (const refTrack of refClip.tracks) {
-  const [, prop] = refTrack.name.split('.');
-  const directSourceName = `${sourceBoneNameForTrack(refTrack.name)}.${prop}`;
-  const hasDirectSource = blockTrackMap.has(directSourceName);
-  const bindTrack = idleBindTrackMap.get(refTrack.name) ?? refTrack;
+  const sourceTrackMap = new Map(sourceClip.tracks.map((t) => [t.name, t]));
 
-  // Mixamo FBX exports flat bones only — never drive Assimp helper tracks from a parent
-  // bone's quaternion (that mismatch is what causes the twisted block pose).
-  if (prop === 'quaternion' && hasDirectSource && !isAssimpHelperTrack(refTrack.name)) {
-    const { track, nullFrames } = resampleQuaternionTrack(
-      refTrack,
-      times,
-      (frameIndex) => {
-        sourceMixer.setTime(times[frameIndex]);
-        sourceScene.updateMatrixWorld(true);
-        return sampleLocalQuaternion(targetScene, sourceScene, refTrack.name);
-      },
-      bindTrack,
-    );
-    if (nullFrames > 0) {
-      resampleWarnings.push(`${refTrack.name}: ${nullFrames}/${numFrames} frames used fallback`);
+  const outputTracks = [];
+  const resampleWarnings = [];
+
+  for (const refTrack of refClip.tracks) {
+    const [, prop] = refTrack.name.split('.');
+    const directSourceName = `${sourceBoneNameForTrack(refTrack.name)}.${prop}`;
+    const hasDirectSource = sourceTrackMap.has(directSourceName);
+    const bindTrack = idleBindTrackMap.get(refTrack.name) ?? refTrack;
+
+    // Mixamo FBX exports flat bones only — never drive Assimp helper tracks from a parent
+    // bone's quaternion (that mismatch is what causes the twisted block pose).
+    if (prop === 'quaternion' && hasDirectSource && !isAssimpHelperTrack(refTrack.name)) {
+      const { track, nullFrames } = resampleQuaternionTrack(
+        refTrack,
+        times,
+        (frameIndex) => {
+          sourceMixer.setTime(times[frameIndex]);
+          sourceScene.updateMatrixWorld(true);
+          return sampleLocalQuaternion(targetScene, sourceScene, refTrack.name);
+        },
+        bindTrack,
+      );
+      if (nullFrames > 0) {
+        resampleWarnings.push(`${refTrack.name}: ${nullFrames}/${numFrames} frames used fallback`);
+      }
+      outputTracks.push(track);
+      continue;
     }
-    outputTracks.push(track);
-    continue;
+
+    // Assimp helper rotations must be derived from the flat FBX bone's world pose, not held
+    // at idle bind — block is a static guard pose (~40-90° off idle on arms) baked in the FBX.
+    if (prop === 'quaternion' && isAssimpHelperTrack(refTrack.name)) {
+      const { track, nullFrames } = resampleQuaternionTrack(
+        refTrack,
+        times,
+        (frameIndex) => {
+          sourceMixer.setTime(times[frameIndex]);
+          sourceScene.updateMatrixWorld(true);
+          return sampleHelperLocalQuaternion(targetScene, sourceScene, refTrack.name);
+        },
+        bindTrack,
+      );
+      if (nullFrames > 0) {
+        resampleWarnings.push(`${refTrack.name}: ${nullFrames}/${numFrames} frames used fallback`);
+      }
+      outputTracks.push(track);
+      continue;
+    }
+
+    if (prop === 'position' && hasDirectSource && !isAssimpHelperTrack(refTrack.name)) {
+      const { track, nullFrames } = resamplePositionTrack(
+        refTrack,
+        times,
+        (frameIndex) => {
+          sourceMixer.setTime(times[frameIndex]);
+          sourceScene.updateMatrixWorld(true);
+          return sampleLocalPosition(targetScene, sourceScene, refTrack.name);
+        },
+        bindTrack,
+      );
+      if (nullFrames > 0) {
+        resampleWarnings.push(`${refTrack.name}: ${nullFrames}/${numFrames} frames used fallback`);
+      }
+      outputTracks.push(track);
+      continue;
+    }
+
+    // Assimp offsets + any track absent from the FBX — hold idle bind-pose constants.
+    outputTracks.push(makeConstantTrack(bindTrack, duration));
   }
 
-  // Assimp helper rotations must be derived from the flat FBX bone's world pose, not held
-  // at idle bind — block is a static guard pose (~40-90° off idle on arms) baked in the FBX.
-  if (prop === 'quaternion' && isAssimpHelperTrack(refTrack.name)) {
-    const { track, nullFrames } = resampleQuaternionTrack(
-      refTrack,
-      times,
-      (frameIndex) => {
-        sourceMixer.setTime(times[frameIndex]);
-        sourceScene.updateMatrixWorld(true);
-        return sampleHelperLocalQuaternion(targetScene, sourceScene, refTrack.name);
-      },
-      bindTrack,
-    );
-    if (nullFrames > 0) {
-      resampleWarnings.push(`${refTrack.name}: ${nullFrames}/${numFrames} frames used fallback`);
-    }
-    outputTracks.push(track);
-    continue;
+  sourceMixer.stopAllAction();
+
+  const outputClip = new AnimationClip('mixamo.com', duration, outputTracks);
+  await exportAnimationGlb(targetScene, outputClip, outputPath);
+
+  console.log(`Wrote ${outputPath}`);
+  console.log(`  duration: ${duration.toFixed(3)}s`);
+  console.log(`  tracks: ${outputTracks.length}`);
+  console.log(
+    `  has Assimp tracks: ${outputTracks.some((t) => t.name.includes('AssimpFbx'))}`,
+  );
+  if (resampleWarnings.length > 0) {
+    console.warn(`  resample fallbacks (${resampleWarnings.length} tracks):`);
+    for (const warning of resampleWarnings) console.warn(`    ${warning}`);
+  } else {
+    console.log('  resample fallbacks: none');
   }
 
-  if (prop === 'position' && hasDirectSource && !isAssimpHelperTrack(refTrack.name)) {
-    const { track, nullFrames } = resamplePositionTrack(
-      refTrack,
-      times,
-      (frameIndex) => {
-        sourceMixer.setTime(times[frameIndex]);
-        sourceScene.updateMatrixWorld(true);
-        return sampleLocalPosition(targetScene, sourceScene, refTrack.name);
-      },
-      bindTrack,
-    );
-    if (nullFrames > 0) {
-      resampleWarnings.push(`${refTrack.name}: ${nullFrames}/${numFrames} frames used fallback`);
-    }
-    outputTracks.push(track);
-    continue;
-  }
-
-  // Assimp offsets + any track absent from the FBX — hold idle bind-pose constants.
-  outputTracks.push(makeConstantTrack(bindTrack, duration));
+  return { duration, outputPath };
 }
 
-sourceMixer.stopAllAction();
+const [sourceArg, outputArg] = process.argv.slice(2);
+const jobs = sourceArg && outputArg
+  ? [[sourceArg, outputArg]]
+  : [
+      ['knight_startblock.fbx', 'knight_startblock.glb'],
+      ['knight_idleblock.fbx', 'knight_idleblock.glb'],
+    ];
 
-const outputClip = new AnimationClip('mixamo.com', duration, outputTracks);
-const outputPath = path.join(modelsDir, 'knight_block.glb');
-await exportAnimationGlb(targetScene, outputClip, outputPath);
-
-console.log(`Wrote ${outputPath}`);
-console.log(`  duration: ${duration.toFixed(3)}s`);
-console.log(`  tracks: ${outputTracks.length}`);
-console.log(
-  `  has Assimp tracks: ${outputTracks.some((t) => t.name.includes('AssimpFbx'))}`,
-);
-if (resampleWarnings.length > 0) {
-  console.warn(`  resample fallbacks (${resampleWarnings.length} tracks):`);
-  for (const warning of resampleWarnings) console.warn(`    ${warning}`);
-} else {
-  console.log('  resample fallbacks: none');
+for (const [sourceFbx, outputGlb] of jobs) {
+  await retargetKnightBlockAnimation(sourceFbx, outputGlb);
 }

@@ -1,6 +1,29 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Color, Mesh, Group, Points, BufferAttribute, AdditiveBlending, Vector3 } from 'three';
+import { Color, Mesh, Group, Points, BufferAttribute, AdditiveBlending, Vector3, ShaderMaterial } from 'three';
+
+const METEOR_TRAIL_VERTEX_SHADER = `
+  attribute float opacity;
+  attribute float scale;
+  varying float vOpacity;
+  void main() {
+    vOpacity = opacity;
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    gl_Position = projectionMatrix * mvPosition;
+    gl_PointSize = scale * 45.0 * (300.0 / -mvPosition.z);
+  }
+`;
+
+const METEOR_TRAIL_FRAGMENT_SHADER = `
+  varying float vOpacity;
+  uniform vec3 uColor;
+  void main() {
+    float d = length(gl_PointCoord - vec2(0.5));
+    float strength = smoothstep(0.5, 0.1, d);
+    vec3 glowColor = mix(uColor, vec3(1.0), 0.4);
+    gl_FragColor = vec4(glowColor, vOpacity * strength);
+  }
+`;
 
 interface MeteorTrailProps {
   color: Color;
@@ -29,6 +52,31 @@ export default function MeteorTrail({
   const opacitiesRef = useRef<Float32Array>(new Float32Array(particlesCount));
   const scalesRef = useRef<Float32Array>(new Float32Array(particlesCount));
   const isInitialized = useRef(false);
+
+  const uniforms = useMemo(
+    () => ({
+      uColor: { value: color.clone() },
+    }),
+    [color],
+  );
+
+  useEffect(() => {
+    uniforms.uColor.value.copy(color);
+  }, [color, uniforms]);
+
+  useEffect(() => {
+    return () => {
+      const points = particlesRef.current;
+      if (!points) return;
+      points.geometry?.dispose();
+      const mat = points.material as ShaderMaterial | ShaderMaterial[] | undefined;
+      if (Array.isArray(mat)) {
+        mat.forEach((m) => m.dispose());
+      } else {
+        mat?.dispose();
+      }
+    };
+  }, []);
 
   // Initialize positions with the meteor's initial position
   useEffect(() => {
@@ -114,30 +162,9 @@ export default function MeteorTrail({
         transparent
         depthWrite={false}
         blending={AdditiveBlending}
-        vertexShader={`
-          attribute float opacity;
-          attribute float scale;
-          varying float vOpacity;
-          void main() {
-            vOpacity = opacity;
-            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
-            gl_Position = projectionMatrix * mvPosition;
-            gl_PointSize = scale * 45.0 * (300.0 / -mvPosition.z);
-          }
-        `}
-        fragmentShader={`
-          varying float vOpacity;
-          uniform vec3 uColor;
-          void main() {
-            float d = length(gl_PointCoord - vec2(0.5));
-            float strength = smoothstep(0.5, 0.1, d);
-            vec3 glowColor = mix(uColor, vec3(1.0), 0.4);
-            gl_FragColor = vec4(glowColor, vOpacity * strength);
-          }
-        `}
-        uniforms={{
-          uColor: { value: color },
-        }}
+        vertexShader={METEOR_TRAIL_VERTEX_SHADER}
+        fragmentShader={METEOR_TRAIL_FRAGMENT_SHADER}
+        uniforms={uniforms}
       />
     </points>
   );

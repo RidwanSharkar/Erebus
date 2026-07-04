@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useMemo } from 'react';
+import { useRef, useMemo, useEffect } from 'react';
 import { Vector3, AdditiveBlending, CylinderGeometry, MeshBasicMaterial } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
@@ -88,6 +88,14 @@ export default function KnightSmiteLightning({
   );
 
   const cyl = useMemo(() => new CylinderGeometry(0.085 * beamScale, 0.085 * beamScale, 1, 6), [beamScale]);
+
+  useEffect(() => {
+    return () => {
+      matCore.dispose();
+      matGlow.dispose();
+      cyl.dispose();
+    };
+  }, [matCore, matGlow, cyl]);
 
   useFrame(() => {
     if (startRef.current === null) startRef.current = performance.now();

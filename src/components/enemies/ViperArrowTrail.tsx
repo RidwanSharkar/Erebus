@@ -1,6 +1,6 @@
 import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Mesh, Line, Vector3, BufferGeometry, LineBasicMaterial, AdditiveBlending, BufferAttribute, SphereGeometry, MeshStandardMaterial } from '@/utils/three-exports';
+import { Mesh, Line, Vector3, BufferGeometry, LineBasicMaterial, AdditiveBlending, BufferAttribute, SphereGeometry, MeshBasicMaterial } from '@/utils/three-exports';
 
 interface ViperArrowTrailProps {
   color: string;
@@ -12,7 +12,7 @@ interface ViperArrowTrailProps {
 const THICKNESS = 1.35;
 const MAX_TRAIL_LENGTH = 85;
 const GLOW_COUNT = 5;
-const SPARK_GROUP_COUNT = 3;
+const SPARK_GROUP_COUNT = 2;
 const SPARKS_PER_GROUP = 3;
 
 function ViperArrowTrail({
@@ -78,10 +78,8 @@ function ViperArrowTrail({
   const glowMats = useMemo(
     () =>
       Array.from({ length: GLOW_COUNT }, (_, i) =>
-        new MeshStandardMaterial({
+        new MeshBasicMaterial({
           color,
-          emissive: '#aaff44',
-          emissiveIntensity: 2 - i * 0.3,
           transparent: true,
           opacity: opacity * (1 - i * 0.2),
           depthWrite: false,
@@ -96,14 +94,13 @@ function ViperArrowTrail({
   const sparkMats = useMemo(
     () =>
       Array.from({ length: SPARK_GROUP_COUNT * SPARKS_PER_GROUP }, (_, i) =>
-        new MeshStandardMaterial({
+        new MeshBasicMaterial({
           color: '#aaff44',
-          emissive: '#88ff00',
-          emissiveIntensity: 3,
           transparent: true,
           opacity: opacity * (1 - Math.floor(i / SPARKS_PER_GROUP) * 0.3),
           depthWrite: false,
           blending: AdditiveBlending,
+          toneMapped: false,
         }),
       ),
     [opacity],

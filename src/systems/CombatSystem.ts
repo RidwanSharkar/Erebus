@@ -34,7 +34,11 @@ import {
   METEOR_IGNITE_DURATION_MS,
   METEOR_IGNITE_TICKS,
   CROSSENTROPY_PLAGUE_VENOM_STACKS,
+  INFESTED_TALENT_CONCENTRATED_VENOM_STACKS,
+  INFESTED_COMBO_VENOM_PROC_CHANCE,
+  INFESTING_SABRES_SWIPES_VENOM_PROC_CHANCE,
   computeIgniteDotTickPlan,
+  getConcentratedVenomMaxStacks,
 } from '@/utils/talents';
 import { DamageNumberManager } from '@/utils/DamageNumberManager';
 import { ImpactEffectManager } from '@/utils/ImpactEffectManager';
@@ -793,7 +797,7 @@ export class CombatSystem extends System {
   ): number {
     if (
       enemy &&
-      damageType === 'reaping_talons' &&
+      (damageType === 'reaping_talons' || damageType === 'reaping_talons_explosion') &&
       glacialTalons === true &&
       enemy.isFrozen
     ) {
@@ -940,9 +944,12 @@ export class CombatSystem extends System {
                         damageType: 'cloudkill' as const,
                         cloudkillDamage: true as const,
                       }
-                  : damageType === 'reaping_talons'
+                  : damageType === 'reaping_talons' || damageType === 'reaping_talons_explosion'
                     ? {
                         damageType: 'reaping_talons' as const,
+                        ...(damageType === 'reaping_talons_explosion'
+                          ? { explosiveTalonsDetonation: true as const }
+                          : {}),
                         ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
                           ? { staggerToAdd: damageEvent.staggerToAdd }
                           : {}),
@@ -1555,12 +1562,15 @@ export class CombatSystem extends System {
       this.maybeTriggerArcticShards(damageType, source, target);
 
       const enemyForVenom = target.getComponent(Enemy);
+      const venomMaxStacks = getConcentratedVenomMaxStacks(
+        (window as any).controlSystemRef?.current?.talentLoadout,
+      );
       if (
         enemyForVenom &&
         damageType === 'barrage' &&
         damageEvent.wyvernBiteConcentratedVenom === true
       ) {
-        enemyForVenom.applyConcentratedVenomStack(currentTime);
+        enemyForVenom.applyConcentratedVenomStack(currentTime, venomMaxStacks);
       }
 
       if (
@@ -1570,7 +1580,83 @@ export class CombatSystem extends System {
         !damageEvent.crossentropyMeteorDamage &&
         damageDealt
       ) {
-        enemyForVenom.applyConcentratedVenomStacks(CROSSENTROPY_PLAGUE_VENOM_STACKS, currentTime);
+        enemyForVenom.applyConcentratedVenomStacks(
+          CROSSENTROPY_PLAGUE_VENOM_STACKS,
+          currentTime,
+          venomMaxStacks,
+        );
+      }
+
+      if (
+        enemyForVenom &&
+        damageType === 'wraith_strike' &&
+        damageEvent.infestedStrike === true &&
+        damageDealt &&
+        !health.isDead
+      ) {
+        enemyForVenom.applyConcentratedVenomStacks(
+          INFESTED_TALENT_CONCENTRATED_VENOM_STACKS,
+          currentTime,
+          venomMaxStacks,
+        );
+      }
+
+      if (
+        enemyForVenom &&
+        damageType === 'backstab' &&
+        damageEvent.infestedBackstab === true &&
+        damageDealt &&
+        !health.isDead
+      ) {
+        enemyForVenom.applyConcentratedVenomStacks(
+          INFESTED_TALENT_CONCENTRATED_VENOM_STACKS,
+          currentTime,
+          venomMaxStacks,
+        );
+      }
+
+      if (
+        enemyForVenom &&
+        (damageType === 'sunder' || damageType === 'fan_of_knives') &&
+        damageEvent.infestedFlourish === true &&
+        damageDealt &&
+        !health.isDead
+      ) {
+        enemyForVenom.applyConcentratedVenomStacks(
+          INFESTED_TALENT_CONCENTRATED_VENOM_STACKS,
+          currentTime,
+          venomMaxStacks,
+        );
+      }
+
+      if (
+        enemyForVenom &&
+        damageType === 'sword' &&
+        damageEvent.infestedCombo === true &&
+        damageDealt &&
+        !health.isDead &&
+        Math.random() < INFESTED_COMBO_VENOM_PROC_CHANCE
+      ) {
+        enemyForVenom.applyConcentratedVenomStacks(
+          INFESTED_TALENT_CONCENTRATED_VENOM_STACKS,
+          currentTime,
+          venomMaxStacks,
+        );
+      }
+
+      if (
+        enemyForVenom &&
+        (damageType === 'sabre_left' || damageType === 'sabre_right') &&
+        damageEvent.sabreInfestingSwipes === true &&
+        damageDealt &&
+        !health.isDead &&
+        Math.random() < INFESTING_SABRES_SWIPES_VENOM_PROC_CHANCE
+      ) {
+        enemyForVenom.applyConcentratedVenomStacks(
+          INFESTED_TALENT_CONCENTRATED_VENOM_STACKS,
+          currentTime,
+          venomMaxStacks,
+        );
       }
 
       if (
@@ -2136,6 +2222,14 @@ export class CombatSystem extends System {
     theme: string,
   ): void {
     this.impactEffectManager.addImpact('mortal-strike-effect', position, direction, { colorVariant: theme });
+  }
+
+  public addWraithStrikeEffect(
+    position: Vector3,
+    direction: Vector3,
+    theme: string,
+  ): void {
+    this.impactEffectManager.addImpact('wraith-strike-effect', position, direction, { colorVariant: theme });
   }
 
   public addPsionicBladeSliceEffect(

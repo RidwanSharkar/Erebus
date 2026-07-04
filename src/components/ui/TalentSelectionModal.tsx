@@ -27,6 +27,9 @@ import {
   CROSSENTROPY_PLAGUE_DAMAGE,
   CROSSENTROPY_PLAGUE_VENOM_MS,
   CROSSENTROPY_PLAGUE_VENOM_STACKS,
+  INFESTED_TALENT_CONCENTRATED_VENOM_STACKS,
+  INFESTED_COMBO_VENOM_PROC_CHANCE,
+  INFESTING_SABRES_SWIPES_VENOM_PROC_CHANCE,
   CROSSENTROPY_METEOR_SINGLE_CHANCE,
   CROSSENTROPY_METEOR_DOUBLE_CHANCE,
   CROSSENTROPY_METEOR_TRIPLE_CHANCE,
@@ -151,6 +154,7 @@ import {
   SPELLBLADE_WRAITH_STRIKE_SHIELD_RESTORE,
   WRAITH_STRIKE_COOLDOWN_SEC,
   WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES,
+  WRAITH_STRIKE_DOUBLE_STRIKE_INTERNAL_COOLDOWN_SEC,
   breathWeaponTalentDefinition,
   BREATH_WEAPON_DAMAGE,
   AFTERSHOCK_STRIP_LENGTH,
@@ -169,6 +173,8 @@ import {
   tempestRoundsTalentDefinition,
   icebeamTalentDefinition,
   shamanTalentDefinition,
+  MANTRA_SHAMAN_MAX_CHARGES,
+  MANTRA_SHAMAN_INTERNAL_COOLDOWN_SEC,
   superconductorTalentDefinition,
   acceleratorTalentDefinition,
   giantKillerTalentDefinition,
@@ -845,7 +851,7 @@ export default function TalentSelectionModal({
   }, [mantraEquipped]);
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center overflow-hidden bg-black/80 p-4">
+    <div className="fixed inset-0 z-[200] flex items-center justify-center overflow-hidden bg-black/80 p-4" data-block-game-input>
       <div className="flex max-h-[min(90vh,calc(100vh-2rem))] min-h-0 w-full max-w-4xl flex-col rounded-xl border-2 border-amber-500 bg-gray-900/98 p-6 shadow-xl">
         <div className="mb-5 shrink-0 text-center">
           <h2 className="text-xl font-bold text-amber-400 mb-1">TALENTS</h2>
@@ -914,7 +920,11 @@ export default function TalentSelectionModal({
               {loadout.infestedStrike && (
                 <>
                   <p className="text-gray-400 text-sm mt-1">{infestedStrikeTalentDefinition.description}</p>
-                  <p className="text-emerald-200/90 text-xs mt-2 font-mono">190 damage · green VFX · zombies on kill (max 3)</p>
+                  <p className="text-emerald-200/90 text-xs mt-2 font-mono">
+                    190 damage · {INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} Concentrated Venom stack/hit (
+                    {WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK} DPS/stack · max {WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS} ·{' '}
+                    {WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC}s) · green VFX · zombies on kill (max 3)
+                  </p>
                 </>
               )}
             </label>
@@ -1005,7 +1015,7 @@ export default function TalentSelectionModal({
                 <>
                   <p className="text-gray-400 text-sm mt-1">{doubleStrikeTalentDefinition.description}</p>
                   <p className="text-amber-200/90 text-xs mt-2 font-mono">
-                    {WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES} charges · {WRAITH_STRIKE_COOLDOWN_SEC}s per charge · one recharge at a time
+                    {WRAITH_STRIKE_DOUBLE_STRIKE_MAX_CHARGES} charges · {WRAITH_STRIKE_COOLDOWN_SEC}s per charge · one recharge at a time · {WRAITH_STRIKE_DOUBLE_STRIKE_INTERNAL_COOLDOWN_SEC}s apart
                   </p>
                 </>
               )}
@@ -1161,7 +1171,11 @@ export default function TalentSelectionModal({
                     <>
                       <p className="text-gray-400 text-sm mt-1">{infestedComboTalentDefinition.description}</p>
                       <p className="text-sky-200/90 text-xs mt-2 font-mono">
-                        {Math.round(INFESTED_COMBO_LIFESTEAL * 100)}% lifesteal per hit · zombie on kill (same as Infested Smite)
+                        {Math.round(INFESTED_COMBO_LIFESTEAL * 100)}% lifesteal per hit ·{' '}
+                        {Math.round(INFESTED_COMBO_VENOM_PROC_CHANCE * 100)}% Concentrated Venom stack/hit (
+                        {WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK} DPS/stack · max{' '}
+                        {WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS} · {WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC}s) · zombie
+                        on kill (same as Infested Smite)
                       </p>
                     </>
                   )}
@@ -1822,7 +1836,14 @@ export default function TalentSelectionModal({
               />
               <label htmlFor="talent-infested-backstab" className="flex-1 cursor-pointer">
                 {loadout.infestedBackstab && (
-                  <p className="text-gray-400 text-sm mt-1">{infestedBackstabTalentDefinition.description}</p>
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{infestedBackstabTalentDefinition.description}</p>
+                    <p className="text-emerald-200/90 text-xs mt-2 font-mono">
+                      {INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} Concentrated Venom stack/hit (
+                      {WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK} DPS/stack · max {WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS} ·{' '}
+                      {WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC}s) · zombies on kill (max 3)
+                    </p>
+                  </>
                 )}
               </label>
             </div>
@@ -1912,7 +1933,10 @@ export default function TalentSelectionModal({
                   <>
                     <p className="text-gray-400 text-sm mt-1">{infestingSabresSwipesTalentDefinition.description}</p>
                     <p className="text-emerald-200/90 text-xs mt-2 font-mono">
-                      {INFESTING_SABRES_SWIPES_LEFT_DAMAGE} / {INFESTING_SABRES_SWIPES_RIGHT_DAMAGE} base (non-stealth) · zombie on kill
+                      {INFESTING_SABRES_SWIPES_LEFT_DAMAGE} / {INFESTING_SABRES_SWIPES_RIGHT_DAMAGE} base (non-stealth) ·{' '}
+                      {Math.round(INFESTING_SABRES_SWIPES_VENOM_PROC_CHANCE * 100)}% Concentrated Venom stack/hit (
+                      {WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK} DPS/stack · max {WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS} ·{' '}
+                      {WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC}s) · zombie on kill
                     </p>
                   </>
                 )}
@@ -2002,7 +2026,14 @@ export default function TalentSelectionModal({
               />
               <label htmlFor="talent-infested-flourish" className="flex-1 cursor-pointer">
                 {loadout.infestedFlourish && (
-                  <p className="text-gray-400 text-sm mt-1">{infestedFlourishTalentDefinition.description}</p>
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{infestedFlourishTalentDefinition.description}</p>
+                    <p className="text-emerald-200/90 text-xs mt-2 font-mono">
+                      {INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} Concentrated Venom stack/hit (
+                      {WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK} DPS/stack · max {WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS} ·{' '}
+                      {WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC}s) · zombies on kill (max 3)
+                    </p>
+                  </>
                 )}
               </label>
             </div>
@@ -3021,7 +3052,12 @@ export default function TalentSelectionModal({
               />
               <label htmlFor="talent-shaman" className={`flex-1 ${mantraEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
                 {loadout.shaman && (
-                  <p className="text-gray-400 text-sm mt-1">{shamanTalentDefinition.description}</p>
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{shamanTalentDefinition.description}</p>
+                    <p className="text-amber-200/90 text-xs mt-2 font-mono">
+                      {MANTRA_SHAMAN_MAX_CHARGES} charges · one recharge at a time · {MANTRA_SHAMAN_INTERNAL_COOLDOWN_SEC}s apart
+                    </p>
+                  </>
                 )}
               </label>
             </div>

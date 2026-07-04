@@ -1,19 +1,29 @@
 'use client';
+import { positionScratch, type Position3 } from '@/utils/position3';
 
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { Group, Vector3 } from 'three';
+import { Group, Mesh, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
-import { Billboard, Text } from '@react-three/drei';
+import { Billboard } from '@react-three/drei';
 import ViperModel from './ViperModel';
 import CubeSoulEffect from './CubeSoulEffect';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
+import {
+  ENEMY_HP_BAR_WIDTH,
+  ENEMY_HP_BAR_HEIGHT,
+  ENEMY_HP_BAR_FILL_HEIGHT,
+  ENEMY_HP_BAR_FILL_Z, ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO,
+  syncEnemyHealthBarFillFromRef,
+  syncEnemyHealthBarNumericTextFromRef,
+} from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
+import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 
 interface ViperRendererProps {
   id: string;
-  position: Vector3;
+  position: Position3;
   rotation: number;
   health: number;
   maxHealth: number;
@@ -41,8 +51,10 @@ function ViperRenderer({
   staggerBuildup = 0,
 }: ViperRendererProps) {
   const theme = campHpTheme(campType);
-  const { socket, enemyTransformsRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
+  const hpFillRef = useRef<Mesh>(null);
+  const hpTextRef = useRef<any>(null);
 
   // Increments on every telegraph — passed to ViperModel so it always restarts DrawBow.
   const [attackKey,   setAttackKey]   = useState(0);
@@ -52,7 +64,7 @@ function ViperRenderer({
   const [isImpacting,  setIsImpacting]  = useState(false);
   const [impactPlayKey, setImpactPlayKey] = useState(0);
 
-  const targetPosition = useRef(position.clone());
+  const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation = useRef(rotation);
   const isAttackingRef = useRef(false);
   const prevHealthRef  = useRef(health);
@@ -64,6 +76,9 @@ function ViperRenderer({
   const opacity       = useRef(1);
   const cachedDeathMats = useRef<any[]>([]);
   const deathCacheBuilt = useRef(false);
+  const soulEnabledRef = useRef(true);
+
+  const SOUL_CULL_DISTANCE = 48;
 
   // Callback ref — positions the group at the server location before the first render
   // so the viper never flickers from world-origin.
@@ -77,14 +92,14 @@ function ViperRenderer({
 
   // Track server position changes and derive walking state from them.
   useEffect(() => {
-    const dist = targetPosition.current.distanceTo(position);
+    const dist = targetPosition.current.distanceTo(positionScratch.set(position.x, position.y, position.z));
     const isLocked = isAttackingRef.current;
     if (!isLocked) {
-      targetPosition.current.copy(position);
+      targetPosition.current.set(position.x, position.y, position.z);
     }
 
     if (dist > 8.0 && groupRef.current && !isLocked) {
-      groupRef.current.position.copy(position);
+      groupRef.current.position.set(position.x, position.y, position.z);
     }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -152,9 +167,11 @@ function ViperRenderer({
     };
   }, [id, socket]);
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
+
+    soulEnabledRef.current = group.position.distanceTo(state.camera.position) < SOUL_CULL_DISTANCE;
 
     const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
     updateEnemyWalkStateFromMoveDist(
@@ -174,6 +191,9 @@ function ViperRenderer({
     while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
     while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
+
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, ENEMY_HP_BAR_WIDTH);
+    syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
 
     // Death fade-out.
     if (isDying) {
@@ -212,32 +232,30 @@ function ViperRenderer({
         impactPlayKey={impactPlayKey}
         onImpactFinished={handleImpactFinished}
       />
-      {!isDying && <CubeSoulEffect color="green" posY={2.5} />}
+      {!isDying && <CubeSoulEffect color="green" posY={2.5} enabledRef={soulEnabledRef} />}
 
       {/* Billboard health bar */}
       <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
             <mesh position={[0, 0, 0]}>
-              <planeGeometry args={[2.0, 0.25]} />
+              <primitive object={ENEMY_HP_BAR_BG_GEO} attach="geometry" />
               <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
             </mesh>
 
-            <mesh position={[-1.0 + (health / maxHealth), 0, 0.001]}>
-              <planeGeometry args={[(health / maxHealth) * 2.0, 0.23]} />
+            <mesh ref={hpFillRef} position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}>
+              <primitive object={ENEMY_HP_BAR_FILL_GEO} attach="geometry" />
               <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
             </mesh>
 
-            <Text
-              position={[0, 0, 0.002]}
+            <EnemyHealthBarTextLabel
+              leading="🐍"
+              numericRef={hpTextRef}
+              health={health}
+              maxHealth={maxHealth}
               fontSize={0.18}
               color={theme.text}
-              anchorX="center"
-              anchorY="middle"
-              fontWeight="bold"
-            >
-              {`🐍 ${Math.ceil(health)}/${maxHealth}`}
-            </Text>
+            />
             <EnemyStaggerBar stagger={staggerBuildup} />
           </>
         )}

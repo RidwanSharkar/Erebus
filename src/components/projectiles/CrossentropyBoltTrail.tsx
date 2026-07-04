@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Color, Mesh, Points, Vector3, AdditiveBlending } from '@/utils/three-exports';
 
@@ -73,6 +73,35 @@ const CrossentropyBoltTrail: React.FC<CrossentropyBoltTrailProps> = ({
   const minMovementDistance = 0.05; // Minimum distance before updating trail
   const updateTimer = useRef(0);
   const updateInterval = 0.016; // ~60fps max update rate
+
+  const uniforms = useMemo(
+    () => ({
+      uColor: { value: color.clone() },
+      uReaper: { value: reaperPurple ? 1 : 0 },
+    }),
+    [color, reaperPurple],
+  );
+
+  useEffect(() => {
+    uniforms.uColor.value.copy(color);
+    uniforms.uReaper.value = reaperPurple ? 1 : 0;
+  }, [color, reaperPurple, uniforms]);
+
+  useEffect(() => {
+    return () => {
+      for (const ref of [particles1Ref, particles2Ref, particles3Ref]) {
+        const points = ref.current;
+        if (!points) continue;
+        points.geometry?.dispose();
+        const mat = points.material;
+        if (Array.isArray(mat)) {
+          mat.forEach((m) => m.dispose());
+        } else {
+          mat?.dispose();
+        }
+      }
+    };
+  }, []);
 
   // Initialize positions only once when meshes are available
   useEffect(() => {
@@ -219,10 +248,7 @@ const CrossentropyBoltTrail: React.FC<CrossentropyBoltTrailProps> = ({
           blending={AdditiveBlending}
           vertexShader={TRAIL_VERTEX_SHADER}
           fragmentShader={TRAIL_FRAGMENT_SHADER}
-          uniforms={{
-            uColor: { value: color },
-            uReaper: { value: reaperPurple ? 1 : 0 },
-          }}
+          uniforms={uniforms}
         />
       </points>
       <points ref={particles2Ref}>
@@ -252,10 +278,7 @@ const CrossentropyBoltTrail: React.FC<CrossentropyBoltTrailProps> = ({
           blending={AdditiveBlending}
           vertexShader={TRAIL_VERTEX_SHADER}
           fragmentShader={TRAIL_FRAGMENT_SHADER}
-          uniforms={{
-            uColor: { value: color },
-            uReaper: { value: reaperPurple ? 1 : 0 },
-          }}
+          uniforms={uniforms}
         />
       </points>
       <points ref={particles3Ref}>
@@ -285,10 +308,7 @@ const CrossentropyBoltTrail: React.FC<CrossentropyBoltTrailProps> = ({
           blending={AdditiveBlending}
           vertexShader={TRAIL_VERTEX_SHADER}
           fragmentShader={TRAIL_FRAGMENT_SHADER}
-          uniforms={{
-            uColor: { value: color },
-            uReaper: { value: reaperPurple ? 1 : 0 },
-          }}
+          uniforms={uniforms}
         />
       </points>
     </>

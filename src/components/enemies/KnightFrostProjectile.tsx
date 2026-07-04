@@ -25,7 +25,7 @@ export default function KnightFrostProjectile({
   const endFixedRef = useRef(endPosition.clone());
 
   // Borrow a pooled point light that follows the projectile (replaces a mounted <pointLight>).
-  const projectileLight = useDynamicLight({ color: new Color('#7dd3fc'), distance: 10, decay: 2, priority: 2 });
+  const projectileLight = useDynamicLight({ color: new Color('#7dd3fc'), distance: 10, decay: 2, priority: 1 });
 
   const coreMat = useMemo(
     () =>

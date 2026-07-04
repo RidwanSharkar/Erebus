@@ -8,6 +8,7 @@ import { World } from '@/ecs/World';
 import { Movement } from '@/ecs/components/Movement';
 import { Transform } from '@/ecs/components/Transform';
 import { WeaponType, WeaponSubclass } from '@/components/dragon/weapons';
+import { isEventOverGameUi } from '@/utils/gameUiInput';
 import DraconicWingJets from '@/components/dragon/DraconicWingJets';
 import DashFireTrail from '@/components/dragon/DashFireTrail';
 
@@ -252,8 +253,8 @@ export default function CharacterRenderer({
   // Track left mouse button for the local player so we can play the cast animation.
   useEffect(() => {
     if (!isLocalPlayer) return;
-    const onDown = (e: MouseEvent) => { if (e.button === 0) isLeftMouseHeld.current = true; };
-    const onUp   = (e: MouseEvent) => { if (e.button === 0) isLeftMouseHeld.current = false; };
+    const onDown = (e: MouseEvent) => { if (e.button === 0 && !isEventOverGameUi(e)) isLeftMouseHeld.current = true; };
+    const onUp   = (e: MouseEvent) => { if (e.button === 0 && !isEventOverGameUi(e)) isLeftMouseHeld.current = false; };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('mouseup',   onUp);
     // Release if the window loses focus (alt-tab, etc.)

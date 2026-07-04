@@ -39,7 +39,7 @@ const BLUE_PALETTE: DirectionalProcLightningPalette = {
   light: '#6eb8f0',
 };
 
-const GREEN_PALETTE: DirectionalProcLightningPalette = {
+export const GREEN_PALETTE: DirectionalProcLightningPalette = {
   core: '#d4ffe8',
   glow: '#00cc55',
   halo: '#00ff66',
@@ -132,6 +132,19 @@ export default function WeaverLightningStrike({
       ],
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  const impactRingRotations = useMemo(
+    () =>
+      [0, 1, 2].map(
+        () =>
+          [Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI] as [
+            number,
+            number,
+            number,
+          ],
+      ),
     [],
   );
 
@@ -233,7 +246,7 @@ export default function WeaverLightningStrike({
               <mesh
                 key={i}
                 material={materials.ringImpact[i]}
-                rotation={[Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI]}
+                rotation={impactRingRotations[i]}
               >
                 <ringGeometry args={[size, size + 0.2, 32]} />
               </mesh>

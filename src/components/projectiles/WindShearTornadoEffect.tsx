@@ -5,7 +5,22 @@ import { useFrame } from '@react-three/fiber';
 interface LightningSpark {
   id: number;
   position: [number, number, number];
-  segments: Array<[number, number, number]>;
+  segments: Array<{
+    position: [number, number, number];
+    radius: number;
+    emissiveIntensity: number;
+  }>;
+  miniSparks: Array<{
+    position: [number, number, number];
+    radius: number;
+    emissiveIntensity: number;
+  }>;
+}
+
+interface CrackleSpark {
+  position: [number, number, number];
+  radius: number;
+  emissiveIntensity: number;
 }
 
 // Whirlwind Radial Wave Effect Component
@@ -27,29 +42,67 @@ export function WhirlwindRadialWaveEffect({
   const lightningSparks: LightningSpark[] = useMemo(() => {
     const sparks: LightningSpark[] = [];
     for (let i = 0; i < 12; i++) {
-      // Random positions within expanding radius
       const angle = (i / 12) * Math.PI * 2;
-      const distance = 0.3 + Math.random() * 0.5; // Random distance from center
+      const distance = 0.3 + Math.random() * 0.5;
       const x = Math.cos(angle) * distance;
       const z = Math.sin(angle) * distance;
-      const y = (Math.random() - 0.5) * 0.3; // Slight vertical variation
+      const y = (Math.random() - 0.5) * 0.3;
 
-      sparks.push({
-        id: i,
-        position: [x, y, z] as [number, number, number],
-        // Create jagged lightning segments
-        segments: Array(3 + Math.floor(Math.random() * 3)).fill(0).map((_, segIdx) => {
+      const segments = Array(3 + Math.floor(Math.random() * 3))
+        .fill(0)
+        .map(() => {
           const segAngle = angle + (Math.random() - 0.5) * 0.5;
           const segDistance = distance + (Math.random() - 0.5) * 0.2;
           const segX = Math.cos(segAngle) * segDistance;
           const segZ = Math.sin(segAngle) * segDistance;
           const segY = y + (Math.random() - 0.5) * 0.1;
-          return [segX, segY, segZ] as [number, number, number];
-        })
+          return {
+            position: [segX, segY, segZ] as [number, number, number],
+            radius: 0.02 + Math.random() * 0.02,
+            emissiveIntensity: 0.5 + Math.random() * 2,
+          };
+        });
+
+      const miniSparks = Array.from({ length: 3 }, (_, miniIdx) => {
+        const miniAngle = (miniIdx / 3) * Math.PI * 2 + Math.random() * Math.PI;
+        const miniDistance = 0.08 + Math.random() * 0.05;
+        const miniX = x + Math.cos(miniAngle) * miniDistance;
+        const miniZ = z + Math.sin(miniAngle) * miniDistance;
+        const miniY = y + (Math.random() - 0.5) * 0.05;
+        return {
+          position: [miniX, miniY, miniZ] as [number, number, number],
+          radius: 0.015 + Math.random() * 0.01,
+          emissiveIntensity: 0.5 + Math.random() * 1.5,
+        };
+      });
+
+      sparks.push({
+        id: i,
+        position: [x, y, z] as [number, number, number],
+        segments,
+        miniSparks,
       });
     }
     return sparks;
   }, []);
+
+  const crackleSparks: CrackleSpark[] = useMemo(
+    () =>
+      Array.from({ length: 8 }, () => {
+        const randomAngle = Math.random() * Math.PI * 2;
+        const randomDistance = 0.2 + Math.random() * 0.8;
+        return {
+          position: [
+            Math.cos(randomAngle) * randomDistance,
+            (Math.random() - 0.5) * 0.4,
+            Math.sin(randomAngle) * randomDistance,
+          ] as [number, number, number],
+          radius: 0.02 + Math.random() * 0.015,
+          emissiveIntensity: 0.5 + Math.random() * 1.5,
+        };
+      }),
+    [],
+  );
 
   useFrame(() => {
     if (!groupRef.current || hasCompleted.current) return;
@@ -123,17 +176,13 @@ export function WhirlwindRadialWaveEffect({
       {/* Violent Yellow Lightning Sparks */}
       {lightningSparks.map((spark: LightningSpark) => (
         <group key={spark.id}>
-          {/* Main spark segments */}
-          {spark.segments.map((segment: [number, number, number], segIdx) => (
-            <mesh
-              key={`spark-${spark.id}-seg-${segIdx}`}
-              position={segment}
-            >
-              <sphereGeometry args={[0.02 + Math.random() * 0.02, 4, 4]} />
+          {spark.segments.map((segment, segIdx) => (
+            <mesh key={`spark-${spark.id}-seg-${segIdx}`} position={segment.position}>
+              <sphereGeometry args={[segment.radius, 4, 4]} />
               <meshStandardMaterial
-                color="#FFFF00" // Pure yellow
-                emissive="#FFD700" // Golden yellow
-                emissiveIntensity={0.5 + Math.random() * 2}
+                color="#FFFF00"
+                emissive="#FFD700"
+                emissiveIntensity={segment.emissiveIntensity}
                 transparent
                 opacity={1}
                 blending={AdditiveBlending}
@@ -141,59 +190,35 @@ export function WhirlwindRadialWaveEffect({
             </mesh>
           ))}
 
-          {/* Crackling mini sparks around main spark */}
-          {[...Array(3)].map((_, miniIdx) => {
-            const miniAngle = (miniIdx / 3) * Math.PI * 2 + Math.random() * Math.PI;
-            const miniDistance = 0.08 + Math.random() * 0.05;
-            const miniX = spark.position[0] + Math.cos(miniAngle) * miniDistance;
-            const miniZ = spark.position[2] + Math.sin(miniAngle) * miniDistance;
-            const miniY = spark.position[1] + (Math.random() - 0.5) * 0.05;
-
-            return (
-              <mesh
-                key={`mini-spark-${spark.id}-${miniIdx}`}
-                position={[miniX, miniY, miniZ]}
-              >
-                <sphereGeometry args={[0.015 + Math.random() * 0.01, 3, 3]} />
-                <meshStandardMaterial
-                  color="#FFFF88" // Bright yellow-white
-                  emissive="#FFD700" // Golden yellow
-                  emissiveIntensity={0.5 + Math.random() * 1.5}
-                  transparent
-                  opacity={0.9}
-                  blending={AdditiveBlending}
-                />
-              </mesh>
-            );
-          })}
+          {spark.miniSparks.map((mini, miniIdx) => (
+            <mesh key={`mini-spark-${spark.id}-${miniIdx}`} position={mini.position}>
+              <sphereGeometry args={[mini.radius, 3, 3]} />
+              <meshStandardMaterial
+                color="#FFFF88"
+                emissive="#FFD700"
+                emissiveIntensity={mini.emissiveIntensity}
+                transparent
+                opacity={0.9}
+                blending={AdditiveBlending}
+              />
+            </mesh>
+          ))}
         </group>
       ))}
 
-      {/* Additional random crackling sparks */}
-      {[...Array(8)].map((_, i) => {
-        const randomAngle = Math.random() * Math.PI * 2;
-        const randomDistance = 0.2 + Math.random() * 0.8;
-        const crackleX = Math.cos(randomAngle) * randomDistance;
-        const crackleZ = Math.sin(randomAngle) * randomDistance;
-        const crackleY = (Math.random() - 0.5) * 0.4;
-
-        return (
-          <mesh
-            key={`crackle-${i}`}
-            position={[crackleX, crackleY, crackleZ]}
-          >
-            <sphereGeometry args={[0.02 + Math.random() * 0.015, 3, 3]} />
-            <meshStandardMaterial
-              color="#FFFF00" // Pure yellow
-              emissive="#FFD700" // Golden yellow
-              emissiveIntensity={0.5 + Math.random() * 1.5}
-              transparent
-              opacity={0.8}
-              blending={AdditiveBlending}
-            />
-          </mesh>
-        );
-      })}
+      {crackleSparks.map((crackle, i) => (
+        <mesh key={`crackle-${i}`} position={crackle.position}>
+          <sphereGeometry args={[crackle.radius, 3, 3]} />
+          <meshStandardMaterial
+            color="#FFFF00"
+            emissive="#FFD700"
+            emissiveIntensity={crackle.emissiveIntensity}
+            transparent
+            opacity={0.8}
+            blending={AdditiveBlending}
+          />
+        </mesh>
+      ))}
     </group>
   );
 }

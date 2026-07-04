@@ -181,13 +181,13 @@ export default function ControlsTutorialOverlay({
 
   return (
     <div
-      className="controls-tutorial fixed inset-0 z-[340] flex items-start justify-end p-3 sm:p-4"
-      onClick={handleClose}
+      className="controls-tutorial fixed inset-0 z-[340] flex items-start justify-end p-3 sm:p-4 pointer-events-none"
       role="presentation"
     >
       <div
         key={animationKey}
-        className={`controls-tutorial-panel relative backdrop-blur-lg px-5 py-4 sm:px-6 sm:py-5 max-w-[88vw] w-[min(470px,88vw)] overflow-hidden ${autoDismiss ? 'controls-tutorial-panel--auto' : ''}`}
+        className={`controls-tutorial-panel relative backdrop-blur-lg px-5 py-4 sm:px-6 sm:py-5 max-w-[88vw] w-[min(470px,88vw)] overflow-hidden pointer-events-auto ${autoDismiss ? 'controls-tutorial-panel--auto' : ''}`}
+        data-block-game-input
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-label="Controls tutorial"

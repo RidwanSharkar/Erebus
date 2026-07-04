@@ -1,9 +1,10 @@
 'use client';
+import { positionScratch, type Position3 } from '@/utils/position3';
 
 import React, { useRef, useState, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
 
-import { Billboard, Text } from '@react-three/drei';
+import { Billboard } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { AdditiveBlending, Color, Group, Mesh, MeshBasicMaterial, RingGeometry, Vector3 } from 'three';
 import WeaverModel from './WeaverModel';
@@ -14,11 +15,12 @@ import { STAGGER_MAX_BOSS } from '@/utils/talents';
 import { campHpTheme } from '@/utils/campHpTheme';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
-import { ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_HEIGHT, ENEMY_HP_BAR_FILL_HEIGHT, ENEMY_HP_BAR_FILL_Z, applyEnemyHealthBarFill } from '@/utils/enemyHealthBar';
+import { ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_HEIGHT, ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO, ENEMY_HP_BAR_FILL_HEIGHT, ENEMY_HP_BAR_FILL_Z, applyEnemyHealthBarFill, syncEnemyHealthBarFillFromRef, syncEnemyHealthBarNumericTextFromRef } from '@/utils/enemyHealthBar';
+import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 
 interface Boss3RendererProps {
   id: string;
-  position: Vector3;
+  position: Position3;
   rotation: number;
   health: number;
   maxHealth: number;
@@ -129,10 +131,11 @@ function Boss3Renderer({
   staggerBuildup = 0,
 }: Boss3RendererProps) {
   const theme = campHpTheme('green');
-  const { socket, enemyTransformsRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
-  const targetPosition = useRef(position.clone());
+  const hpTextRef = useRef<any>(null);
+  const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation = useRef(rotation);
   const isWalkingRef = useRef(false);
   const isCastingSummonRef = useRef(false);
@@ -179,11 +182,11 @@ function Boss3Renderer({
   }, []);
 
   useEffect(() => {
-    const dist = targetPosition.current.distanceTo(position);
-    targetPosition.current.copy(position);
+    const dist = targetPosition.current.distanceTo(positionScratch.set(position.x, position.y, position.z));
+    targetPosition.current.set(position.x, position.y, position.z);
 
     if (dist > 8 && groupRef.current) {
-      groupRef.current.position.copy(position);
+      groupRef.current.position.set(position.x, position.y, position.z);
     }
   }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -299,6 +302,9 @@ function Boss3Renderer({
     while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
 
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, ENEMY_HP_BAR_WIDTH);
+    syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
+
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
@@ -359,7 +365,7 @@ function Boss3Renderer({
         {health > 0 && !isDying && (
           <>
             <mesh position={[0, 0, 0]}>
-              <planeGeometry args={[ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_HEIGHT]} />
+              <primitive object={ENEMY_HP_BAR_BG_GEO} attach="geometry" />
               <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
             </mesh>
             <mesh
@@ -367,19 +373,17 @@ function Boss3Renderer({
               position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
               scale={[1, 1, 1]}
             >
-              <planeGeometry args={[ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_FILL_HEIGHT]} />
+              <primitive object={ENEMY_HP_BAR_FILL_GEO} attach="geometry" />
               <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
             </mesh>
-            <Text
-              position={[0, 0, 0.002]}
+            <EnemyHealthBarTextLabel
+              leading="FEAR"
+              numericRef={hpTextRef}
+              health={health}
+              maxHealth={maxHealth}
               fontSize={0.18}
               color={theme.text}
-              anchorX="center"
-              anchorY="middle"
-              fontWeight="bold"
-            >
-              {`FEAR ${Math.ceil(health)}/${maxHealth}`}
-            </Text>
+            />
             <EnemyStaggerBar stagger={staggerBuildup} staggerMax={STAGGER_MAX_BOSS} />
           </>
         )}

@@ -1,9 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3 } from '@/utils/three-exports';
-import { AdditiveBlending, Euler } from 'three';
+import { AdditiveBlending, BoxGeometry, Euler, Group, MeshBasicMaterial } from 'three';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import type { FanOfKnivesDaggerColors } from '@/utils/talents';
 
@@ -21,68 +21,101 @@ interface FanOfKnivesDaggerProps {
   projectiles: FanOfKnivesProjectileView[];
 }
 
-/**
- * One dagger instance. Lives as its own component so it can borrow a pooled point
- * light (Rules of Hooks forbid calling useDynamicLight inside the projectiles.map()).
- */
-function FanOfKnivesDaggerInstance({ projectile }: { projectile: FanOfKnivesProjectileView }) {
-  const p = projectile;
-  const { dagger, glow, trail, light } = p.colors;
-  const traveled = Math.max(0, p.distanceTraveled);
-  const fadeStartDistance = Math.max(p.maxDistance * 0.75, 1e-3);
-  const fadeEndDistance = Math.max(p.maxDistance, fadeStartDistance + 1e-3);
+const DAGGER_BOX_GEO = new BoxGeometry(0.07, 0.07, 0.55);
+const GLOW_BOX_GEO = new BoxGeometry(0.2, 0.2, 0.7);
+const TRAIL_BOX_GEO = new BoxGeometry(0.13, 0.13, 0.9);
+const _eulerScratch = new Euler(0, 0, 0, 'YXZ');
+
+function computeFadeOpacity(traveled: number, maxDistance: number): number {
+  const fadeStart = Math.max(maxDistance * 0.75, 1e-3);
+  const fadeEnd = Math.max(maxDistance, fadeStart + 1e-3);
   const fadeProgress =
-    traveled < fadeStartDistance
-      ? 0
-      : Math.min(1, (traveled - fadeStartDistance) / (fadeEndDistance - fadeStartDistance));
-  const distOpacity = 1 - fadeProgress * fadeProgress;
+    traveled < fadeStart ? 0 : Math.min(1, (traveled - fadeStart) / (fadeEnd - fadeStart));
+  return 1 - fadeProgress * fadeProgress;
+}
 
-  const yaw = Math.atan2(p.direction.x, p.direction.z);
-  const xz = Math.sqrt(p.direction.x * p.direction.x + p.direction.z * p.direction.z);
-  const pitch = Math.atan2(-p.direction.y, xz || 1e-8);
-  const eulerRot = new Euler(pitch, yaw, 0, 'YXZ');
+function FanOfKnivesDaggerInstance({ projectile }: { projectile: FanOfKnivesProjectileView }) {
+  const projectileRef = useRef(projectile);
+  projectileRef.current = projectile;
 
-  // Pooled point light follows the dagger position (world space).
+  const { dagger, glow, trail, light } = projectile.colors;
+  const groupRef = useRef<Group>(null);
+  const rotGroupRef = useRef<Group>(null);
+
+  const daggerMat = useRef(
+    new MeshBasicMaterial({
+      color: dagger,
+      transparent: true,
+      opacity: 0.95,
+      depthWrite: false,
+      blending: AdditiveBlending,
+    }),
+  ).current;
+  const glowMat = useRef(
+    new MeshBasicMaterial({
+      color: glow,
+      transparent: true,
+      opacity: 0.5,
+      depthWrite: false,
+      blending: AdditiveBlending,
+    }),
+  ).current;
+  const trailMat = useRef(
+    new MeshBasicMaterial({
+      color: trail,
+      transparent: true,
+      opacity: 0.35,
+      depthWrite: false,
+      blending: AdditiveBlending,
+    }),
+  ).current;
+
+  daggerMat.color.set(dagger);
+  glowMat.color.set(glow);
+  trailMat.color.set(trail);
+
   const daggerLight = useDynamicLight({ color: light, distance: 3.5, decay: 2, priority: 2 });
 
+  useEffect(() => {
+    return () => {
+      daggerMat.dispose();
+      glowMat.dispose();
+      trailMat.dispose();
+    };
+  }, [daggerMat, glowMat, trailMat]);
+
   useFrame(() => {
-    daggerLight.current?.setPosition(p.position.x, p.position.y, p.position.z);
+    const proj = projectileRef.current;
+    const traveled = Math.max(0, proj.startPosition.distanceTo(proj.position));
+    const distOpacity = computeFadeOpacity(traveled, proj.maxDistance);
+
+    if (groupRef.current) {
+      groupRef.current.position.copy(proj.position);
+      groupRef.current.scale.setScalar(1.225);
+    }
+
+    const yaw = Math.atan2(proj.direction.x, proj.direction.z);
+    const xz = Math.sqrt(proj.direction.x * proj.direction.x + proj.direction.z * proj.direction.z);
+    const pitch = Math.atan2(-proj.direction.y, xz || 1e-8);
+    _eulerScratch.set(pitch, yaw, 0, 'YXZ');
+    if (rotGroupRef.current) {
+      rotGroupRef.current.rotation.copy(_eulerScratch);
+    }
+
+    daggerMat.opacity = 0.95 * distOpacity;
+    glowMat.opacity = 0.5 * distOpacity;
+    trailMat.opacity = 0.35 * distOpacity;
+
+    daggerLight.current?.setPosition(proj.position.x, proj.position.y, proj.position.z);
     daggerLight.current?.setIntensity(5 * distOpacity);
   });
 
   return (
-    <group position={p.position.toArray()} scale={1.225}>
-      <group rotation={eulerRot}>
-        <mesh renderOrder={1}>
-          <boxGeometry args={[0.07, 0.07, 0.55]} />
-          <meshBasicMaterial
-            color={dagger}
-            transparent
-            opacity={0.95 * distOpacity}
-            depthWrite={false}
-            blending={AdditiveBlending}
-          />
-        </mesh>
-        <mesh renderOrder={2}>
-          <boxGeometry args={[0.2, 0.2, 0.7]} />
-          <meshBasicMaterial
-            color={glow}
-            transparent
-            opacity={0.5 * distOpacity}
-            depthWrite={false}
-            blending={AdditiveBlending}
-          />
-        </mesh>
-        <mesh renderOrder={1} position={[0, 0, 0.55]}>
-          <boxGeometry args={[0.13, 0.13, 0.9]} />
-          <meshBasicMaterial
-            color={trail}
-            transparent
-            opacity={0.3 * distOpacity}
-            depthWrite={false}
-            blending={AdditiveBlending}
-          />
-        </mesh>
+    <group ref={groupRef}>
+      <group ref={rotGroupRef}>
+        <mesh renderOrder={1} geometry={DAGGER_BOX_GEO} material={daggerMat} />
+        <mesh renderOrder={2} geometry={GLOW_BOX_GEO} material={glowMat} />
+        <mesh renderOrder={1} position={[0, 0, 0.55]} geometry={TRAIL_BOX_GEO} material={trailMat} />
       </group>
     </group>
   );
@@ -91,8 +124,8 @@ function FanOfKnivesDaggerInstance({ projectile }: { projectile: FanOfKnivesProj
 function FanOfKnivesDagger({ projectiles }: FanOfKnivesDaggerProps) {
   return (
     <>
-      {projectiles.map((p) => (
-        <FanOfKnivesDaggerInstance key={p.id} projectile={p} />
+      {projectiles.map((projectile) => (
+        <FanOfKnivesDaggerInstance key={projectile.id} projectile={projectile} />
       ))}
     </>
   );
