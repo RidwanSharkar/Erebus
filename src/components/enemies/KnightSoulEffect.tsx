@@ -13,6 +13,7 @@ import {
   SOUL_TYPE_MATERIALS,
   type SharedSoulType,
 } from '@/utils/sharedEnemyUiGeometry';
+import { SharedMesh } from '@/utils/SharedMesh';
 
 type SoulType = 'green' | 'red' | 'blue' | 'purple' | 'yellow';
 
@@ -112,9 +113,9 @@ function KnightSoulEffect({ soulType, compact = false }: KnightSoulEffectProps) 
         decay={5}
       />
 
-      <mesh ref={coreRef} position={[0, coreYOffset, 0]} geometry={SOUL_ORB_CORE_GEO} material={soulMats.core} scale={[coreRadius / 0.14, coreRadius / 0.14, coreRadius / 0.14]} />
+      <SharedMesh ref={coreRef} position={[0, coreYOffset, 0]} geometry={SOUL_ORB_CORE_GEO} material={soulMats.core} scale={[coreRadius / 0.14, coreRadius / 0.14, coreRadius / 0.14]} />
 
-      <mesh ref={glowRef} geometry={SOUL_ORB_GLOW_GEO} material={soulMats.glow} scale={[glowRadius / 0.3, glowRadius / 0.3, glowRadius / 0.3]} />
+      <SharedMesh ref={glowRef} geometry={SOUL_ORB_GLOW_GEO} material={soulMats.glow} scale={[glowRadius / 0.3, glowRadius / 0.3, glowRadius / 0.3]} />
 
       <group ref={orbitGroupRef} position={[0, orbitYOffset, 0]}>
         {Array.from({ length: ORBIT_COUNT }).map((_, i) => {
@@ -122,7 +123,7 @@ function KnightSoulEffect({ soulType, compact = false }: KnightSoulEffectProps) 
           const x = Math.cos(angle) * orbitRadius;
           const z = Math.sin(angle) * orbitRadius;
           return (
-            <mesh
+            <SharedMesh
               key={i}
               position={[x, 0, z]}
               ref={el => { particleRefs.current[i] = el; }}
@@ -134,7 +135,7 @@ function KnightSoulEffect({ soulType, compact = false }: KnightSoulEffectProps) 
         })}
       </group>
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, cfg.ringY, 0]} geometry={SOUL_ORB_RING_GEO} material={soulMats.ring} scale={[cfg.scale, cfg.scale, cfg.scale]} />
+      <SharedMesh rotation={[-Math.PI / 2, 0, 0]} position={[0, cfg.ringY, 0]} geometry={SOUL_ORB_RING_GEO} material={soulMats.ring} scale={[cfg.scale, cfg.scale, cfg.scale]} />
     </group>
   );
 }

@@ -305,6 +305,8 @@ export class AudioSystem extends System {
   private shieldRegenLoopInstance: number | null = null;
   private shieldRegenShouldPlay = false;
   private soundLastPlayedAt = new Map<string, number>();
+  /** Active looped gameplay SFX instances — one per soundId (stop-before-play). */
+  private loopingSfxInstances = new Map<string, number>();
 
   constructor() {
     super();
@@ -709,10 +711,37 @@ export class AudioSystem extends System {
     if (sound) {
       if (soundInstance !== undefined) {
         sound.stop(soundInstance);
+        const tracked = this.loopingSfxInstances.get(soundId);
+        if (tracked === soundInstance) {
+          this.loopingSfxInstances.delete(soundId);
+        }
       } else {
         sound.stop();
+        this.loopingSfxInstances.delete(soundId);
       }
     }
+  }
+
+  /** Stop the tracked loop instance for `soundId`, if any. */
+  public stopLoopingWeaponSound(soundId: string): void {
+    const instance = this.loopingSfxInstances.get(soundId);
+    if (instance !== undefined) {
+      this.stopSound(soundId, instance);
+    }
+  }
+
+  /** Play a looping weapon SFX — stops any prior loop of the same id before starting. */
+  public playLoopingWeaponSound(
+    soundId: string,
+    position: Vector3,
+    config?: SoundConfig,
+  ): number | null {
+    this.stopLoopingWeaponSound(soundId);
+    const instance = this.playWeaponSound(soundId, position, { ...config, loop: true });
+    if (instance != null) {
+      this.loopingSfxInstances.set(soundId, instance);
+    }
+    return instance;
   }
 
   // Set master volume (0.0 to 1.0)
@@ -773,9 +802,9 @@ export class AudioSystem extends System {
     return this.playWeaponSound('runeblade_swing_hit', position, { volume: 0.8 });
   }
 
-  /** Cyclone Rush post-charge blade spin — loop until stopped via `stopSound`. */
+  /** Cyclone Rush post-charge blade spin — loop until stopped via `stopSound` / `stopLoopingWeaponSound`. */
   public playRunebladeWhirlwindSound(position: Vector3) {
-    return this.playWeaponSound('runeblade_whirlwind', position, { volume: 0.9, loop: true });
+    return this.playLoopingWeaponSound('runeblade_whirlwind', position, { volume: 0.9 });
   }
 
   // Play runeblade miss sound (swing into empty air, combo-step aware)

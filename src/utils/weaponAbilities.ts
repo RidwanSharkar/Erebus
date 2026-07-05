@@ -6,6 +6,10 @@ import {
   LIGHTNING_BOLT_ROOM_STAGGER,
   BOW_UNCHARGED_PROJECTILE_DAMAGE,
   ENTROPIC_BOLT_FIRE_RATE_SEC,
+  CLOUDKILL_PROC_CHANCE,
+  CLOUDKILL_DAMAGE,
+  CLOUDKILL_ARROW_COUNT_MIN,
+  CLOUDKILL_ARROW_COUNT_MAX,
   type TalentLoadout,
 } from '@/utils/talents';
 
@@ -543,6 +547,9 @@ const BOW_TEMPEST_ROUNDS_PRIMARY: PrimaryAttackData = {
   description: 'Replaces primary attack with a 3-round burst attack. Each arrow deals 30 damage.',
 };
 
+const CLOUDKILL_PRIMARY_ADDON =
+  `${CLOUDKILL_PROC_CHANCE * 100}% chance on each enemy hit to rain ${CLOUDKILL_ARROW_COUNT_MIN}–${CLOUDKILL_ARROW_COUNT_MAX} poison arrows (${CLOUDKILL_DAMAGE} damage each).`;
+
 const SCYTHE_ENTROPIC_BOLTS_PRIMARY: PrimaryAttackData = {
   name: 'Entropic Bolts',
   description:
@@ -607,9 +614,25 @@ export function getPrimaryAttackForWeapon(
 
   const passiveId = options?.passiveAbilityId ?? null;
   const talents = options?.talentLoadout;
+  const hasCloudkill = talents?.cloudkill === true;
+  const hasTempestRounds =
+    weapon === WeaponType.BOW && (passiveId === 'BOW_P' || talents?.tempestRounds === true);
 
-  if (weapon === WeaponType.BOW && (passiveId === 'BOW_P' || talents?.tempestRounds === true)) {
+  if (hasTempestRounds) {
+    if (hasCloudkill) {
+      return {
+        name: BOW_TEMPEST_ROUNDS_PRIMARY.name,
+        description: `${BOW_TEMPEST_ROUNDS_PRIMARY.description} Cloudkill: ${CLOUDKILL_PRIMARY_ADDON}`,
+      };
+    }
     return BOW_TEMPEST_ROUNDS_PRIMARY;
+  }
+
+  if (weapon === WeaponType.BOW && hasCloudkill) {
+    return {
+      name: base.name,
+      description: `${base.description} Cloudkill: ${CLOUDKILL_PRIMARY_ADDON}`,
+    };
   }
 
   if (weapon === WeaponType.SCYTHE && (passiveId === 'SCYTHE_P' || talents?.icebeam === true)) {

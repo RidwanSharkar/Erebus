@@ -1,6 +1,21 @@
-import { AnimationClip, VectorKeyframeTrack } from 'three';
+import { AnimationClip, Object3D, VectorKeyframeTrack } from 'three';
 
 const sessionClipCaches = new Map<string, AnimationClip[]>();
+
+/** Drop animation tracks whose target bone is missing from the live skeleton root. */
+export function filterAnimationTracksForRoot(root: Object3D, clip: AnimationClip): AnimationClip {
+  const nodeNames = new Set<string>();
+  root.traverse((child) => {
+    if (child.name) nodeNames.add(child.name);
+  });
+
+  const filtered = clip.clone();
+  filtered.tracks = clip.tracks.filter((track) => {
+    const boneName = track.name.split('.')[0];
+    return nodeNames.has(boneName);
+  });
+  return filtered;
+}
 
 /** Zero root-motion X/Z on Hips position tracks so server position stays authoritative. */
 export function stripRootMotionXZ(clip: AnimationClip): AnimationClip {

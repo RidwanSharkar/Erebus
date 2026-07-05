@@ -11,7 +11,7 @@ import TitanBladestorm from './TitanBladestorm';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyMeleeAttackRangeRing, { TITAN_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   ENEMY_HP_BAR_FILL_Z,
@@ -69,7 +69,7 @@ function TitanRenderer({
   bladestormStartTime,
 }: TitanRendererProps) {
   const theme = campHpTheme(soulType);
-  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemyVisualRotationsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
   const hpTextRef = useRef<any>(null);
@@ -254,6 +254,7 @@ function TitanRenderer({
     while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
     while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
+    syncEnemyVisualRotation(id, enemyVisualRotationsRef, group.rotation.y);
 
     if (isDying) {
       fadeTimer.current += delta;

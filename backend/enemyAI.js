@@ -1815,6 +1815,7 @@ class EnemyAI {
 
   tryKnightDeathGrasp(knight, targetPlayer, now, distance) {
     if (knight.soulType !== 'red' && knight.soulType !== 'green') return false;
+    if (this._isCoopPortalPositionWriteBlocked()) return false;
 
     const DEATH_GRASP_MIN_RANGE = 5.0; // must be *over* 5u (strict)
     const DEATH_GRASP_MAX_RANGE = 13.0;
@@ -1959,6 +1960,7 @@ class EnemyAI {
             targetPlayerId: targetId,
             position: newPosition,
             rotation: rot,
+            coopRoomEntryToken: this.room?.getCoopRoomEntryToken?.() ?? 0,
             timestamp: Date.now(),
           });
         }
@@ -5255,6 +5257,7 @@ class EnemyAI {
         direction: { x: dx / len, y: 0, z: dz / len },
         distance: TITAN_KNOCKBACK_DISTANCE,
         duration: TITAN_KNOCKBACK_DURATION,
+        coopRoomEntryToken: this.room?.getCoopRoomEntryToken?.() ?? 0,
         timestamp: Date.now(),
       });
     }
@@ -6025,6 +6028,7 @@ class EnemyAI {
                 targetPlayerId: currentPlayer.id,
                 position: newPosition,
                 rotation: rot,
+                coopRoomEntryToken: this.room?.getCoopRoomEntryToken?.() ?? 0,
                 timestamp: Date.now(),
               });
             }
@@ -6728,6 +6732,7 @@ class EnemyAI {
         const players = this.room?.getPlayers();
         const deathGraspTarget = players ? this.getBossThreatTarget(liveBoss, players) : null;
         if (!deathGraspTarget) return;
+        if (this._isCoopPortalPositionWriteBlocked()) return;
 
         this.boss2CastDeathGraspArc(liveBoss, deathGraspTarget, () => {
           const nextBoss = this.room?.getEnemy(boss.id);

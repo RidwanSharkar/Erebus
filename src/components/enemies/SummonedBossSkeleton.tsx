@@ -5,15 +5,14 @@ import { Billboard, Text } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import CustomSkeleton from '@/components/environment/CustomSkeleton';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
+import { syncEnemyVisualRotation } from '@/utils/enemyLiveTransform';
 import {
   ENEMY_HP_BAR_WIDTH,
-  ENEMY_HP_BAR_HEIGHT,
-  ENEMY_HP_BAR_FILL_HEIGHT,
-  ENEMY_HP_BAR_FILL_Z, ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO,
   applyEnemyHealthBarFill,
   syncEnemyHealthBarFillFromRef,
   syncEnemyHealthBarTextFromRef,
 } from '@/utils/enemyHealthBar';
+import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface SummonedBossSkeletonProps {
   id: string;
@@ -34,7 +33,7 @@ export default function SummonedBossSkeleton({
   isDying = false,
   onPositionUpdate
 }: SummonedBossSkeletonProps) {
-  const { socket, enemiesRef } = useMultiplayerActions();
+  const { socket, enemyVisualRotationsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group>(null);
   const hpFillRef = useRef<Mesh>(null);
   const hpTextRef = useRef<any>(null);
@@ -193,6 +192,9 @@ export default function SummonedBossSkeleton({
   useFrame(() => {
     syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, ENEMY_HP_BAR_WIDTH);
     syncEnemyHealthBarTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
+    if (groupRef.current) {
+      syncEnemyVisualRotation(id, enemyVisualRotationsRef, groupRef.current.rotation.y);
+    }
   });
 
   return (
@@ -220,18 +222,11 @@ export default function SummonedBossSkeleton({
         >
           {health > 0 && (
             <>
-              <mesh position={[0, 0, 0]}>
-                <primitive object={ENEMY_HP_BAR_BG_GEO} attach="geometry" />
-                <meshBasicMaterial color="#333333" opacity={0.8} transparent />
-              </mesh>
-              <mesh
-                ref={hpFillRef}
-                position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
-                scale={[1, 1, 1]}
-              >
-                <primitive object={ENEMY_HP_BAR_FILL_GEO} attach="geometry" />
-                <meshBasicMaterial color="#ff3333" opacity={0.9} transparent />
-              </mesh>
+              <EnemyHpBarPlanes
+                fillRef={hpFillRef}
+                backgroundColor="#333333"
+                fillColor="#ff3333"
+              />
               <Text
                 ref={hpTextRef}
                 position={[0, 0, 0.002]}

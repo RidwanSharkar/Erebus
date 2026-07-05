@@ -8,7 +8,7 @@ import { Billboard } from '@react-three/drei';
 import ZombieModel from './ZombieModel';
 import EnemyMeleeAttackRangeRing, { GHOUL_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import {
   ENEMY_HP_BAR_FILL_HEIGHT,
   ENEMY_HP_BAR_FILL_Z,
@@ -50,7 +50,7 @@ function ZombieRenderer({
   staggerBuildup = 0,
   visualScale = 1,
 }: ZombieRendererProps) {
-  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemyVisualRotationsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
   const hpTextRef = useRef<any>(null);
@@ -158,6 +158,7 @@ function ZombieRenderer({
     while (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2;
     while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
+    syncEnemyVisualRotation(id, enemyVisualRotationsRef, group.rotation.y);
 
     if (isDying) {
       fadeTimer.current += delta;

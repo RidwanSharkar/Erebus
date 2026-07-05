@@ -3,7 +3,7 @@ import type { Position3 } from '@/utils/position3';
 import { useFrame } from '@react-three/fiber';
 import { Mesh, Group, Quaternion, Vector3, Matrix4 } from '@/utils/three-exports';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, syncEnemyVisualRotation } from '@/utils/enemyLiveTransform';
 import {
   FOREST_CANOPY_TIERS,
   createForestTrunkTaperedSegmentGeometries,
@@ -55,7 +55,7 @@ const TentacleSpineRenderer: React.FC<TentacleSpineRendererProps> = ({
   slamSeq,
   windDirXZ,
 }) => {
-  const { enemyTransformsRef } = useMultiplayerActions();
+  const { enemyTransformsRef, enemyVisualRotationsRef } = useMultiplayerActions();
   const groupRef = useRef<Group>(null);
   const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation = useRef(rotation);
@@ -216,6 +216,7 @@ const TentacleSpineRenderer: React.FC<TentacleSpineRendererProps> = ({
     syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
     groupRef.current.position.copy(targetPosition.current);
     groupRef.current.rotation.y = targetRotation.current;
+    syncEnemyVisualRotation(id, enemyVisualRotationsRef, groupRef.current.rotation.y);
 
     trunkMat.uniforms.uTime.value += delta;
     canopyMats.forEach((m) => {

@@ -34,7 +34,7 @@ function handlePlayerEvents(socket, gameRooms) {
 
   // Handle player position and rotation updates
   socket.on('player-update', (data) => {
-    const { roomId, position, rotation, weapon, health, movementDirection } = data;
+    const { roomId, position, rotation, weapon, health, movementDirection, coopRoomEntryToken } = data;
     
     if (!gameRooms.has(roomId)) return;
     
@@ -50,7 +50,14 @@ function handlePlayerEvents(socket, gameRooms) {
     const coopPostTeleportGuardActive =
       typeof room.isCoopPostTeleportPositionGuardActive === 'function' &&
       room.isCoopPostTeleportPositionGuardActive();
-    const coopPositionWriteBlocked = coopTransitionActive || coopPostTeleportGuardActive;
+    const roomToken = room.getCoopRoomEntryToken?.() ?? 0;
+    const clientToken = Number(coopRoomEntryToken);
+    const coopStaleRoomToken =
+      room.gameMode === 'coop' &&
+      roomToken > 0 &&
+      (!Number.isFinite(clientToken) || clientToken < roomToken);
+    const coopPositionWriteBlocked =
+      coopTransitionActive || coopPostTeleportGuardActive || coopStaleRoomToken;
     if (position && rotation && !isDead && !coopPositionWriteBlocked) {
       room.updatePlayerPosition(playerId, position, rotation, movementDirection);
     }
@@ -85,6 +92,7 @@ function handlePlayerEvents(socket, gameRooms) {
         weapon,
         health,
         movementDirection: isDead ? ZERO_MOVEMENT_DIRECTION : movementDirection,
+        coopRoomEntryToken: room.getCoopRoomEntryToken?.() ?? 0,
       });
       state.lastBroadcastAt = now;
       if (broadcastPosition) {
@@ -446,6 +454,7 @@ function handlePlayerEvents(socket, gameRooms) {
       direction,
       distance,
       duration,
+      coopRoomEntryToken: room.getCoopRoomEntryToken?.() ?? 0,
       timestamp: Date.now()
     });
   });

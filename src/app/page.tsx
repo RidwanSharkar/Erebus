@@ -886,7 +886,13 @@ function HomeContent() {
 
   const handleCoopBoonPick = useCallback(
     (id: TalentId, kind: 'class' | 'room', classPickWeapon?: WeaponType) => {
-      setTalentLoadout((prev) => applyTalentIdToLoadout(prev, id));
+      setTalentLoadout((prev) => {
+        const next = applyTalentIdToLoadout(prev, id);
+        window.dispatchEvent(
+          new CustomEvent('coop-talent-loadout-picked', { detail: next }),
+        );
+        return next;
+      });
       if (id === TALENT_RAISE_DEAD || id === TALENT_METEOR_STRIKE
           || id === TALENT_COLDSNAP_ROOM || id === TALENT_LIGHTNING_BOLT_ROOM
           || id === TALENT_AEGIS_ROOM) {

@@ -142,8 +142,8 @@ function rollCrossentropyMeteorStrikeCount() {
 /** Keep in sync with `CLOUDKILL_*` in src/utils/talents.ts */
 const CLOUDKILL_ARROW_COUNT_MIN = 4;
 const CLOUDKILL_ARROW_COUNT_MAX = 8;
-const CLOUDKILL_ARROW_DELAY_MS = 250;
-const CLOUDKILL_DAMAGE = 40;
+const CLOUDKILL_ARROW_DELAY_MS = 125;
+const CLOUDKILL_DAMAGE = 35;
 const CLOUDKILL_RADIUS = 1.5;
 const CLOUDKILL_WARNING_MS = 100;
 const CLOUDKILL_ARROW_SPEED = 26.5;
@@ -443,6 +443,8 @@ class GameRoom {
     this.coopCombatTransition = null;
     /** Co-op: reject stale client position writes until this timestamp after portal teleport. */
     this.coopPostTeleportPositionGuardUntil = 0;
+    /** Co-op: monotonic token bumped on each portal teleport; stamped on authoritative position events. */
+    this.coopRoomEntryToken = 0;
     /** Co-op colored room: one whisper SFX per room visit on first combat engagement. */
     this.coopRoomWhisperPlayed = false;
     /** Co-op: pending post-teleport initial wave spawn (`_schedulePostTeleportEnemyWave`). */
@@ -804,6 +806,7 @@ class GameRoom {
     this.coopCombatTransition = null;
     this.coopCombatTransitionId = 0;
     this.coopPostTeleportPositionGuardUntil = 0;
+    this.coopRoomEntryToken = 0;
     this._devSpawnBoss2 = false;
     this._devSpawnBoss3 = false;
     this._resetMushroomState();
@@ -950,6 +953,7 @@ class GameRoom {
 
   teleportAllPlayersToCombatSpawn() {
     if (this.gameMode === 'coop') {
+      this.coopRoomEntryToken += 1;
       this.coopPostTeleportPositionGuardUntil = Date.now() + COOP_POST_TELEPORT_POSITION_GUARD_MS;
     }
     const spawnBaseX = COOP_MAIN_ENTRY_X;
@@ -1274,6 +1278,10 @@ class GameRoom {
     return this.gameMode === 'coop' && Date.now() < this.coopPostTeleportPositionGuardUntil;
   }
 
+  getCoopRoomEntryToken() {
+    return this.coopRoomEntryToken;
+  }
+
   _clearAllCombatEnemies() {
     this._clearCoopDelayedEnemyWaveTimer();
     this.coopWaveSpawnPlan = null;
@@ -1511,6 +1519,7 @@ class GameRoom {
         coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
+        coopRoomEntryToken: this.coopRoomEntryToken,
         mushroomState: this.getMushroomState(),
         timestamp: Date.now(),
       });
@@ -1566,6 +1575,7 @@ class GameRoom {
         coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
+        coopRoomEntryToken: this.coopRoomEntryToken,
         mushroomState: this.getMushroomState(),
         timestamp: Date.now(),
       });
@@ -1615,6 +1625,7 @@ class GameRoom {
         coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
+        coopRoomEntryToken: this.coopRoomEntryToken,
         mushroomState: this.getMushroomState(),
         timestamp: Date.now(),
       });
@@ -1665,6 +1676,7 @@ class GameRoom {
         coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
+        coopRoomEntryToken: this.coopRoomEntryToken,
         mushroomState: this.getMushroomState(),
         timestamp: Date.now(),
       });
@@ -1715,6 +1727,7 @@ class GameRoom {
         coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
+        coopRoomEntryToken: this.coopRoomEntryToken,
         mushroomState: this.getMushroomState(),
         timestamp: Date.now(),
       });
@@ -1782,6 +1795,7 @@ class GameRoom {
           coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
           coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
           coopCombatTransitionId,
+          coopRoomEntryToken: this.coopRoomEntryToken,
           mushroomState: this.getMushroomState(),
           timestamp: Date.now(),
         });
@@ -1843,6 +1857,7 @@ class GameRoom {
           coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
           coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
           coopCombatTransitionId,
+          coopRoomEntryToken: this.coopRoomEntryToken,
           mushroomState: this.getMushroomState(),
           timestamp: Date.now(),
         });
@@ -1891,6 +1906,7 @@ class GameRoom {
           coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
           coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
           coopCombatTransitionId,
+          coopRoomEntryToken: this.coopRoomEntryToken,
           mushroomState: this.getMushroomState(),
           timestamp: Date.now(),
         });
@@ -6320,6 +6336,7 @@ class GameRoom {
     this.coopCombatTransition = null;
     this.coopCombatTransitionId = 0;
     this.coopPostTeleportPositionGuardUntil = 0;
+    this.coopRoomEntryToken = 0;
   }
 
   // Get room summary for debugging

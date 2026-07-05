@@ -1,6 +1,7 @@
 'use client';
 
 import { STAGGER_MAX } from '@/utils/talents';
+import { SharedMesh } from '@/utils/SharedMesh';
 import { MeshBasicMaterial, PlaneGeometry } from 'three';
 
 /** Shared across all stagger bars — fill driven via mesh.scale.x, not geometry args. */
@@ -45,17 +46,17 @@ export default function EnemyStaggerBar({
 
   return (
     <>
-      <mesh position={[0, y, 0]} scale={[width, h, 1]}>
+      <SharedMesh position={[0, y, 0]} scale={[width, h, 1]}>
         <primitive object={STAGGER_BAR_GEO} attach="geometry" />
         <primitive object={STAGGER_BG_MAT} attach="material" />
-      </mesh>
-      <mesh
+      </SharedMesh>
+      <SharedMesh
         position={[-half + (width * t) / 2, y, 0.001]}
         scale={[width * t, fillH, 1]}
       >
         <primitive object={STAGGER_BAR_GEO} attach="geometry" />
         <primitive object={STAGGER_FILL_MAT} attach="material" />
-      </mesh>
+      </SharedMesh>
     </>
   );
 }

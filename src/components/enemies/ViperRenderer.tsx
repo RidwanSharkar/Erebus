@@ -8,18 +8,16 @@ import { Billboard } from '@react-three/drei';
 import ViperModel from './ViperModel';
 import CubeSoulEffect from './CubeSoulEffect';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   ENEMY_HP_BAR_WIDTH,
-  ENEMY_HP_BAR_HEIGHT,
-  ENEMY_HP_BAR_FILL_HEIGHT,
-  ENEMY_HP_BAR_FILL_Z, ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO,
   syncEnemyHealthBarFillFromRef,
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface ViperRendererProps {
   id: string;
@@ -51,7 +49,7 @@ function ViperRenderer({
   staggerBuildup = 0,
 }: ViperRendererProps) {
   const theme = campHpTheme(campType);
-  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemyVisualRotationsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
   const hpTextRef = useRef<any>(null);
@@ -191,6 +189,7 @@ function ViperRenderer({
     while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
     while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
+    syncEnemyVisualRotation(id, enemyVisualRotationsRef, group.rotation.y);
 
     syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, ENEMY_HP_BAR_WIDTH);
     syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
@@ -238,15 +237,11 @@ function ViperRenderer({
       <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
-            <mesh position={[0, 0, 0]}>
-              <primitive object={ENEMY_HP_BAR_BG_GEO} attach="geometry" />
-              <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
-            </mesh>
-
-            <mesh ref={hpFillRef} position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}>
-              <primitive object={ENEMY_HP_BAR_FILL_GEO} attach="geometry" />
-              <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
-            </mesh>
+            <EnemyHpBarPlanes
+              fillRef={hpFillRef}
+              backgroundColor={theme.background}
+              fillColor={theme.fill}
+            />
 
             <EnemyHealthBarTextLabel
               leading="🐍"

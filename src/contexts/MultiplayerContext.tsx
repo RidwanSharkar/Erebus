@@ -351,6 +351,8 @@ interface MultiplayerContextType {
   enemiesRef: React.MutableRefObject<Map<string, Enemy>>;
   /** Server-authoritative enemy positions/rotations updated without React setState (~30 Hz). */
   enemyTransformsRef: React.MutableRefObject<Map<string, EnemyLiveTransform>>;
+  /** Lerped mesh Y rotation per enemy id (updated in renderers each frame). */
+  enemyVisualRotationsRef: React.MutableRefObject<Map<string, number>>;
   killCount: number;
   skeletonKillCount: number;
   /** Co-op wave clear target — from server `skeleton-kill-count-updated` (`required`). */
@@ -423,6 +425,10 @@ interface MultiplayerContextType {
   coopTransitionOverlayRef: React.MutableRefObject<boolean>;
   /** Blocks local `player-update` emits from portal click until ECS snap completes. */
   coopPendingPortalSnapRef: React.MutableRefObject<boolean>;
+  /** Monotonic token from server `combat-arena-entered`; used to reject stale authoritative position events. */
+  coopRoomEntryTokenRef: React.MutableRefObject<number>;
+  /** Timestamp (ms) of the latest `combat-arena-entered`; used for post-portal position grace window. */
+  coopCombatArenaEnterAtRef: React.MutableRefObject<number>;
   /** @deprecated Use hideCoopPortalTransition + confirmCoopPortalTransitionComplete instead. */
   endCoopPortalTransition: () => void;
 
@@ -571,6 +577,7 @@ export type MultiplayerActionsContextType = Pick<
   | 'playersTransformsRef'
   | 'enemiesRef'
   | 'enemyTransformsRef'
+  | 'enemyVisualRotationsRef'
   | 'joinRoom'
   | 'leaveRoom'
   | 'previewRoom'
@@ -630,6 +637,8 @@ export type MultiplayerActionsContextType = Pick<
   | 'resetLocalPositionEmitThrottle'
   | 'coopTransitionOverlayRef'
   | 'coopPendingPortalSnapRef'
+  | 'coopRoomEntryTokenRef'
+  | 'coopCombatArenaEnterAtRef'
   | 'endCoopPortalTransition'
   | 'clearCoopClearedRoomColor'
   | 'clearLateJoinCombatLoadout'
@@ -933,8 +942,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [enemies, setEnemies] = useState<Map<string, Enemy>>(new Map());
   const enemiesRef = useRef<Map<string, Enemy>>(enemies);
   const enemyTransformsRef = useRef<Map<string, EnemyLiveTransform>>(new Map());
+  const enemyVisualRotationsRef = useRef<Map<string, number>>(new Map());
 
   enemiesRef.current = enemies;
+
+  useEffect(() => {
+    (window as Window & { enemyVisualRotationsRef?: typeof enemyVisualRotationsRef }).enemyVisualRotationsRef =
+      enemyVisualRotationsRef;
+    return () => {
+      delete (window as Window & { enemyVisualRotationsRef?: typeof enemyVisualRotationsRef }).enemyVisualRotationsRef;
+    };
+  }, []);
 
   const playersRef = useRef(players);
   playersRef.current = players;
@@ -963,6 +981,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     const ids = new Set(enemies.keys());
     for (const id of Array.from(enemyTransformsRef.current.keys())) {
       if (!ids.has(id)) enemyTransformsRef.current.delete(id);
+    }
+    for (const id of Array.from(enemyVisualRotationsRef.current.keys())) {
+      if (!ids.has(id)) enemyVisualRotationsRef.current.delete(id);
     }
     enemies.forEach((e, id) => {
       const prev = enemyTransformsRef.current.get(id);
@@ -996,6 +1017,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopTransitionOverlay, setCoopTransitionOverlay] = useState(false);
   const coopTransitionOverlayRef = useRef(false);
   const coopPendingPortalSnapRef = useRef(false);
+  const coopRoomEntryTokenRef = useRef(0);
+  const coopCombatArenaEnterAtRef = useRef(0);
   const [coopPortalBlinkSeq, setCoopPortalBlinkSeq] = useState(0);
   const pendingLocalPortalBlinkRef = useRef(false);
   const [coopCombatTransitionId, setCoopCombatTransitionId] = useState<number | null>(null);
@@ -1154,6 +1177,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setPlayers(new Map());
       setEnemies(new Map());
       enemyTransformsRef.current.clear();
+      enemyVisualRotationsRef.current.clear();
       playersTransformsRef.current.clear();
       setCampTypes([]);
       setCoopTerrainTheme('purple');
@@ -1322,6 +1346,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
     // Ref-only movement updates — avoids ~60 Hz React re-renders of the full scene tree.
     addEventHandler('player-moved', (data) => {
+      const expectedToken = coopRoomEntryTokenRef.current;
+      if (expectedToken > 0) {
+        const token = Number(data?.coopRoomEntryToken ?? 0);
+        if (token !== expectedToken) return;
+      }
       applyPlayerMove(playersTransformsRef, playersRef, {
         playerId: data.playerId,
         position: data.position,
@@ -1903,6 +1932,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopCombatTransitionId(Number.isFinite(transitionId) ? transitionId : null);
       coopTransitionOverlayRef.current = true;
       coopPendingPortalSnapRef.current = true;
+      const entryToken = Number(data?.coopRoomEntryToken);
+      coopRoomEntryTokenRef.current = Number.isFinite(entryToken) ? entryToken : 0;
+      coopCombatArenaEnterAtRef.current = Date.now();
       setCoopTransitionOverlay(true);
       setCoopCombatArenaEnterSeq((s) => s + 1);
       if (pendingLocalPortalBlinkRef.current) {
@@ -2099,6 +2131,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setPlayers(new Map());
       setEnemies(new Map());
       enemyTransformsRef.current.clear();
+      enemyVisualRotationsRef.current.clear();
       playersTransformsRef.current.clear();
       setCampTypes([]);
       setCoopTerrainTheme('purple');
@@ -2173,6 +2206,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setPlayers(new Map());
     setEnemies(new Map());
     enemyTransformsRef.current.clear();
+    enemyVisualRotationsRef.current.clear();
     setKillCount(0);
     setSkeletonKillCount(0);
     setSkeletonKillRequired(8);
@@ -2189,6 +2223,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setCoopTransitionOverlay(false);
     coopTransitionOverlayRef.current = false;
     coopPendingPortalSnapRef.current = false;
+    coopRoomEntryTokenRef.current = 0;
+    coopCombatArenaEnterAtRef.current = 0;
     setCoopPortalBlinkSeq(0);
     pendingLocalPortalBlinkRef.current = false;
     setCoopCombatTransitionId(null);
@@ -2239,6 +2275,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
   const hideCoopPortalTransition = useCallback(() => {
     coopTransitionOverlayRef.current = false;
+    coopPendingPortalSnapRef.current = false;
     setCoopTransitionOverlay(false);
   }, []);
 
@@ -2315,7 +2352,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       roomId: currentRoomId,
       position,
       rotation,
-      movementDirection
+      movementDirection,
+      coopRoomEntryToken: coopRoomEntryTokenRef.current,
     });
   }, [socket, currentRoomId]);
 
@@ -2926,6 +2964,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     enemies,
     enemiesRef,
     enemyTransformsRef,
+    enemyVisualRotationsRef,
     killCount,
     skeletonKillCount,
     skeletonKillRequired,
@@ -2957,6 +2996,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     resetLocalPositionEmitThrottle,
     coopTransitionOverlayRef,
     coopPendingPortalSnapRef,
+    coopRoomEntryTokenRef,
+    coopCombatArenaEnterAtRef,
     endCoopPortalTransition,
     currentPreview,
     joinRoom,
@@ -3036,6 +3077,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       playersTransformsRef,
       enemiesRef,
       enemyTransformsRef,
+      enemyVisualRotationsRef,
       joinRoom,
       leaveRoom,
       previewRoom,
@@ -3095,6 +3137,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       resetLocalPositionEmitThrottle,
       coopTransitionOverlayRef,
       coopPendingPortalSnapRef,
+      coopRoomEntryTokenRef,
+      coopCombatArenaEnterAtRef,
       endCoopPortalTransition,
       clearCoopClearedRoomColor,
       clearLateJoinCombatLoadout,
@@ -3160,6 +3204,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       resetLocalPositionEmitThrottle,
       coopTransitionOverlayRef,
       coopPendingPortalSnapRef,
+      coopRoomEntryTokenRef,
+      coopCombatArenaEnterAtRef,
       endCoopPortalTransition,
       clearCoopClearedRoomColor,
       clearLateJoinCombatLoadout,

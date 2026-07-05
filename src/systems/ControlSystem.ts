@@ -666,6 +666,7 @@ export class ControlSystem extends System {
   private backstabStartTime = 0;
   private backstabDuration = 1.0; // Total animation duration (0.3 + 0.4 + 0.3 seconds)
   private backstabTargetRotations = new Map<number, number>(); // Store target rotations at start of backstab
+  private backstabDamageApplied = false;
   
   // Sunder ability state (Sabres)
   private lastSunderTime = 0;
@@ -5034,6 +5035,21 @@ export class ControlSystem extends System {
     if (!this.isBackstabbing) return;
 
     this.isBackstabbing = false;
+    this.backstabDamageApplied = false;
+    this.backstabTargetRotations.clear();
+  }
+
+  private getEnemyVisualRotationY(entity: Entity): number | undefined {
+    const serverEnemyId = entity.userData?.serverEnemyId as string | undefined;
+    if (serverEnemyId) {
+      const meshRot = (
+        window as Window & { enemyVisualRotationsRef?: { current?: Map<string, number> } }
+      ).enemyVisualRotationsRef?.current?.get(serverEnemyId);
+      if (meshRot !== undefined) return meshRot;
+    }
+    const visualRot = entity.userData?.visualRotation;
+    if (visualRot !== undefined) return visualRot;
+    return entity.userData?.rotation;
   }
 
   private handleSabresInput(playerTransform: Transform): void {
@@ -6132,11 +6148,22 @@ export class ControlSystem extends System {
   private updateBackstabState(playerTransform: Transform): void {
     const currentTime = Date.now() / 1000;
     const elapsedTime = currentTime - this.backstabStartTime;
-    
+
+    // Apply damage during Sabres thrust phase (windup 0.125s, thrust ends ~0.275s)
+    const damageWindowStart = 0.125;
+    const damageWindowEnd = 0.275;
+
+    if (elapsedTime >= damageWindowStart && elapsedTime <= damageWindowEnd) {
+      if (!this.backstabDamageApplied) {
+        this.performBackstabDamage(playerTransform);
+        this.backstabDamageApplied = true;
+      }
+    }
+
     // Check if backstab animation duration has elapsed
     if (elapsedTime >= this.backstabDuration) {
       this.isBackstabbing = false;
-      // Clean up captured rotations
+      this.backstabDamageApplied = false;
       this.backstabTargetRotations.clear();
     }
   }
@@ -6598,6 +6625,7 @@ export class ControlSystem extends System {
     this.isSkyfalling = false;
     this.skyfallPhase = 'none';
     this.isBackstabbing = false;
+    this.backstabDamageApplied = false;
     this.isSundering = false;
     this.sunderDamageApplied = false; // Reset sunder damage flag
 
@@ -7152,30 +7180,20 @@ export class ControlSystem extends System {
     
     for (const entity of allEntities) {
       if (entity === this.playerEntity) continue;
-      const visualRot = entity.userData?.visualRotation;
-      const serverRot = entity.userData?.rotation;
-      const rotToCapture = visualRot !== undefined ? visualRot : serverRot;
-      
+      const rotToCapture = this.getEnemyVisualRotationY(entity);
+
       if (rotToCapture !== undefined) {
         this.backstabTargetRotations.set(entity.id, rotToCapture);
       }
     }
-    
-    console.log(`🗡️ Captured ${this.backstabTargetRotations.size} entity rotations for backstab`);
-    
+
     // Start backstab animation
     this.isBackstabbing = true;
     this.backstabStartTime = currentTime;
+    this.backstabDamageApplied = false;
 
     // Play backstab sound at the start of the ability
     this.audioSystem?.playBackstabSound(playerTransform.position);
-
-    // Trigger callback for multiplayer/visual effects - actual backstab detection happens in performBackstabDamage
-    // We'll call this after damage detection, so remove this early call
-    // The callback will be triggered from performBackstabDamage with the correct isBackstab value
-    
-    // Perform backstab damage
-    this.performBackstabDamage(playerTransform);
   }
 
   private performBackstabDamage(playerTransform: Transform): void {
@@ -7301,26 +7319,8 @@ export class ControlSystem extends System {
       const enemy = entity.getComponent(Enemy);
 
       const capturedRotation = this.backstabTargetRotations.get(entity.id);
-      const visualRotation = entity.userData?.visualRotation;
-      const serverRotation = entity.userData?.rotation;
-
       const rotationToUse =
-        capturedRotation !== undefined
-          ? capturedRotation
-          : visualRotation !== undefined
-            ? visualRotation
-            : serverRotation;
-
-      console.log(`🗡️ Backstab Debug - Entity ${entity.id}:`, {
-        hasEnemy: !!enemy,
-        hasUserData: !!entity.userData,
-        serverRotation: serverRotation,
-        visualRotation: visualRotation,
-        capturedRotation: capturedRotation,
-        rotationToUse: rotationToUse,
-        usingVisual: visualRotation !== undefined && capturedRotation === undefined,
-        serverEnemyId: entity.userData?.serverEnemyId,
-      });
+        capturedRotation !== undefined ? capturedRotation : this.getEnemyVisualRotationY(entity);
 
       if (enemy && rotationToUse !== undefined) {
         const targetFacingDirection = new Vector3(
@@ -7336,25 +7336,9 @@ export class ControlSystem extends System {
         const behindDotProduct = targetFacingDirection.dot(attackerDirection);
         isBackstab = behindDotProduct < -0.3;
 
-        console.log(`🗡️ Backstab Calculation:`, {
-          entityRotation: rotationToUse,
-          targetFacing: targetFacingDirection,
-          attackerDirection: attackerDirection,
-          behindDotProduct: behindDotProduct,
-          isBackstab: isBackstab,
-          threshold: -0.3,
-        });
-
         if (isBackstab) {
           baseDamage = 285;
-          console.log(`✅ BACKSTAB SUCCESS! Base damage increased to 215`);
-        } else {
-          console.log(`❌ Not a backstab. Dot product ${behindDotProduct.toFixed(2)} >= -0.3`);
         }
-      } else {
-        console.log(
-          `❌ Backstab failed checks - enemy: ${!!enemy}, rotation defined: ${rotationToUse !== undefined}`,
-        );
       }
     }
 
@@ -7384,13 +7368,6 @@ export class ControlSystem extends System {
         })
       : calculateDamage(baseDamage, WeaponType.SABRES);
     const damage = damageResult.damage;
-
-    console.log(`🗡️ Final Backstab Damage:`, {
-      baseDamage: baseDamage,
-      isBackstab: isBackstab,
-      finalDamage: damage,
-      isCritical: damageResult.isCritical,
-    });
 
     const combatSystem = this.world.getSystem(CombatSystem);
     if (combatSystem) {

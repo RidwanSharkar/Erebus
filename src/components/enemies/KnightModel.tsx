@@ -8,7 +8,7 @@ import { peek as suspendPeek } from 'suspend-react';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadGltfAnimationClips, preloadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
-import { getCachedProcessedClips } from '@/utils/enemyAnimationClipCache';
+import { filterAnimationTracksForRoot, getCachedProcessedClips } from '@/utils/enemyAnimationClipCache';
 
 export type KnightAbilityClip = 'Smite' | 'Aggro' | 'Cast' | 'Spin' | 'StartBlock' | 'IdleBlock';
 
@@ -86,8 +86,8 @@ const KNIGHT_DEFERRED_MODEL_PATHS: Record<Exclude<KnightDeferredAnimationName, '
   Aggro: '/models/knight_aggro.glb',
   Cast: '/models/knight_cast.glb',
   Spin: '/models/knight_spin.glb',
-  StartBlock: '/models/knight_cast.glb',
-  IdleBlock: '/models/knight_cast.glb',
+  StartBlock: '/models/knight_startblock.glb',
+  IdleBlock: '/models/knight_idleblock.glb',
   Impact1: '/models/knight_impact1.glb',
   Impact2: '/models/knight_impact2.glb',
 };
@@ -247,10 +247,13 @@ export default React.memo(function KnightModel({
   // Only Idle goes through useAnimations — it is always loaded and stable.
   // Deferred clips are registered directly on the mixer so loading them never
   // triggers useAnimations cleanup (which would stop the current Idle/Walk).
-  const idleClips = useMemo(
-    () => getCachedProcessedClips('knight-idle', idleAnims, { stripRootMotion: true, renameTo: 'Idle' }),
-    [idleAnims],
-  );
+  const idleClips = useMemo(() => {
+    const processed = getCachedProcessedClips('knight-idle', idleAnims, {
+      stripRootMotion: true,
+      renameTo: 'Idle',
+    });
+    return processed.map((clip) => filterAnimationTracksForRoot(clonedScene, clip));
+  }, [idleAnims, clonedScene]);
 
   const { actions: idleActions, mixer } = useAnimations(idleClips, sceneGroupRef);
 
@@ -270,7 +273,8 @@ export default React.memo(function KnightModel({
       if (!rawClips?.length || extraActionsRef.current[name]) return;
       const processed = getCachedProcessedClips(cacheKey, rawClips, options);
       processed.forEach((clip) => {
-        extraActionsRef.current[name] = mixer.clipAction(clip, root);
+        const boundClip = filterAnimationTracksForRoot(root, clip);
+        extraActionsRef.current[name] = mixer.clipAction(boundClip, root);
       });
     };
 

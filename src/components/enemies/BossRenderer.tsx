@@ -8,19 +8,17 @@ import BossGlbModel from './BossGlbModel';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyMeleeAttackRangeRing, { BOSS_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   ENEMY_HP_BAR_WIDTH,
-  ENEMY_HP_BAR_HEIGHT,
-  ENEMY_HP_BAR_FILL_HEIGHT,
-  ENEMY_HP_BAR_FILL_Z, ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO,
   applyEnemyHealthBarFill,
   syncEnemyHealthBarFillFromRef,
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 const WALK_STOP_DELAY = 250;
 const LERP_SPEED = 12;
@@ -59,7 +57,7 @@ function BossRenderer({
   staggerBuildup = 0,
 }: BossRendererProps) {
   const theme = campHpTheme('red');
-  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemyVisualRotationsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group>(null);
   const hpFillRef = useRef<Mesh>(null);
   const hpTextRef = useRef<any>(null);
@@ -299,6 +297,7 @@ function BossRenderer({
     while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
     currentRotationRef.current = group.rotation.y;
+    syncEnemyVisualRotation(id, enemyVisualRotationsRef, group.rotation.y);
 
     const entity = world.getEntity(entityId);
     if (entity) {
@@ -343,18 +342,11 @@ function BossRenderer({
       <Billboard position={[0, 6.1, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
-            <mesh position={[0, 0, 0]}>
-              <primitive object={ENEMY_HP_BAR_BG_GEO} attach="geometry" />
-              <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
-            </mesh>
-            <mesh
-              ref={hpFillRef}
-              position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
-              scale={[1, 1, 1]}
-            >
-              <primitive object={ENEMY_HP_BAR_FILL_GEO} attach="geometry" />
-              <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
-            </mesh>
+            <EnemyHpBarPlanes
+              fillRef={hpFillRef}
+              backgroundColor={theme.background}
+              fillColor={theme.fill}
+            />
             <EnemyHealthBarTextLabel
               leading="HATE"
               numericRef={hpTextRef}

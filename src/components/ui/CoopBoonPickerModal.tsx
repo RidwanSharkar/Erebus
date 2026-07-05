@@ -113,6 +113,7 @@ const ABILITY_LABELS: Record<string, string> = {
   BOW_R:           'Reaping Talons',
   BOW_Q:           'Barrage',
   BOW_BASIC:       'Primary Shot',
+  'Primary Attack (Left-click)': 'Primary Shot',
   SCYTHE_R:        'Crossentropy',
   SCYTHE_F:        'Mantra',
   SCYTHE_BASIC:    'Entropic Bolt',

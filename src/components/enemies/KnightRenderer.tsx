@@ -13,18 +13,16 @@ import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyAbilityChargeTelegraph from './EnemyAbilityChargeTelegraph';
 import { registerKnightAnimationHandlers } from '@/utils/knightAnimationDispatch';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   ENEMY_HP_BAR_WIDTH,
-  ENEMY_HP_BAR_HEIGHT,
-  ENEMY_HP_BAR_FILL_HEIGHT,
-  ENEMY_HP_BAR_FILL_Z, ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO,
   applyEnemyHealthBarFill,
   syncEnemyHealthBarFillFromRef,
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import { KNIGHT_CAST_ABILITY_LOCK_MS, KNIGHT_STORM_LASH_DURATION_MS } from '@/utils/knightCoopAbilitiesConstants';
 import GhostTrail from '../dragon/GhostTrail';
 import { WeaponType } from '../dragon/weapons';
@@ -121,7 +119,7 @@ function KnightRenderer({
   impactHitReactMode = 'off',
 }: KnightRendererProps) {
   const theme = campHpTheme(campType);
-  const { enemyTransformsRef, enemiesRef, subscribeEnemyDamage } = useMultiplayerActions();
+  const { enemyTransformsRef, enemyVisualRotationsRef, enemiesRef, subscribeEnemyDamage } = useMultiplayerActions();
   const spinChargeColor = soulType ? SPIN_CHARGE_COLORS[soulType] : DEFAULT_SPIN_CHARGE_COLOR;
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
@@ -562,6 +560,7 @@ function KnightRenderer({
     while (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2;
     while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
+    syncEnemyVisualRotation(id, enemyVisualRotationsRef, group.rotation.y);
 
     // Death fade-out.
     if (isDying) {
@@ -648,19 +647,11 @@ function KnightRenderer({
       <Billboard position={[0, 3 * visualScale, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
-            <mesh position={[0, 0, 0]}>
-              <primitive object={ENEMY_HP_BAR_BG_GEO} attach="geometry" />
-              <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
-            </mesh>
-
-            <mesh
-              ref={hpFillRef}
-              position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
-              scale={[1, 1, 1]}
-            >
-              <primitive object={ENEMY_HP_BAR_FILL_GEO} attach="geometry" />
-              <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
-            </mesh>
+            <EnemyHpBarPlanes
+              fillRef={hpFillRef}
+              backgroundColor={theme.background}
+              fillColor={theme.fill}
+            />
 
             <EnemyHealthBarTextLabel
               leading="⚔"

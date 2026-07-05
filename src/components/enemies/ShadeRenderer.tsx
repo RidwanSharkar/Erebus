@@ -8,19 +8,17 @@ import { Billboard } from '@react-three/drei';
 import ShadeModel from './ShadeModel';
 import CubeSoulEffect from './CubeSoulEffect';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   ENEMY_HP_BAR_WIDTH,
-  ENEMY_HP_BAR_HEIGHT,
-  ENEMY_HP_BAR_FILL_HEIGHT,
-  ENEMY_HP_BAR_FILL_Z, ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO,
   applyEnemyHealthBarFill,
   syncEnemyHealthBarFillFromRef,
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import GhostTrail from '../dragon/GhostTrail';
 import { WeaponType } from '../dragon/weapons';
 
@@ -61,7 +59,7 @@ function ShadeRenderer({
 }: ShadeRendererProps) {
   const theme = campHpTheme(campType);
   const isBlueShade = soulType === 'blue';
-  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemyVisualRotationsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
   const hpTextRef = useRef<any>(null);
@@ -264,6 +262,8 @@ function ShadeRenderer({
       }
     }
 
+    syncEnemyVisualRotation(id, enemyVisualRotationsRef, group.rotation.y);
+
     // Death fade-out (death clip on model underneath)
     if (isDying) {
       fadeTimer.current += delta;
@@ -317,19 +317,11 @@ function ShadeRenderer({
       <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
-            <mesh position={[0, 0, 0]}>
-              <primitive object={ENEMY_HP_BAR_BG_GEO} attach="geometry" />
-              <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
-            </mesh>
-
-            <mesh
-              ref={hpFillRef}
-              position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
-              scale={[1, 1, 1]}
-            >
-              <primitive object={ENEMY_HP_BAR_FILL_GEO} attach="geometry" />
-              <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
-            </mesh>
+            <EnemyHpBarPlanes
+              fillRef={hpFillRef}
+              backgroundColor={theme.background}
+              fillColor={theme.fill}
+            />
 
             <EnemyHealthBarTextLabel
               leading="👻"

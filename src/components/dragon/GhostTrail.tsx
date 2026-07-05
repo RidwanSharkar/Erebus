@@ -2,11 +2,13 @@ import { useRef, useEffect, useState, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Mesh, Vector3, Color, SphereGeometry } from 'three';
 import { Group, MeshBasicMaterial } from '@/utils/three-exports';
+import { SharedMesh } from '@/utils/SharedMesh';
 import { WeaponType, WeaponSubclass } from './weapons';
 import React from 'react';
 
 const DASH_LINGER_MS = 100; // how long the trail stays visible after dash ends
 const TRAIL_SPHERE_GEO = new SphereGeometry(0.475, 16, 16);
+TRAIL_SPHERE_GEO.userData.shared = true;
 const HIDDEN_TRAIL_POS = new Vector3(9999, 9999, 9999);
 
 function hideTrailMeshes(
@@ -259,7 +261,7 @@ const GhostTrail = React.memo(({ parentRef, worldPositionRef, weaponType, weapon
   return (
     <>
       {Array.from({ length: trailCount }).map((_, i) => (
-        <mesh
+        <SharedMesh
           key={i}
           ref={(el) => {
             trailsRef.current[i] = el;

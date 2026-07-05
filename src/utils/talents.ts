@@ -1963,7 +1963,7 @@ export const cloudkillTalentDefinition: TalentDefinition = {
   id: TALENT_CLOUDKILL,
   name: 'Cloudkill',
   description:
-    'Bow basic attacks have a 20% chance on each enemy hit to rain 4–8 poison arrows onto that enemy. Each arrow deals 40 damage to enemies in the impact area.',
+    `Bow basic attacks have a ${CLOUDKILL_PROC_CHANCE * 100}% chance on each enemy hit to rain ${CLOUDKILL_ARROW_COUNT_MIN}–${CLOUDKILL_ARROW_COUNT_MAX} poison arrows onto that enemy. Each arrow deals ${CLOUDKILL_DAMAGE} damage to enemies in the impact area.`,
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 

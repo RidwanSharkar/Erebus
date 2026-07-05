@@ -1,4 +1,4 @@
-import { AdditiveBlending, Color, DoubleSide, ShaderMaterial } from 'three';
+import { AdditiveBlending, Color, DoubleSide, NormalBlending, ShaderMaterial } from 'three';
 
 export type GroundLineTelegraphVariant = 'viper' | 'tentacle' | 'archon' | 'archonPurple' | 'archonBlue';
 
@@ -220,7 +220,7 @@ export function createGroundLineTelegraphMaterial(
     transparent: true,
     depthWrite: false,
     side: DoubleSide,
-    blending: isGlow ? AdditiveBlending : undefined,
+    blending: isGlow ? AdditiveBlending : NormalBlending,
   });
 }
 
@@ -248,7 +248,7 @@ export function createGroundLineTelegraphBaseMaterial(
     transparent: true,
     depthWrite: false,
     side: DoubleSide,
-    blending: isGlow ? AdditiveBlending : undefined,
+    blending: isGlow ? AdditiveBlending : NormalBlending,
   });
 }
 

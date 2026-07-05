@@ -38,7 +38,6 @@ import {
   CLOUDKILL_SKY_HEIGHT_MIN,
   CLOUDKILL_WARNING_MS,
   rollCloudkillArrowCount,
-  shouldApplyCloudkillTalent,
   getMeteorIgniteDotFraction,
   getEffectiveIntellectWithTalentBonuses,
   METEOR_IGNITE_DURATION_MS,
@@ -777,7 +776,7 @@ export class ProjectileSystem extends System {
         if (
           localEnt &&
           projectile.owner === localEnt.id &&
-          shouldApplyCloudkillTalent(cs?.talentLoadout) &&
+          cs?.shouldApplyCloudkillForBow?.() === true &&
           Math.random() < CLOUDKILL_PROC_CHANCE
         ) {
           cloudkillProc = true;

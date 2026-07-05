@@ -7,8 +7,18 @@ export interface EnemyLiveTransform {
 }
 
 export type EnemyTransformsRef = MutableRefObject<Map<string, EnemyLiveTransform>>;
+export type EnemyVisualRotationsRef = MutableRefObject<Map<string, number>>;
 
 const _scratch = new Vector3();
+
+/** Store lerped mesh Y rotation for backstab / facing checks (ref-only, no React setState). */
+export function syncEnemyVisualRotation(
+  enemyId: string,
+  visualRotationsRef: EnemyVisualRotationsRef,
+  rotationY: number,
+): void {
+  visualRotationsRef.current.set(enemyId, rotationY);
+}
 
 /** Derive walk/idle from per-frame server transform delta (ref-only movement store). */
 export function updateEnemyWalkStateFromMoveDist(

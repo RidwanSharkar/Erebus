@@ -14,9 +14,10 @@ import Boss3GreenBeam from './Boss3GreenBeam';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
 import { campHpTheme } from '@/utils/campHpTheme';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
-import { ENEMY_HP_BAR_WIDTH, ENEMY_HP_BAR_HEIGHT, ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO, ENEMY_HP_BAR_FILL_HEIGHT, ENEMY_HP_BAR_FILL_Z, applyEnemyHealthBarFill, syncEnemyHealthBarFillFromRef, syncEnemyHealthBarNumericTextFromRef } from '@/utils/enemyHealthBar';
+import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { ENEMY_HP_BAR_WIDTH, applyEnemyHealthBarFill, syncEnemyHealthBarFillFromRef, syncEnemyHealthBarNumericTextFromRef } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface Boss3RendererProps {
   id: string;
@@ -131,7 +132,7 @@ function Boss3Renderer({
   staggerBuildup = 0,
 }: Boss3RendererProps) {
   const theme = campHpTheme('green');
-  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemyVisualRotationsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
   const hpTextRef = useRef<any>(null);
@@ -301,6 +302,7 @@ function Boss3Renderer({
     while (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2;
     while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
+    syncEnemyVisualRotation(id, enemyVisualRotationsRef, group.rotation.y);
 
     syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, ENEMY_HP_BAR_WIDTH);
     syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
@@ -364,18 +366,11 @@ function Boss3Renderer({
       <Billboard position={[0, 6.2, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
-            <mesh position={[0, 0, 0]}>
-              <primitive object={ENEMY_HP_BAR_BG_GEO} attach="geometry" />
-              <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
-            </mesh>
-            <mesh
-              ref={hpFillRef}
-              position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
-              scale={[1, 1, 1]}
-            >
-              <primitive object={ENEMY_HP_BAR_FILL_GEO} attach="geometry" />
-              <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
-            </mesh>
+            <EnemyHpBarPlanes
+              fillRef={hpFillRef}
+              backgroundColor={theme.background}
+              fillColor={theme.fill}
+            />
             <EnemyHealthBarTextLabel
               leading="FEAR"
               numericRef={hpTextRef}

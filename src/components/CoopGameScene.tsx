@@ -205,6 +205,8 @@ import {
   type FanOfKnivesFlourishTint,
   CROSSENTROPY_PLAGUE_VENOM_MS,
   resolveWraithStrikeThemeFromMeta,
+  normalizeTalentLoadout,
+  type TalentLoadout,
 } from '@/utils/talents';
 import { StatSystem, StatPointData, type PlayerStats } from '@/utils/StatSystem';
 import { ITEM_RARITY_COLORS, isItemRarity } from '@/utils/itemRarity';
@@ -325,6 +327,8 @@ import MushroomEruptionVfx from '@/components/environment/MushroomEruptionVfx';
 
 /** Default main combat entry Z (ring centered here; matches server `teleportAllPlayersToCombatSpawn`). */
 const COOP_MAIN_DEFAULT_SPAWN_Z = COOP_MAIN_ENTRY_Z;
+/** Client grace window after portal enter — align with backend `COOP_POST_TELEPORT_POSITION_GUARD_MS`. */
+const COOP_POST_PORTAL_POSITION_GRACE_MS = 1500;
 import { useBowPowershot } from '@/components/projectiles/useBowPowershot';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 import PVPSummonTotemManager from '@/components/projectiles/PVPSummonTotemManager';
@@ -1384,6 +1388,8 @@ export function CoopGameScene({
     resetLocalPositionEmitThrottle,
     coopTransitionOverlayRef,
     coopPendingPortalSnapRef,
+    coopRoomEntryTokenRef,
+    coopCombatArenaEnterAtRef,
   } = useMultiplayerActions();
 
   const {
@@ -1654,11 +1660,14 @@ export function CoopGameScene({
   const runebladeWhirlwindInstanceRef = useRef<number | undefined>(undefined);
   const remotePlayerWhirlwindInstancesRef = useRef<Map<string, number>>(new Map());
   const remotePlayerWhirlwindStartTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const remotePlayerWhirlwindFailsafeTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const _lastSetPlayerPositionMs = useRef<number>(0);
   const _scratchCamDir = useRef<Vector3>(new Vector3());
   const pendingPortalSnapRef = coopPendingPortalSnapRef;
   const lastAppliedCombatEnterSeqRef = useRef(0);
   const lastAppliedIntermissionSeqRef = useRef(0);
+  /** One-shot halt when portal overlay ref flips true (before React disables input). */
+  const portalOverlayLocomotionHaltedRef = useRef(false);
   const resetLocalPositionEmitThrottleRef = useRef(resetLocalPositionEmitThrottle);
   resetLocalPositionEmitThrottleRef.current = resetLocalPositionEmitThrottle;
 
@@ -1970,8 +1979,7 @@ export function CoopGameScene({
       }
       const movement = ent?.getComponent(Movement);
       if (movement) {
-        movement.velocity.set(0, 0, 0);
-        movement.acceleration.set(0, 0, 0);
+        movement.haltLocomotion();
       }
       realTimePlayerPositionRef.current.set(snappedPos.x, snappedPos.y, snappedPos.z);
       applyPlayerMove(playersTransformsRef, contextPlayersRef, {
@@ -1984,7 +1992,6 @@ export function CoopGameScene({
       cameraSystemRef.current?.snapToTarget();
 
       lastAppliedCombatEnterSeqRef.current = coopCombatArenaEnterSeq;
-      pendingPortalSnapRef.current = false;
     }
     if (intermissionChanged) {
       lastAppliedIntermissionSeqRef.current = coopMainArenaIntermissionSeq;
@@ -2038,6 +2045,9 @@ export function CoopGameScene({
       controlSystemRef.current.setAllowAllInput(isChatOpen);
     }
     engineRef.current?.getInputManager().setGameInputBlocked(uiBlocksGame);
+    if (!coopTransitionOverlay) {
+      portalOverlayLocomotionHaltedRef.current = false;
+    }
   }, [isChatOpen, uiBlocksGameInput, coopTransitionOverlay]);
 
   useEffect(() => {
@@ -4363,6 +4373,24 @@ export function CoopGameScene({
 
     const blockLocalDamageDuringCoopPortal = () => coopTransitionOverlayRef.current;
 
+    const blockAuthoritativePositionDuringCoopPortal = (eventRoomToken?: number) => {
+      if (coopTransitionOverlayRef.current) return true;
+      if (pendingPortalSnapRef.current) return true;
+
+      const expectedToken = coopRoomEntryTokenRef.current;
+      if (expectedToken > 0) {
+        const token = eventRoomToken ?? 0;
+        if (token !== expectedToken) return true;
+      }
+
+      const enteredAt = coopCombatArenaEnterAtRef.current;
+      if (enteredAt > 0 && Date.now() - enteredAt < COOP_POST_PORTAL_POSITION_GRACE_MS) {
+        return true;
+      }
+
+      return false;
+    };
+
     const handlePlayerAttack = (data: any) => {
       // CRITICAL FIX: Never process our own attacks to prevent duplicate projectiles and damage
       if (data.playerId === socket.id) {
@@ -4375,11 +4403,17 @@ export function CoopGameScene({
           clearTimeout(pending);
           remotePlayerWhirlwindStartTimeoutsRef.current.delete(playerId);
         }
+        const failsafe = remotePlayerWhirlwindFailsafeTimeoutsRef.current.get(playerId);
+        if (failsafe !== undefined) {
+          clearTimeout(failsafe);
+          remotePlayerWhirlwindFailsafeTimeoutsRef.current.delete(playerId);
+        }
         const instance = remotePlayerWhirlwindInstancesRef.current.get(playerId);
         if (instance !== undefined) {
           window.audioSystem?.stopSound('runeblade_whirlwind', instance);
           remotePlayerWhirlwindInstancesRef.current.delete(playerId);
         }
+        window.audioSystem?.stopLoopingWeaponSound?.('runeblade_whirlwind');
       };
       
       if (engineRef.current) {
@@ -4801,14 +4835,23 @@ export function CoopGameScene({
           if (data.attackType === 'sword_charge_start') {
             stopRemoteRunebladeWhirlwind(data.playerId);
             const playerId = data.playerId;
+            const SPIN_ROTATION_SPEED = 26.5;
+            const targetRotations = chargeStoredSpin ? 3 : 1.5;
+            const spinDurationMs = (targetRotations * 2 * Math.PI) / SPIN_ROTATION_SPEED * 1000;
+            const CHARGE_SPIN_SOUND_DELAY_MS = 450;
             const timeoutId = setTimeout(() => {
               remotePlayerWhirlwindStartTimeoutsRef.current.delete(playerId);
               const instance = window.audioSystem?.playRunebladeWhirlwindSound(chargeSpinPos);
               if (instance !== undefined) {
                 remotePlayerWhirlwindInstancesRef.current.set(playerId, instance);
               }
-            }, 450);
+            }, CHARGE_SPIN_SOUND_DELAY_MS);
             remotePlayerWhirlwindStartTimeoutsRef.current.set(playerId, timeoutId);
+            const failsafeId = setTimeout(() => {
+              remotePlayerWhirlwindFailsafeTimeoutsRef.current.delete(playerId);
+              stopRemoteRunebladeWhirlwind(playerId);
+            }, CHARGE_SPIN_SOUND_DELAY_MS + spinDurationMs);
+            remotePlayerWhirlwindFailsafeTimeoutsRef.current.set(playerId, failsafeId);
           } else if (data.attackType === 'sword_charge_spin') {
             stopRemoteRunebladeWhirlwind(data.playerId);
           }
@@ -6407,8 +6450,9 @@ export function CoopGameScene({
       targetPlayerId: string;
       position: { x: number; y: number; z: number };
       rotation: { x: number; y: number; z: number };
+      coopRoomEntryToken?: number;
     }) => {
-      if (blockLocalDamageDuringCoopPortal()) return;
+      if (blockAuthoritativePositionDuringCoopPortal(data.coopRoomEntryToken)) return;
 
       setPlayers(prev => {
         const updated = new Map(prev);
@@ -6448,6 +6492,7 @@ export function CoopGameScene({
       targetPlayerId: string;
       position: { x: number; y: number; z: number };
       rotation: { x: number; y: number; z: number };
+      coopRoomEntryToken?: number;
     }) => {
       applyServerDeathGraspPull(data);
     };
@@ -6497,6 +6542,7 @@ export function CoopGameScene({
       targetPlayerId: string;
       position: { x: number; y: number; z: number };
       rotation: { x: number; y: number; z: number };
+      coopRoomEntryToken?: number;
     }) => {
       applyServerDeathGraspPull(data);
     };
@@ -7085,6 +7131,9 @@ export function CoopGameScene({
 
     const handlePlayerKnockback = (data: any) => {
       if (!data || !data.targetPlayerId) {
+        return;
+      }
+      if (blockAuthoritativePositionDuringCoopPortal(data.coopRoomEntryToken)) {
         return;
       }
 
@@ -9500,6 +9549,18 @@ export function CoopGameScene({
 
   // Game loop integration with React Three Fiber
   useFrame((state, deltaTime) => {
+    // Cancel dash/charge/knockback as soon as the portal overlay ref is set (sync, before React state).
+    if (
+      coopTransitionOverlayRef.current &&
+      !portalOverlayLocomotionHaltedRef.current &&
+      playerEntityRef.current !== null &&
+      engineRef.current
+    ) {
+      const haltEnt = engineRef.current.getWorld().getEntity(playerEntityRef.current);
+      haltEnt?.getComponent(Movement)?.haltLocomotion();
+      portalOverlayLocomotionHaltedRef.current = true;
+    }
+
     // Remote player interpolation + ghost-trail refs (60 Hz via playersTransformsRef, no React state).
     if (engineRef.current && gameStarted && engineReady) {
       const world = engineRef.current.getWorld();
@@ -11072,6 +11133,31 @@ export function CoopGameScene({
     }
   }, [talentLoadout, engineReady]);
 
+  useEffect(() => {
+    const onTalentLoadoutPicked = (event: Event) => {
+      const detail = (event as CustomEvent<TalentLoadout>).detail;
+      if (!detail || !controlSystemRef.current) return;
+      controlSystemRef.current.setTalentLoadout(normalizeTalentLoadout(detail));
+    };
+    window.addEventListener('coop-talent-loadout-picked', onTalentLoadoutPicked);
+    return () => window.removeEventListener('coop-talent-loadout-picked', onTalentLoadoutPicked);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      window.audioSystem?.stopLoopingWeaponSound?.('runeblade_whirlwind');
+      runebladeWhirlwindInstanceRef.current = undefined;
+      remotePlayerWhirlwindStartTimeoutsRef.current.forEach((pending) => clearTimeout(pending));
+      remotePlayerWhirlwindStartTimeoutsRef.current.clear();
+      remotePlayerWhirlwindFailsafeTimeoutsRef.current.forEach((failsafe) => clearTimeout(failsafe));
+      remotePlayerWhirlwindFailsafeTimeoutsRef.current.clear();
+      remotePlayerWhirlwindInstancesRef.current.forEach((instance) => {
+        window.audioSystem?.stopSound('runeblade_whirlwind', instance);
+      });
+      remotePlayerWhirlwindInstancesRef.current.clear();
+    };
+  }, []);
+
   React.useEffect(() => {
     if (!controlSystemRef.current || !statPointData || !engineReady) return;
     controlSystemRef.current.setAllocatedPlayerStats(effectiveCombatStats);
@@ -11393,15 +11479,14 @@ export function CoopGameScene({
             });
           }}
           onChargeSpinStart={() => {
+            window.audioSystem?.stopLoopingWeaponSound?.('runeblade_whirlwind');
             runebladeWhirlwindInstanceRef.current = window.audioSystem?.playRunebladeWhirlwindSound(
               realTimePlayerPositionRef.current,
             );
           }}
           onChargeSpinEnd={() => {
-            if (runebladeWhirlwindInstanceRef.current !== undefined) {
-              window.audioSystem?.stopSound('runeblade_whirlwind', runebladeWhirlwindInstanceRef.current);
-              runebladeWhirlwindInstanceRef.current = undefined;
-            }
+            window.audioSystem?.stopLoopingWeaponSound?.('runeblade_whirlwind');
+            runebladeWhirlwindInstanceRef.current = undefined;
           }}
           onDeflectComplete={() => {
             controlSystemRef.current?.onDeflectComplete();

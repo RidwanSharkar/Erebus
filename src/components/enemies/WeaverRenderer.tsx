@@ -9,19 +9,17 @@ import { useFrame } from '@react-three/fiber';
 import { Billboard } from '@react-three/drei';
 import WeaverModel from './WeaverModel';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   ENEMY_HP_BAR_WIDTH,
-  ENEMY_HP_BAR_HEIGHT,
-  ENEMY_HP_BAR_FILL_HEIGHT,
-  ENEMY_HP_BAR_FILL_Z, ENEMY_HP_BAR_BG_GEO, ENEMY_HP_BAR_FILL_GEO,
   applyEnemyHealthBarFill,
   syncEnemyHealthBarFillFromRef,
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface WeaverRendererProps {
   id: string;
@@ -65,7 +63,7 @@ function WeaverRenderer({
   const auraDisc = isBlue
     ? { color: '#3388dd', emissive: '#1a50aa' }
     : { color: '#00cc44', emissive: '#00aa22' };
-  const { socket, enemyTransformsRef, enemiesRef } = useMultiplayerActions();
+  const { socket, enemyTransformsRef, enemyVisualRotationsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
   const hpTextRef = useRef<any>(null);
@@ -274,6 +272,7 @@ function WeaverRenderer({
       while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
       while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
       group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
+      syncEnemyVisualRotation(id, enemyVisualRotationsRef, group.rotation.y);
     }
 
     if (isDying) {
@@ -360,19 +359,11 @@ function WeaverRenderer({
       <Billboard position={[0, 3.2, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
-            <mesh position={[0, 0, 0]}>
-              <primitive object={ENEMY_HP_BAR_BG_GEO} attach="geometry" />
-              <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
-            </mesh>
-
-            <mesh
-              ref={hpFillRef}
-              position={[-ENEMY_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
-              scale={[1, 1, 1]}
-            >
-              <primitive object={ENEMY_HP_BAR_FILL_GEO} attach="geometry" />
-              <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
-            </mesh>
+            <EnemyHpBarPlanes
+              fillRef={hpFillRef}
+              backgroundColor={theme.background}
+              fillColor={theme.fill}
+            />
 
             <EnemyHealthBarTextLabel
               leading="🧵"
