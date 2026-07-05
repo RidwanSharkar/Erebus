@@ -1,6 +1,7 @@
 /**
  * Co-op knight cast / Death Grasp timing — must stay in sync with `backend/enemyAI.js`
  * (knightCastFrost, tryKnightDeathGrasp, knightCastDeathGrasp).
+ * Death Grasp unlocks after boss 1 for regular knights; Boss1 elite knights bypass via isBoss1EliteKnight.
  */
 export const KNIGHT_CAST_ABILITY_LOCK_MS = 2000; // meleeLockUntil + Cast clip
 export const KNIGHT_CAST_PROJECTILE_DELAY_MS = 1000; // release after cast start
@@ -14,6 +15,7 @@ export const KNIGHT_DEATH_GRASP_MIN_RANGE = 5.0; // must be strictly beyond this
 export const KNIGHT_DEATH_GRASP_MAX_RANGE = 13.0;
 export const KNIGHT_DEATH_GRASP_COOLDOWN_MS = 15000;
 export const KNIGHT_DEATH_GRASP_STANDOFF = 1.2; // server pull position from knight
+export const KNIGHT_DEATH_GRASP_UNLOCK_BOSS_COUNT = 1;
 
 // Knight Smite (enemyAI: knightCastSmite, tryKnightSmiteUnlocked)
 export const KNIGHT_SMITE_IMPACT_DELAY_MS = 900;

@@ -452,10 +452,10 @@ const KNIGHT_SMITE_UNLOCK_BOSS_COUNT = 2;
 const KNIGHT_SMITE_COOLDOWN_MS = 7000;
 const KNIGHT_SMITE_LOCK_MS = 1200;
 const KNIGHT_STORM_LASH_COOLDOWN_MS = 12000;
-const KNIGHT_STORM_LASH_RANGE = 7.0;
+const KNIGHT_STORM_LASH_RANGE = 6.0;
 const KNIGHT_STORM_LASH_DURATION_MS = 4000;
 const KNIGHT_STORM_LASH_ZAP_INTERVAL_MS = 750;
-const KNIGHT_STORM_LASH_ZAP_DAMAGE = 20;
+const KNIGHT_STORM_LASH_ZAP_DAMAGE = 15;
 const KNIGHT_STORM_LASH_HALF_WIDTH = 1.0;
 const KNIGHT_STORM_LASH_VFX_SCALE = 0.75;
 const KNIGHT_SMITE_IMPACT_DELAY_MS = 900;
@@ -487,6 +487,7 @@ const KNIGHT_BLOCK_COOLDOWN_MS = {
 const KNIGHT_ELITE_BLOCK_DURATION_MS = 8000;
 const KNIGHT_ELITE_BLOCK_HEALTH_THRESHOLDS = [0.9, 0.5, 0.2];
 const KNIGHT_BLOCK_UNLOCK_BOSS_COUNT = 2;
+const KNIGHT_DEATH_GRASP_UNLOCK_BOSS_COUNT = 1;
 
 /** Post-boss-2 unlock: single tectonic-style ground spike (castheal windup, player-targeted). */
 const WEAVER_IMPALE_SPIKE_UNLOCK_BOSS_COUNT = 2;
@@ -1338,7 +1339,7 @@ class EnemyAI {
         } else if (now - lastAttackTime >= attackCooldown) {
           this.bossAttackCooldown.set(knight.id, now);
 
-          const SWING_LOCK_MS = 800;
+          const SWING_LOCK_MS = 900;
           this.meleeLockUntil.set(knight.id, now + SWING_LOCK_MS);
 
           const attackFocus = { ...targetPlayer.position };
@@ -1394,7 +1395,7 @@ class EnemyAI {
         } else if (now - lastAttackTime >= attackCooldown) {
           this.bossAttackCooldown.set(knight.id, now);
 
-          const SWING_LOCK_MS = 800;
+          const SWING_LOCK_MS = 900;
           this.meleeLockUntil.set(knight.id, now + SWING_LOCK_MS);
 
           const attackFocus = { ...z.position };
@@ -1815,6 +1816,12 @@ class EnemyAI {
 
   tryKnightDeathGrasp(knight, targetPlayer, now, distance) {
     if (knight.soulType !== 'red' && knight.soulType !== 'green') return false;
+    if (
+      !knight.isBoss1EliteKnight &&
+      (this.room?.coopBossesDefeatedCount ?? 0) < KNIGHT_DEATH_GRASP_UNLOCK_BOSS_COUNT
+    ) {
+      return false;
+    }
     if (this._isCoopPortalPositionWriteBlocked()) return false;
 
     const DEATH_GRASP_MIN_RANGE = 5.0; // must be *over* 5u (strict)
@@ -2433,7 +2440,7 @@ class EnemyAI {
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(shade.position, tpos);
-    const attackRange = 12.0;
+    const attackRange = 10.0;
     const aggroRadius = 15;
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
@@ -2454,7 +2461,7 @@ class EnemyAI {
     this._queueMoveIfChanged(shade.id, shade.position, shade.rotation);
 
     if (distance <= attackRange) {
-      const blinkCooldown = 5250;
+      const blinkCooldown = 6250;
       const lastBlinkTime = this.shadeBlinkCooldown.get(shade.id) || 0;
       const now = Date.now();
 
