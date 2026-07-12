@@ -888,8 +888,24 @@ export const REAPING_TALONS_DOUBLE_TALONS_INTERNAL_COOLDOWN_SEC = 1.75;
 
 /** Bow LMB tap (uncharged primary) base damage without Trigger Finger. */
 export const BOW_UNCHARGED_PROJECTILE_DAMAGE = 10;
-/** Bow LMB tap base damage with Trigger Finger class talent. */
-export const BOW_TRIGGER_FINGER_UNCHARGED_DAMAGE = 50;
+/** Quick Draw — flat additive bonus on partial/uncharged LMB (not perfect or full charge). */
+export const TRIGGER_FINGER_FLAT_DAMAGE_BONUS = 50;
+/** @deprecated Use TRIGGER_FINGER_FLAT_DAMAGE_BONUS — kept for import compatibility. */
+export const BOW_TRIGGER_FINGER_UNCHARGED_DAMAGE = TRIGGER_FINGER_FLAT_DAMAGE_BONUS;
+/** Bow LMB fully charged primary base damage without High Caliber. */
+export const BOW_FULL_CHARGE_BASE_DAMAGE = 50;
+/** Bow LMB fully charged primary base damage with High Caliber (2× flat). */
+export const BOW_HIGH_CALIBER_FULL_CHARGE_BASE_DAMAGE = 100;
+/** High Caliber — additive base damage per STRENGTH on fully charged LMB. */
+export const HIGH_CALIBER_CHARGED_DAMAGE_PER_STRENGTH = 2;
+/** Bow LMB perfect-shot base damage without High Caliber. */
+export const BOW_PERFECT_SHOT_BASE_DAMAGE = 75;
+/** Bow LMB perfect-shot base damage with High Caliber (2× flat). */
+export const BOW_HIGH_CALIBER_PERFECT_SHOT_BASE_DAMAGE = 150;
+/** High Caliber — additive base damage per STRENGTH on perfect LMB. */
+export const HIGH_CALIBER_PERFECT_DAMAGE_PER_STRENGTH = 3;
+/** Quick Draw — additive base damage per AGILITY on partial/uncharged LMB (not perfect or full charge). */
+export const TRIGGER_FINGER_DAMAGE_PER_AGILITY = 2;
 
 /** Wrathful Bite — Frostbite / Barrage (`BOW_Q`) hits use these additive crit modifiers in CombatSystem. */
 export const WRATHFUL_BITE_BARRAGE_CRIT_CHANCE_ADD = 0.4;
@@ -1069,6 +1085,10 @@ export const DUAL_COIL_LATERAL_OFFSET = 0.16;
 export const WYVERN_STING_COOLDOWN_SEC = 5;
 /** Arctic Sting — min seconds between perfect-shot blizzard spawns. */
 export const ARCTIC_STING_BLIZZARD_ICD_SEC = 4;
+/** Arctic Sting + Tempest Rounds — per burst-arrow hit proc chance (chill stack). */
+export const TEMPEST_BURST_ARCTIC_STING_PROC_CHANCE = 0.15;
+/** Wyvern Sting + Tempest Rounds — per burst-arrow hit proc chance (zombie on kill). */
+export const TEMPEST_BURST_WYVERN_STING_PROC_CHANCE = 0.15;
 
 /** Wrathful Entropic — bolts + beam additive crit (crit damage multiplier unchanged). */
 export const WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD = 0.25;
@@ -1947,7 +1967,7 @@ export const highCaliberTalentDefinition: TalentDefinition = {
   id: TALENT_HIGH_CALIBER,
   name: 'High Caliber',
   description:
-    'Bow left-click takes 1.5× as long to reach full charge but Perfect Shots now deal double the base damage.',
+    `Bow left-click takes 1.5× as long to reach full charge. Perfect Shots and fully charged shots deal double base damage (+${HIGH_CALIBER_PERFECT_DAMAGE_PER_STRENGTH} / +${HIGH_CALIBER_CHARGED_DAMAGE_PER_STRENGTH} base damage per STRENGTH respectively).`,
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 
@@ -1955,7 +1975,7 @@ export const triggerFingerTalentDefinition: TalentDefinition = {
   id: TALENT_TRIGGER_FINGER,
   name: 'Quick Draw',
   description:
-    'Uncharged basic attacks gain +50 base damage.',
+    `Partial and uncharged basic attacks gain +${TRIGGER_FINGER_FLAT_DAMAGE_BONUS} base damage and +${TRIGGER_FINGER_DAMAGE_PER_AGILITY} base damage per AGILITY (does not apply to Perfect Shots or fully charged shots).`,
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 
@@ -2279,9 +2299,9 @@ export interface TalentLoadout {
   arcaneSynergy: boolean;
   windFury: boolean;
   dualCoil: boolean;
-  /** HIGH CALIBER — bow LMB slower full charge (+90/60), powershot/perfect doubled damage, thicker perfect beam. */
+  /** HIGH CALIBER — bow LMB slower full charge (+90/60), charged/perfect doubled damage + STR scaling, thicker perfect beam. */
   highCaliber: boolean;
-  /** TRIGGER FINGER — bow LMB uncharged damage + red projectile VFX. */
+  /** TRIGGER FINGER — bow LMB partial/uncharged scaled damage + flat/AGI bonus + red projectile VFX. */
   triggerFinger: boolean;
   /** Cloudkill — bow LMB primary 20% on-hit poison arrow volley. */
   cloudkill: boolean;
@@ -3144,6 +3164,60 @@ export function getWindShearProjectileDamage(
 ): number {
   const strength = getEffectiveStrengthWithTalentBonuses(stats, talentLoadout, abilityLoadout);
   return WIND_SHEAR_BASE_DAMAGE + WIND_SHEAR_DAMAGE_PER_STRENGTH * Math.max(0, strength);
+}
+
+export function getBowHighCaliberFullChargeDamage(
+  stats: PlayerStats,
+  talentLoadout?: TalentLoadout | null,
+  abilityLoadout?: AbilityLoadout | null,
+): number {
+  if (!shouldApplyHighCaliberTalent(talentLoadout)) {
+    return BOW_FULL_CHARGE_BASE_DAMAGE;
+  }
+  const strength = getEffectiveStrengthWithTalentBonuses(stats, talentLoadout, abilityLoadout);
+  return (
+    BOW_HIGH_CALIBER_FULL_CHARGE_BASE_DAMAGE +
+    HIGH_CALIBER_CHARGED_DAMAGE_PER_STRENGTH * Math.max(0, strength)
+  );
+}
+
+export function getBowHighCaliberPerfectShotDamage(
+  stats: PlayerStats,
+  talentLoadout?: TalentLoadout | null,
+  abilityLoadout?: AbilityLoadout | null,
+): number {
+  if (!shouldApplyHighCaliberTalent(talentLoadout)) {
+    return BOW_PERFECT_SHOT_BASE_DAMAGE;
+  }
+  const strength = getEffectiveStrengthWithTalentBonuses(stats, talentLoadout, abilityLoadout);
+  return (
+    BOW_HIGH_CALIBER_PERFECT_SHOT_BASE_DAMAGE +
+    HIGH_CALIBER_PERFECT_DAMAGE_PER_STRENGTH * Math.max(0, strength)
+  );
+}
+
+export function getBowTriggerFingerBonusDamage(
+  stats: PlayerStats,
+  talentLoadout?: TalentLoadout | null,
+  abilityLoadout?: AbilityLoadout | null,
+): number {
+  if (!shouldApplyTriggerFingerTalent(talentLoadout)) {
+    return 0;
+  }
+  const agility = getEffectiveAgilityWithTalentBonuses(stats, talentLoadout, abilityLoadout);
+  return (
+    TRIGGER_FINGER_FLAT_DAMAGE_BONUS +
+    TRIGGER_FINGER_DAMAGE_PER_AGILITY * Math.max(0, agility)
+  );
+}
+
+/** @deprecated Use getBowTriggerFingerBonusDamage */
+export function getBowTriggerFingerTapDamage(
+  stats: PlayerStats,
+  talentLoadout?: TalentLoadout | null,
+  abilityLoadout?: AbilityLoadout | null,
+): number {
+  return getBowTriggerFingerBonusDamage(stats, talentLoadout, abilityLoadout);
 }
 
 export function getManaShieldRestoreAmount(

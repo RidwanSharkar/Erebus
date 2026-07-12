@@ -156,6 +156,7 @@ function ChargedArrowTrail({
         positions[i * 3 + 2] = currentPos.z;
       }
       trailGeometry.attributes.position.needsUpdate = true;
+      trailGeometry.setDrawRange(0, Math.max(0, (maxTrailLength - 1) * 2));
     } else {
       // Ring-buffer write.
       ringHead.current = (ringHead.current + maxTrailLength - 1) % maxTrailLength;
@@ -173,6 +174,7 @@ function ChargedArrowTrail({
       }
 
       trailGeometry.attributes.position.needsUpdate = true;
+      trailGeometry.setDrawRange(0, len >= 2 ? (len - 1) * 2 : 0);
     }
 
     const _head = ringHead.current;

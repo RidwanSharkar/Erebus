@@ -134,13 +134,20 @@ import {
   CLOUDKILL_ARROW_COUNT_MIN,
   CLOUDKILL_ARROW_COUNT_MAX,
   BOW_UNCHARGED_PROJECTILE_DAMAGE,
-  BOW_TRIGGER_FINGER_UNCHARGED_DAMAGE,
+  TRIGGER_FINGER_FLAT_DAMAGE_BONUS,
+  BOW_HIGH_CALIBER_PERFECT_SHOT_BASE_DAMAGE,
+  BOW_HIGH_CALIBER_FULL_CHARGE_BASE_DAMAGE,
+  HIGH_CALIBER_PERFECT_DAMAGE_PER_STRENGTH,
+  HIGH_CALIBER_CHARGED_DAMAGE_PER_STRENGTH,
+  TRIGGER_FINGER_DAMAGE_PER_AGILITY,
   wyvernStingTalentDefinition,
   wyvernTalonsTalentDefinition,
   arcticStingTalentDefinition,
   glacialBiteTalentDefinition,
   glacialTalonsTalentDefinition,
   ARCTIC_STING_BLIZZARD_ICD_SEC,
+  TEMPEST_BURST_ARCTIC_STING_PROC_CHANCE,
+  TEMPEST_BURST_WYVERN_STING_PROC_CHANCE,
   WYVERN_STING_COOLDOWN_SEC,
   WYVERN_STING_VENOM_BASE_DPS,
   WYVERN_STING_VENOM_PER_INTELLECT,
@@ -2574,7 +2581,12 @@ export default function TalentSelectionModal({
               />
               <label htmlFor="talent-high-caliber" className="flex-1 cursor-pointer">
                 {loadout.highCaliber && (
-                  <p className="text-gray-400 text-sm mt-1">{highCaliberTalentDefinition.description}</p>
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{highCaliberTalentDefinition.description}</p>
+                    <p className="text-rose-200/90 text-xs mt-2 font-mono">
+                      Perfect: {BOW_HIGH_CALIBER_PERFECT_SHOT_BASE_DAMAGE} + {HIGH_CALIBER_PERFECT_DAMAGE_PER_STRENGTH}/STR · Full charge: {BOW_HIGH_CALIBER_FULL_CHARGE_BASE_DAMAGE} + {HIGH_CALIBER_CHARGED_DAMAGE_PER_STRENGTH}/STR
+                    </p>
+                  </>
                 )}
               </label>
             </div>
@@ -2600,7 +2612,7 @@ export default function TalentSelectionModal({
                   <>
                     <p className="text-gray-400 text-sm mt-1">{triggerFingerTalentDefinition.description}</p>
                     <p className="text-rose-200/90 text-xs mt-2 font-mono">
-                      LMB minimum damage {BOW_UNCHARGED_PROJECTILE_DAMAGE} → {BOW_TRIGGER_FINGER_UNCHARGED_DAMAGE}
+                      Partial/uncharged: scaled LMB damage + {TRIGGER_FINGER_FLAT_DAMAGE_BONUS} + {TRIGGER_FINGER_DAMAGE_PER_AGILITY}/AGI (excludes perfect &amp; full charge)
                     </p>
                   </>
                 )}
@@ -2661,6 +2673,11 @@ export default function TalentSelectionModal({
                     <p className="text-emerald-200/90 text-xs mt-1 font-mono">
                       Cobra venom: {WYVERN_STING_VENOM_BASE_DPS} + {WYVERN_STING_VENOM_PER_INTELLECT} per Intellect DPS · {COBRA_SHOT_VENOM_DURATION_SEC}s
                     </p>
+                    {loadout.tempestRounds && (
+                      <p className="text-emerald-200/90 text-xs mt-1 font-mono">
+                        With Tempest Rounds: {TEMPEST_BURST_WYVERN_STING_PROC_CHANCE * 100}% chance per burst hit to raise a zombie on kill
+                      </p>
+                    )}
                   </>
                 )}
               </label>
@@ -2684,7 +2701,12 @@ export default function TalentSelectionModal({
               />
               <label htmlFor="talent-tempest-rounds" className="flex-1 cursor-pointer">
                 {loadout.tempestRounds && (
-                  <p className="text-gray-400 text-sm mt-1">{tempestRoundsTalentDefinition.description}</p>
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{tempestRoundsTalentDefinition.description}</p>
+                    <p className="text-sky-200/90 text-xs mt-2 font-mono">
+                      Arctic Sting / Wyvern Sting (when active): {TEMPEST_BURST_ARCTIC_STING_PROC_CHANCE * 100}% proc per burst hit
+                    </p>
+                  </>
                 )}
               </label>
             </div>
@@ -2707,6 +2729,11 @@ export default function TalentSelectionModal({
                     <p className="text-sky-200/90 text-xs mt-2 font-mono">
                       Blizzard proc internal cooldown: {ARCTIC_STING_BLIZZARD_ICD_SEC}s
                     </p>
+                    {loadout.tempestRounds && (
+                      <p className="text-sky-200/90 text-xs mt-1 font-mono">
+                        With Tempest Rounds: {TEMPEST_BURST_ARCTIC_STING_PROC_CHANCE * 100}% chance per burst hit applies chill (+1 stack; 6 stacks freeze)
+                      </p>
+                    )}
                   </div>
                 </div>
                 </TalentHoverSurface>

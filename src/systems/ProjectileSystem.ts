@@ -42,6 +42,10 @@ import {
   getEffectiveIntellectWithTalentBonuses,
   METEOR_IGNITE_DURATION_MS,
   METEOR_IGNITE_TICKS,
+  shouldApplyArcticStingTalent,
+  shouldApplyWyvernStingTalent,
+  TEMPEST_BURST_ARCTIC_STING_PROC_CHANCE,
+  TEMPEST_BURST_WYVERN_STING_PROC_CHANCE,
   type TempestBurstTheme,
 } from '@/utils/talents';
 import {
@@ -765,20 +769,22 @@ export class ProjectileSystem extends System {
       }
 
       const isBowPrimary =
+        projectile.isBowLmbPrimary === true ||
         renderer?.mesh?.userData?.isRegularArrow === true ||
         renderer?.mesh?.userData?.isChargedArrow === true ||
+        projectile.projectileType === 'burst_arrow' ||
         renderer?.mesh?.userData?.projectileType === 'burst_arrow';
 
       let cloudkillProc = false;
+      let tempestBurstArcticChill = false;
+      let tempestBurstWyvernZombie = false;
+
       if (isBowPrimary && damageType === 'projectile' && target.getComponent(Enemy)) {
         const cs = (window as any).controlSystemRef?.current;
         const localEnt = cs?.getPlayerEntity?.() as { id: number } | null | undefined;
-        if (
-          localEnt &&
-          projectile.owner === localEnt.id &&
-          cs?.shouldApplyCloudkillForBow?.() === true &&
-          Math.random() < CLOUDKILL_PROC_CHANCE
-        ) {
+        const isLocalOwner = localEnt != null && projectile.owner === localEnt.id;
+
+        if (isLocalOwner && cs?.shouldApplyCloudkillForBow?.() === true && Math.random() < CLOUDKILL_PROC_CHANCE) {
           cloudkillProc = true;
           if (this.combatSystem?.usesNetworkedEnemyDamage() !== true) {
             const impactTransform = target.getComponent(Transform);
@@ -787,6 +793,16 @@ export class ProjectileSystem extends System {
               impactPos.y = Math.max(1.5, impactPos.y);
               this.scheduleCloudkillVolley(projectile, impactPos);
             }
+          }
+        }
+
+        if (isLocalOwner && projectile.projectileType === 'burst_arrow') {
+          const loadout = cs?.getTalentLoadout?.() ?? cs?.talentLoadout;
+          if (shouldApplyArcticStingTalent(loadout) && Math.random() < TEMPEST_BURST_ARCTIC_STING_PROC_CHANCE) {
+            tempestBurstArcticChill = true;
+          }
+          if (shouldApplyWyvernStingTalent(loadout) && Math.random() < TEMPEST_BURST_WYVERN_STING_PROC_CHANCE) {
+            tempestBurstWyvernZombie = true;
           }
         }
       }
@@ -866,11 +882,13 @@ export class ProjectileSystem extends System {
         glacialBiteChill,
         undefined,
         isCrossentropyBolt && projectile.crossentropyMeteor === true,
+        undefined, // crossentropyMeteorDamage
+        undefined, // infernalDashRoom
         entanglementBarrage,
         cloudkillProc,
-        undefined,
-        projectile.tempestBurstArcticChill === true,
-        projectile.tempestBurstWyvernZombie === true,
+        undefined, // wyvernTalonsZombie
+        tempestBurstArcticChill || projectile.tempestBurstArcticChill === true,
+        tempestBurstWyvernZombie || projectile.tempestBurstWyvernZombie === true,
       );
       }
 
@@ -1130,6 +1148,8 @@ export class ProjectileSystem extends System {
       /** Bow perfect window — Wrathful Shots crit. */
       isPerfectShot?: boolean;
       perfectShotVolleyId?: number;
+      /** Bow LMB primary — Cloudkill / co-op projectile routing. */
+      isBowLmbPrimary?: boolean;
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -1157,6 +1177,9 @@ export class ProjectileSystem extends System {
     }
     if (config?.perfectShotVolleyId != null) {
       projectile.perfectShotVolleyId = config.perfectShotVolleyId;
+    }
+    if (config?.isBowLmbPrimary === true) {
+      projectile.isBowLmbPrimary = true;
     }
     projectile.setDirection(direction);
     
@@ -1701,6 +1724,8 @@ export class ProjectileSystem extends System {
       tempestBurstArcticChill?: boolean;
       /** Tempest Rounds burst — Wyvern Sting zombie on kill. */
       tempestBurstWyvernZombie?: boolean;
+      /** Bow LMB primary — Cloudkill / co-op projectile routing. */
+      isBowLmbPrimary?: boolean;
     }
   ): Entity {
     const projectileEntity = world.createEntity();
@@ -1726,6 +1751,9 @@ export class ProjectileSystem extends System {
     }
     if (config?.isPerfectShot === true) {
       projectile.isPerfectShot = true;
+    }
+    if (config?.isBowLmbPrimary === true) {
+      projectile.isBowLmbPrimary = true;
     }
     if (config?.tempestBurstWrathful === true) {
       projectile.tempestBurstWrathful = true;

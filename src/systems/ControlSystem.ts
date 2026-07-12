@@ -153,7 +153,11 @@ import {
   shouldApplyTriggerFingerTalent,
   shouldApplyCloudkillTalent,
   BOW_UNCHARGED_PROJECTILE_DAMAGE,
-  BOW_TRIGGER_FINGER_UNCHARGED_DAMAGE,
+  BOW_FULL_CHARGE_BASE_DAMAGE,
+  BOW_HIGH_CALIBER_FULL_CHARGE_BASE_DAMAGE,
+  getBowHighCaliberFullChargeDamage,
+  getBowHighCaliberPerfectShotDamage,
+  getBowTriggerFingerBonusDamage,
   shouldApplyWyvernStingTalent,
   WYVERN_STING_COOLDOWN_SEC,
   ARCTIC_STING_BLIZZARD_ICD_SEC,
@@ -2728,11 +2732,18 @@ export class ControlSystem extends System {
         })()
       : [baseSpawn];
     
-    const bowPrimaryDamage = computeBowPrimaryScaledDamage(
+    let bowPrimaryDamage = computeBowPrimaryScaledDamage(
       this.chargeProgress,
-      this.bowUnchargedProjectileBaseDamage(),
-      this.bowPowershotBaseDamage(),
+      BOW_UNCHARGED_PROJECTILE_DAMAGE,
+      this.bowPrimaryScaledMaxDamage(),
     );
+    if (this.bowTriggerFingerUnchargedActive()) {
+      bowPrimaryDamage += getBowTriggerFingerBonusDamage(
+        this.allocatedPlayerStats,
+        this.talentLoadout,
+        this.abilityLoadout,
+      );
+    }
 
     // Create projectile using the ProjectileSystem with current weapon config
     const projectileConfig = {
@@ -2744,6 +2755,7 @@ export class ControlSystem extends System {
       level: this.currentLevel,
       opacity: 1.0,
       sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown',
+      isBowLmbPrimary: true as const,
       ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_UNCHARGED_STAGGER } : {}),
       ...(this.bowTriggerFingerUnchargedActive() ? { triggerFingerUncharged: true as const } : {}),
     };
@@ -2798,9 +2810,7 @@ export class ControlSystem extends System {
       : [baseSpawn];
 
     const tempestTheme = resolveTempestBurstTheme(this.talentLoadout);
-    const tempestBurstWrathful = tempestTheme === 'wrathful';
-    const tempestBurstArcticChill = tempestTheme === 'arctic';
-    const tempestBurstWyvernZombie = shouldApplyWyvernStingTalent(this.talentLoadout);
+    const tempestBurstWrathful = shouldApplyWrathfulShotsTalent(this.talentLoadout);
 
     const projectileConfig = {
       speed: 35,
@@ -2812,11 +2822,10 @@ export class ControlSystem extends System {
       opacity: 1.0,
       projectileType: 'burst_arrow' as const,
       sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown',
+      isBowLmbPrimary: true as const,
       tempestBurstSeq,
       tempestBurstTheme: tempestTheme,
       ...(tempestBurstWrathful ? { tempestBurstWrathful: true as const } : {}),
-      ...(tempestBurstArcticChill ? { tempestBurstArcticChill: true as const } : {}),
-      ...(tempestBurstWyvernZombie ? { tempestBurstWyvernZombie: true as const } : {}),
       ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_TEMPEST_ROUND_STAGGER } : {}),
     };
 
@@ -3464,7 +3473,7 @@ export class ControlSystem extends System {
     
     const chargedArrowConfig = {
       speed: 35, // Faster than regular arrows (25)
-      damage: this.bowPowershotBaseDamage(),
+      damage: this.bowFullChargeDamage(),
       lifetime: 2, // Longer lifetime than regular arrows (3)
       piercing: true, // Charged arrows can pierce through enemies
       explosive: false, // No explosion, but could add special effects
@@ -3472,6 +3481,7 @@ export class ControlSystem extends System {
       level: this.currentLevel,
       opacity: 1.0,
       sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown',
+      isBowLmbPrimary: true as const,
       ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_CHARGED_STAGGER } : {}),
     };
     
@@ -3510,7 +3520,7 @@ export class ControlSystem extends System {
       this.pendingArcticStingVolleyId = volleyId;
     }
 
-    const perfectShotDamage = this.bowPerfectShotBaseDamage();
+    const perfectShotDamage = this.bowPerfectShotDamage();
 
     const perfectConfig = {
       speed: 40, // Faster than regular charged arrows (35)
@@ -3522,6 +3532,7 @@ export class ControlSystem extends System {
       level: this.currentLevel,
       opacity: 1.0,
       sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown',
+      isBowLmbPrimary: true as const,
       isPerfectShot: true,
       perfectShotVolleyId: volleyId,
       ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_PERFECT_STAGGER } : {}),
@@ -6980,18 +6991,26 @@ export class ControlSystem extends System {
     return this.currentWeapon === WeaponType.BOW && shouldApplyTriggerFingerTalent(this.talentLoadout);
   }
 
-  private bowUnchargedProjectileBaseDamage(): number {
-    return this.bowTriggerFingerUnchargedActive()
-      ? BOW_TRIGGER_FINGER_UNCHARGED_DAMAGE
-      : BOW_UNCHARGED_PROJECTILE_DAMAGE;
+  private bowPrimaryScaledMaxDamage(): number {
+    return this.bowHighCaliberActive()
+      ? BOW_HIGH_CALIBER_FULL_CHARGE_BASE_DAMAGE
+      : BOW_FULL_CHARGE_BASE_DAMAGE;
   }
 
-  private bowPowershotBaseDamage(): number {
-    return this.bowHighCaliberActive() ? 100 : 50;
+  private bowFullChargeDamage(): number {
+    return getBowHighCaliberFullChargeDamage(
+      this.allocatedPlayerStats,
+      this.talentLoadout,
+      this.abilityLoadout,
+    );
   }
 
-  private bowPerfectShotBaseDamage(): number {
-    return this.bowHighCaliberActive() ? 150 : 75;
+  private bowPerfectShotDamage(): number {
+    return getBowHighCaliberPerfectShotDamage(
+      this.allocatedPlayerStats,
+      this.talentLoadout,
+      this.abilityLoadout,
+    );
   }
 
   /** Tempest Rounds: P passive unlock or co-op talent — used for bow crit bonus in DamageCalculator. */

@@ -14,6 +14,13 @@ export function getBowFullChargeMs(highCaliber: boolean): number {
 export const BOW_PERFECT_SHOT_MIN_PROGRESS = 0.75;
 export const BOW_PERFECT_SHOT_MAX_PROGRESS = 0.98;
 
+/** Quick tap releases below this progress count as uncharged (Quick Draw AGI applies only here). */
+export const BOW_UNCHARGED_MAX_PROGRESS = 0.05;
+
+export function isBowUnchargedProgress(progress: number): boolean {
+  return progress < BOW_UNCHARGED_MAX_PROGRESS;
+}
+
 export function computeBowPrimaryScaledDamage(
   progress: number,
   minDamage: number,

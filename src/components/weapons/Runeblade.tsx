@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3, Color, Shape, AdditiveBlending, BufferGeometry, Float32BufferAttribute } from '@/utils/three-exports';
+import { Group, Vector3, Color, Shape, AdditiveBlending, BufferGeometry, Float32BufferAttribute, Points, PointsMaterial } from '@/utils/three-exports';
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import CorruptedAura from './CorruptedAura';
 import Blizzard from './Blizzard/Blizzard';
@@ -200,7 +200,40 @@ export default function Runeblade({
   // from the old N×<mesh> pattern and collapses all sparks to a single draw call.
   const sparkPositions = useMemo(() => new Float32Array(MAX_SPARKS * 3), []);
   const sparkColors    = useMemo(() => new Float32Array(MAX_SPARKS * 3), []);
-  const sparkGeoRef    = useRef<BufferGeometry>(null);
+
+  const sparkGeometry = useMemo(() => {
+    const geo = new BufferGeometry();
+    geo.setAttribute('position', new Float32BufferAttribute(sparkPositions, 3));
+    geo.setAttribute('color', new Float32BufferAttribute(sparkColors, 3));
+    geo.setDrawRange(0, 0);
+    return geo;
+  }, [sparkPositions, sparkColors]);
+
+  const sparkMaterial = useMemo(
+    () =>
+      new PointsMaterial({
+        vertexColors: true,
+        size: 0.04,
+        sizeAttenuation: true,
+        transparent: true,
+        opacity: 0.85,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      }),
+    [],
+  );
+
+  const sparkPoints = useMemo(
+    () => new Points(sparkGeometry, sparkMaterial),
+    [sparkGeometry, sparkMaterial],
+  );
+
+  useEffect(() => {
+    return () => {
+      sparkGeometry.dispose();
+      sparkMaterial.dispose();
+    };
+  }, [sparkGeometry, sparkMaterial]);
 
   // Swing collision tracking
   const lastSwingHitTime = useRef<Record<string, number>>({});
@@ -918,10 +951,10 @@ export default function Runeblade({
       sparkParticles.current = live.length > MAX_SPARKS ? live.slice(-MAX_SPARKS) : live;
 
       // Write live-spark positions + faded colours into the GPU buffer
-      if (sparkGeoRef.current) {
+      {
         const pos = sparkPositions;
         const col = sparkColors;
-        const count = sparkParticles.current.length;
+        const count = Math.min(sparkParticles.current.length, MAX_SPARKS);
         const sr = secondaryColor.r;
         const sg = secondaryColor.g;
         const sb = secondaryColor.b;
@@ -936,12 +969,13 @@ export default function Runeblade({
           col[idx + 1] = sg * fade;
           col[idx + 2] = sb * fade;
         }
-        const geo = sparkGeoRef.current;
+        const geo = sparkGeometry;
         (geo.attributes.position as Float32BufferAttribute).set(pos);
-        (geo.attributes.color    as Float32BufferAttribute).set(col);
+        (geo.attributes.color as Float32BufferAttribute).set(col);
         geo.attributes.position.needsUpdate = true;
-        geo.attributes.color.needsUpdate    = true;
-        geo.setDrawRange(0, count);
+        geo.attributes.color.needsUpdate = true;
+        const attrCount = geo.attributes.position.count;
+        geo.setDrawRange(0, Math.min(count, attrCount));
       }
     }
   });
@@ -1236,29 +1270,8 @@ export default function Runeblade({
             </group>
 
             {/* Spark particles — single <points> draw call instead of N×<mesh>.
-                The sparkGeoRef buffer is filled each frame in useFrame.
-                vertexColors encodes per-spark fade (life → brightness). */}
-            <points>
-              <bufferGeometry ref={sparkGeoRef}>
-                <bufferAttribute
-                  attach="attributes-position"
-                  args={[sparkPositions, 3]}
-                />
-                <bufferAttribute
-                  attach="attributes-color"
-                  args={[sparkColors, 3]}
-                />
-              </bufferGeometry>
-              <pointsMaterial
-                vertexColors
-                size={0.04}
-                sizeAttenuation
-                transparent
-                opacity={0.85}
-                blending={AdditiveBlending}
-                depthWrite={false}
-              />
-            </points>
+                sparkGeometry is filled each frame in useFrame. */}
+            <primitive object={sparkPoints} />
           </group>
         )}
       </group>

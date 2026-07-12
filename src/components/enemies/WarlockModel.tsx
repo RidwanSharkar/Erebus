@@ -4,8 +4,8 @@ import React, { useRef, useEffect, useMemo } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
-import { getCachedEnemyAnimationClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
+import { useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { filterAnimationClipsForRoot, getCachedEnemyAnimationClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
 
 interface WarlockModelProps {
   isWalking: boolean;
@@ -70,18 +70,23 @@ export default React.memo(function WarlockModel({
 
   const animations = useMemo(
     () =>
-      getCachedEnemyAnimationClips('warlock', () => [
-        ...renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ),
-        ...renameAnimationClips(walkAnims, 'Walk').map(stripRootMotionXZ),
-        ...renameAnimationClips(blinkAnims, 'Blink'),
-        ...renameAnimationClips(launchAnims, 'Launch'),
-        ...renameAnimationClips(deathAnims, 'Death'),
-        ...renameAnimationClips(impactAnims, 'Impact'),
-      ]),
-    [idleAnims, walkAnims, blinkAnims, launchAnims, deathAnims, impactAnims],
+      filterAnimationClipsForRoot(
+        clonedScene,
+        getCachedEnemyAnimationClips('warlock', () => [
+          ...renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ),
+          ...renameAnimationClips(walkAnims, 'Walk').map(stripRootMotionXZ),
+          ...renameAnimationClips(blinkAnims, 'Blink'),
+          ...renameAnimationClips(launchAnims, 'Launch'),
+          ...renameAnimationClips(deathAnims, 'Death'),
+          ...renameAnimationClips(impactAnims, 'Impact'),
+        ]),
+      ),
+    [idleAnims, walkAnims, blinkAnims, launchAnims, deathAnims, impactAnims, clonedScene],
   );
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
+
+  useCleanupAnimationMixer(mixer, sceneGroupRef);
 
   const getAction = (name: 'Idle' | 'Walk' | 'Blink' | 'Launch' | 'Death' | 'Impact'): AnimationAction | null =>
     actions[name] ?? null;

@@ -1295,7 +1295,15 @@ function HomeContent() {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="text-center mb-6">
-                <h2 className="text-2xl font-bold text-yellow-400 mb-2">📜 RULEBOOK</h2>
+                <h2 className="text-2xl font-bold text-yellow-400 mb-2 flex items-center justify-center gap-2">
+                  <img
+                    src="/icons/rules.svg"
+                    alt=""
+                    className="h-7 w-7 shrink-0 object-contain"
+                    aria-hidden
+                  />
+                  RULEBOOK
+                </h2>
               </div>
 
               <div className="text-white space-y-4">

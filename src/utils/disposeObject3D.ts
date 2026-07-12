@@ -1,5 +1,24 @@
 import * as THREE from 'three';
+import type { RefObject } from 'react';
 import { useEffect } from 'react';
+
+function isSharedResource(
+  resource: { userData?: { shared?: boolean } } | null | undefined,
+): boolean {
+  return resource?.userData?.shared === true;
+}
+
+/** Skip module-level / singleton geometries marked with userData.shared. */
+export function disposeGeometrySafe(geometry: THREE.BufferGeometry | undefined): void {
+  if (!geometry || isSharedResource(geometry)) return;
+  geometry.dispose();
+}
+
+/** Skip module-level / singleton materials marked with userData.shared. */
+export function disposeMaterialSafe(material: THREE.Material | undefined): void {
+  if (!material || isSharedResource(material)) return;
+  disposeMaterial(material);
+}
 
 /**
  * Recursively dispose all geometries, materials, and textures attached to a
@@ -13,12 +32,12 @@ export function disposeObject3D(object: THREE.Object3D): void {
   object.traverse((child) => {
     if ((child as THREE.Mesh).isMesh) {
       const mesh = child as THREE.Mesh;
-      mesh.geometry?.dispose();
+      disposeGeometrySafe(mesh.geometry);
       const mat = mesh.material;
       if (Array.isArray(mat)) {
-        mat.forEach(disposeMaterial);
+        mat.forEach(disposeMaterialSafe);
       } else if (mat) {
-        disposeMaterial(mat);
+        disposeMaterialSafe(mat);
       }
     }
   });
@@ -55,4 +74,19 @@ export function useDisposeClonedMaterials(clonedScene: THREE.Object3D | null | u
     if (!clonedScene) return;
     return () => disposeClonedMaterials(clonedScene);
   }, [clonedScene]);
+}
+
+/** Stop clips and uncache the mixer root on unmount to avoid PropertyBinding warnings. */
+export function useCleanupAnimationMixer(
+  mixer: THREE.AnimationMixer | undefined,
+  rootRef: RefObject<THREE.Object3D | null>,
+): void {
+  useEffect(() => {
+    if (!mixer) return;
+    return () => {
+      mixer.stopAllAction();
+      const root = rootRef.current;
+      if (root) mixer.uncacheRoot(root);
+    };
+  }, [mixer, rootRef]);
 }

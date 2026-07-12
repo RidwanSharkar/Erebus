@@ -295,6 +295,12 @@ export class CombatSystem extends System {
     return cs?.getWrathfulShotsTempestCritOpts?.();
   }
 
+  /** Bow LMB primary projectile (uncharged, charged, perfect, Tempest burst). */
+  private isBowLmbPrimaryProjectile(source: Entity | undefined): boolean {
+    if (!source) return false;
+    return source.getComponent(Projectile)?.isBowLmbPrimary === true;
+  }
+
   /** Entropic bolts / Icebeam Wrathful Entropic — additive crit from queued damage meta. */
   private getCritCalcOptsForQueuedDamage(
     damageType: string | undefined,
@@ -922,7 +928,8 @@ export class CombatSystem extends System {
                       : {}),
                   }
                 : damageType === 'projectile' &&
-                    ((damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0) ||
+                    (this.isBowLmbPrimaryProjectile(source) ||
+                      (damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0) ||
                       damageEvent.cloudkillProc === true ||
                       damageEvent.tempestBurstArcticChill === true ||
                       damageEvent.tempestBurstWyvernZombie === true)

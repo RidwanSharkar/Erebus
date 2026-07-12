@@ -152,6 +152,7 @@ function ViperArrowTrail({
         positions[i * 3 + 2] = currentPos.z;
       }
       trailGeometry.attributes.position.needsUpdate = true;
+      trailGeometry.setDrawRange(0, Math.max(0, (MAX_TRAIL_LENGTH - 1) * 2));
     } else {
       // Ring-buffer write.
       ringHead.current = (ringHead.current + MAX_TRAIL_LENGTH - 1) % MAX_TRAIL_LENGTH;
@@ -169,6 +170,7 @@ function ViperArrowTrail({
       }
 
       trailGeometry.attributes.position.needsUpdate = true;
+      trailGeometry.setDrawRange(0, len >= 2 ? (len - 1) * 2 : 0);
     }
 
     const _head = ringHead.current;

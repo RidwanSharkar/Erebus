@@ -318,6 +318,8 @@ const BOSS2_ARCHON_LIGHTNING_HALF_WIDTH = 1.0;
 const BOSS2_ARCHON_LIGHTNING_RANGE = 14;
 /** Phase 1 perpendicular arm half-length at target (capped). */
 const BOSS2_ARCHON_LIGHTNING_CROSS_HALF_MIN = 4;
+/** Beam origin height above caster — Boss2 uses scaled WarlockModel (1.65×). */
+const BOSS2_ARCHON_LIGHTNING_SKY_Y_OFFSET = 3.0;
 const BOSS2_BLINK_COOLDOWN_MS = 8_000;
 const BOSS2_DEATH_GRASP_CAST_MS = 1_000;
 const BOSS2_DEATH_GRASP_TRAVEL_MS = 670;
@@ -446,6 +448,8 @@ const WARLOCK_ARCHON_SHOCK_WINDUP_MS = 825;
 const WARLOCK_ARCHON_SHOCK_DAMAGE = 47;
 const WARLOCK_ARCHON_SHOCK_HALF_WIDTH = 1.0;
 const WARLOCK_ARCHON_SHOCK_RANGE = 14;
+/** Camp warlock beam origin — lower than Boss2 (see BOSS2_ARCHON_LIGHTNING_SKY_Y_OFFSET). */
+const WARLOCK_ARCHON_SHOCK_SKY_Y_OFFSET = 1.85;
 
 /** Post-boss-2 unlock: all knight colors gain themed Smite (Red Smite buffed). */
 const KNIGHT_SMITE_UNLOCK_BOSS_COUNT = 2;
@@ -2858,7 +2862,7 @@ class EnemyAI {
     const ty = targetPlayer.position.y + 1.1;
     const tx = targetPlayer.position.x;
     const tz = targetPlayer.position.z;
-    const warlockSkyY = warlock.position.y + 3.0;
+    const warlockSkyY = warlock.position.y + WARLOCK_ARCHON_SHOCK_SKY_Y_OFFSET;
 
     const beams = [
       {
@@ -4260,6 +4264,7 @@ class EnemyAI {
 
     this.room.getEnemies().forEach(enemy => {
       if (enemy.id === weaver.id) return;
+      if (this.isFriendlyCombatUnit(enemy)) return;
       if (enemy.isDying || enemy.health <= 0) return;
       if (enemy.type === 'tentacle-spine') return;
       if (enemy.health >= enemy.maxHealth) return; // Already full — no point healing
@@ -4278,6 +4283,8 @@ class EnemyAI {
   }
 
   weaverCastHeal(weaver, targetEnemy) {
+    if (this.isFriendlyCombatUnit(targetEnemy)) return;
+
     const now = Date.now();
     // Face the heal target
     const dx = targetEnemy.position.x - weaver.position.x;
@@ -4303,6 +4310,7 @@ class EnemyAI {
 
       const liveEnemy = this.room?.getEnemy(targetEnemy.id);
       if (!liveEnemy || liveEnemy.isDying || liveEnemy.health <= 0) return;
+      if (this.isFriendlyCombatUnit(liveEnemy)) return;
 
       const healAmount    = 250;
       const previousHp    = liveEnemy.health;
@@ -6637,7 +6645,7 @@ class EnemyAI {
     const ty = targetPlayer.position.y + 1.1;
     const tx = targetPlayer.position.x;
     const tz = targetPlayer.position.z;
-    const bossSkyY = boss.position.y + 3.0;
+    const bossSkyY = boss.position.y + BOSS2_ARCHON_LIGHTNING_SKY_Y_OFFSET;
 
     /** @type {{ startPosition: { x: number; y: number; z: number }; targetPosition: { x: number; y: number; z: number } }[]} */
     let beams = [];

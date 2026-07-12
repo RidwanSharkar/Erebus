@@ -335,6 +335,7 @@ import PVPSummonTotemManager from '@/components/projectiles/PVPSummonTotemManage
 import { ExperienceSystem } from '@/utils/ExperienceSystem';
 import DynamicLightPool, { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import { calculationCache } from '@/utils/CalculationCache';
+import { ENEMY_HP_BAR_BG_GEO } from '@/utils/sharedEnemyUiGeometry';
 import { isDevPerformanceHudEnabled } from '@/utils/isDevPerformanceHudEnabled';
 import { devPerformanceStore, recordReactProfilerCommit } from '@/utils/devPerformanceStore';
 import { logGpuResourceAudit } from '@/utils/gpuResourceAudit';
@@ -527,6 +528,16 @@ function DevPerformanceCollector() {
 
     // Sample render + scene stats ~4x/sec.
     if (f % 15 !== 0) return;
+
+    if (f % 60 === 0) {
+      const posAttr = ENEMY_HP_BAR_BG_GEO.getAttribute('position');
+      if (!posAttr || posAttr.count < 1) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          '[gpu] ENEMY_HP_BAR_BG_GEO position buffer invalid — shared geometry may have been disposed',
+        );
+      }
+    }
 
     const info = gl.info;
     const complexity = sampleSceneComplexity(scene);
@@ -8642,6 +8653,7 @@ export function CoopGameScene({
             id: `weaver-heal-${data.weaverId}-${ts}`,
             position: pos,
           });
+          window.audioSystem?.playGreaterHealSound?.(pos);
         }, 1800);
         return;
       }
@@ -8673,6 +8685,7 @@ export function CoopGameScene({
           id: `weaver-heal-${data.weaverId}-${ts}`,
           position: liveTo,
         });
+        window.audioSystem?.playGreaterHealSound?.(liveTo);
       }, 1800);
     };
 
@@ -11681,8 +11694,6 @@ export function CoopGameScene({
 
       {/* BOSS Enemy Renderer (Co-op Mode) */}
       {engineRef.current && (enemiesByType.get('boss') ?? []).map(enemy => {
-        if (enemy.isDying) return null;
-
         // Get the local ECS entity ID for this enemy
         const entityId = serverEnemyEntities.current.get(enemy.id);
         if (!entityId) return null; // Wait for ECS sync
@@ -11727,7 +11738,6 @@ export function CoopGameScene({
 
       {/* Boss 2 Enemy Renderer (Co-op Mode) */}
       {(enemiesByType.get('boss2') ?? []).map(enemy => {
-        if (enemy.isDying) return null;
         if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
         const isTaunted = isEnemyTaunted(enemy.id);
 
@@ -11755,7 +11765,6 @@ export function CoopGameScene({
 
       {/* Boss 3 — Weaver Nexus (Co-op) */}
       {(enemiesByType.get('boss3') ?? []).map(enemy => {
-        if (enemy.isDying) return null;
         if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
         const isTaunted = isEnemyTaunted(enemy.id);
 

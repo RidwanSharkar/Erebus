@@ -24,6 +24,8 @@ export class Projectile extends Component {
   public projectileType: string; // Type of projectile (e.g., 'viper_sting', 'arrow', etc.)
   /** Co-op: stagger from talents (e.g. Stagger Shot) passed to CombatSystem on hit. */
   public staggerToAdd?: number;
+  /** Bow LMB primary (uncharged, charged, perfect, or Tempest burst) — talent proc routing. */
+  public isBowLmbPrimary?: boolean;
   /** Bow perfect-timing primary — Wrathful Shots crit (CombatSystem + Projectile). */
   public isPerfectShot?: boolean;
   /** Bow perfect shot volley id (Dual Coil shares one id per release; Arctic Sting first-hit). */
@@ -216,6 +218,13 @@ export class Projectile extends Component {
     this.startPosition.set(0, 0, 0);
     this.projectileType = 'generic';
     this.staggerToAdd = undefined;
+    this.isBowLmbPrimary = undefined;
+    this.isPerfectShot = undefined;
+    this.perfectShotVolleyId = undefined;
+    this.tempestBurstWrathful = undefined;
+    this.tempestBurstArcticChill = undefined;
+    this.tempestBurstWyvernZombie = undefined;
+    this.tempestBurstTheme = undefined;
     this.infernoCrossentropy = undefined;
     this.reaperCrossentropy = undefined;
     this.crossentropyTempest = undefined;
@@ -251,6 +260,13 @@ export class Projectile extends Component {
     clone.homingStrength = this.homingStrength;
     clone.maxTurnRate = this.maxTurnRate;
     clone.staggerToAdd = this.staggerToAdd;
+    clone.isBowLmbPrimary = this.isBowLmbPrimary;
+    clone.isPerfectShot = this.isPerfectShot;
+    clone.perfectShotVolleyId = this.perfectShotVolleyId;
+    clone.tempestBurstWrathful = this.tempestBurstWrathful;
+    clone.tempestBurstArcticChill = this.tempestBurstArcticChill;
+    clone.tempestBurstWyvernZombie = this.tempestBurstWyvernZombie;
+    clone.tempestBurstTheme = this.tempestBurstTheme;
     clone.infernoCrossentropy = this.infernoCrossentropy;
     clone.reaperCrossentropy = this.reaperCrossentropy;
     clone.crossentropyTempest = this.crossentropyTempest;

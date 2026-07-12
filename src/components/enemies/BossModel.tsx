@@ -8,6 +8,7 @@ import BonePlate from '../dragon/BonePlate';
 import AscendantBoneWings from '../dragon/AscendantBoneWings';
 import BoneTail from '../dragon/BoneTail';
 import BoneAura from '../dragon/BoneAura';
+import { disposeGeometrySafe, disposeMaterialSafe } from '@/utils/disposeObject3D';
 import DraconicWingJets from '../dragon/DraconicWingJets';
 import { WeaponType } from '../dragon/weapons';
 import BossBoneWings from './BossBoneWings';
@@ -736,15 +737,15 @@ export default function BossModel({
           if (child instanceof Mesh) {
             // Dispose geometries (but not shared ones)
             if (child.geometry && !child.geometry.userData?.shared) {
-              child.geometry.dispose();
+              disposeGeometrySafe(child.geometry);
             }
 
             // Dispose materials
             if (child.material) {
               if (Array.isArray(child.material)) {
-                child.material.forEach((material: Material) => material.dispose());
+                child.material.forEach((material: Material) => disposeMaterialSafe(material));
               } else {
-                (child.material as Material).dispose();
+                disposeMaterialSafe(child.material as Material);
               }
             }
           }

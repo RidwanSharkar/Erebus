@@ -17,6 +17,11 @@ export function filterAnimationTracksForRoot(root: Object3D, clip: AnimationClip
   return filtered;
 }
 
+/** Filter every clip in a list against the live skeleton root. */
+export function filterAnimationClipsForRoot(root: Object3D, clips: AnimationClip[]): AnimationClip[] {
+  return clips.map((clip) => filterAnimationTracksForRoot(root, clip));
+}
+
 /** Zero root-motion X/Z on Hips position tracks so server position stays authoritative. */
 export function stripRootMotionXZ(clip: AnimationClip): AnimationClip {
   const result = clip.clone();

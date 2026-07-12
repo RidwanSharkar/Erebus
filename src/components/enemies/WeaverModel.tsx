@@ -4,8 +4,8 @@ import React, { useRef, useEffect, useMemo } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
-import { getCachedEnemyAnimationClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
+import { useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { filterAnimationClipsForRoot, getCachedEnemyAnimationClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
 
 interface WeaverModelProps {
   isWalking: boolean;
@@ -76,18 +76,23 @@ export default React.memo(function WeaverModel({
 
   const animations = useMemo(
     () =>
-      getCachedEnemyAnimationClips('weaver', () => [
-        ...renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ),
-        ...renameAnimationClips(walkAnims, 'Walk').map(stripRootMotionXZ),
-        ...renameAnimationClips(castHealAnims, 'CastHeal'),
-        ...renameAnimationClips(castSummonAnims, 'CastSummon'),
-        ...renameAnimationClips(deathAnims, 'Death'),
-        ...renameAnimationClips(impactAnims, 'Impact'),
-      ]),
-    [idleAnims, walkAnims, castHealAnims, castSummonAnims, deathAnims, impactAnims],
+      filterAnimationClipsForRoot(
+        clonedScene,
+        getCachedEnemyAnimationClips('weaver', () => [
+          ...renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ),
+          ...renameAnimationClips(walkAnims, 'Walk').map(stripRootMotionXZ),
+          ...renameAnimationClips(castHealAnims, 'CastHeal'),
+          ...renameAnimationClips(castSummonAnims, 'CastSummon'),
+          ...renameAnimationClips(deathAnims, 'Death'),
+          ...renameAnimationClips(impactAnims, 'Impact'),
+        ]),
+      ),
+    [idleAnims, walkAnims, castHealAnims, castSummonAnims, deathAnims, impactAnims, clonedScene],
   );
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
+
+  useCleanupAnimationMixer(mixer, sceneGroupRef);
 
   const getAction = (name: 'Idle' | 'Walk' | 'CastHeal' | 'CastSummon' | 'Death' | 'Impact'): AnimationAction | null =>
     actions[name] ?? null;

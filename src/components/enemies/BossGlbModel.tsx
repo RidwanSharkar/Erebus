@@ -14,7 +14,8 @@ import {
   PointLight,
 } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { filterAnimationClipsForRoot } from '@/utils/enemyAnimationClipCache';
 
 // Target ≈ 2+ units — tune if asset scale differs
 const SCALE = 0.0205;
@@ -192,7 +193,7 @@ export default function BossGlbModel({
       return clip;
     };
 
-    return [
+    return filterAnimationClipsForRoot(clonedScene, [
       ...rename(idleAnims, 'Idle').map(stripRootMotionXZ),
       ...rename(walkAnims, 'Walk').map(stripRootMotionXZ),
       ...rename(atk1, 'Attack0').map(stripRootMotionXZ),
@@ -202,10 +203,12 @@ export default function BossGlbModel({
       ...rename(jumpAnims, 'TectonicJump').map(stripRootMotionXZ),
       ...rename(impactAnims, 'Impact').map(stripRootMotionXZ),
       ...rename(deathAnims, 'Death').map(stripRootMotionXZ),
-    ];
-  }, [idleAnims, walkAnims, atk1, atk2, throwAnims, leapAnims, jumpAnims, impactAnims, deathAnims]);
+    ]);
+  }, [idleAnims, walkAnims, atk1, atk2, throwAnims, leapAnims, jumpAnims, impactAnims, deathAnims, clonedScene]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
+
+  useCleanupAnimationMixer(mixer, sceneGroupRef);
 
   const getAction = (name: string): AnimationAction | null => actions[name] ?? null;
 
