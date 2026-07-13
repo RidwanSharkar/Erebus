@@ -2,7 +2,7 @@
 import { Component } from '../Entity';
 import { Shield } from './Shield';
 
-export type InvulnerabilitySource = 'none' | 'aegis' | 'hit_iframe' | 'other';
+export type InvulnerabilitySource = 'none' | 'aegis' | 'dodge' | 'hit_iframe' | 'other';
 
 export class Health extends Component {
   public static readonly componentType = 'Health'; // Explicit type identifier
@@ -167,6 +167,10 @@ export class Health extends Component {
 
   public isAegisInvulnerable(): boolean {
     return this.isInvulnerable && this.invulnerabilitySource === 'aegis';
+  }
+
+  public isDodgeInvulnerable(): boolean {
+    return this.isInvulnerable && this.invulnerabilitySource === 'dodge';
   }
 
   public removeInvulnerability(): void {

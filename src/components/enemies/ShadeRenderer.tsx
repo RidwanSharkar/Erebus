@@ -331,7 +331,7 @@ function ShadeRenderer({
               fontSize={0.18}
               color={theme.text}
             />
-            <EnemyStaggerBar stagger={staggerBuildup} />
+            <EnemyStaggerBar enemyId={id} stagger={staggerBuildup} />
           </>
         )}
       </Billboard>

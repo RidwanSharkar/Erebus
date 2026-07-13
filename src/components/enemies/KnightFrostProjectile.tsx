@@ -4,6 +4,7 @@ import { useRef, useMemo, useLayoutEffect, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, Mesh, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import EntropicBoltTrail from '@/components/projectiles/EntropicBoltTrail';
 
 interface KnightFrostProjectileProps {
   startPosition: Vector3;
@@ -11,6 +12,9 @@ interface KnightFrostProjectileProps {
   travelMs: number;
   onComplete: () => void;
 }
+
+const trailColor = new Color('#0ea5e9');
+const trailAccent = new Color('#cffafe');
 
 export default function KnightFrostProjectile({
   startPosition,
@@ -23,9 +27,9 @@ export default function KnightFrostProjectile({
   const startTimeRef = useRef<number | null>(null);
   const doneRef = useRef(false);
   const endFixedRef = useRef(endPosition.clone());
+  const dirRef = useRef(new Vector3(0, 0, -1));
 
-  // Borrow a pooled point light that follows the projectile (replaces a mounted <pointLight>).
-  const projectileLight = useDynamicLight({ color: new Color('#7dd3fc'), distance: 10, decay: 2, priority: 1 });
+  const projectileLight = useDynamicLight({ color: '#38bdf8', distance: 6.5, priority: 1 });
 
   const coreMat = useMemo(
     () =>
@@ -61,57 +65,16 @@ export default function KnightFrostProjectile({
     [],
   );
 
-  const trail1Mat = useMemo(
-    () =>
-      new MeshBasicMaterial({
-        color: new Color('#bae6fd'),
-        transparent: true,
-        opacity: 0.5,
-        blending: AdditiveBlending,
-        depthWrite: false,
-      }),
-    [],
-  );
-  const trail2Mat = useMemo(
-    () =>
-      new MeshBasicMaterial({
-        color: new Color('#7dd3fc'),
-        transparent: true,
-        opacity: 0.35,
-        blending: AdditiveBlending,
-        depthWrite: false,
-      }),
-    [],
-  );
-  const trail3Mat = useMemo(
-    () =>
-      new MeshBasicMaterial({
-        color: new Color('#38bdf8'),
-        transparent: true,
-        opacity: 0.22,
-        blending: AdditiveBlending,
-        depthWrite: false,
-      }),
-    [],
-  );
-  const trail4Mat = useMemo(
-    () =>
-      new MeshBasicMaterial({
-        color: new Color('#0284c7'),
-        transparent: true,
-        opacity: 0.12,
-        blending: AdditiveBlending,
-        depthWrite: false,
-      }),
-    [],
-  );
-
   useEffect(() => {
-    const mats = [coreMat, midMat, auraMat, trail1Mat, trail2Mat, trail3Mat, trail4Mat];
+    const mats = [coreMat, midMat, auraMat];
     return () => { mats.forEach((m) => m.dispose()); };
-  }, [coreMat, midMat, auraMat, trail1Mat, trail2Mat, trail3Mat, trail4Mat]);
+  }, [coreMat, midMat, auraMat]);
 
   useLayoutEffect(() => {
+    const d = endPosition.clone().sub(startPosition);
+    const len = d.length();
+    if (len > 1e-4) dirRef.current.copy(d).multiplyScalar(1 / len);
+
     if (!groupRef.current) return;
     const dx = endPosition.x - startPosition.x;
     const dz = endPosition.z - startPosition.z;
@@ -128,10 +91,9 @@ export default function KnightFrostProjectile({
 
     groupRef.current.position.lerpVectors(startPosition, endFixedRef.current, k);
 
-    // Drive the pooled light at the projectile's world position.
     const gp = groupRef.current.position;
     projectileLight.current?.setPosition(gp.x, gp.y, gp.z);
-    projectileLight.current?.setIntensity(14);
+    projectileLight.current?.setIntensity(16);
 
     if (spinRef.current) {
       spinRef.current.rotation.y += delta * 5;
@@ -141,44 +103,38 @@ export default function KnightFrostProjectile({
     const pulse = 0.85 + Math.sin(elapsed * 0.012) * 0.15;
     coreMat.opacity = 0.92 * pulse;
     midMat.opacity = 0.65 * pulse;
-    const trailFade = 1 - k * 0.35;
-    trail1Mat.opacity = 0.5 * trailFade;
-    trail2Mat.opacity = 0.35 * trailFade;
-    trail3Mat.opacity = 0.22 * trailFade;
-    trail4Mat.opacity = 0.12 * trailFade;
 
     if (k >= 1 && !doneRef.current) {
       doneRef.current = true;
+      projectileLight.current?.setIntensity(0);
       onComplete();
     }
   });
 
   return (
-    <group ref={groupRef} position={startPosition.clone()}>
-      <group ref={spinRef}>
-        <mesh material={auraMat}>
-          <sphereGeometry args={[0.42, 12, 12]} />
-        </mesh>
-        <mesh material={midMat}>
-          <sphereGeometry args={[0.28, 12, 12]} />
-        </mesh>
-        <mesh material={coreMat}>
-          <sphereGeometry args={[0.14, 10, 10]} />
-        </mesh>
+    <>
+      <EntropicBoltTrail
+        color={trailColor}
+        accentColor={trailAccent}
+        size={0.075}
+        meshRef={groupRef}
+        opacity={0.95}
+        flightDirectionRef={dirRef}
+      />
+      <group ref={groupRef} position={startPosition.clone()}>
+        <group ref={spinRef}>
+          <mesh material={auraMat}>
+            <sphereGeometry args={[0.42, 12, 12]} />
+          </mesh>
+          <mesh material={midMat}>
+            <sphereGeometry args={[0.28, 12, 12]} />
+          </mesh>
+          <mesh material={coreMat}>
+            <sphereGeometry args={[0.14, 10, 10]} />
+          </mesh>
+        </group>
       </group>
-      <mesh material={trail1Mat} position={[0, 0, -0.85]}>
-        <sphereGeometry args={[0.22, 8, 8]} />
-      </mesh>
-      <mesh material={trail2Mat} position={[0, 0, -1.5]}>
-        <sphereGeometry args={[0.16, 7, 7]} />
-      </mesh>
-      <mesh material={trail3Mat} position={[0, 0, -2.15]}>
-        <sphereGeometry args={[0.1, 6, 6]} />
-      </mesh>
-      <mesh material={trail4Mat} position={[0, 0, -2.75]}>
-        <sphereGeometry args={[0.06, 5, 5]} />
-      </mesh>
-    </group>
+    </>
   );
 }
 

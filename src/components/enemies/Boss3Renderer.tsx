@@ -379,7 +379,7 @@ function Boss3Renderer({
               fontSize={0.18}
               color={theme.text}
             />
-            <EnemyStaggerBar stagger={staggerBuildup} staggerMax={STAGGER_MAX_BOSS} />
+            <EnemyStaggerBar enemyId={id} stagger={staggerBuildup} staggerMax={STAGGER_MAX_BOSS} />
           </>
         )}
       </Billboard>

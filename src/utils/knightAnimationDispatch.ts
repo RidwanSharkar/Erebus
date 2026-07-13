@@ -1,4 +1,5 @@
 import type { Socket } from 'socket.io-client';
+import { registerKnightBlock } from '@/utils/knightBlockState';
 
 export type KnightDashPayload = {
   knightId: string;
@@ -21,6 +22,7 @@ export type KnightBlockTelegraphPayload = {
   knightId: string;
   durationMs: number;
   startBlockMs?: number;
+  timestamp?: number;
 };
 
 export type KnightAnimationHandlers = {
@@ -93,6 +95,7 @@ export function registerKnightAnimationSocketListeners(socket: Socket): () => vo
     dispatch(data.knightId, 'onDeathGraspTelegraph', data);
   };
   const onBlockTelegraph = (data: KnightBlockTelegraphPayload) => {
+    registerKnightBlock(data.knightId, data.durationMs, data.timestamp ?? Date.now());
     dispatch(data.knightId, 'onBlockTelegraph', data);
   };
 

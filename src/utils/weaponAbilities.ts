@@ -50,6 +50,11 @@ const ALL_WEAPONS: WeaponType[] = [
   WeaponType.SPEAR,
 ];
 
+/** Coop throne weapons except Sabres (native R = Divebomb). */
+const ALL_WEAPONS_EXCEPT_SABRES: WeaponType[] = ALL_WEAPONS.filter(
+  (weapon) => weapon !== WeaponType.SABRES,
+);
+
 /** Flat pool of every ability available for the universal loadout (Q/E/R slots) */
 export const universalAbilityPool: UniversalAbility[] = [
 
@@ -136,7 +141,7 @@ export const universalAbilityPool: UniversalAbility[] = [
     id: 'SCYTHE_E', sourceWeapon: WeaponType.SCYTHE, sourceKey: 'E',
     name: 'Coldsnap', cooldown: 12.0, icon: '/icons/coldsnap.svg',
     description: 'Conjures an explosive ice vortex that applies FREEZE to enemies, immobilizing them for 6 seconds.',
-    allowedWeapons: ALL_WEAPONS,
+    allowedWeapons: ALL_WEAPONS_EXCEPT_SABRES,
   },
   {
     id: 'SCYTHE_R', sourceWeapon: WeaponType.SCYTHE, sourceKey: 'R',
@@ -200,7 +205,7 @@ export const universalAbilityPool: UniversalAbility[] = [
     id: 'SPEAR_R', sourceWeapon: WeaponType.SPEAR, sourceKey: 'R',
     name: 'Lightning Bolt', cooldown: 3.0, icon: '/icons/lightningBolt.svg',
     description: `Calls down a lightning bolt on a random enemy within range, dealing ${LIGHTNING_BOLT_ROOM_DAMAGE} + ${LIGHTNING_BOLT_ROOM_DAMAGE_PER_AGILITY} damage per point of AGILITY and applying ${LIGHTNING_BOLT_ROOM_STAGGER} stagger.`,
-    allowedWeapons: ALL_WEAPONS,
+    allowedWeapons: ALL_WEAPONS_EXCEPT_SABRES,
   },
   {
     id: 'SPEAR_F', sourceWeapon: WeaponType.SPEAR, sourceKey: 'F',
@@ -214,19 +219,19 @@ export const universalAbilityPool: UniversalAbility[] = [
     id: 'RAISE_DEAD', sourceWeapon: WeaponType.NONE, sourceKey: 'R',
     name: 'Raise Dead', cooldown: 15.0, icon: '/icons/raiseDead.svg',
     description: 'Instantly summons one allied zombie at your position. Subject to the 3-zombie cap; benefits from all owned zombie boons.',
-    allowedWeapons: ALL_WEAPONS,
+    allowedWeapons: ALL_WEAPONS_EXCEPT_SABRES,
   },
   {
     id: 'METEOR_STRIKE', sourceWeapon: WeaponType.NONE, sourceKey: 'R',
     name: 'Meteor', cooldown: 8.0, icon: '/icons/meteorStrike.svg',
     description: 'Calls down 1 meteor on the nearest enemy within range, with a 15% chance to call a second and a 5% chance to call a third. Meteors deal 240 AoE damage.',
-    allowedWeapons: ALL_WEAPONS,
+    allowedWeapons: ALL_WEAPONS_EXCEPT_SABRES,
   },
   {
     id: 'AEGIS_ROOM', sourceWeapon: WeaponType.NONE, sourceKey: 'R',
     name: 'Aegis', cooldown: 8.0, icon: '/icons/aegis.svg',
     description: 'Creates a protective barrier that blocks all incoming damage for 3 seconds.',
-    allowedWeapons: ALL_WEAPONS,
+    allowedWeapons: ALL_WEAPONS_EXCEPT_SABRES,
   },
 ];
 

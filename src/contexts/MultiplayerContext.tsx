@@ -16,6 +16,7 @@ import { applyEnemyMoveBatch, type EnemyLiveTransform } from '@/utils/enemyLiveT
 import { applyPlayerMove, type PlayerLiveTransform } from '@/utils/playerLiveTransform';
 import { patchEnemyRef, patchPlayerRef } from '@/utils/multiplayerRefPatch';
 import { buildMushroomInstances, getMushroomColliderCenter } from '@/utils/mushroomLayout';
+import { clearKnightBlock } from '@/utils/knightBlockState';
 
 export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'merchant' | 'boss';
 export type CoopTerrainTheme = 'purple' | 'blue' | 'green';
@@ -2085,6 +2086,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     addEventHandler('enemy-removed', (data) => {
       const id = data?.enemyId;
       if (typeof id !== 'string' || !id) return;
+      clearKnightBlock(id);
       pendingEnemyRemovalsRef.current.add(id);
       // Prune throttle maps so they don't accumulate stale entries
       delete lastEnemyMoveUpdate.current[id];

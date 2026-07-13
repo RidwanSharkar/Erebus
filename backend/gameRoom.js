@@ -31,7 +31,7 @@ const KNIGHT_SOUL_TYPES = ['red', 'blue', 'purple', 'green'];
 /** Max freeze duration (ms) for boss-tier enemies (server + client). */
 const BOSS_MAX_FREEZE_MS = 1000;
 const ENTANGLEMENT_DURATION_MS = 5000;
-const ENTANGLEMENT_DAMAGE_PER_SECOND = 20;
+const ENTANGLEMENT_DAMAGE_PER_SECOND = 31;
 /** Keep in sync with `STAGGER_MAX` / `STAGGER_MAX_BOSS` in `src/utils/talents.ts`. */
 const STAGGER_CAP_NORMAL = 100;
 const STAGGER_CAP_BOSS = 300;
@@ -92,7 +92,7 @@ const WYVERN_VENOM_MAX_STACKS = 5;
 const LETHAL_INJECTION_VENOM_MAX_STACKS = 10;
 const WYVERN_VENOM_DURATION_MS = 8000;
 /** Keep in sync with `STORM_SHIELD_BASE_RESTORE` in src/utils/talents.ts */
-const STORM_SHIELD_BASE_RESTORE = 20;
+const STORM_SHIELD_BASE_RESTORE = 30;
 /** Keep in sync with `STORM_SHIELD_AGILITY_PER_POINT` in src/utils/talents.ts */
 const STORM_SHIELD_AGILITY_PER_POINT = 5;
 /** Keep in sync with `PYROMANIA_METEOR_ICD_MS` in src/utils/talents.ts */
@@ -635,7 +635,7 @@ class GameRoom {
       this._addConcentratedVenomStacks(enemyId, STORM_WITCH_VENOM_STACKS, fromPlayerId);
     }
 
-    if (this.io && afterEnemy) {
+    if (this.io && afterEnemy && procResult) {
       this.io.to(this.roomId).emit('enemy-stagger-proc', {
         enemyId,
         position: { x: afterEnemy.position.x, y: afterEnemy.position.y, z: afterEnemy.position.z },

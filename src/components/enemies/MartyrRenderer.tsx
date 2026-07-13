@@ -175,7 +175,7 @@ function MartyrRenderer({
               fontSize={0.15}
               color="#ffcc99"
             />
-            <EnemyStaggerBar stagger={staggerBuildup} />
+            <EnemyStaggerBar enemyId={id} stagger={staggerBuildup} />
           </>
         )}
       </Billboard>

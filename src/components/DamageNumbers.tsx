@@ -19,6 +19,10 @@ const getDamageNumberDuration = (damageData: DamageNumberData) => {
   return OUTGOING_DAMAGE_DURATION_MS;
 };
 
+function isHealDamageType(type?: string): boolean {
+  return type === 'healing' || (!!type && type.endsWith('_healing'));
+}
+
 const getStableScreenJitter = (id: string, amplitudePx: number) => {
   let hash = 0;
   for (let i = 0; i < id.length; i += 1) {
@@ -157,6 +161,10 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
           damageData.displayText
             ? damageData.damageType === 'aegis_blocked'
               ? 'text-sky-200 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(56,189,248,0.95)] tracking-widest'
+              : damageData.damageType === 'dodge_blocked'
+              ? 'text-emerald-200 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(52,211,153,0.95)] tracking-widest'
+              : damageData.damageType === 'knight_blocked'
+              ? 'text-slate-200 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(203,213,225,0.95)] tracking-widest'
               : 'text-slate-200 text-lg font-bold'
             : damageData.isIncomingDamage
             ? // Incoming damage: red for all damage
@@ -170,15 +178,7 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
                 ? 'text-amber-200 text-2xl font-black tracking-wide drop-shadow-[0_0_12px_rgba(251,191,36,0.95)]'
                 : damageData.damageType === 'crossentropy'
                 ? 'text-orange-400'
-                :               damageData.damageType === 'healing' ||
-                  damageData.damageType === 'reanimate_healing' ||
-                  damageData.damageType === 'smite_healing' ||
-                  damageData.damageType === 'viper_sting_healing' ||
-                  damageData.damageType === 'summon_totem_healing' ||
-                  damageData.damageType === 'rejuvenating_shot_healing' ||
-                  damageData.damageType === 'flurry_healing' ||
-                  damageData.damageType === 'merchant_healing' ||
-                  damageData.damageType === 'healing_stream_healing'
+                : isHealDamageType(damageData.damageType)
                 ? 'text-green-400 text-lg font-extrabold'
                 : damageData.damageType === 'colossus_strike' ||
                   damageData.damageType === 'lightning_storm'
@@ -231,30 +231,14 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
               </span>
             )}
             {damageData.isIncomingDamage && '-'}
-            {(damageData.damageType === 'healing' ||
-              damageData.damageType === 'reanimate_healing' ||
-              damageData.damageType === 'smite_healing' ||
-              damageData.damageType === 'viper_sting_healing' ||
-              damageData.damageType === 'summon_totem_healing' ||
-              damageData.damageType === 'rejuvenating_shot_healing' ||
-              damageData.damageType === 'flurry_healing' ||
-              damageData.damageType === 'merchant_healing' ||
-              damageData.damageType === 'healing_stream_healing' ||
+            {(isHealDamageType(damageData.damageType) ||
               damageData.damageType === 'experience_gain' ||
               damageData.damageType === 'gold_pickup') && '+'}
             {damageData.damageType === 'experience_gain' ? (
               <>{Math.round(damageData.damage)} XP</>
             ) : damageData.damageType === 'gold_pickup' ? (
               <>{Math.round(damageData.damage)}</>
-            ) : damageData.damageType === 'healing' ||
-             damageData.damageType === 'reanimate_healing' ||
-             damageData.damageType === 'smite_healing' ||
-             damageData.damageType === 'viper_sting_healing' ||
-             damageData.damageType === 'summon_totem_healing' ||
-             damageData.damageType === 'rejuvenating_shot_healing' ||
-             damageData.damageType === 'flurry_healing' ||
-             damageData.damageType === 'merchant_healing' ||
-             damageData.damageType === 'healing_stream_healing'
+            ) : isHealDamageType(damageData.damageType)
               ? Math.round(damageData.damage)
               : damageData.damage}
             {damageData.isCritical && '!'}

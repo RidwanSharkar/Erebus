@@ -71,7 +71,7 @@ const KNIGHT_SPIN_CAST_RANGE = 4.5;
 const KNIGHT_SPIN_CHARGE_MS = 500;
 const KNIGHT_SPIN_DISTANCE = 4.5;
 const KNIGHT_SPIN_TRAVEL_MS = 400; // 31 frames at 30fps
-const KNIGHT_SPIN_DAMAGE = 20;
+const KNIGHT_SPIN_DAMAGE = 18;
 const KNIGHT_SPIN_STRIP_HALF_WIDTH = 0.75;
 
 // Knight / templar / ghoul / martyr / titan: ring goals + peer separation (radii match client CoopGameScene hit spheres).
@@ -153,9 +153,9 @@ const ALLIED_KNIGHT_PROTECTIVE_THREAT_TTL_MS = 15000;
 const ALLIED_KNIGHT_PROTECTIVE_THREAT_DECAY_PER_SEC = 0.85;
 const ALLIED_KNIGHT_PROTECTIVE_OVERRIDE_DAMAGE = 50;
 const ALLIED_KNIGHT_ORB_COUNT = 3;
-const ALLIED_KNIGHT_SMITE_ORB_COST = 1;
+const ALLIED_KNIGHT_SMITE_ORB_COST = 2;
 const ALLIED_KNIGHT_SMITE_COOLDOWN_MS = 5000;
-const ALLIED_KNIGHT_ORB_RECHARGE_MS = 5000;
+const ALLIED_KNIGHT_ORB_RECHARGE_MS = 4000;
 const ALLIED_KNIGHT_SMITE_LOCK_MS = 1200;
 const ALLIED_KNIGHT_SMITE_IMPACT_DELAY_MS = 900;
 const ALLIED_KNIGHT_SMITE_CAST_RANGE = 3.6;
@@ -465,12 +465,12 @@ const KNIGHT_STORM_LASH_VFX_SCALE = 0.75;
 const KNIGHT_SMITE_IMPACT_DELAY_MS = 900;
 const KNIGHT_SMITE_RADIUS_BASE = 2.8;
 const KNIGHT_SMITE_RADIUS_POST_BOSS2 = 3.0;
-const KNIGHT_SMITE_DAMAGE_PRE_BOSS2 = { red: 60 };
+const KNIGHT_SMITE_DAMAGE_PRE_BOSS2 = { red: 48 };
 const KNIGHT_SMITE_DAMAGE_POST_BOSS2 = {
-  red: 95,
-  blue: 85,
-  green: 80,
-  purple: 90,
+  red: 96,
+  blue: 82,
+  green: 68,
+  purple: 72,
 };
 
 /** Knight Block — reactive invuln after taking damage; elite Boss1 knights use HP thresholds. */
@@ -672,6 +672,7 @@ class EnemyAI {
 
     // Blue: Storm Lash channeled lightning zaps (timeout handles cleared on death)
     this.knightStormLashTimeouts = new Map(); // enemyId -> handle[]
+    this.knightStormLashActiveUntil = new Map(); // enemyId -> channel expiry timestamp
 
     // Knight Block — reactive invuln / elite HP-threshold blocks
     this.knightBlockCooldown = new Map(); // enemyId -> lastBlockTime (regular color-tier)
@@ -1314,7 +1315,18 @@ class EnemyAI {
     const now = Date.now();
 
     const lockUntil = this.meleeLockUntil.get(knight.id) || 0;
-    if (now < lockUntil) return;
+    if (now < lockUntil) {
+      const shouldTrackFacing =
+        this.isKnightBlocking(knight.id) ||
+        this.isKnightStormLashing(knight.id);
+
+      if (shouldTrackFacing) {
+        const tpos = this.combatTargetPosition(resolved);
+        this._smoothRotateEnemyTowardPoint(knight, tpos);
+        this._queueMoveIfChanged(knight.id, knight.position, knight.rotation);
+      }
+      return;
+    }
 
     if (this.tryKnightBlock(knight, now)) return;
 
@@ -2036,6 +2048,17 @@ class EnemyAI {
     const knightId = knight.id;
     this.meleeLockUntil.set(knightId, now + durationMs);
     this.knightBlockActiveUntil.set(knightId, now + durationMs);
+
+    const aggroData = this.enemyAggro.get(knightId);
+    if (aggroData) {
+      const players = this.room?.getPlayers() || [];
+      const resolved = this.resolveAggroCombatTarget(aggroData, knight, players);
+      if (resolved) {
+        const tpos = this.combatTargetPosition(resolved);
+        this._smoothRotateEnemyTowardPoint(knight, tpos, { instant: true });
+      }
+    }
+
     this._queueMove(knightId, knight.position, knight.rotation);
     if (this.io) {
       this.io.to(this.roomId).emit('knight-block-telegraph', {
@@ -2050,6 +2073,11 @@ class EnemyAI {
 
   isKnightBlocking(enemyId) {
     const until = this.knightBlockActiveUntil.get(enemyId);
+    return !!until && Date.now() < until;
+  }
+
+  isKnightStormLashing(enemyId) {
+    const until = this.knightStormLashActiveUntil.get(enemyId);
     return !!until && Date.now() < until;
   }
 
@@ -2236,6 +2264,7 @@ class EnemyAI {
     const FROST_CAST_LAUNCH_MS = 1000; // half of 2 s cast; matches client FROST_DURATION
     const FROST_PROJECTILE_TRAVEL_MS = 550;
     const FROST_HIT_RADIUS = 1.35; // XZ — dash out of this to dodge
+    const FROST_RAY_FREEZE_MS = 2000;
 
     const fdx = targetPlayer.position.x - knight.position.x;
     const fdz = targetPlayer.position.z - knight.position.z;
@@ -2302,13 +2331,13 @@ class EnemyAI {
           const distXZ = Math.sqrt(dx * dx + dz * dz);
 
           if (distXZ <= FROST_HIT_RADIUS) {
-            this.room?.applyPlayerStatusEffect(currentTarget.id, 'freeze', 3500);
+            this.room?.applyPlayerStatusEffect(currentTarget.id, 'freeze', FROST_RAY_FREEZE_MS);
             if (this.io) {
               this.io.to(this.roomId).emit('knight-frost', {
                 knightId,
                 targetPlayerId: currentTarget.id,
                 damage: 17,
-                slowDuration: 3500,
+                slowDuration: FROST_RAY_FREEZE_MS,
                 targetPosition: {
                   x: currentTarget.position.x,
                   y: currentTarget.position.y + 1.0,
@@ -2338,19 +2367,17 @@ class EnemyAI {
     const knightId = knight.id;
     const targetId = targetPlayer.id;
     const BEAM_Y = knight.position.y + 1.1;
+    const now = Date.now();
 
-    const fdx = targetPlayer.position.x - knight.position.x;
-    const fdz = targetPlayer.position.z - knight.position.z;
-    if (fdx !== 0 || fdz !== 0) {
-      knight.rotation = Math.atan2(fdx, fdz);
-    }
+    this.knightStormLashActiveUntil.set(knightId, now + KNIGHT_STORM_LASH_DURATION_MS);
+    this._smoothRotateEnemyTowardPoint(knight, targetPlayer.position, { instant: true });
 
     if (this.io) {
       this._queueMove(knight.id, knight.position, knight.rotation);
       this.io.to(this.roomId).emit('knight-stormlash-telegraph', {
         knightId,
         targetPlayerId: targetId,
-        timestamp: Date.now(),
+        timestamp: now,
       });
     }
     _enemyAiLog(`🔵⚡ Blue Knight ${knightId} channeling Storm Lash at player ${targetId}!`);
@@ -2374,6 +2401,10 @@ class EnemyAI {
         const players = this.room?.getPlayers();
         const liveTarget = players?.find(p => p.id === targetId);
         if (!liveTarget || liveTarget.health <= 0) return;
+
+        this._smoothRotateEnemyTowardPoint(liveKnight, liveTarget.position, { instant: true });
+        this._queueMove(liveKnight.id, liveKnight.position, liveKnight.rotation);
+        this._flushMoves();
 
         const ax = liveKnight.position.x;
         const az = liveKnight.position.z;
@@ -7227,49 +7258,44 @@ class EnemyAI {
     return closestPlayer;
   }
 
-  // Update boss rotation to face target (called even when stationary)
-  updateBossRotation(boss, targetPlayer) {
-    if (!targetPlayer) return;
-    
-    // Calculate direction vector
-    const direction = {
-      x: targetPlayer.position.x - boss.position.x,
-      y: 0, // Keep enemies on ground
-      z: targetPlayer.position.z - boss.position.z
-    };
-    
-    // Normalize direction
-    const magnitude = Math.sqrt(direction.x * direction.x + direction.z * direction.z);
-    if (magnitude === 0) return;
-    
-    direction.x /= magnitude;
-    direction.z /= magnitude;
-    
-    // Calculate target rotation to face target
-    const targetRotation = Math.atan2(direction.x, direction.z);
-    
-    // Get current rotation (initialize if needed)
-    const currentRotation = boss.rotation || 0;
-    
-    // Calculate rotation difference and normalize to [-PI, PI]
+  /** Smoothly (or instantly) rotate an enemy on the XZ plane to face a world point. */
+  _smoothRotateEnemyTowardPoint(enemy, targetPos, options = {}) {
+    const { instant = false } = options;
+    if (!enemy || !targetPos) return false;
+
+    const dx = targetPos.x - enemy.position.x;
+    const dz = targetPos.z - enemy.position.z;
+    const magnitude = Math.hypot(dx, dz);
+    if (magnitude === 0) return false;
+
+    const targetRotation = Math.atan2(dx, dz);
+    const currentRotation = enemy.rotation || 0;
+
     let rotationDiff = targetRotation - currentRotation;
     while (rotationDiff > Math.PI) rotationDiff -= Math.PI * 2;
     while (rotationDiff < -Math.PI) rotationDiff += Math.PI * 2;
-    
-    // Smooth rotation interpolation (4.0 rotation speed like Ascendant)
-    const deltaTime = this.updateInterval / 1000; // Convert to seconds
-    const rotationSpeed = 4.0; // Radians per second
-    const rotationStep = rotationDiff * Math.min(1, rotationSpeed * deltaTime);
-    
-    // Apply smooth rotation
-    boss.rotation = currentRotation + rotationStep;
-    
-    // Normalize final rotation to [-PI, PI]
-    while (boss.rotation > Math.PI) boss.rotation -= Math.PI * 2;
-    while (boss.rotation < -Math.PI) boss.rotation += Math.PI * 2;
-    
-    // Broadcast rotation update to all players
-    this._queueMoveIfChanged(boss.id, boss.position, boss.rotation);
+
+    if (instant) {
+      enemy.rotation = targetRotation;
+    } else {
+      const deltaTime = this.updateInterval / 1000;
+      const rotationSpeed = 4.0;
+      const rotationStep = rotationDiff * Math.min(1, rotationSpeed * deltaTime);
+      enemy.rotation = currentRotation + rotationStep;
+    }
+
+    while (enemy.rotation > Math.PI) enemy.rotation -= Math.PI * 2;
+    while (enemy.rotation < -Math.PI) enemy.rotation += Math.PI * 2;
+
+    return true;
+  }
+
+  // Update boss rotation to face target (called even when stationary)
+  updateBossRotation(boss, targetPlayer) {
+    if (!targetPlayer) return;
+    if (this._smoothRotateEnemyTowardPoint(boss, targetPlayer.position)) {
+      this._queueMoveIfChanged(boss.id, boss.position, boss.rotation);
+    }
   }
 
   getMeleeBodyRadius(type) {
@@ -9470,6 +9496,7 @@ class EnemyAI {
       for (const h of stormLashHandles) clearTimeout(h);
     }
     this.knightStormLashTimeouts.delete(enemyId);
+    this.knightStormLashActiveUntil.delete(enemyId);
     this.clearKnightDeathGraspTimers(enemyId);
     this.knightBlockCooldown.delete(enemyId);
     this.knightBlockActiveUntil.delete(enemyId);

@@ -273,7 +273,7 @@ function GhoulRenderer({
               fontSize={0.16}
               color="#ffccaa"
             />
-            <EnemyStaggerBar stagger={staggerBuildup} />
+            <EnemyStaggerBar enemyId={id} stagger={staggerBuildup} />
           </>
         )}
       </Billboard>

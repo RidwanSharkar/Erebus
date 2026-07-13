@@ -181,7 +181,7 @@ function GreedRenderer({
               fontSize={0.16}
               color={theme.text}
             />
-            <EnemyStaggerBar stagger={staggerBuildup} />
+            <EnemyStaggerBar enemyId={id} stagger={staggerBuildup} />
           </>
         )}
       </Billboard>

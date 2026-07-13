@@ -221,7 +221,7 @@ function ZombieRenderer({
               fontSize={0.16}
               color="#ccffcc"
             />
-            <EnemyStaggerBar stagger={staggerBuildup} />
+            <EnemyStaggerBar enemyId={id} stagger={staggerBuildup} />
           </>
         )}
       </Billboard>

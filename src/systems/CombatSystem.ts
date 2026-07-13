@@ -41,6 +41,7 @@ import {
   getConcentratedVenomMaxStacks,
 } from '@/utils/talents';
 import { DamageNumberManager } from '@/utils/DamageNumberManager';
+import { addEnemyHitDamageNumber } from '@/utils/enemyDamageNumber';
 import { ImpactEffectManager } from '@/utils/ImpactEffectManager';
 import type { ImpactEffectEvent } from '@/utils/ImpactEffectManager';
 import { Projectile } from '@/ecs/components/Projectile';
@@ -266,7 +267,6 @@ export class CombatSystem extends System {
     const healPosition = playerTransform
       ? playerTransform.getWorldPosition().clone().add(new Vector3(0, 1.5, 0))
       : new Vector3(0, 1.5, 0);
-    this.damageNumberManager.addDamageNumber(healingAmount, false, healPosition, 'healing');
     controlSystem?.broadcastRoomBoonHealing?.(healingAmount, 'room_boon_bloodleech', healPosition);
   }
 
@@ -1193,15 +1193,17 @@ export class CombatSystem extends System {
           if (damageType === 'sabre_right' || damageType === 'sabres_right') position.x += 0.3;
           else if (damageType === 'sabre_left' || damageType === 'sabres_left') position.x -= 0.3;
           const dualCoilSlot = this.applyDualCoilDamageNumberLateral(position, source);
-          this.damageNumberManager.addDamageNumber(
-            displayDamage,
-            damageResult.isCritical,
+          addEnemyHitDamageNumber(this.damageNumberManager, {
+            enemyId: target.userData?.serverEnemyId as string | undefined,
+            enemyType: target.userData?.coopServerEnemyType as string | undefined,
+            damage: displayDamage,
+            isCritical: damageResult.isCritical,
             position,
             damageType,
-            undefined,
-            damageType === 'barrage' || damageType === 'entropic' ? target.id : undefined,
-            dualCoilSlot
-          );
+            mergeBarrageTargetEntityId:
+              damageType === 'barrage' || damageType === 'entropic' ? target.id : undefined,
+            dualCoilSlot,
+          });
         }
       }
 
@@ -1818,6 +1820,22 @@ export class CombatSystem extends System {
         typeof window !== 'undefined'
       ) {
         window.dispatchEvent(new CustomEvent('aegis-block'));
+      }
+    } else if (actualDamage > 0 && health.isDodgeInvulnerable()) {
+      const transform = target.getComponent(Transform);
+      if (transform) {
+        const position = transform.getWorldPosition().clone();
+        position.y -= 0.5;
+        this.damageNumberManager.addDamageNumber(
+          0,
+          false,
+          position,
+          'dodge_blocked',
+          true,
+          undefined,
+          undefined,
+          'DODGE'
+        );
       }
     }
   }

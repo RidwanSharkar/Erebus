@@ -21,6 +21,7 @@ import { WeaponType } from '../dragon/weapons';
 import { calculateDamage, DamageResult } from '@/core/DamageCalculator';
 import { INFERNAL_SMITE_CRIT_CHANCE_ADD, STAGGERING_SMITE_BEAM_STAGGER } from '@/utils/talents';
 import { createBeamCylinderAdditiveMaterial } from '@/utils/beamCylinderAdditiveMaterial';
+import { addEnemyHitDamageNumber } from '@/utils/enemyDamageNumber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 const _hslScratch = { h: 0, s: 0, l: 0 };
@@ -356,12 +357,13 @@ const SmiteComponent = memo(function Smite({
         if (!queuedToCombatSystem && combatSystem?.damageNumberManager) {
           const damagePosition = enemy.position.clone();
           damagePosition.y += 1.5;
-          combatSystem.damageNumberManager.addDamageNumber(
-            finalDamage,
-            damageResult.isCritical,
-            damagePosition,
-            'smite',
-          );
+          addEnemyHitDamageNumber(combatSystem.damageNumberManager, {
+            enemyId: enemy.id,
+            damage: finalDamage,
+            isCritical: damageResult.isCritical,
+            position: damagePosition,
+            damageType: 'smite',
+          });
         }
 
         if (!queuedToCombatSystem && setDamageNumbers && nextDamageNumberId) {

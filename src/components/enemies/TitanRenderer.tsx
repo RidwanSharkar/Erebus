@@ -329,7 +329,7 @@ function TitanRenderer({
               color={theme.text}
               numericFormat={(hp, max) => `${Math.ceil(hp)} / ${max}`}
             />
-            <EnemyStaggerBar stagger={staggerBuildup} width={HP_BAR_WIDTH} y={-0.28} />
+            <EnemyStaggerBar enemyId={id} stagger={staggerBuildup} width={HP_BAR_WIDTH} y={-0.28} />
           </>
         )}
       </Billboard>

@@ -17,6 +17,7 @@ export function useAnnouncementQueue(queueOverlayAnnouncement: QueueOverlayAnnou
   const queueRef = useRef<QueuedAnnouncement[]>([]);
   const drainingRef = useRef(false);
   const drainTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const delayedTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const queueOverlayRef = useRef(queueOverlayAnnouncement);
   queueOverlayRef.current = queueOverlayAnnouncement;
 
@@ -27,31 +28,68 @@ export function useAnnouncementQueue(queueOverlayAnnouncement: QueueOverlayAnnou
     }
   }, []);
 
-  const drain = useCallback(() => {
-    if (drainingRef.current || queueRef.current.length === 0) return;
-    drainingRef.current = true;
-    const next = queueRef.current.shift()!;
-    queueOverlayRef.current(
-      next.title,
-      next.color,
-      next.triggerKey ?? `${next.title}-${Date.now()}`,
-    );
+  const cancelDelayedEnqueues = useCallback(() => {
+    for (const timer of delayedTimersRef.current) {
+      clearTimeout(timer);
+    }
+    delayedTimersRef.current = [];
+  }, []);
+
+  const drainRef = useRef<() => void>(() => {});
+
+  const scheduleDrainCompletion = useCallback(() => {
     clearDrainTimer();
     drainTimerRef.current = setTimeout(() => {
       drainTimerRef.current = null;
       drainingRef.current = false;
-      drain();
+      drainRef.current();
     }, ROOM_TITLE_ANNOUNCEMENT_MS);
   }, [clearDrainTimer]);
+
+  const showAnnouncement = useCallback((item: QueuedAnnouncement) => {
+    queueOverlayRef.current(
+      item.title,
+      item.color,
+      item.triggerKey ?? `${item.title}-${Date.now()}`,
+    );
+  }, []);
+
+  const drain = useCallback(() => {
+    if (drainingRef.current || queueRef.current.length === 0) return;
+    drainingRef.current = true;
+    showAnnouncement(queueRef.current.shift()!);
+    scheduleDrainCompletion();
+  }, [showAnnouncement, scheduleDrainCompletion]);
+
+  drainRef.current = drain;
 
   const enqueueAnnouncement = useCallback((
     title: string,
     color: string,
     triggerKey?: string | number,
   ) => {
-    queueRef.current.push({ title, color, triggerKey });
+    const item = { title, color, triggerKey };
+    const isBusy = drainingRef.current || queueRef.current.length > 0;
+
+    if (isBusy) {
+      cancelDelayedEnqueues();
+      queueRef.current = [];
+      clearDrainTimer();
+      drainingRef.current = true;
+      showAnnouncement(item);
+      scheduleDrainCompletion();
+      return;
+    }
+
+    queueRef.current.push(item);
     drain();
-  }, [drain]);
+  }, [
+    drain,
+    cancelDelayedEnqueues,
+    clearDrainTimer,
+    showAnnouncement,
+    scheduleDrainCompletion,
+  ]);
 
   const enqueueAnnouncementAfter = useCallback((
     delayMs: number,
@@ -59,17 +97,19 @@ export function useAnnouncementQueue(queueOverlayAnnouncement: QueueOverlayAnnou
     color: string,
     triggerKey?: string | number,
   ) => {
-    setTimeout(() => {
-      queueRef.current.push({ title, color, triggerKey });
-      drain();
+    const timer = setTimeout(() => {
+      delayedTimersRef.current = delayedTimersRef.current.filter((t) => t !== timer);
+      enqueueAnnouncement(title, color, triggerKey);
     }, delayMs);
-  }, [drain]);
+    delayedTimersRef.current.push(timer);
+  }, [enqueueAnnouncement]);
 
   useEffect(() => () => {
     clearDrainTimer();
+    cancelDelayedEnqueues();
     queueRef.current = [];
     drainingRef.current = false;
-  }, [clearDrainTimer]);
+  }, [clearDrainTimer, cancelDelayedEnqueues]);
 
   return { enqueueAnnouncement, enqueueAnnouncementAfter };
 }

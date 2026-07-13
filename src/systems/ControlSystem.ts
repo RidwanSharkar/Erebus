@@ -5984,6 +5984,9 @@ export class ControlSystem extends System {
     this.lastSkyfallTime = currentTime;
     this.skyfallStartPosition.copy(playerTransform.position);
 
+    const playerHealth = this.playerEntity?.getComponent(Health);
+    playerHealth?.setInvulnerable(4.0, 'dodge');
+
     // Play skyfall sound
     this.audioSystem?.playSabresSkyfallSound(playerTransform.position);
 
@@ -6144,6 +6147,11 @@ export class ControlSystem extends System {
   }
   
   private completeSkyfallAbility(playerTransform: Transform): void {
+    const playerHealth = this.playerEntity?.getComponent(Health);
+    if (playerHealth?.isDodgeInvulnerable()) {
+      playerHealth.removeInvulnerability();
+    }
+
     // Reset all Skyfall states
     this.isSkyfalling = false;
     this.skyfallPhase = 'none';
@@ -6633,6 +6641,10 @@ export class ControlSystem extends System {
     this.lastFlurryHealNumberWallClockMs = 0;
     this.healingStreamHealCarry = 0;
     this.lastHealingStreamHealNumberWallClockMs = 0;
+    const playerHealth = this.playerEntity?.getComponent(Health);
+    if (playerHealth?.isDodgeInvulnerable()) {
+      playerHealth.removeInvulnerability();
+    }
     this.isSkyfalling = false;
     this.skyfallPhase = 'none';
     this.isBackstabbing = false;

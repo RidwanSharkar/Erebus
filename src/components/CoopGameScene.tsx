@@ -216,6 +216,8 @@ import { isBowPerfectShotProgress } from '@/utils/bowConstants';
 import { getRuneCountForWeapon } from '@/utils/runeCount';
 import { registerEnemyAttackTelegraphSounds } from '@/utils/enemyTelegraphSound';
 import { registerKnightAnimationSocketListeners } from '@/utils/knightAnimationDispatch';
+import { addEnemyHitDamageNumber } from '@/utils/enemyDamageNumber';
+import type { DamageNumberManager } from '@/utils/DamageNumberManager';
 import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
 
 const ZERO_PLAYER_STATS: PlayerStats = { strength: 0, stamina: 0, agility: 0, intellect: 0 };
@@ -320,7 +322,7 @@ import CastleWallCollision from '@/components/environment/CastleWallCollision';
 import PillarCollision from '@/components/environment/PillarCollision';
 import { MAIN_ARENA_HEX_RADIUS, MAIN_MAP_RADIUS, clampToMainArenaXZ } from '@/utils/mapConstants';
 import { COOP_MAIN_ENTRY_Z, rotationYTowardArenaCenter } from '@/utils/coopArenaLayout';
-import { KNIGHT_SMITE_RADIUS_BASE } from '@/utils/knightCoopAbilitiesConstants';
+import { KNIGHT_FROST_FREEZE_MS, KNIGHT_SMITE_RADIUS_BASE } from '@/utils/knightCoopAbilitiesConstants';
 import { MUSHROOM_COUNT, buildMushroomInstances, getMushroomColliderCenter } from '@/utils/mushroomLayout';
 import { MUSHROOM_MAX_HP } from '@/utils/mushroomConstants';
 import MushroomEruptionVfx from '@/components/environment/MushroomEruptionVfx';
@@ -2270,14 +2272,6 @@ export function CoopGameScene({
           if (health && strengthHeal > 0 && health.heal(strengthHeal)) {
             updatePlayerHealth(health.currentHealth, health.maxHealth);
             broadcastPlayerHealing(strengthHeal, 'room_boon_bloodleech', position);
-            onDamageNumbersUpdate?.([{
-              id: `room-boon-bloodleech-${Date.now()}-${Math.random()}`,
-              damage: strengthHeal,
-              position,
-              isCritical: false,
-              timestamp: Date.now(),
-              damageType: 'reanimate_healing',
-            }]);
           }
         }
       } else {
@@ -2290,7 +2284,6 @@ export function CoopGameScene({
       damageEnemy,
       enemies,
       gameMode,
-      onDamageNumbersUpdate,
       players,
       socket?.id,
       talentLoadout,
@@ -3140,14 +3133,6 @@ export function CoopGameScene({
       if (health && staminaHeal > 0 && health.heal(staminaHeal)) {
         updatePlayerHealth(health.currentHealth, health.maxHealth);
         broadcastPlayerHealing(staminaHeal, 'room_boom_mending_dash', payload.destination);
-        onDamageNumbersUpdate?.([{
-          id: `room-boom-mending-${Date.now()}-${Math.random()}`,
-          damage: staminaHeal,
-          position: payload.destination.clone().add(new Vector3(0, 1.6, 0)),
-          isCritical: false,
-          timestamp: Date.now(),
-          damageType: 'reanimate_healing',
-        }]);
       }
     } else if (payload.variant === 'staggering') {
       const target = findNearestEnemy(payload.destination, STAGGERING_DASH_RANGE);
@@ -3172,7 +3157,6 @@ export function CoopGameScene({
     broadcastPlayerAbility,
     broadcastPlayerHealing,
     createRoomBoomDashVfx,
-    onDamageNumbersUpdate,
     socket?.id,
     updatePlayerHealth,
   ]);
@@ -3872,14 +3856,6 @@ export function CoopGameScene({
 
     updatePlayerHealth(health.currentHealth, health.maxHealth);
     broadcastPlayerHealing(healAmount, 'room_boon_orb_shield', position);
-    onDamageNumbersUpdate?.([{
-      id: `room-boon-orb-shield-${Date.now()}-${Math.random()}`,
-      damage: healAmount,
-      position,
-      isCritical: false,
-      timestamp: Date.now(),
-      damageType: 'reanimate_healing',
-    }]);
 
     const id = nextRoomBoomEffectId.current++;
     pvpAbilityLayerRef.current?.addRoomBoomMending({ id, position: vfxPosition });
@@ -3887,7 +3863,6 @@ export function CoopGameScene({
   }, [
     broadcastPlayerHealing,
     engineRef,
-    onDamageNumbersUpdate,
     playerEntityRef,
     updatePlayerHealth,
   ]);
@@ -3964,18 +3939,9 @@ export function CoopGameScene({
 
     updatePlayerHealth(health.currentHealth, health.maxHealth);
     broadcastPlayerHealing(healAmount, 'room_boon_fatebreaker', position);
-    onDamageNumbersUpdate?.([{
-      id: `room-boon-fatebreaker-${Date.now()}-${Math.random()}`,
-      damage: healAmount,
-      position,
-      isCritical: false,
-      timestamp: Date.now(),
-      damageType: 'reanimate_healing',
-    }]);
   }, [
     broadcastPlayerHealing,
     engineRef,
-    onDamageNumbersUpdate,
     playerEntityRef,
     updatePlayerHealth,
   ]);
@@ -6046,6 +6012,17 @@ export function CoopGameScene({
                   if (typeof window !== 'undefined') {
                     window.dispatchEvent(new CustomEvent('aegis-block'));
                   }
+                } else if (data.damage > 0 && health.isDodgeInvulnerable()) {
+                  damageNumberManager.addDamageNumber(
+                    0,
+                    false,
+                    incomingDamagePosition,
+                    'dodge_blocked',
+                    true,
+                    undefined,
+                    undefined,
+                    'DODGE'
+                  );
                 }
               }
 
@@ -6663,7 +6640,7 @@ export function CoopGameScene({
       greaterHealImpactTimers.current.push(timer);
     };
 
-    // Blue Knight — Frost Ray (magic damage + 3s movement freeze)
+    // Blue Knight — Frost Ray (magic damage + 2s movement freeze)
     const handleKnightFrost = (data: any) => {
       if (data.targetPosition) {
         const p = new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z);
@@ -6716,7 +6693,7 @@ export function CoopGameScene({
         // Root movement briefly while still allowing the player to attack.
         const movement = playerEntity.getComponent(Movement);
         if (movement) {
-          const freezeDuration = 3000;
+          const freezeDuration = data.slowDuration ?? KNIGHT_FROST_FREEZE_MS;
           movement.freeze(freezeDuration);
           pvpAbilityLayerRef.current?.addLocalPlayerFrozen({
             id: nextLocalPlayerFrozenEffectId.current++,
@@ -8167,9 +8144,17 @@ export function CoopGameScene({
       const isCritical = !!data.isCritical;
       const numPos = p.clone();
       numPos.y += 1.35;
-      const damageNumberManager = (window as any).damageNumberManager;
-      if (damageNumberManager?.addDamageNumber) {
-        damageNumberManager.addDamageNumber(dmg, isCritical, numPos, 'stagger_break');
+      const damageNumberManager = (window as any).damageNumberManager as DamageNumberManager | undefined;
+      if (damageNumberManager) {
+        const enemyType = enemiesRef.current.get(data.enemyId)?.type;
+        addEnemyHitDamageNumber(damageNumberManager, {
+          enemyId: data.enemyId,
+          enemyType,
+          damage: dmg,
+          isCritical,
+          position: numPos,
+          damageType: 'stagger_break',
+        });
       }
       lightningBurstLayerRef.current?.addStaggerProcEffect({
           id: `stagger-proc-${data.enemyId}-${Date.now()}`,

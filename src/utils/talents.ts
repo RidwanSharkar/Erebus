@@ -213,6 +213,16 @@ export const TALENT_COLDSNAP_ROOM = 'COLDSNAP_ROOM' as const;
 export const TALENT_LIGHTNING_BOLT_ROOM = 'LIGHTNING_BOLT_ROOM' as const;
 /** Purple room universal active boon — manually cast Aegis deflect + invulnerability on R key (8s cooldown). */
 export const TALENT_AEGIS_ROOM = 'AEGIS_ROOM' as const;
+
+/** Universal colored-room active boons that occupy the R hotkey. */
+export const COOP_UNIVERSAL_R_ACTIVE_ROOM_BOONS: readonly TalentId[] = [
+  TALENT_RAISE_DEAD,
+  TALENT_METEOR_STRIKE,
+  TALENT_COLDSNAP_ROOM,
+  TALENT_LIGHTNING_BOLT_ROOM,
+  TALENT_AEGIS_ROOM,
+];
+
 /** Purple room universal passive — restore a dash charge when taking damage from an enemy. */
 export const TALENT_MOMENTUM_RIFT = 'MOMENTUM_RIFT' as const;
 /** Purple room universal passive — restore shield when expending a dash charge (scales with Intellect). */
@@ -4357,18 +4367,30 @@ export function buildRoomBoonPoolForColor(
   }
 
   if (k === 'green') {
-    return [...pool, TALENT_MENDING_DASH, TALENT_ORB_SHIELD, ...GREEN_COOP_UNIVERSAL_ZOMBIE_BOONS, TALENT_RAISE_DEAD, TALENT_NECROS_INITIATE];
+    return excludeUniversalRActiveBoonsForWeapon(
+      [...pool, TALENT_MENDING_DASH, TALENT_ORB_SHIELD, ...GREEN_COOP_UNIVERSAL_ZOMBIE_BOONS, TALENT_RAISE_DEAD, TALENT_NECROS_INITIATE],
+      weapon,
+    );
   }
 
   switch (k) {
     case 'red':
-      return [...pool, TALENT_INFERNAL_DASH, TALENT_BLOODLEECH, TALENT_REBUKE, TALENT_METEOR_STRIKE, TALENT_INFERNAL_INITIATE, TALENT_FISSION, TALENT_BLOOD_ORBS, TALENT_BLOODMAGE];
+      return excludeUniversalRActiveBoonsForWeapon(
+        [...pool, TALENT_INFERNAL_DASH, TALENT_BLOODLEECH, TALENT_REBUKE, TALENT_METEOR_STRIKE, TALENT_INFERNAL_INITIATE, TALENT_FISSION, TALENT_BLOOD_ORBS, TALENT_BLOODMAGE],
+        weapon,
+      );
     case 'purple':
-      return [...pool, TALENT_GLACIAL_DASH, TALENT_COLDSNAP_ROOM, TALENT_AEGIS_ROOM, TALENT_MOMENTUM_RIFT, TALENT_MANA_SHIELD, TALENT_HAILSTORM, TALENT_AWAKENED_EYE, TALENT_ABYSSAL_INITIATE];
+      return excludeUniversalRActiveBoonsForWeapon(
+        [...pool, TALENT_GLACIAL_DASH, TALENT_COLDSNAP_ROOM, TALENT_AEGIS_ROOM, TALENT_MOMENTUM_RIFT, TALENT_MANA_SHIELD, TALENT_HAILSTORM, TALENT_AWAKENED_EYE, TALENT_ABYSSAL_INITIATE],
+        weapon,
+      );
     case 'blue':
-      return [...pool, TALENT_STAGGERING_DASH, TALENT_GUARDBREAK, TALENT_OVERSHOCK, TALENT_UNSTABLE_ENERGY, TALENT_LIGHTNING_BOLT_ROOM, TALENT_TEMPEST_INITIATE, TALENT_OVERCLOCK, TALENT_OVERRIDE];
+      return excludeUniversalRActiveBoonsForWeapon(
+        [...pool, TALENT_STAGGERING_DASH, TALENT_GUARDBREAK, TALENT_OVERSHOCK, TALENT_UNSTABLE_ENERGY, TALENT_LIGHTNING_BOLT_ROOM, TALENT_TEMPEST_INITIATE, TALENT_OVERCLOCK, TALENT_OVERRIDE],
+        weapon,
+      );
     default:
-      return pool;
+      return excludeUniversalRActiveBoonsForWeapon(pool, weapon);
   }
 }
 
@@ -4471,6 +4493,15 @@ export function filterTalentIdsByExclusionSet(
   excluded: ReadonlySet<TalentId>,
 ): TalentId[] {
   return pool.filter((id) => !excluded.has(id));
+}
+
+/** Sabres start with native R (Divebomb) — exclude universal R active room boons from their pool only. */
+export function excludeUniversalRActiveBoonsForWeapon(
+  pool: readonly TalentId[],
+  weapon: WeaponType,
+): TalentId[] {
+  if (weapon !== WeaponType.SABRES) return pool.slice();
+  return filterTalentIdsByExclusionSet(pool, new Set(COOP_UNIVERSAL_R_ACTIVE_ROOM_BOONS));
 }
 
 function appendAvailableTalentIds(

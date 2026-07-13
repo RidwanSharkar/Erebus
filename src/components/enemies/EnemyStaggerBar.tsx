@@ -1,8 +1,16 @@
 'use client';
 
+import { useLayoutEffect, useRef } from 'react';
+import { useFrame } from '@react-three/fiber';
+import type { Mesh } from 'three';
 import { STAGGER_MAX } from '@/utils/talents';
 import { SharedMesh } from '@/utils/SharedMesh';
 import { MeshBasicMaterial, PlaneGeometry } from 'three';
+import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
+import {
+  applyEnemyStaggerBarFill,
+  syncEnemyStaggerBarFillFromRef,
+} from '@/utils/enemyStaggerBar';
 
 /** Shared across all stagger bars — fill driven via mesh.scale.x, not geometry args. */
 const STAGGER_BAR_GEO = new PlaneGeometry(1, 1);
@@ -23,6 +31,8 @@ const STAGGER_FILL_MAT = new MeshBasicMaterial({
 STAGGER_FILL_MAT.userData.shared = true;
 
 interface EnemyStaggerBarProps {
+  enemyId: string;
+  /** Spawn/fallback stagger when ref has no live value yet. */
   stagger: number;
   /** Proc threshold for full bar (default non-boss `STAGGER_MAX`). */
   staggerMax?: number;
@@ -33,16 +43,31 @@ interface EnemyStaggerBarProps {
 }
 
 export default function EnemyStaggerBar({
+  enemyId,
   stagger,
   staggerMax = STAGGER_MAX,
   y = -0.22,
   width = 1.6,
 }: EnemyStaggerBarProps) {
-  const cap = staggerMax > 0 ? staggerMax : STAGGER_MAX;
-  const t = Math.min(1, Math.max(0, stagger / cap));
+  const { enemiesRef } = useMultiplayerActions();
+  const fillRef = useRef<Mesh | null>(null);
   const h = 0.08;
   const fillH = 0.06;
-  const half = width / 2;
+
+  useLayoutEffect(() => {
+    applyEnemyStaggerBarFill(fillRef.current, stagger, staggerMax, width);
+  }, [stagger, staggerMax, width]);
+
+  useFrame(() => {
+    syncEnemyStaggerBarFillFromRef(
+      fillRef,
+      enemiesRef,
+      enemyId,
+      stagger,
+      staggerMax,
+      width,
+    );
+  });
 
   return (
     <>
@@ -51,8 +76,9 @@ export default function EnemyStaggerBar({
         <primitive object={STAGGER_BG_MAT} attach="material" />
       </SharedMesh>
       <SharedMesh
-        position={[-half + (width * t) / 2, y, 0.001]}
-        scale={[width * t, fillH, 1]}
+        ref={fillRef}
+        position={[-width / 2, y, 0.001]}
+        scale={[0, fillH, 1]}
       >
         <primitive object={STAGGER_BAR_GEO} attach="geometry" />
         <primitive object={STAGGER_FILL_MAT} attach="material" />

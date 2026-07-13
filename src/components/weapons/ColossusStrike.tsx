@@ -4,6 +4,7 @@ import { useFrame } from '@react-three/fiber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import { WeaponType } from '../dragon/weapons';
 import { calculateDamage } from '@/core/DamageCalculator';
+import { addEnemyHitDamageNumber } from '@/utils/enemyDamageNumber';
 
 interface ColossusStrikeProps {
   weaponType: WeaponType;
@@ -262,12 +263,13 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
         if (combatSystem && combatSystem.damageNumberManager) {
           const damagePosition = target.position.clone();
           damagePosition.y += 1.5; // Offset above target
-          combatSystem.damageNumberManager.addDamageNumber(
-            finalDamage,
+          addEnemyHitDamageNumber(combatSystem.damageNumberManager, {
+            enemyId: target.id,
+            damage: finalDamage,
             isCritical,
-            damagePosition,
-            'colossus_strike' // Use distinct damage type for visual styling
-          );
+            position: damagePosition,
+            damageType: 'colossus_strike',
+          });
         }
 
         damageDealtFlag = true;
