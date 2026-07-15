@@ -161,6 +161,11 @@ const ALLIED_KNIGHT_SMITE_IMPACT_DELAY_MS = 900;
 const ALLIED_KNIGHT_SMITE_CAST_RANGE = 3.6;
 const ALLIED_KNIGHT_SMITE_DAMAGE = 70;
 const ALLIED_KNIGHT_SMITE_RADIUS = 1.85;
+/** Max mobs that may simultaneously focus the allied knight via threat redirect. */
+const ALLIED_KNIGHT_FOCUS_SOFT_CAP = 3;
+/** Living players within this range take priority over allied-knight redirects (solo always). */
+const PLAYER_PROXIMITY_AGGRO_OVERRIDE_RADIUS = 15;
+const AGGRO_DEBUG_SNAPSHOT_DELAY_MS = 2000;
 // TEMPEST INITIATE boon constants (keep in sync with src/utils/talents.ts)
 const TEMPEST_INITIATE_SMITE_COOLDOWN_MS = 2500;
 const TEMPEST_INITIATE_SMITE_BASE_DAMAGE_BONUS = 20;
@@ -231,6 +236,18 @@ const TEMPLAR_BLINK_SMITE_DAMAGE = 75;
 const TEMPLAR_BLINK_SMITE_RADIUS = 2.5;
 const TEMPLAR_BLINK_SMITE_ABILITY_LOCK_MS = 2500; // no move/melee during windup + post-strike
 const TELEPORT_BEHIND_DISTANCE = 2.2; // same as boss blink (templar blink smite; not used by main co-op boss)
+
+// Wraith — stealth flank + buzzsaw cone
+const WRAITH_STEALTH_DURATION_MS = 5000;
+const WRAITH_STEALTH_COOLDOWN_MS = 8000;
+const WRAITH_BUZZSAW_COOLDOWN_MS = 6000;
+const WRAITH_BUZZSAW_DURATION_MS = 1500;
+const WRAITH_BUZZSAW_DAMAGE = 32;
+const WRAITH_BUZZSAW_TICK_MS = 500;
+const WRAITH_BUZZSAW_RANGE = 5.5;
+const WRAITH_BUZZSAW_HALF_ANGLE_RAD = Math.PI / 6;
+const WRAITH_ENGAGE_RANGE = 3.5;
+const WRAITH_AGGRO_RADIUS = 18;
 
 // Co-op main boss (GLB): melee + leap + tectonic
 const BOSS_MELEE_RANGE = 2.9;
@@ -306,6 +323,7 @@ const TEMPLAR_LEAP_DAMAGE = 60;
 
 /** Co-op player locomotion (matches client Movement.maxSpeed / dash tuning). */
 const PLAYER_COOP_MAX_SPEED = 3.575;
+const PLAYER_COOP_SPRINT_MULTIPLIER = 1.5;
 const PLAYER_DASH_DISTANCE = 4.125;
 const PLAYER_DASH_DURATION_S = 0.35;
 const MOB_LEAP_PREDICTION_MAX_OFFSET = 12;
@@ -532,6 +550,7 @@ class EnemyAI {
     this.io = io;
     this.room = null; // Will be set by GameRoom
     this.aiTimer = null;
+    this._aggroDebugSnapshotTimer = null;
     this.updateInterval = 33; // Update AI every 33ms (30fps for smooth movement)
     
     // Enemy aggro tracking
@@ -613,6 +632,13 @@ class EnemyAI {
 
     // Shade blink+attack cooldown tracking (4-second cooldown)
     this.shadeBlinkCooldown = new Map(); // enemyId -> lastBlinkTime
+
+    // Wraith stealth + buzzsaw cooldown tracking
+    this.wraithStealthCooldown = new Map(); // enemyId -> lastStealthCastMs
+    this.wraithBuzzsawCooldown = new Map(); // enemyId -> lastBuzzsawCastMs
+    /** @type {Map<string, { stealthEndsAt: number, revealTimeout: ReturnType<typeof setTimeout> | null }>} */
+    this.wraithStealthState = new Map();
+
     this.enemyLastQueuedMove = new Map(); // enemyId -> last { x, y, z, rotation } sent via _queueMove
 
     // Viper arrow shot cooldown tracking (2-second cooldown)
@@ -793,6 +819,10 @@ class EnemyAI {
       clearInterval(this.aiTimer);
       this.aiTimer = null;
     }
+    if (this._aggroDebugSnapshotTimer) {
+      clearTimeout(this._aggroDebugSnapshotTimer);
+      this._aggroDebugSnapshotTimer = null;
+    }
     
     this.enemyAggro.clear();
     this.bossDamageTracking.clear();
@@ -874,6 +904,12 @@ class EnemyAI {
     this.warlockArchonShockCooldown.clear();
     this.warlockArchonShockLockUntil.clear();
     this.shadeBlinkCooldown.clear();
+    this.wraithStealthCooldown.clear();
+    this.wraithBuzzsawCooldown.clear();
+    for (const state of this.wraithStealthState.values()) {
+      if (state?.revealTimeout) clearTimeout(state.revealTimeout);
+    }
+    this.wraithStealthState.clear();
     this.enemyLastQueuedMove.clear();
     this.viperAttackCooldown.clear();
     this.viperFollowupTimeout.forEach((t) => clearTimeout(t));
@@ -1109,6 +1145,11 @@ class EnemyAI {
     // Bonus wandering/fleeing enemy (10% chance per countable combat room wave)
     if (enemy.type === 'greed') {
       this.updateGreedAI(enemy, players);
+      return;
+    }
+
+    if (enemy.type === 'wraith') {
+      this.updateWraithAI(enemy, players);
       return;
     }
 
@@ -2716,6 +2757,177 @@ class EnemyAI {
     }
   }
 
+  // ─── Wraith AI ─────────────────────────────────────────────────────────────
+
+  isWraithInvisible(wraithId) {
+    const state = this.wraithStealthState.get(wraithId);
+    if (!state) return false;
+    return Date.now() < state.stealthEndsAt;
+  }
+
+  revealWraithStealth(wraithId, reason = 'timeout') {
+    const state = this.wraithStealthState.get(wraithId);
+    if (!state) return;
+    if (state.revealTimeout) clearTimeout(state.revealTimeout);
+    this.wraithStealthState.delete(wraithId);
+
+    const wraith = this.room?.getEnemy?.(wraithId);
+    if (this.io && wraith) {
+      this.io.to(this.roomId).emit('wraith-stealth-reveal', {
+        wraithId,
+        position: { ...wraith.position },
+        reason,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  computeWraithFlankGoal(wraith, resolved, tpos) {
+    if (resolved.kind === 'player') {
+      const playerRotation = resolved.player.rotation?.y || 0;
+      const facingX = Math.sin(playerRotation);
+      const facingZ = Math.cos(playerRotation);
+      return {
+        position: {
+          x: tpos.x - facingX * TELEPORT_BEHIND_DISTANCE,
+          y: tpos.y ?? 0,
+          z: tpos.z - facingZ * TELEPORT_BEHIND_DISTANCE,
+        },
+        id: resolved.player.id,
+      };
+    }
+    return this.aggroTargetToMoveTarget(resolved);
+  }
+
+  castWraithStealth(wraith) {
+    const now = Date.now();
+    this.wraithStealthCooldown.set(wraith.id, now);
+    const stealthEndsAt = now + WRAITH_STEALTH_DURATION_MS;
+    const wraithId = wraith.id;
+    const revealTimeout = setTimeout(() => {
+      this.revealWraithStealth(wraithId, 'timeout');
+    }, WRAITH_STEALTH_DURATION_MS);
+    this.wraithStealthState.set(wraithId, { stealthEndsAt, revealTimeout });
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('wraith-stealth-cloak', {
+        wraithId,
+        position: { ...wraith.position },
+        timestamp: now,
+      });
+    }
+  }
+
+  castWraithBuzzsaw(wraith) {
+    const now = Date.now();
+    if (this.isWraithInvisible(wraith.id)) {
+      this.revealWraithStealth(wraith.id, 'buzzsaw');
+    }
+
+    this.wraithBuzzsawCooldown.set(wraith.id, now);
+    this.meleeLockUntil.set(wraith.id, now + WRAITH_BUZZSAW_DURATION_MS);
+
+    if (this.io) {
+      this._queueMoveIfChanged(wraith.id, wraith.position, wraith.rotation);
+      this.io.to(this.roomId).emit('wraith-buzzsaw-telegraph', {
+        wraithId: wraith.id,
+        position: { ...wraith.position },
+        rotation: wraith.rotation,
+        durationMs: WRAITH_BUZZSAW_DURATION_MS,
+        timestamp: now,
+      });
+    }
+
+    const wraithId = wraith.id;
+    const ox = wraith.position.x;
+    const oz = wraith.position.z;
+    const facing = wraith.rotation;
+
+    for (let tick = 0; tick < 3; tick++) {
+      this._scheduleEnemyTimeout(wraithId, () => {
+        if (!this.room?.getGameStarted()) return;
+        const live = this.room?.getEnemy?.(wraithId);
+        if (!live || live.isDying || live.type !== 'wraith') return;
+        if (this.room?.isEnemyAffectedBy(wraithId, 'stun')) return;
+        if (this.room?.isEnemyAffectedBy(wraithId, 'freeze')) return;
+        this.room?.damagePlayersInCone?.(
+          ox,
+          oz,
+          facing,
+          WRAITH_BUZZSAW_RANGE,
+          WRAITH_BUZZSAW_HALF_ANGLE_RAD,
+          WRAITH_BUZZSAW_DAMAGE,
+          'wraith_buzzsaw',
+          { sourceEnemyId: wraithId },
+        );
+      }, tick * WRAITH_BUZZSAW_TICK_MS);
+    }
+  }
+
+  updateWraithAI(wraith, players) {
+    let aggroData = this.enemyAggro.get(wraith.id);
+    if (!aggroData) {
+      const closestPlayer = this.findClosestPlayer(wraith, players);
+      if (!closestPlayer) return;
+      aggroData = {
+        targetPlayerId: closestPlayer.id,
+        targetZombieId: null,
+        targetTrapId: null,
+        lastUpdate: Date.now(),
+        aggro: 100,
+      };
+      this.enemyAggro.set(wraith.id, aggroData);
+    }
+
+    const resolved = this.resolveAggroCombatTarget(aggroData, wraith, players);
+    if (!resolved) return;
+
+    const tpos = this.combatTargetPosition(resolved);
+    const distance = this.calculateDistance(wraith.position, tpos);
+    const aggroRadius = WRAITH_AGGRO_RADIUS;
+    const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
+
+    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(wraith.position, tpos)) {
+      aggroData.isAggroed = true;
+    } else if (aggroData.isAggroed && distance > leashRadius) {
+      aggroData.isAggroed = false;
+      aggroData.threatFromDamage = false;
+    }
+    this._maybeClearForcedEdgeSpawn(aggroData, distance, aggroRadius);
+
+    if (!aggroData.isAggroed) return;
+
+    const now = Date.now();
+    const lockUntil = this.meleeLockUntil.get(wraith.id) || 0;
+    if (now < lockUntil) return;
+
+    const dx = tpos.x - wraith.position.x;
+    const dz = tpos.z - wraith.position.z;
+    if (Math.hypot(dx, dz) > 1e-4) {
+      wraith.rotation = Math.atan2(dx, dz);
+    }
+    this._queueMoveIfChanged(wraith.id, wraith.position, wraith.rotation);
+
+    const lastBuzzsaw = this.wraithBuzzsawCooldown.get(wraith.id) || 0;
+    const buzzsawReady = now - lastBuzzsaw >= WRAITH_BUZZSAW_COOLDOWN_MS;
+
+    if (distance <= WRAITH_ENGAGE_RANGE && buzzsawReady) {
+      this.castWraithBuzzsaw(wraith);
+      return;
+    }
+
+    const lastStealth = this.wraithStealthCooldown.get(wraith.id) || 0;
+    const stealthReady = now - lastStealth >= WRAITH_STEALTH_COOLDOWN_MS;
+    const isInvisible = this.isWraithInvisible(wraith.id);
+
+    if (!isInvisible && stealthReady && distance > WRAITH_ENGAGE_RANGE) {
+      this.castWraithStealth(wraith);
+    }
+
+    const moveTarget = this.computeWraithFlankGoal(wraith, resolved, tpos);
+    this.moveEnemyTowardsTarget(wraith, moveTarget, { stopThreshold: 0.35 });
+  }
+
   // ─── Warlock AI ──────────────────────────────────────────────────────────────
 
   updateWarlockAI(warlock, players) {
@@ -3671,6 +3883,7 @@ class EnemyAI {
       const blinkTime = Date.now();
       if (this.io) {
         this._queueMove(e.id, e.position, e.rotation);
+        this._flushMoves();
         this.io.to(this.roomId).emit('templar-teleport', {
           templarId: e.id,
           startPosition,
@@ -5445,6 +5658,9 @@ class EnemyAI {
         dirX /= mag;
         dirZ /= mag;
         speed = PLAYER_COOP_MAX_SPEED * (md.inputStrength ?? 1);
+        if (md.isSprinting) {
+          speed *= PLAYER_COOP_SPRINT_MULTIPLIER;
+        }
       }
     }
 
@@ -7587,6 +7803,7 @@ class EnemyAI {
       case 'ghoul':   return 2;
       case 'titan':   return 2.5;
       case 'martyr':  return 3.0;
+      case 'wraith':  return 2.5;
       case 'player-zombie': return 2.0;
       default: return 2.0;
     }
@@ -8018,8 +8235,9 @@ class EnemyAI {
         const ex = enemy.position.x - strikePosition.x;
         const ez = enemy.position.z - strikePosition.z;
         if (ex * ex + ez * ez > ALLIED_KNIGHT_SMITE_RADIUS * ALLIED_KNIGHT_SMITE_RADIUS) continue;
+        const isPrimaryTarget = enemy.id === targetId;
         this.room.damageEnemy(enemy.id, smiteDamage, null, null, {
-          sourceAlliedUnitId: liveAlly.id,
+          ...(isPrimaryTarget ? { sourceAlliedUnitId: liveAlly.id } : {}),
           damageType: 'allied_knight_smite',
         });
       }
@@ -9449,6 +9667,11 @@ class EnemyAI {
     if (warlockShockT) clearTimeout(warlockShockT);
     this.warlockArchonShockTimeout.delete(enemyId);
     this.shadeBlinkCooldown.delete(enemyId);
+    this.wraithStealthCooldown.delete(enemyId);
+    this.wraithBuzzsawCooldown.delete(enemyId);
+    const wraithStealth = this.wraithStealthState.get(enemyId);
+    if (wraithStealth?.revealTimeout) clearTimeout(wraithStealth.revealTimeout);
+    this.wraithStealthState.delete(enemyId);
     this.enemyLastQueuedMove.delete(enemyId);
     this.viperAttackCooldown.delete(enemyId);
     const viperFollowupT = this.viperFollowupTimeout.get(enemyId);
@@ -9643,10 +9866,78 @@ class EnemyAI {
     aggroData.directPlayerDamageAggroed = false;
   }
 
+  _countEnemiesTargetingUnit(unitId) {
+    if (!unitId) return 0;
+    let count = 0;
+    this.enemyAggro.forEach((data) => {
+      if (data.targetZombieId === unitId || data.targetTrapId === unitId) count += 1;
+    });
+    return count;
+  }
+
+  /** Solo or direct player damage: prefer player over allied-knight redirect when close. */
+  _shouldPreferPlayerOverAlly(moverEnemy, players) {
+    if (!players?.length || !moverEnemy?.position) return false;
+    const closest = this.findClosestPlayer(moverEnemy, players);
+    if (!closest?.position || closest.health <= 0) return false;
+    const dist = this.calculateDistance(moverEnemy.position, closest.position);
+    if (dist > PLAYER_PROXIMITY_AGGRO_OVERRIDE_RADIUS) return false;
+    return players.length === 1;
+  }
+
+  /** Clear trap/zombie focus so a fresh room starts player-targeted until threat is earned. */
+  clearNonPlayerAggroTargets() {
+    this.enemyAggro.forEach((data) => {
+      data.targetZombieId = null;
+      data.targetTrapId = null;
+    });
+  }
+
+  /** Dev-only: dump aggro target breakdown shortly after portal wave spawn. */
+  scheduleAggroDebugSnapshot(label = 'room-entry') {
+    if (process.env.NODE_ENV === 'production') return;
+    if (this._aggroDebugSnapshotTimer) {
+      clearTimeout(this._aggroDebugSnapshotTimer);
+    }
+    this._aggroDebugSnapshotTimer = setTimeout(() => {
+      this._aggroDebugSnapshotTimer = null;
+      const rows = [];
+      this.enemyAggro.forEach((data, enemyId) => {
+        let focus = 'player';
+        if (data.targetTrapId) focus = `trap:${data.targetTrapId}`;
+        else if (data.targetZombieId) focus = `ally:${data.targetZombieId}`;
+        rows.push({
+          enemyId,
+          focus,
+          isAggroed: !!data.isAggroed,
+          targetPlayerId: data.targetPlayerId ?? null,
+        });
+      });
+      _enemyAiLog(`📊 Aggro snapshot (${label}):`, rows);
+    }, AGGRO_DEBUG_SNAPSHOT_DELAY_MS);
+  }
+
   applyAlliedUnitThreat(defenderEnemyId, allyId, aggroAmount = 50) {
     const ally = this.room?.enemies?.get?.(allyId);
     if (!ally || ally.type !== 'allied-knight' || ally.isDying || ally.health <= 0) return;
+
+    const existing = this.enemyAggro.get(defenderEnemyId);
+    const alreadyOnKnight = existing?.targetZombieId === allyId;
+    const knightFocusCount = this._countEnemiesTargetingUnit(allyId);
+    if (!alreadyOnKnight && knightFocusCount >= ALLIED_KNIGHT_FOCUS_SOFT_CAP) {
+      if (existing) {
+        existing.aggro += Math.max(aggroAmount, 50);
+        existing.lastUpdate = Date.now();
+        existing.isAggroed = true;
+      }
+      _enemyAiLog(
+        `🛡️ Allied-knight threat soft-capped for ${defenderEnemyId} (${knightFocusCount}/${ALLIED_KNIGHT_FOCUS_SOFT_CAP} on ${allyId})`,
+      );
+      return;
+    }
+
     this.applyZombieThreat(defenderEnemyId, allyId, Math.max(aggroAmount * 2, 100));
+    _enemyAiLog(`🛡️ Allied-knight threat: ${defenderEnemyId} → ${allyId} (focus ${knightFocusCount + 1})`);
   }
 
   clearTrapPendingSlam(trapId) {
@@ -9697,6 +9988,7 @@ class EnemyAI {
     if (fallbackPlayerId) aggroData.targetPlayerId = fallbackPlayerId;
     aggroData.aggro += aggroAmount;
     aggroData.lastUpdate = Date.now();
+    _enemyAiLog(`🦴 Trap threat: ${defenderEnemyId} → ${trapId}`);
     aggroData.isAggroed = true;
     aggroData.threatFromDamage = true;
     aggroData.directPlayerDamageAggroed = false;
@@ -9830,8 +10122,12 @@ class EnemyAI {
   resolveAggroCombatTarget(aggroData, moverEnemy, players) {
     if (!aggroData || !moverEnemy || !players) return null;
 
+    const preferPlayerOverAlly =
+      aggroData.directPlayerDamageAggroed ||
+      this._shouldPreferPlayerOverAlly(moverEnemy, players);
+
     const tid = aggroData.targetTrapId;
-    if (tid) {
+    if (tid && !preferPlayerOverAlly) {
       const tr = this.room?.enemies?.get(tid);
       if (tr && tr.type === 'tentacle-spine' && !tr.isDying && tr.health > 0) {
         return { kind: 'trap', trap: tr };
@@ -9840,7 +10136,7 @@ class EnemyAI {
     }
 
     const zid = aggroData.targetZombieId;
-    if (zid) {
+    if (zid && !preferPlayerOverAlly) {
       const z = this.room?.enemies?.get(zid);
       if (z && this.isFriendlyCombatUnit(z) && !z.isDying && z.health > 0) {
         return { kind: 'zombie', zombie: z };
@@ -9953,6 +10249,7 @@ class EnemyAI {
     aggroData.threatFromDamage = true;
     aggroData.directPlayerDamageAggroed = true;
     this.markAlliedCombatInitiated(enemyId);
+    _enemyAiLog(`🎯 Player aggro: ${enemyId} → ${playerId} (cleared ally/trap focus)`);
   }
 
   // Remove player from all aggro charts when they die

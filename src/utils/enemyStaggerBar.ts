@@ -16,7 +16,7 @@ export function readLiveEnemyStagger(
   return live?.staggerBuildup ?? fallbackStagger;
 }
 
-/** Left-aligned fill mesh: fixed planeGeometry width + scale.x (no per-tick geometry alloc). */
+/** Left-aligned fill mesh: 1×1 unit geometry scaled to `barWidth * ratio`. */
 export function applyEnemyStaggerBarFill(
   fillMesh: Mesh | null | undefined,
   stagger: number,
@@ -25,7 +25,7 @@ export function applyEnemyStaggerBarFill(
 ): void {
   if (!fillMesh) return;
   const t = enemyStaggerRatio(stagger, staggerMax);
-  fillMesh.scale.x = t;
+  fillMesh.scale.x = barWidth * t;
   fillMesh.position.x = -barWidth / 2 + (barWidth * t) / 2;
 }
 

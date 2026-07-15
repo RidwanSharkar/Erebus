@@ -186,6 +186,8 @@ export default function Runeblade({
   const isChargeSpinning = useRef(false);
   const shouldStartSpin = useRef(false);
   const chargeSpinAudioActiveRef = useRef(false);
+  const onChargeSpinEndRef = useRef(onChargeSpinEnd);
+  onChargeSpinEndRef.current = onChargeSpinEnd;
   const basePosition = [-1.18, 0.675, 0.675] as const; // POSITIONING
 
   // Chain Lightning Sparks
@@ -234,6 +236,15 @@ export default function Runeblade({
       sparkMaterial.dispose();
     };
   }, [sparkGeometry, sparkMaterial]);
+
+  useEffect(() => {
+    return () => {
+      if (chargeSpinAudioActiveRef.current) {
+        chargeSpinAudioActiveRef.current = false;
+        onChargeSpinEndRef.current?.();
+      }
+    };
+  }, []);
 
   // Swing collision tracking
   const lastSwingHitTime = useRef<Record<string, number>>({});
@@ -635,6 +646,10 @@ export default function Runeblade({
     }
 
     if (isCharging && !chargeStartTime.current) {
+      if (isChargeSpinning.current && chargeSpinAudioActiveRef.current) {
+        chargeSpinAudioActiveRef.current = false;
+        onChargeSpinEnd?.();
+      }
       shouldStartSpin.current = false;
       isChargeSpinning.current = false;
       chargeSpinRotation.current = 0;

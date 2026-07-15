@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useCallback, useLayoutEffect, useEffect } from 'react';
+import React, { useRef, useMemo, useCallback, useLayoutEffect, useEffect, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   InstancedMesh,
@@ -217,7 +217,7 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
   radius = MAIN_MAP_RADIUS,
   halfX = MAIN_MAP_HALF_X,
   halfZ = MAIN_MAP_HALF_Z,
-  bladeHeight = 0.45,
+  bladeHeight = 0.55,
   windStrength: windOverride,
   roomTheme,
   grassPalette = 'theme',
@@ -229,6 +229,7 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
   groundLightIntensity,
 }) => {
   const meshRef = useRef<InstancedMesh>(null);
+  const [matricesReady, setMatricesReady] = useState(false);
 
   const effectiveTheme = resolveRoomTheme(roomTheme, isSnowTheme);
   const defaultCount = THEME_COUNTS[effectiveTheme];
@@ -393,15 +394,18 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
     }
 
     mesh.instanceMatrix.needsUpdate = true;
+    mesh.count = count;
     mesh.computeBoundingSphere();
     if (mesh.boundingSphere) {
       mesh.boundingSphere.center.set(0, 0, 0);
       mesh.boundingSphere.radius = radius;
     }
+    setMatricesReady(true);
     return true;
   }, [count, radius, halfX, halfZ, bladeHeight, useHexField, useSquareEdge]);
 
   useLayoutEffect(() => {
+    setMatricesReady(false);
     if (fillInstanceMatrices()) return;
     let cancelled = false;
     let raf = 0;
@@ -410,7 +414,11 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
     const tick = () => {
       if (cancelled) return;
       if (fillInstanceMatrices()) return;
-      if (++attempts >= maxRafAttempts) return;
+      if (++attempts >= maxRafAttempts) {
+        // eslint-disable-next-line no-console
+        console.warn('[StylizedGrass] instance matrices not ready after max rAF retries');
+        return;
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -458,6 +466,7 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
         ref={meshRef}
         args={[bladeGeometry, material, count]}
         frustumCulled
+        visible={matricesReady}
       />
     </group>
   );

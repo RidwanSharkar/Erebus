@@ -22,6 +22,7 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'bow_draw', file: 'bow/draw.mp3' },
   { id: 'bow_release', file: 'bow/release.mp3' },
   { id: 'bow_power_release', file: 'bow/powerRelease.mp3' },
+  { id: 'bow_high_caliber', file: 'bow/high_caliber.mp3' },
   { id: 'bow_viper_sting_release', file: 'bow/viper_sting_release.mp3' },
   { id: 'bow_barrage_release', file: 'bow/barrage_release.mp3' },
   { id: 'bow_cobra_shot_release', file: 'bow/cobra_shot_release.mp3' },
@@ -30,6 +31,7 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'sabres_swing', file: 'sabres/sabres_swing.mp3' },
   { id: 'sabres_backstab', file: 'sabres/backstab.mp3' },
   { id: 'sabres_flourish', file: 'sabres/flourish.mp3' },
+  { id: 'sabres_flourish_miss', file: 'sabres/flourish_miss.mp3' },
   { id: 'sabres_shadow_step', file: 'sabres/shadow_step.mp3' },
   { id: 'sabres_skyfall', file: 'sabres/skyfall.mp3' },
   { id: 'entropic_bolt', file: 'scythe/entropic_bolts.mp3' },
@@ -74,6 +76,7 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'boss3_disc', file: 'versus/boss3disc.mp3' },
   { id: 'templar_telegraph', file: 'versus/templartelegraph.mp3' },
   { id: 'enemy_blink', file: 'versus/blink.mp3' },
+  { id: 'wraith_buzzsaw', file: 'versus/buzzsaw.mp3' },
   { id: 'enemy_death', file: 'versus/deathSFX.mp3' },
   { id: 'enemy_death_ghoul', file: 'versus/ghoulDeathSFX.mp3' },
   { id: 'enemy_death_warlock', file: 'versus/warlockdeath.mp3' },
@@ -86,7 +89,10 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'enemy_knight_smite', file: 'versus/smite.mp3' },
   { id: 'enemy_templar_smite', file: 'sword/smite.mp3' },
   { id: 'weaver_ghoul_summon', file: 'versus/summon.mp3' },
+  { id: 'weaver_thunder', file: 'versus/weaver_thunder.mp3' },
+  { id: 'knight_block', file: 'versus/knightBlock.mp3' },
   { id: 'enemy_spawn_summon', file: 'ui/summon.mp3' },
+  { id: 'ui_summon_zombie', file: 'ui/summonZombie.mp3' },
   { id: 'shade_throw', file: 'versus/shadeThrow.mp3' },
   { id: 'shade_damage_1', file: 'versus/shadeDamage1.mp3' },
   { id: 'shade_damage_2', file: 'versus/shadeDamage2.mp3' },
@@ -143,6 +149,8 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'ui_greater_heal', file: 'ui/greaterHeal.mp3' },
   { id: 'ui_level', file: 'ui/1LEVEL.mp3' },
   { id: 'ui_aegis', file: 'ui/aegis.mp3' },
+  { id: 'ui_deflect_bolt', file: 'ui/Deflect.mp3' },
+  { id: 'ui_locusts', file: 'ui/locusts.mp3' },
   { id: 'ui_shield_break', file: 'ui/1shieldBreak.mp3' },
   { id: 'ui_shield_regen', file: 'ui/1shieldRegen.mp3' },
   { id: 'merchant_greet_arrival', file: 'ui/merchantGreetArrival.mp3' },
@@ -150,6 +158,7 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'merchant_greet_exit', file: 'ui/merchantGreetExit.mp3' },
   { id: 'ui_pedestal', file: 'ui/pedestal.mp3' },
   { id: 'ui_fountain', file: 'ui/fountain.mp3' },
+  { id: 'ui_warcrack', file: 'ui/WARCRACK.mp3' },
 ];
 
 const STARTUP_SOUND_IDS = new Set([
@@ -170,6 +179,7 @@ const WEAPON_SPECIFIC_SOUND_IDS: Partial<Record<WeaponType, readonly string[]>> 
     'bow_draw',
     'bow_release',
     'bow_power_release',
+    'bow_high_caliber',
     'bow_viper_sting_release',
     'bow_barrage_release',
     'bow_cobra_shot_release',
@@ -181,6 +191,7 @@ const WEAPON_SPECIFIC_SOUND_IDS: Partial<Record<WeaponType, readonly string[]>> 
     'sabres_swing',
     'sabres_backstab',
     'sabres_flourish',
+    'sabres_flourish_miss',
     'sabres_shadow_step',
     'sabres_skyfall',
     'knight_miss',
@@ -263,6 +274,7 @@ const ALL_WEAPON_SPECIFIC_SOUND_IDS = new Set(
 const COMMON_GAMEPLAY_PRELOAD_IDS = new Set([
   ...WEAPON_SOUND_ASSETS.map(asset => asset.id).filter(id => !ALL_WEAPON_SPECIFIC_SOUND_IDS.has(id)),
   'icebeam', // Boss3 green beam loop — required even when player is not on Scythe
+  'ui_warcrack',
 ]);
 
 function getGameplayPreloadAssets(weapon?: WeaponType): SfxAsset[] {
@@ -293,7 +305,7 @@ export class AudioSystem extends System {
   private startupPreloadPromise: Promise<void> | null = null;
   private readonly sfxById = new Map(WEAPON_SOUND_ASSETS.map(asset => [asset.id, asset]));
   private masterVolume = 0.725;
-  private sfxVolume = 0.675;
+  private sfxVolume = 0.66;
   private listenerPosition = new Vector3(0, 0, 0);
   private coopBgmMode: CoopBgmMode = 'none';
   private coopChaosInstance: number | null = null;
@@ -464,11 +476,21 @@ export class AudioSystem extends System {
   }
 
   // Play bow release sound (called when arrow is fired)
-  public playBowReleaseSound(position: Vector3, chargeProgress?: number, isPerfectShot?: boolean) {
+  public playBowReleaseSound(
+    position: Vector3,
+    chargeProgress?: number,
+    isPerfectShot?: boolean,
+    highCaliber?: boolean,
+  ) {
     // Adjust volume/pitch based on charge level
     const volume = 0.7 + (chargeProgress || 0) * 0.3; // 0.7 to 1.0
     const rate = 0.9 + (chargeProgress || 0) * 0.2; // 0.9 to 1.1
-    const soundId = isPerfectShot === true ? 'bow_power_release' : 'bow_release';
+    const soundId =
+      isPerfectShot === true && highCaliber === true
+        ? 'bow_high_caliber'
+        : isPerfectShot === true
+          ? 'bow_power_release'
+          : 'bow_release';
 
     return this.playWeaponSound(soundId, position, {
       volume,
@@ -504,6 +526,11 @@ export class AudioSystem extends System {
   // Play sabres flourish sound (Sunder ability)
   public playSabresFlourishSound(position: Vector3) {
     return this.playWeaponSound('sabres_flourish', position, { volume: 0.9 });
+  }
+
+  // Play sabres flourish miss sound (Sunder whiff)
+  public playSabresFlourishMissSound(position: Vector3) {
+    return this.playWeaponSound('sabres_flourish_miss', position, { volume: 0.9 });
   }
 
   // Play sabres shadow step sound (Stealth ability)
@@ -737,11 +764,32 @@ export class AudioSystem extends System {
     config?: SoundConfig,
   ): number | null {
     this.stopLoopingWeaponSound(soundId);
+
+    if (!this.soundCache.has(soundId)) {
+      const asset = this.sfxById.get(soundId);
+      if (asset) {
+        void this.loadSfx(asset).then((loaded) => {
+          if (loaded) {
+            this.playLoopingWeaponSound(soundId, position, config);
+          }
+        });
+      }
+      return null;
+    }
+
     const instance = this.playWeaponSound(soundId, position, { ...config, loop: true });
     if (instance != null) {
       this.loopingSfxInstances.set(soundId, instance);
     }
     return instance;
+  }
+
+  /** Stop Cyclone Rush whirlwind — by instance ref and/or tracked loop map entry. */
+  public stopRunebladeWhirlwindSound(instance?: number): void {
+    if (instance !== undefined) {
+      this.stopSound('runeblade_whirlwind', instance);
+    }
+    this.stopLoopingWeaponSound('runeblade_whirlwind');
   }
 
   // Set master volume (0.0 to 1.0)
@@ -859,6 +907,18 @@ export class AudioSystem extends System {
     return this.playWeaponSound('weaver_ghoul_summon', position, { volume: 0.85 });
   }
 
+  public playWeaverLightningTelegraphSound(position: Vector3) {
+    return this.playWeaponSound('weaver_thunder', position, { volume: 0.9 });
+  }
+
+  public playKnightBlockSound(position: Vector3) {
+    return this.playWeaponSound('knight_block', position, { volume: 0.85 });
+  }
+
+  public playSummonZombieSound(position: Vector3) {
+    return this.playWeaponSound('ui_summon_zombie', position, { volume: 0.85 });
+  }
+
   // Play the flame-summon spawn cue when an enemy emerges into an enemy room.
   public playEnemySummonSpawnSound(position: Vector3) {
     return this.playWeaponSound('enemy_spawn_summon', position, { volume: 0.7 });
@@ -869,11 +929,40 @@ export class AudioSystem extends System {
     return this.playWeaponSound('enemy_blink', position, { volume: 0.9 });
   }
 
+  // Play Wraith buzzsaw channel sound
+  public playEnemyBuzzsawSound(position: Vector3) {
+    return this.playWeaponSound('wraith_buzzsaw', position, { volume: 0.95 });
+  }
+
   // Play enemy death sound — accepts a plain object so callers outside Three.js contexts
   // don't need to import Vector3. `deathSFX.mp3` is used for knight, weaver, boss3, and titan.
   public playEnemyDeathSound(position: { x: number; y: number; z: number }, enemyType?: string) {
     const soundId = this.resolveEnemyDeathSoundId(enemyType);
     return this.playWeaponSound(soundId, new Vector3(position.x, position.y, position.z), { volume: 0.95 });
+  }
+
+  /** Kill sting (WARCRACK) + diegetic death SFX + red strike indicator at corpse position. */
+  public playEnemyKillFeedback(
+    position: { x: number; y: number; z: number },
+    enemyType?: string,
+  ) {
+    this.playWeaponSound('ui_warcrack', AudioSystem.UI_ORIGIN, { volume: 1.1 });
+    this.playEnemyDeathSound(position, enemyType);
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent(EREBUS_STRIKE_INDICATOR_EVENT, {
+          detail: {
+            variant: 'kill',
+            position: {
+              x: position.x,
+              y: position.y + 1.5,
+              z: position.z,
+            },
+          },
+        }),
+      );
+    }
   }
 
   private resolveEnemyDeathSoundId(enemyType?: string): string {
@@ -1098,6 +1187,16 @@ export class AudioSystem extends System {
 
   public playAegisBlockSound() {
     return this.playWeaponSound('ui_aegis', AudioSystem.UI_ORIGIN, { volume: 1.33 });
+  }
+
+  /** Shift-Deflect — first negated hit fires the homing bolt; fired once, not on repeat blocks. */
+  public playDeflectBoltSound() {
+    return this.playWeaponSound('ui_deflect_bolt', AudioSystem.UI_ORIGIN, { volume: 1.2 });
+  }
+
+  /** Acolyte Locust — one shot per missile released from the shift channel. */
+  public playLocustSound() {
+    return this.playWeaponSound('ui_locusts', AudioSystem.UI_ORIGIN, { volume: 1.1 });
   }
 
   public playFrozenStatusSound(position: Vector3) {
@@ -1359,6 +1458,7 @@ export class AudioSystem extends System {
       window.dispatchEvent(
         new CustomEvent(EREBUS_STRIKE_INDICATOR_EVENT, {
           detail: {
+            variant: 'weapon-hit',
             weapon: resolved,
             ...(hitWorldPosition ? { position: hitWorldPosition } : {}),
           },

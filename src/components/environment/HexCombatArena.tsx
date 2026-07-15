@@ -42,7 +42,7 @@ export default function HexCombatArena({ variant, combatActive = false }: HexCom
         fieldShape="hex"
         radius={HEX_ARENA_RADIUS}
         count={HEX_ARENA_GRASS_COUNT}
-        bladeHeight={0.45}
+        bladeHeight={0.55}
         windStrength={0.2}
         grassPalette="crimson"
       />

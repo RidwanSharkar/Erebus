@@ -30,7 +30,7 @@ interface WeaverRendererProps {
   isDying?: boolean;
   campType?: string;
   /** Co-op: green = support weaver, blue = lightning weaver (aura colour) */
-  soulType?: 'green' | 'blue' | 'red' | 'purple' | 'yellow';
+  soulType?: 'green' | 'blue' | 'red' | 'purple' | 'yellow' | 'orange';
   staggerBuildup?: number;
 }
 

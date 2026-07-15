@@ -4,7 +4,15 @@ import { useMemo } from 'react';
 import { Vector3 } from '@/utils/three-exports';
 import DirectionalProcLightning, { type DirectionalProcLightningPalette } from './DirectionalProcLightning';
 
-const SKY_Y = 24;
+export const PROC_LIGHTNING_SKY_Y = 24;
+
+/** Blue room Lightning Bolt (`SPEAR_R`) — yellow/gold recolor of the stagger proc bolt. */
+export const YELLOW_ROOM_PALETTE: DirectionalProcLightningPalette = {
+  core: '#fff7ad',
+  glow: '#FFD700',
+  halo: '#FFA500',
+  light: '#FFE566',
+};
 
 const BLUE_PALETTE: DirectionalProcLightningPalette = {
   core: '#e0f2fe',
@@ -56,7 +64,7 @@ export default function StaggerProcLightning({
   stormShield = false,
 }: StaggerProcLightningProps) {
   const from = useMemo(
-    () => new Vector3(position.x, position.y + SKY_Y, position.z),
+    () => new Vector3(position.x, position.y + PROC_LIGHTNING_SKY_Y, position.z),
     [position.x, position.y, position.z],
   );
 

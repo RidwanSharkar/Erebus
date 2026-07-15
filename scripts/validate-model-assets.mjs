@@ -17,6 +17,7 @@ const threeLoader = new GLTFLoader();
 globalThis.self ??= globalThis;
 
 const BASE_SCENE_FILES = new Set([
+  'ally_idle.glb',
   'boss_idle.glb',
   'character_idle.glb',
   'ghoul_idle.glb',
@@ -28,6 +29,7 @@ const BASE_SCENE_FILES = new Set([
   'viper_idle.glb',
   'warlock_idle.glb',
   'weaver_idle.glb',
+  'wraith_idle.glb',
   'zombie_idle.glb',
 ]);
 

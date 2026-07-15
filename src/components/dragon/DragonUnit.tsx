@@ -89,6 +89,9 @@ interface DragonUnitProps {
   deflectShieldActive?: boolean;
   deflectShieldDurationSec?: number;
   deflectShieldPaletteVariant?: AegisPaletteVariant;
+  /** Shift-tap Deflect-Block — independent gold shield instance, unrelated to Q-Aegis `isDeflecting`. */
+  isBlockingDeflect?: boolean;
+  blockingDeflectDurationSec?: number;
   isSmiting?: boolean;
   isColossusStriking?: boolean;
   isDeathGrasping?: boolean;
@@ -234,6 +237,8 @@ export default function DragonUnit({
   deflectShieldActive: deflectShieldActiveProp,
   deflectShieldDurationSec = 3,
   deflectShieldPaletteVariant = 'default',
+  isBlockingDeflect = false,
+  blockingDeflectDurationSec = 1,
   isSmiting = false,
   isColossusStriking = false,
   isDeathGrasping = false,
@@ -701,7 +706,7 @@ export default function DragonUnit({
     </group>
   ), [isDashing, hasAscendantWings]);
 
-  const crestPosition: [number, number, number] = hideBody ? [0, 1.8, 0.15] : [0, 0.5, 0.15];
+  const crestPosition: [number, number, number] = hideBody ? [0, 1.7, 0.15] : [0, 0.5, 0.15];
 
   return (
     <group ref={groupRef} position={[position.x, position.y + 0.2, position.z]}>
@@ -740,7 +745,8 @@ export default function DragonUnit({
       {/* CREST — visible with or without dragon body, raised higher on character model */}
       <ArchmageCrest
         position={crestPosition}
-        scale={-0.625}
+        rotation={[0.2, 0.00, 0.0]}
+        scale={-0.6}
         weaponType={currentWeapon}
         weaponSubclass={currentSubclass}
       />
@@ -827,6 +833,21 @@ export default function DragonUnit({
           weaponType={currentWeapon}
           paletteVariant={deflectShieldPaletteVariant}
           enableBlockFlash={isLocalPlayer}
+        />
+      )}
+
+      {isBlockingDeflect && (
+        <DeflectShield
+          isActive={isBlockingDeflect}
+          duration={blockingDeflectDurationSec}
+          playerPosition={playerPosition}
+          playerRotation={playerRotation}
+          dragonGroupRef={groupRef}
+          weaponType={WeaponType.RUNEBLADE}
+          paletteVariant="default"
+          enableBlockFlash={isLocalPlayer}
+          blockEventName="deflect-block"
+          onBlockFlash={() => window.audioSystem?.playDeflectBoltSound?.()}
         />
       )}
 

@@ -189,6 +189,8 @@ function handleEnemyEvents(socket, gameRooms) {
       if (data.icebeamWrathful) hitMeta.icebeamWrathful = true;
       if (data.icebeamInfested) hitMeta.icebeamInfested = true;
       if (icebeamArcticChill) hitMeta.icebeamArcticChill = true;
+    } else if (damageType === 'locust') {
+      hitMeta = { damageType: 'locust' };
     }
     room.damageEnemy(enemyId, damage, actualSourcePlayerId, player, hitMeta);
   });

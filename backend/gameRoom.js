@@ -160,7 +160,7 @@ function rollCloudkillArrowCount() {
 /**
  * Z and X offsets must match ThroneRoom.tsx `THRONE_TRAINING_DUMMY_SPAWNS` / `THRONE_TRAINING_DUMMY_SPAWN_Z`.
  */
-const THRONE_TRAINING_DUMMY_Z = 10.75;
+const THRONE_TRAINING_DUMMY_Z = 14.60;
 
 /**
  * @typedef {'knight'} ThDummyVisual
@@ -207,6 +207,7 @@ const BOSS1_ELITE_SIZE_SCALE = 1.33;
 const BOSS1_ELITE_SPEED_MULT = 1.15;
 const BOSS1_ELITE_HEALTH_MULT = 3;
 const COOP_WAVE_GREED_SPAWN_CHANCE = 0.20; // 10% chance for a bonus Greed enemy on any countable combat room's wave init
+const COOP_WAVE_WRAITH_ROOM_CHANCE = 0.33; // 33% chance for 1–2 bonus Wraiths on any countable combat room's wave init
 const GREED_LIFETIME_MS = 30000; // Greed despawns 30s after spawning if not killed
 const GREED_COLORS = ['green', 'red', 'blue', 'purple'];
 /** Client default kill-bar target until first server `required` emit (see ExperienceBar.tsx). */
@@ -250,6 +251,7 @@ const GOLD_REWARD_TABLE = Object.freeze({
   'weaver:green': { min: 9, max: 14 },
   'weaver:blue': { min: 8, max: 12 },
   'ghoul': { min: 0, max: 4 },
+  'wraith': { min: 50, max: 80 },
   'boss': { fixed: 50 },
   'boss2': { fixed: 100 },
   'boss3': { fixed: 150 },
@@ -1184,6 +1186,10 @@ class GameRoom {
     return !!this.coopBossThroneArena;
   }
 
+  getCoopCombatTransitionId() {
+    return this.coopCombatTransition?.id ?? null;
+  }
+
   getCoopThroneBossKind() {
     return this.coopThroneBossKind;
   }
@@ -1247,7 +1253,13 @@ class GameRoom {
       this.startEnemyAI();
     }
     if (process.env.NODE_ENV !== 'production') {
-      console.log(`🌀 Co-op combat transition ${id} released (${reason})`);
+      console.log(`🌀 Co-op combat transition ${id} released (${reason})`, {
+        spawnInitialWave: !!transition.spawnInitialWave,
+        startAIOnRelease: !!transition.startAIOnRelease,
+      });
+      if (this.enemyAI?.scheduleAggroDebugSnapshot) {
+        this.enemyAI.scheduleAggroDebugSnapshot(`transition-${id}`);
+      }
     }
     return true;
   }
@@ -1256,6 +1268,13 @@ class GameRoom {
     const transition = this.coopCombatTransition;
     const id = Number(transitionId);
     if (!transition || !Number.isFinite(id) || transition.id !== id) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('⚠️ coop-combat-transition-ready rejected', {
+          playerId,
+          transitionId: id,
+          activeTransitionId: transition?.id ?? null,
+        });
+      }
       return false;
     }
     if (!this.players.has(playerId)) {
@@ -1296,8 +1315,13 @@ class GameRoom {
     this.miniBoss1SpawnedThisRoom = false;
     this.tripleBossIds = null;
     this.boss1EliteKnightIds = null;
-    this._clearCoopCombatTransitionTimer();
-    this.coopCombatTransition = null;
+    if (this.coopCombatTransition) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.warn('⚠️ _clearAllCombatEnemies clearing active coopCombatTransition without release');
+      }
+      this._clearCoopCombatTransitionTimer();
+      this.coopCombatTransition = null;
+    }
     this.stopEnemyAI();
     const ids = Array.from(this.enemies.keys());
     for (const id of ids) {
@@ -1484,6 +1508,13 @@ class GameRoom {
     if (!offer || offer.length !== 2) {
       return false;
     }
+
+    for (const player of this.players.values()) {
+      if (!this._playerThronePrepReady(player)) {
+        return false;
+      }
+    }
+
     let pick = chosenCampType != null ? String(chosenCampType).toLowerCase() : '';
     if (!pick || !offer.includes(pick)) {
       pick = offer[0];
@@ -1976,6 +2007,7 @@ class GameRoom {
     const weapon = COOP_THRONE_WEAPONS[Math.floor(Math.random() * COOP_THRONE_WEAPONS.length)];
     player.weapon = weapon;
     player.subclass = COOP_DEFAULT_SUBCLASS[weapon] ?? 'ELEMENTAL';
+    player.archetype = 'ROGUE';
     player.lateJoinCombatLoadout = true;
   }
 
@@ -1993,6 +2025,7 @@ class GameRoom {
       rotation: { x: 0, y: 0, z: 0 },
       weapon: weapon,
       subclass: subclass,
+      archetype: 'ROGUE',
       health: maxHealth, // Start with full health
       maxHealth: maxHealth,
       level: 1, // Start at level 1
@@ -2321,6 +2354,59 @@ class GameRoom {
       }
     }
     if (hitAny) this._tryEmitCoopRoomWhisper();
+  }
+
+  /**
+   * Damage players whose XZ foot position lies inside a horizontal cone from origin along facingAngle.
+   * @param {number} originX
+   * @param {number} originZ
+   * @param {number} facingAngle - radians, atan2(dx, dz) matching enemy.rotation
+   * @param {number} range - max distance along cone axis
+   * @param {number} halfAngleRad - half-angle of cone in radians
+   */
+  damagePlayersInCone(originX, originZ, facingAngle, range, halfAngleRad, damage, damageType = 'wraith_buzzsaw', meta = null) {
+    if (!this.io || !this.players || range <= 0 || halfAngleRad <= 0 || damage <= 0) return 0;
+    if (this.isCoopCombatTransitionActive()) return 0;
+
+    const fwdX = Math.sin(facingAngle);
+    const fwdZ = Math.cos(facingAngle);
+    const cosHalf = Math.cos(halfAngleRad);
+    let hitCount = 0;
+
+    for (const [playerId, player] of this.players) {
+      if (!player || player.health <= 0) continue;
+      const px = player.position.x;
+      const pz = player.position.z;
+      const dx = px - originX;
+      const dz = pz - originZ;
+      const dist = Math.hypot(dx, dz);
+      if (dist <= 0 || dist > range) continue;
+
+      const dot = (dx * fwdX + dz * fwdZ) / dist;
+      if (dot < cosHalf) continue;
+
+      const previousHealth = player.health;
+      player.health = Math.max(0, player.health - damage);
+      hitCount += 1;
+      const wasKilled = previousHealth > 0 && player.health <= 0;
+      if (meta?.sourceEnemyId && this.enemyAI) {
+        this.enemyAI.recordAlliedProtectionThreat(meta.sourceEnemyId, playerId, damage);
+      }
+      this._emitPlayerDamagedWithHealth(playerId, player, {
+        sourcePlayerId: null,
+        targetPlayerId: playerId,
+        damage,
+        damageType,
+        isCritical: false,
+        newHealth: player.health,
+        maxHealth: player.maxHealth,
+        wasKilled,
+        timestamp: Date.now(),
+        ...(meta?.sourceEnemyId ? { sourceEnemyId: meta.sourceEnemyId } : {}),
+      });
+    }
+    if (hitCount > 0) this._tryEmitCoopRoomWhisper();
+    return hitCount;
   }
 
   damagePlayersInHorizontalRing(center, radius, damage, damageType = 'boss_aoe', meta = null) {
@@ -2765,6 +2851,9 @@ class GameRoom {
     if (this.gameMode === 'coop') {
       this.initializeEnemies();
       this.spawnOrReviveAlliedUnitsForEnemyRoom();
+      if (this.enemyAI?.clearNonPlayerAggroTargets) {
+        this.enemyAI.clearNonPlayerAggroTargets();
+      }
       this.startEnemyAI();
     }
   }
@@ -2805,9 +2894,9 @@ class GameRoom {
     const tier = Math.min(this.coopBossesDefeatedCount || 0, 3);
     const hpBonus = 225 * tier;
 
-    const SHADE_DAMAGE_BY_TIER   = [18, 25, 35, 40];
+    const SHADE_DAMAGE_BY_TIER   = [13, 18, 25, 33];
     const TEMPLAR_DAMAGE_BY_TIER = [48, 60, 78, 96];
-    const VIPER_DAMAGE_BY_TIER   = [55, 70, 85, 95];
+    const VIPER_DAMAGE_BY_TIER   = [50, 65, 85, 95];
 
     const ts = Date.now();
     const base = {
@@ -2855,6 +2944,11 @@ class GameRoom {
       return { id: `martyr-${campIndex}-${slotIndex}-${ts}`, type: 'martyr', ...base,
         health: 200, maxHealth: 175, damage: 0, moveSpeed: 3.0,
         soulType: campDef.knightSoulType };
+    }
+    if (type === 'wraith') {
+      return { id: `wraith-${campIndex}-${slotIndex}-${ts}`, type: 'wraith', ...base,
+        health: 800 + hpBonus, maxHealth: 800 + hpBonus,
+        damage: 0, moveSpeed: 2.5, soulType: 'orange' };
     }
     if (type === 'titan') {
       // Excluded from HP scaling.
@@ -3223,6 +3317,7 @@ class GameRoom {
     const titanQuota = this._computeRoomTitanQuota(roomKind);
     this.roomTitanQuota = titanQuota;
     this.roomHasTitans = titanQuota > 0;
+    this.roomHasWraith = Math.random() < COOP_WAVE_WRAITH_ROOM_CHANCE;
 
     if (isMixedRoom) {
       this.roomHasMartyrs = false;
@@ -3365,6 +3460,7 @@ class GameRoom {
 
     this._maybeSpawnMartyrBonusEnemies(isMixedRoom);
     this._maybeSpawnGreedBonusEnemy(isMixedRoom);
+    this._maybeSpawnWraithBonusEnemy(isMixedRoom);
 
     if (this.io) {
       this.io.to(this.roomId).emit('camps-initialized', {
@@ -3428,6 +3524,37 @@ class GameRoom {
     }
     if (spawned > 0) {
       console.log(`💣 Martyr bonus: spawned ${spawned} in room ${this.currentCoopRoomKind}`);
+      this.startEnemyAI();
+    }
+  }
+
+  /** Spawn 1–2 additive wraith bonus enemies in countable combat rooms (never counts toward quota). */
+  _maybeSpawnWraithBonusEnemy(isMixedRoom) {
+    if (!this.roomHasWraith) return;
+    if (!this._isCountableCoopCombatRoom(this.currentCoopRoomKind)) return;
+
+    let campDef = this.coopWaveSpawnPlan?.campDef;
+    if (!campDef) {
+      const keys = Object.keys(GameRoom.CAMP_TYPES);
+      campDef = GameRoom.CAMP_TYPES[keys[Math.floor(Math.random() * keys.length)]];
+    }
+
+    const count = 1 + Math.floor(Math.random() * 2);
+    const positions = this._generateScatteredPositions(count, isMixedRoom);
+    let spawned = 0;
+    for (let i = 0; i < count; i++) {
+      const pos = positions[i];
+      if (!pos) continue;
+      const enemy = this._buildEnemy('wraith', 0, 900 + i, pos, campDef);
+      this.enemies.set(enemy.id, enemy);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+        this._emitEnemySummonVfx(enemy);
+      }
+      spawned++;
+    }
+    if (spawned > 0) {
+      console.log(`👻 Wraith bonus: spawned ${spawned} in room ${this.currentCoopRoomKind}`);
       this.startEnemyAI();
     }
   }
@@ -3662,6 +3789,9 @@ class GameRoom {
 
     if (appliedDamage > 0) {
       enemy.lastDamageAt = Date.now();
+      if (enemy.type === 'wraith' && this.enemyAI?.revealWraithStealth) {
+        this.enemyAI.revealWraithStealth(enemy.id, 'damage');
+      }
     }
 
     if (enemy.type === 'training-dummy' && enemy.health <= 0) {
@@ -3813,6 +3943,13 @@ class GameRoom {
         };
       } else if (hitMeta && hitMeta.damageType === 'mushroom_eruption') {
         damagedPayload.damageType = 'mushroom_eruption';
+        damagedPayload.position = {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        };
+      }
+      if (result.wasKilled) {
         damagedPayload.position = {
           x: enemy.position.x,
           y: enemy.position.y,
@@ -4620,6 +4757,14 @@ class GameRoom {
             health: killer.health,
             maxHealth: killer.maxHealth,
           });
+          this.io.to(this.roomId).emit('player-healing', {
+            sourcePlayerId: fromPlayerId,
+            targetPlayerId: fromPlayerId,
+            healingAmount: relentlessHeal,
+            healingType: 'relentless_backstab',
+            position: killer.position || { x: 0, y: 0, z: 0 },
+            timestamp: Date.now(),
+          });
           this.io.to(fromPlayerId).emit('sabres-relentless-backstab-kill');
         }
       }
@@ -5037,6 +5182,36 @@ class GameRoom {
           this._pruneEnemyMaps(enemyId);
           this.enemies.delete(enemyId);
           console.log(`🗑️ Martyr ${enemyId} removed from enemies map after death fade`);
+          if (this.io) {
+            this.io.to(this.roomId).emit('enemy-removed', { enemyId, timestamp: Date.now() });
+          }
+        }, 2500);
+
+        return result;
+
+      } else if (enemy.type === 'wraith') {
+        if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
+          this.io.to(this.roomId).emit('player-experience-gained', {
+            playerId: fromPlayerId,
+            experienceGained: 75,
+            source: 'wraith_kill',
+            enemyId: enemyId,
+            timestamp: Date.now()
+          });
+        }
+
+        if (Math.random() < 0.12) {
+          this.spawnItemDrop(enemy.position, enemy);
+        }
+
+        if (this.enemyAI) {
+          this.enemyAI.removeEnemyAggro(enemyId);
+        }
+
+        this._scheduleTimeout(() => {
+          this._pruneEnemyMaps(enemyId);
+          this.enemies.delete(enemyId);
+          console.log(`🗑️ Wraith ${enemyId} removed from enemies map after death fade`);
           if (this.io) {
             this.io.to(this.roomId).emit('enemy-removed', { enemyId, timestamp: Date.now() });
           }
@@ -6378,6 +6553,26 @@ class GameRoom {
     }
   }
 
+  /** Co-op throne prep — persist local archetype selection. */
+  updatePlayerArchetype(playerId, archetype) {
+    const player = this.players.get(playerId);
+    if (!player) return null;
+    const raw = archetype != null ? String(archetype).toUpperCase() : 'NONE';
+    const allowed = new Set(['NONE', 'ROGUE', 'GLADIATOR', 'ACOLYTE']);
+    const normalized = allowed.has(raw) ? raw : 'NONE';
+    player.archetype = normalized;
+    return normalized;
+  }
+
+  /** True when a co-op player has chosen a weapon and archetype in the throne prep room. */
+  _playerThronePrepReady(player) {
+    if (!player) return false;
+    const weapon = player.weapon != null ? String(player.weapon).toLowerCase() : 'none';
+    if (!weapon || weapon === 'none') return false;
+    const archetype = player.archetype != null ? String(player.archetype).toUpperCase() : 'NONE';
+    return archetype !== 'NONE';
+  }
+
   updatePlayerHealth(playerId, health) {
     const player = this.players.get(playerId);
     if (player) {
@@ -6391,6 +6586,16 @@ class GameRoom {
       player.shield = Math.max(0, Math.min(maxShield || player.maxShield || 100, shield));
       if (maxShield !== undefined) {
         player.maxShield = maxShield;
+      }
+    }
+  }
+
+  updatePlayerEnergy(playerId, energy, maxEnergy) {
+    const player = this.players.get(playerId);
+    if (player) {
+      player.energy = Math.max(0, Math.min(maxEnergy || player.maxEnergy || 100, energy));
+      if (maxEnergy !== undefined) {
+        player.maxEnergy = maxEnergy;
       }
     }
   }

@@ -12,6 +12,7 @@ import TemplarRenderer from '@/components/enemies/TemplarRenderer';
 import TitanRenderer from '@/components/enemies/TitanRenderer';
 import GreedRenderer from '@/components/enemies/GreedRenderer';
 import MartyrRenderer from '@/components/enemies/MartyrRenderer';
+import WraithRenderer from '@/components/enemies/WraithRenderer';
 import ZombieRenderer from '@/components/enemies/ZombieRenderer';
 import AlliedKnightRenderer from '@/components/enemies/AlliedKnightRenderer';
 import AlliedHealerRenderer from '@/components/enemies/AlliedHealerRenderer';
@@ -299,6 +300,24 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
             health={enemy.health}
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
+            staggerBuildup={enemy.staggerBuildup ?? 0}
+          />
+        );
+      })}
+
+      {(enemiesByType.get('wraith') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <WraithRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={enemy.position}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+            campType={enemy.campType}
             staggerBuildup={enemy.staggerBuildup ?? 0}
           />
         );

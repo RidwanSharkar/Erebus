@@ -1,6 +1,7 @@
 import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Mesh, Line, Vector3, BufferGeometry, LineBasicMaterial, AdditiveBlending, BufferAttribute, SphereGeometry, MeshStandardMaterial } from '@/utils/three-exports';
+import { applyArrowTrailDrawRange } from '@/utils/arrowTrailDrawRange';
 
 interface ChargedArrowTrailProps {
   color: string;
@@ -55,6 +56,7 @@ function ChargedArrowTrail({
     geometry.setAttribute('position', new BufferAttribute(positions, 3));
     geometry.setAttribute('color', new BufferAttribute(colors, 3));
     geometry.setIndex(indices);
+    geometry.setDrawRange(0, 0);
 
     return geometry;
   }, [maxTrailLength]);
@@ -70,7 +72,12 @@ function ChargedArrowTrail({
     });
   }, [opacity]);
 
-  const trailLine = useMemo(() => new Line(trailGeometry, trailMaterial), [trailGeometry, trailMaterial]);
+  const trailLine = useMemo(() => {
+    const line = new Line(trailGeometry, trailMaterial);
+    line.visible = false;
+    line.frustumCulled = false;
+    return line;
+  }, [trailGeometry, trailMaterial]);
 
   const glowGeos = useMemo(
     () => Array.from({ length: GLOW_COUNT }, (_, i) => new SphereGeometry(size * 2 * (0.3 - i * 0.05), 8, 8)),
@@ -122,6 +129,8 @@ function ChargedArrowTrail({
 
   useEffect(() => {
     return () => {
+      trailLine.visible = false;
+      trailGeometry.setDrawRange(0, 0);
       trailGeometry.dispose();
       trailMaterial.dispose();
       glowGeos.forEach((g) => g.dispose());
@@ -129,7 +138,7 @@ function ChargedArrowTrail({
       sparkGeo.dispose();
       sparkMats.forEach((m) => m.dispose());
     };
-  }, [trailGeometry, trailMaterial, glowGeos, glowMats, sparkGeo, sparkMats]);
+  }, [trailGeometry, trailMaterial, trailLine, glowGeos, glowMats, sparkGeo, sparkMats]);
 
   const _scratchPos = useRef(new Vector3());
 
@@ -156,7 +165,8 @@ function ChargedArrowTrail({
         positions[i * 3 + 2] = currentPos.z;
       }
       trailGeometry.attributes.position.needsUpdate = true;
-      trailGeometry.setDrawRange(0, Math.max(0, (maxTrailLength - 1) * 2));
+      applyArrowTrailDrawRange(trailGeometry, maxTrailLength);
+      if (trailRef.current) trailRef.current.visible = true;
     } else {
       // Ring-buffer write.
       ringHead.current = (ringHead.current + maxTrailLength - 1) % maxTrailLength;
@@ -174,7 +184,8 @@ function ChargedArrowTrail({
       }
 
       trailGeometry.attributes.position.needsUpdate = true;
-      trailGeometry.setDrawRange(0, len >= 2 ? (len - 1) * 2 : 0);
+      applyArrowTrailDrawRange(trailGeometry, len);
+      if (trailRef.current) trailRef.current.visible = len >= 2;
     }
 
     const _head = ringHead.current;

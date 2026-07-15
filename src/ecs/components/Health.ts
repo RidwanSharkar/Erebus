@@ -2,7 +2,7 @@
 import { Component } from '../Entity';
 import { Shield } from './Shield';
 
-export type InvulnerabilitySource = 'none' | 'aegis' | 'dodge' | 'hit_iframe' | 'other';
+export type InvulnerabilitySource = 'none' | 'aegis' | 'dodge' | 'hit_iframe' | 'deflect' | 'other';
 
 export class Health extends Component {
   public static readonly componentType = 'Health'; // Explicit type identifier
@@ -19,6 +19,8 @@ export class Health extends Component {
   public regenerationRate: number;
   public regenerationDelay: number;
   public lastDamageTime: number;
+  /** Whether the current Deflect invulnerability window has already negated a hit (only the first negated hit fires the bolt/energy refill). */
+  public deflectNegationConsumed: boolean;
 
   constructor(maxHealth: number = 100) {
     super();
@@ -34,6 +36,7 @@ export class Health extends Component {
     this.regenerationRate = 0; // Health per second
     this.regenerationDelay = 3; // Seconds after damage before regeneration starts
     this.lastDamageTime = 0;
+    this.deflectNegationConsumed = false;
   }
 
   public takeDamage(amount: number, currentTime: number = Date.now() / 1000, entity?: any, bypassInvulnerability: boolean = false): boolean {
@@ -150,6 +153,9 @@ export class Health extends Component {
     if (source === 'aegis' && typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('aegis-invuln-granted'));
     }
+    if (source === 'deflect') {
+      this.deflectNegationConsumed = false;
+    }
   }
 
   /** Add to remaining invulnerability time, or start invuln if not active. */
@@ -171,6 +177,19 @@ export class Health extends Component {
 
   public isDodgeInvulnerable(): boolean {
     return this.isInvulnerable && this.invulnerabilitySource === 'dodge';
+  }
+
+  public isDeflectInvulnerable(): boolean {
+    return this.isInvulnerable && this.invulnerabilitySource === 'deflect';
+  }
+
+  /** Consumes the current Deflect window's negation, returning true only the first time it's called while active. */
+  public consumeDeflectNegation(): boolean {
+    if (!this.isDeflectInvulnerable() || this.deflectNegationConsumed) {
+      return false;
+    }
+    this.deflectNegationConsumed = true;
+    return true;
   }
 
   public removeInvulnerability(): void {
@@ -199,6 +218,7 @@ export class Health extends Component {
     this.regenerationRate = 0;
     this.regenerationDelay = 3;
     this.lastDamageTime = 0;
+    this.deflectNegationConsumed = false;
     this.enabled = true;
   }
 
@@ -214,6 +234,7 @@ export class Health extends Component {
     clone.regenerationRate = this.regenerationRate;
     clone.regenerationDelay = this.regenerationDelay;
     clone.lastDamageTime = this.lastDamageTime;
+    clone.deflectNegationConsumed = this.deflectNegationConsumed;
     return clone;
   }
 }

@@ -75,7 +75,6 @@ function TemplarRenderer({
   const isAbilityRef    = useRef(false);
 
   const targetPosition  = useRef(new Vector3(position.x, position.y, position.z));
-  const serverPositionRef = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation  = useRef(rotation);
   const isAttackingRef  = useRef(false);
   const isWalkingRef    = useRef(false);
@@ -107,17 +106,39 @@ function TemplarRenderer({
     }
   };
 
-  const flushServerPosition = useCallback(() => {
-    targetPosition.current.copy(serverPositionRef.current);
-    if (groupRef.current) {
-      groupRef.current.position.copy(serverPositionRef.current);
-      groupRef.current.rotation.y = targetRotation.current;
+  const patchLiveTransform = useCallback((
+    livePosition: { x: number; y: number; z: number },
+    liveRotation: number,
+  ) => {
+    const existing = enemyTransformsRef.current.get(id);
+    if (existing) {
+      existing.position = livePosition;
+      existing.rotation = liveRotation;
+    } else {
+      enemyTransformsRef.current.set(id, {
+        position: { x: livePosition.x, y: livePosition.y, z: livePosition.z },
+        rotation: liveRotation,
+      });
     }
-  }, []);
 
-  useEffect(() => {
-    serverPositionRef.current.set(position.x, position.y, position.z);
-  }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
+    const enemy = enemiesRef.current.get(id);
+    if (enemy) {
+      enemy.position = livePosition;
+      enemy.rotation = liveRotation;
+    }
+  }, [id, enemyTransformsRef, enemiesRef]);
+
+  const flushServerPosition = useCallback(() => {
+    const live = enemyTransformsRef.current.get(id);
+    if (!live) return;
+
+    targetPosition.current.set(live.position.x, live.position.y, live.position.z);
+    targetRotation.current = live.rotation;
+    if (groupRef.current) {
+      groupRef.current.position.set(live.position.x, live.position.y, live.position.z);
+      groupRef.current.rotation.y = live.rotation;
+    }
+  }, [id, enemyTransformsRef]);
 
   // Initialise the group at the exact server position before the first frame.
   const setGroupRef = useCallback((group: Group | null) => {
@@ -228,6 +249,8 @@ function TemplarRenderer({
       endPosition: { x: number; y: number; z: number },
       rot: number,
     ) => {
+      patchLiveTransform(endPosition, rot);
+
       const endPos = new Vector3(endPosition.x, endPosition.y, endPosition.z);
       targetPosition.current.copy(endPos);
       targetRotation.current = rot;
@@ -327,7 +350,7 @@ function TemplarRenderer({
       socket.off('templar-leap-start', onLeapStart);
       socket.off('templar-leap-land', onLeapLand);
     };
-  }, [id, socket, flushServerPosition]);
+  }, [id, socket, flushServerPosition, patchLiveTransform]);
 
   useLayoutEffect(() => {
     applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth, ENEMY_HP_BAR_WIDTH);
@@ -340,10 +363,22 @@ function TemplarRenderer({
     syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, ENEMY_HP_BAR_WIDTH);
     syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
 
-    const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    const locked = isAnimLocked();
+    let dist = 0;
+
+    if (locked) {
+      // During charge / blink smite / leap, keep the locally snapped target — do not
+      // overwrite it from enemyTransformsRef (may still hold pre-blink position).
+    } else {
+      dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+      if (dist > 5.0) {
+        group.position.copy(targetPosition.current);
+      }
+    }
+
     updateEnemyWalkStateFromMoveDist(
       dist,
-      isAnimLocked(),
+      locked,
       isDying,
       WALK_STOP_DELAY,
       lastMoveTimeRef,

@@ -325,6 +325,52 @@ export const AEGIS_ROOM_DURATION_SEC = 3;
 /** MANA SHIELD room boon — shield restored per effective Intellect per dash charge spent. */
 export const MANA_SHIELD_RESTORE_PER_INTELLECT = 2;
 
+/** Shift-tap Deflect — cooldown between activations (seconds). */
+export const DEFLECT_SHIFT_COOLDOWN_SEC = 1.25;
+/** Shift-tap Deflect — invulnerability + block duration (seconds). */
+export const DEFLECT_SHIFT_DURATION_SEC = 1.0;
+/** Shift-tap Deflect — Energy cost to activate. */
+export const DEFLECT_SHIFT_ENERGY_COST = 30;
+/** Shift-tap Deflect — damage dealt by the homing bolt on the first negated hit. */
+export const DEFLECT_BOLT_DAMAGE = 375;
+/** Shift-tap Deflect — bolt grow-in-place charge duration before it homes in (ms). */
+export const DEFLECT_BOLT_CHARGE_MS = 1000;
+
+/** Acolyte Locusts — nearest hostile acquisition radius (units). */
+export const LOCUST_TARGET_RADIUS = 16;
+/** Acolyte Locusts — energy spent per volley of three missiles. */
+export const LOCUST_ENERGY_PER_VOLLEY = 15;
+/** Acolyte Locusts — seconds between missiles within a volley. */
+export const LOCUST_MISSILE_INTERVAL_SEC = 0.275;
+/** Acolyte Locusts — missiles per volley. */
+export const LOCUST_MISSILES_PER_VOLLEY = 3;
+/** Acolyte Locusts — seconds after launch before homing/acceleration begins. */
+export const LOCUST_HOMING_DELAY_SEC = 0.4;
+/** Acolyte Locusts — flat base damage per missile. */
+export const LOCUST_BASE_DAMAGE = 8;
+/** Acolyte Locusts — bonus damage per point of Intellect. */
+export const LOCUST_INTELLECT_DAMAGE_MULTIPLIER = 3;
+
+/** Compute per-missile Locust damage from allocated stats. */
+export function computeLocustMissileDamage(stats: {
+  strength?: number;
+  agility?: number;
+  stamina?: number;
+  intellect?: number;
+}): number {
+  const strength = stats.strength ?? 0;
+  const agility = stats.agility ?? 0;
+  const stamina = stats.stamina ?? 0;
+  const intellect = stats.intellect ?? 0;
+  return (
+    LOCUST_BASE_DAMAGE +
+    strength +
+    agility +
+    stamina +
+    LOCUST_INTELLECT_DAMAGE_MULTIPLIER * intellect
+  );
+}
+
 /** TEMPEST INITIATE — allied knight smite cooldown when boon is active. */
 export const TEMPEST_INITIATE_SMITE_COOLDOWN_MS = 2500;
 /** TEMPEST INITIATE — flat bonus damage added to allied knight smite. */
@@ -517,9 +563,9 @@ export const CROSSENTROPY_FRAGMENTATION_PROC_CHANCE = 0.5;
 /** FRAGMENTATION talent — horizontal (xz) max distance from struck enemy to ricochet target. */
 export const CROSSENTROPY_FRAGMENTATION_NEAR_RADIUS_UNITS = 15;
 /** FRAGMENTATION talent — Entropic Bolt: proc chance for 3rd target (after guaranteed 2nd). */
-export const ENTROPIC_FRAGMENTATION_SECOND_HOP_CHANCE = 0.5;
+export const ENTROPIC_FRAGMENTATION_SECOND_HOP_CHANCE = 0.4;
 /** FRAGMENTATION talent — Entropic Bolt: proc chance for 4th target (after 3rd). */
-export const ENTROPIC_FRAGMENTATION_THIRD_HOP_CHANCE = 0.3;
+export const ENTROPIC_FRAGMENTATION_THIRD_HOP_CHANCE = 0.1;
 
 /** Whether an Entropic Bolt fragmentation chain should spawn the next hop (hop 0 → always). */
 export function shouldEntropicFragmentationChain(fragmentHop: number): boolean {
@@ -537,7 +583,7 @@ export const RELENTLESS_BACKSTAB_KILL_BASE = 30;
 /** Relentless (Sabres): additional HP healed per point of Stamina (all sources). */
 export const RELENTLESS_BACKSTAB_KILL_HEAL_PER_STAMINA = 5;
 /** Vorpal Gust — piercing beam along horizontal camera forward (XZ). */
-export const VORPAL_GUST_BEAM_LENGTH = 5.5;
+export const VORPAL_GUST_BEAM_LENGTH = 5.65;
 export const VORPAL_GUST_BEAM_RADIUS = 1;
 export const VORPAL_GUST_BEAM_ORIGIN_FORWARD_OFFSET = 0.5;
 /** Beam VFX origin height in DragonUnit local space (weapon root; ~bow/chest). */
@@ -598,7 +644,7 @@ export const CROSSENTROPY_REAPER_HIT_HEAL = 2;
 export const CROSSENTROPY_MAX_TRAVEL_DISTANCE = 20;
 
 /** Arctic Shards — Entropic hit chance to spawn concentrated blizzard. */
-export const ARCTIC_SHARDS_PROC_CHANCE = 0.15;
+export const ARCTIC_SHARDS_PROC_CHANCE = 0.175;
 /** Arctic Shards — fixed entropic bolt damage (purple room LMB line). */
 export const ARCTIC_ENTROPIC_BOLT_DAMAGE = 47;
 /** Arctic / Glacial ground blizzard — duration at fixed point (seconds). */
@@ -607,7 +653,7 @@ export const ARCTIC_BLIZZARD_DURATION_SEC = 6;
 export const ARCTIC_BLIZZARD_TICK_MS = 500;
 export const ARCTIC_BLIZZARD_DAMAGE_PER_TICK = 30;
 /** HAILSTORM room boon — arctic blizzard base damage per tick (up from `ARCTIC_BLIZZARD_DAMAGE_PER_TICK`). */
-export const HAILSTORM_ARCTIC_BLIZZARD_DAMAGE_PER_TICK = 45;
+export const HAILSTORM_ARCTIC_BLIZZARD_DAMAGE_PER_TICK = 50;
 /** HAILSTORM room boon — bonus arctic blizzard damage per Intellect point. */
 export const HAILSTORM_INTELLECT_DAMAGE_PER_POINT = 2;
 /** XZ radius for arctic ground blizzard ticks. */
@@ -634,7 +680,7 @@ export const REANIMATE_SUNWELL_HEAL = 15;
 export const REANIMATE_SUNWELL_COOLDOWN_SEC = 5;
 
 /** Infested Smite — heal per enemy hit per Smite beam. */
-export const INFESTED_SMITE_HEAL_PER_TARGET = 10;
+export const INFESTED_SMITE_HEAL_PER_TARGET = 20;
 
 /** Runeblade Smite — flat self-heal when the beam hits at least one target (stacks with Infested Smite). */
 export const RUNEBLADE_SMITE_BASE_HEAL = 10;
@@ -643,7 +689,7 @@ export const RUNEBLADE_SMITE_BASE_HEAL = 10;
 export const REAPING_TALONS_RETURN_HEAL_PER_ORB = 4;
 
 /** Runeblade — HP healed per successful LMB swing while Storm Shroud (Flurry) is active (Windfury / ability). */
-export const RUNEBLADE_FLURRY_HEAL_PER_SLASH = 2;
+export const RUNEBLADE_FLURRY_HEAL_PER_SLASH = 8;
 
 /** Runeblade only: `effectiveFireRate /=` this while Flurry is active (Spear/Sword use 1.5). */
 export const RUNEBLADE_FLURRY_ATTACK_SPEED_FACTOR = 1.35;
@@ -661,7 +707,7 @@ export const INFERNAL_SMITE_TICKS = 4;
 export const INFERNAL_SMITE_CRIT_CHANCE_ADD = 0.2;
 
 /** Vengeance — Colossus Smite: max extra damage multiplier at 0 HP (+200% → 3× total vs full HP). Linear in missing health fraction. */
-export const VENGEANCE_SMITE_MAX_EXTRA_DAMAGE_MULT = 2.5;
+export const VENGEANCE_SMITE_MAX_EXTRA_DAMAGE_MULT = 3.25;
 
 export type TalentId =
   | typeof TALENT_WRATH_STRIKE
@@ -1306,7 +1352,7 @@ export const doubleTalonsTalentDefinition: TalentDefinition = {
 
 export const healingStreamTalentDefinition: TalentDefinition = {
   id: TALENT_HEALING_STREAM,
-  name: 'HEALING STREAM',
+  name: 'Healing Stream',
   description:
     'You heal 2 HP per second for each of your Totems within range.',
   modifiesAbilityId: 'Mantra (Q)',
@@ -1436,7 +1482,7 @@ export const relentlessTalentDefinition: TalentDefinition = {
 
 export const doubleStabTalentDefinition: TalentDefinition = {
   id: TALENT_DOUBLE_STAB,
-  name: 'Repeat Offender',
+  name: 'Assassin',
   description:
     'Backstab now holds 2 charges for use.',
   modifiesAbilityId: 'Backstab (Q)',
@@ -5355,22 +5401,22 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_NECROS_INITIATE]: '/icons/necrosInitiate.svg',
   [TALENT_INFERNAL_INITIATE]: '/icons/infernalInitiate.svg',
   [TALENT_ABYSSAL_INITIATE]: '/icons/abyssalInitiate.svg',
-  [TALENT_MAGMA_CURRENT]: null,
+  [TALENT_MAGMA_CURRENT]: '/icons/magmaCurrent.svg',
   [TALENT_LEGION]: '/icons/legion.svg',
   [TALENT_FATEBREAKER]: '/icons/valkyrie.svg',
   [TALENT_FROST_QUEEN]: '/icons/frostQueen.svg',
   [TALENT_FORCE_OF_NATURE]: '/icons/plagueDoctor.svg',
   [TALENT_MONSOON]: '/icons/stormcaller.svg',
-  [TALENT_TYRANTS_CLOAK]: null,
+  [TALENT_TYRANTS_CLOAK]: '/icons/tyrantsCloak.svg',
   [TALENT_HELLFIRE_VENOM]: '/icons/hellfireVenom.svg',
   [TALENT_STORM_WITCH]: '/icons/stormWitch.svg',
   [TALENT_DUALITY]: '/icons/duality.svg',
   [TALENT_ACID_RAIN]: '/icons/acidRain.svg',
   [TALENT_SPELL_THIEF]: '/icons/spellThief.svg',
-  [TALENT_DIVINE_COLD]: '/icons/duality.svg',
-  [TALENT_PYROMANIA]: '/icons/meteorStrike.svg',
-  [TALENT_LETHAL_INJECTION]: '/icons/cloudkill.svg',
-  [TALENT_STORM_SHIELD]: '/icons/orbShield.svg',
+  [TALENT_DIVINE_COLD]: '/icons/divineCold.svg',
+  [TALENT_PYROMANIA]: '/icons/pyromania.svg',
+  [TALENT_LETHAL_INJECTION]: '/icons/lethalInjection.svg',
+  [TALENT_STORM_SHIELD]: '/icons/stormShield.svg',
 };
 
 const COOP_ROOM_COLOR_BY_TALENT: Partial<Record<TalentId, CoopRoomColor>> = (() => {

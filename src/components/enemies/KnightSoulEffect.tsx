@@ -15,7 +15,7 @@ import {
 } from '@/utils/sharedEnemyUiGeometry';
 import { SharedMesh } from '@/utils/SharedMesh';
 
-type SoulType = 'green' | 'red' | 'blue' | 'purple' | 'yellow';
+type SoulType = 'green' | 'red' | 'blue' | 'purple' | 'yellow' | 'orange';
 
 interface KnightSoulEffectProps {
   soulType: SoulType;
@@ -29,6 +29,7 @@ const SOUL_COLORS: Record<SoulType, { core: string; glow: string; light: string 
   blue:   { core: '#44aaff', glow: '#2266dd', light: '#3399ff' },
   purple: { core: '#cc44ff', glow: '#8811cc', light: '#bb33ff' },
   yellow: { core: '#ffe433', glow: '#cc9900', light: '#fff176' },
+  orange: { core: '#ff8833', glow: '#cc5500', light: '#ffaa44' },
 };
 
 const ORBIT_COUNT = 4;

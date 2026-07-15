@@ -6,6 +6,7 @@ import { Vector3 } from '@/utils/three-exports';
 import RejuvenatingShot from './RejuvenatingShot';
 import RejuvenatingShotHealingEffect from './RejuvenatingShotHealingEffect';
 import { World } from '@/ecs/World';
+import { getRejuvenatingShotHealAmount } from '@/utils/bowConstants';
 
 export interface RejuvenatingShotProjectile {
   id: number;
@@ -18,28 +19,46 @@ export interface RejuvenatingShotProjectile {
   distanceTraveled: number;
   opacity: number;
   fadeStartTime: number | null;
-  hasHealed: boolean; // Track if this projectile has already healed someone
-  healedPlayerId: string | null; // Track which player was healed to prevent double healing
+  hasHealed: boolean;
+  healedTargetId: string | null;
+  healAmount: number;
+  authoritative: boolean;
+}
+
+export interface RejuvenatingShotTriggerOptions {
+  healAmount?: number;
+  authoritative?: boolean;
+}
+
+interface HealTarget {
+  id: string;
+  position: Vector3;
+  health: number;
+  maxHealth: number;
 }
 
 interface RejuvenatingShotManagerProps {
   world: World;
-  playerPositions?: Array<{
-    id: string;
-    position: Vector3;
-    health: number;
-    maxHealth: number;
-  }>;
+  playerPositions?: HealTarget[];
+  alliedTargets?: HealTarget[];
   onPlayerHealed?: (playerId: string, healAmount: number, position: Vector3) => void;
+  onAlliedHealed?: (enemyId: string, healAmount: number, position: Vector3) => void;
 }
 
-// Global function to trigger rejuvenating shot from ControlSystem
-let globalRejuvenatingShotTrigger: ((position: Vector3, direction: Vector3) => void) | null = null;
+let globalRejuvenatingShotTrigger: ((
+  position: Vector3,
+  direction: Vector3,
+  options?: RejuvenatingShotTriggerOptions,
+) => void) | null = null;
 let globalRejuvenatingShotProjectilePool: (() => RejuvenatingShotProjectile[]) | null = null;
 
-export function triggerGlobalRejuvenatingShot(position: Vector3, direction: Vector3): void {
+export function triggerGlobalRejuvenatingShot(
+  position: Vector3,
+  direction: Vector3,
+  options?: RejuvenatingShotTriggerOptions,
+): void {
   if (globalRejuvenatingShotTrigger) {
-    globalRejuvenatingShotTrigger(position, direction);
+    globalRejuvenatingShotTrigger(position, direction, options);
   }
 }
 
@@ -50,8 +69,7 @@ export function getGlobalRejuvenatingShotProjectiles(): RejuvenatingShotProjecti
   return [];
 }
 
-const HEALING_RANGE = 2.0; // Range to detect player collision
-const HEALING_AMOUNT = 80; // Amount to heal players
+const HEALING_RANGE = 2.0;
 
 interface HealingEffectData {
   id: number;
@@ -59,18 +77,62 @@ interface HealingEffectData {
   startTime: number;
 }
 
-export default function RejuvenatingShotManager({ world, playerPositions = [], onPlayerHealed }: RejuvenatingShotManagerProps) {
+function findHealTarget(
+  projectilePosition: Vector3,
+  playerPositions: HealTarget[],
+  alliedTargets: HealTarget[],
+): { kind: 'player' | 'ally'; target: HealTarget } | null {
+  type ClosestHit = { kind: 'player' | 'ally'; target: HealTarget; distance: number };
+  let closest: ClosestHit | null = null;
+
+  const consider = (kind: 'player' | 'ally', target: HealTarget) => {
+    if (target.health >= target.maxHealth) return;
+    const distance = projectilePosition.distanceTo(target.position);
+    if (distance > HEALING_RANGE) return;
+    if (!closest || distance < closest.distance) {
+      closest = { kind, target, distance };
+    }
+  };
+
+  for (const player of playerPositions) {
+    consider('player', player);
+  }
+  for (const ally of alliedTargets) {
+    consider('ally', ally);
+  }
+
+  if (!closest) return null;
+  const hit: ClosestHit = closest;
+  return { kind: hit.kind, target: hit.target };
+}
+
+export default function RejuvenatingShotManager({
+  world,
+  playerPositions = [],
+  alliedTargets = [],
+  onPlayerHealed,
+  onAlliedHealed,
+}: RejuvenatingShotManagerProps) {
   const projectilePool = useRef<RejuvenatingShotProjectile[]>([]);
   const nextProjectileId = useRef(0);
   const [healingEffects, setHealingEffects] = useState<HealingEffectData[]>([]);
   const nextHealingEffectId = useRef(0);
+  const playerPositionsRef = useRef(playerPositions);
+  const alliedTargetsRef = useRef(alliedTargets);
+
+  useEffect(() => {
+    playerPositionsRef.current = playerPositions;
+  }, [playerPositions]);
+
+  useEffect(() => {
+    alliedTargetsRef.current = alliedTargets;
+  }, [alliedTargets]);
   
   const POOL_SIZE = 3;
-  const PROJECTILE_SPEED = 1.0; // Same speed as Cobra Shot
-  const MAX_DISTANCE = 20; // Same range as Cobra Shot
+  const PROJECTILE_SPEED = 1.0;
+  const MAX_DISTANCE = 20;
   const FADE_DURATION = 1000;
 
-  // Initialize projectile pool
   useEffect(() => {
     projectilePool.current = Array(POOL_SIZE).fill(null).map((_, index) => ({
       id: index,
@@ -84,7 +146,9 @@ export default function RejuvenatingShotManager({ world, playerPositions = [], o
       opacity: 1,
       fadeStartTime: null,
       hasHealed: false,
-      healedPlayerId: null
+      healedTargetId: null,
+      healAmount: getRejuvenatingShotHealAmount(0),
+      authoritative: false,
     }));
   }, []);
 
@@ -92,7 +156,11 @@ export default function RejuvenatingShotManager({ world, playerPositions = [], o
     return projectilePool.current.find(p => !p.active);
   }, []);
 
-  const shootRejuvenatingShot = useCallback((position: Vector3, direction: Vector3) => {
+  const shootRejuvenatingShot = useCallback((
+    position: Vector3,
+    direction: Vector3,
+    options?: RejuvenatingShotTriggerOptions,
+  ) => {
     const projectile = getInactiveProjectile();
     if (!projectile) {
       return;
@@ -100,7 +168,6 @@ export default function RejuvenatingShotManager({ world, playerPositions = [], o
 
     const now = Date.now();
 
-    // Set up projectile
     projectile.position.copy(position);
     projectile.direction.copy(direction).normalize();
     projectile.startPosition.copy(position);
@@ -110,12 +177,11 @@ export default function RejuvenatingShotManager({ world, playerPositions = [], o
     projectile.opacity = 1;
     projectile.fadeStartTime = null;
     projectile.hasHealed = false;
-    projectile.healedPlayerId = null;
-
-    console.log('💚 Rejuvenating Shot fired!', { position: position.clone(), direction: direction.clone() });
+    projectile.healedTargetId = null;
+    projectile.healAmount = options?.healAmount ?? getRejuvenatingShotHealAmount(0);
+    projectile.authoritative = options?.authoritative ?? false;
   }, [getInactiveProjectile]);
 
-  // Set up global trigger and projectile pool access
   useEffect(() => {
     globalRejuvenatingShotTrigger = shootRejuvenatingShot;
     globalRejuvenatingShotProjectilePool = () => projectilePool.current;
@@ -125,26 +191,21 @@ export default function RejuvenatingShotManager({ world, playerPositions = [], o
     };
   }, [shootRejuvenatingShot]);
 
-  // Update projectiles and handle collisions
   useFrame(() => {
     const currentTime = Date.now();
 
     projectilePool.current.forEach(projectile => {
       if (!projectile.active) return;
 
-      // Move projectile
       const movement = projectile.direction.clone().multiplyScalar(PROJECTILE_SPEED);
       projectile.position.add(movement);
 
-      // Update distance traveled
       projectile.distanceTraveled = projectile.position.distanceTo(projectile.startPosition);
       
-      // Start fading when approaching max distance
       if (projectile.distanceTraveled > MAX_DISTANCE * 0.8 && !projectile.fadeStartTime) {
         projectile.fadeStartTime = currentTime;
       }
 
-      // Handle fading
       if (projectile.fadeStartTime) {
         const fadeElapsed = currentTime - projectile.fadeStartTime;
         projectile.opacity = Math.max(0, 1 - (fadeElapsed / FADE_DURATION));
@@ -154,49 +215,42 @@ export default function RejuvenatingShotManager({ world, playerPositions = [], o
           projectile.opacity = 1;
           projectile.fadeStartTime = null;
           projectile.hasHealed = false;
-          projectile.healedPlayerId = null;
+          projectile.healedTargetId = null;
           return;
         }
       }
 
-      // Check collisions with players (only if not already healed someone)
-      if (!projectile.hasHealed) {
-        for (const player of playerPositions) {
-          // Skip if we already healed this specific player
-          if (projectile.healedPlayerId === player.id) {
-            continue;
-          }
-          
-          const distance = projectile.position.distanceTo(player.position);
-          if (distance <= HEALING_RANGE) {
-            // Create healing effect at player's position
-            const healingEffectPosition = player.position.clone();
-            healingEffectPosition.y += 0; // Ground level
-            
-            const newHealingEffect: HealingEffectData = {
-              id: nextHealingEffectId.current++,
-              position: healingEffectPosition,
-              startTime: Date.now()
-            };
-            
-            setHealingEffects(prev => [...prev, newHealingEffect]);
-            
-            // Heal the player
-            if (onPlayerHealed) {
-              onPlayerHealed(player.id, HEALING_AMOUNT, projectile.position.clone());
-              console.log(`💚 RejuvenatingShot healed player ${player.id} for ${HEALING_AMOUNT} HP at position`, healingEffectPosition);
-            }
+      if (!projectile.hasHealed && projectile.authoritative) {
+        const hit = findHealTarget(
+          projectile.position,
+          playerPositionsRef.current,
+          alliedTargetsRef.current,
+        );
 
-            // Mark this projectile as having healed someone and track which player
-            projectile.hasHealed = true;
-            projectile.healedPlayerId = player.id;
-            
-            // Deactivate projectile after healing
-            projectile.active = false;
-            projectile.opacity = 1;
-            projectile.fadeStartTime = null;
-            break; // Only heal one player per shot
+        if (hit && hit.target.id !== projectile.healedTargetId) {
+          const healingEffectPosition = hit.target.position.clone();
+          healingEffectPosition.y += 0;
+
+          const healPos = hit.target.position.clone();
+          healPos.y += 1.6;
+
+          setHealingEffects(prev => [...prev, {
+            id: nextHealingEffectId.current++,
+            position: healingEffectPosition,
+            startTime: Date.now(),
+          }]);
+
+          if (hit.kind === 'player' && onPlayerHealed) {
+            onPlayerHealed(hit.target.id, projectile.healAmount, healPos);
+          } else if (hit.kind === 'ally' && onAlliedHealed) {
+            onAlliedHealed(hit.target.id, projectile.healAmount, healPos);
           }
+
+          projectile.hasHealed = true;
+          projectile.healedTargetId = hit.target.id;
+          projectile.active = false;
+          projectile.opacity = 1;
+          projectile.fadeStartTime = null;
         }
       }
     });
@@ -208,7 +262,6 @@ export default function RejuvenatingShotManager({ world, playerPositions = [], o
 
   return (
     <group name="rejuvenating-shot-manager">
-      {/* Render active projectiles */}
       {projectilePool.current
         .filter(projectile => projectile.active)
         .map((projectile) => (
@@ -221,7 +274,6 @@ export default function RejuvenatingShotManager({ world, playerPositions = [], o
           />
         ))}
       
-      {/* Render healing effects */}
       {healingEffects.map((effect) => (
         <RejuvenatingShotHealingEffect
           key={effect.id}

@@ -1821,6 +1821,33 @@ export class CombatSystem extends System {
       ) {
         window.dispatchEvent(new CustomEvent('aegis-block'));
       }
+    } else if (actualDamage > 0 && health.isDeflectInvulnerable()) {
+      const transform = target.getComponent(Transform);
+      if (transform) {
+        const position = transform.getWorldPosition().clone();
+        position.y -= 0.5;
+        this.damageNumberManager.addDamageNumber(
+          0,
+          false,
+          position,
+          'deflect_blocked',
+          true,
+          undefined,
+          undefined,
+          'DEFLECT'
+        );
+      }
+      if (
+        this.localPlayerEntityId !== null &&
+        target.id === this.localPlayerEntityId &&
+        typeof window !== 'undefined'
+      ) {
+        window.dispatchEvent(new CustomEvent('deflect-block'));
+        if (health.consumeDeflectNegation()) {
+          const sourceEnemyId = source?.userData?.serverEnemyId as string | undefined;
+          window.dispatchEvent(new CustomEvent('deflect-negated', { detail: { sourceEnemyId } }));
+        }
+      }
     } else if (actualDamage > 0 && health.isDodgeInvulnerable()) {
       const transform = target.getComponent(Transform);
       if (transform) {
@@ -1951,10 +1978,15 @@ export class CombatSystem extends System {
   }
 
   private triggerDeathEffects(entity: Entity, killer?: Entity): void {
-    // This can be extended to trigger death animations, loot drops, etc.
+    const enemy = entity.getComponent(Enemy);
     const transform = entity.getComponent(Transform);
-    if (transform) {
-      // console.log(`💀 Death effect at position:`, transform.position);
+    if (enemy && transform) {
+      const pos = transform.getWorldPosition();
+      const serverEnemyType = entity.userData?.coopServerEnemyType as string | undefined;
+      (window as any).audioSystem?.playEnemyKillFeedback(
+        { x: pos.x, y: pos.y, z: pos.z },
+        serverEnemyType,
+      );
     }
   }
 

@@ -28,6 +28,8 @@ interface CharacterRendererProps {
   isCobraShotCharging?: boolean;
   /** Reaping Talons (`BOW_R`) charge window — same flag as EtherealBow viper-sting draw. */
   isViperStingCharging?: boolean;
+  /** Rejuvenating Shot (`BOW_F`) charge window. */
+  isRejuvenatingShotCharging?: boolean;
   isDead?: boolean;
   /** Co-op remote: SwordCast/Cast when replicated melee/channel state mirrors LMB posture. */
   remotePrimaryWeaponCastHold?: boolean;
@@ -36,8 +38,10 @@ interface CharacterRendererProps {
 const LERP_SPEED      = 15;  // snappy but smooth position interpolation
 const WALK_STOP_DELAY = 120; // ms before switching to Idle after movement stops
 const YAW_OFFSET_FACTOR = 1.6;         // fraction of residual angle applied (keeps strafe posture readable)
-const YAW_OFFSET_MAX    = Math.PI / 4; // clamp (~30 deg) so the body never fully turns off-camera
+const YAW_OFFSET_MAX    = Math.PI / 4; // clamp (~45 deg) so the body never fully turns off-camera
 const YAW_OFFSET_LERP   = 10;          // smoothing speed toward target offset
+const YAW_OFFSET_MAX_SPRINT = Math.PI / 2; // sprint clip rotates up to ±90° for pure A/D
+const YAW_OFFSET_FACTOR_SPRINT = 1;        // full residual for sprint diagonals / strafe
 
 // The controllable player must never wait behind enemy/boss asset staging.
 preloadCharacterModels();
@@ -88,6 +92,7 @@ function animCardinalAngle(s: AnimState): number | null {
   switch (s) {
     case 'Run':
     case 'Walk':
+    case 'Sprint':
       return 0;
     case 'RightStrafe':
     case 'WalkRight':
@@ -119,7 +124,11 @@ function computeModelYawOffset(
   let residual = angle - cardinal;
   while (residual > Math.PI) residual -= Math.PI * 2;
   while (residual < -Math.PI) residual += Math.PI * 2;
-  return Math.max(-YAW_OFFSET_MAX, Math.min(YAW_OFFSET_MAX, -residual * YAW_OFFSET_FACTOR));
+
+  const isSprint = animState === 'Sprint';
+  const factor = isSprint ? YAW_OFFSET_FACTOR_SPRINT : YAW_OFFSET_FACTOR;
+  const maxOffset = isSprint ? YAW_OFFSET_MAX_SPRINT : YAW_OFFSET_MAX;
+  return Math.max(-maxOffset, Math.min(maxOffset, -residual * factor));
 }
 
 export default function CharacterRenderer({
@@ -135,6 +144,7 @@ export default function CharacterRenderer({
   isBarrageCharging = false,
   isCobraShotCharging = false,
   isViperStingCharging = false,
+  isRejuvenatingShotCharging = false,
   isDead = false,
   remotePrimaryWeaponCastHold = false,
 }: CharacterRendererProps) {
@@ -158,15 +168,19 @@ export default function CharacterRenderer({
   const wasGrounded          = useRef(true);
   const jumpIsBack           = useRef(false);
   const jumpIsFront          = useRef(false);
-  /** True while LMB or bow ability warmup holds DrawBow pose (Barrage, Cobra, Reaping Talons). */
+  /** True while LMB or bow ability warmup holds DrawBow pose (Barrage, Cobra, Reaping Talons, Rejuvenating Shot). */
   const bowDrawHoldActive =
     currentWeapon === WeaponType.BOW &&
-    (isCharging || isBarrageCharging || isCobraShotCharging || isViperStingCharging);
+    (isCharging || isBarrageCharging || isCobraShotCharging ||
+     isViperStingCharging || isRejuvenatingShotCharging);
 
   const prevBowDrawHold = useRef(false);
   const bowReleaseTimer      = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isCastingAbility     = useRef(false);
   const abilityAnimTimer     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Shift-tap Deflect-Block — plays regardless of movement state (unlike CastSingle's stationary-only gate). */
+  const isBlockCasting       = useRef(false);
+  const blockAnimTimer       = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Snap to spawn position before first paint so the character never flashes at origin.
   const setGroupRef = useCallback((group: Group | null) => {
@@ -198,10 +212,11 @@ export default function CharacterRenderer({
       if (walkStopTimer.current)   clearTimeout(walkStopTimer.current);
       if (bowReleaseTimer.current) clearTimeout(bowReleaseTimer.current);
       if (abilityAnimTimer.current) clearTimeout(abilityAnimTimer.current);
+      if (blockAnimTimer.current) clearTimeout(blockAnimTimer.current);
     };
   }, []);
 
-  // When any bow draw hold ends (LMB, Barrage, Cobra, or Reaping Talons charge), play ReleaseBow then Idle.
+  // When any bow draw hold ends (LMB, Barrage, Cobra, Reaping Talons, or Rejuvenating Shot charge), play ReleaseBow then Idle.
   useEffect(() => {
     if (prevBowDrawHold.current && !bowDrawHoldActive && currentWeapon === WeaponType.BOW) {
       if (bowReleaseTimer.current) clearTimeout(bowReleaseTimer.current);
@@ -249,6 +264,33 @@ export default function CharacterRenderer({
     window.addEventListener('character-ability-cast', handleAbilityCast);
     return () => { window.removeEventListener('character-ability-cast', handleAbilityCast); };
   }, [isLocalPlayer, world, entityId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Listen for Shift-tap Deflect-Block and play the Block animation immediately, regardless of
+  // movement state (Deflect can be tapped while moving, unlike CastSingle's stationary-only gate).
+  useEffect(() => {
+    if (!isLocalPlayer) return;
+
+    const handleBlockCast = () => {
+      if (blockAnimTimer.current) clearTimeout(blockAnimTimer.current);
+
+      isBlockCasting.current = true;
+      setAnimState('Block');
+      prevAnimState.current = 'Block';
+
+      // Clip is ~0.567 s; small buffer so the animation always finishes before we release it.
+      blockAnimTimer.current = setTimeout(() => {
+        blockAnimTimer.current = null;
+        isBlockCasting.current = false;
+        if (prevAnimState.current === 'Block') {
+          setAnimState('Idle');
+          prevAnimState.current = 'Idle';
+        }
+      }, 650);
+    };
+
+    window.addEventListener('character-block-cast', handleBlockCast);
+    return () => { window.removeEventListener('character-block-cast', handleBlockCast); };
+  }, [isLocalPlayer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Track left mouse button for the local player so we can play the cast animation.
   useEffect(() => {
@@ -391,6 +433,14 @@ export default function CharacterRenderer({
             abilityAnimTimer.current = null;
           }
         }
+        // Movement resuming after the brief Deflect-Block halt cancels the Block pose early.
+        if (isBlockCasting.current) {
+          isBlockCasting.current = false;
+          if (blockAnimTimer.current) {
+            clearTimeout(blockAnimTimer.current);
+            blockAnimTimer.current = null;
+          }
+        }
 
         // Player is actively pressing a movement key — pick directional animation.
         const moveDir = movement.moveDirection.clone();
@@ -403,6 +453,12 @@ export default function CharacterRenderer({
           next = slowLocomotion || backwardDiagonal
             ? dirToSlowWalkAnimState(facingDir, moveDir)
             : dirToAnimState(facingDir, moveDir);
+          if (
+            movement.isSprinting &&
+            (next === 'Run' || next === 'LeftStrafe' || next === 'RightStrafe')
+          ) {
+            next = 'Sprint';
+          }
         } else {
           next = 'Idle';
         }
@@ -453,6 +509,12 @@ export default function CharacterRenderer({
 
         // If an ability cast is in progress, keep CastSingle running.
         if (isCastingAbility.current) {
+          applyModelYawOffset(prevAnimState.current, null);
+          return;
+        }
+
+        // Let Block play out on its own (driven by the block-cast effect).
+        if (prevAnimState.current === 'Block' || isBlockCasting.current) {
           applyModelYawOffset(prevAnimState.current, null);
           return;
         }
@@ -514,7 +576,10 @@ export default function CharacterRenderer({
     <>
       <group ref={setGroupRef}>
         <group ref={modelYawGroupRef}>
-          <CharacterModel animState={animState} isDead={isDead} />
+          <CharacterModel
+            animState={animState}
+            isDead={isDead}
+          />
         </group>
         <group position={[0, 1.0, -0.12]}>
           <DraconicWingJets

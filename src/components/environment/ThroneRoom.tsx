@@ -5,7 +5,6 @@ import { AdditiveBlending, BackSide, Group, MathUtils, MeshBasicMaterial, Sphere
 import CustomSky from './CustomSky';
 import type { RoomBorderTheme, SimpleBorderColorTheme } from './SimpleBorderEffects';
 import SimpleBorderEffects from './SimpleBorderEffects';
-import PerimeterCloudSystem from './PerimeterCloudSystem';
 import StylizedGrass from './StylizedGrass';
 import StoneGround from './StoneGround';
 import Pillar from './Pillar';
@@ -18,7 +17,12 @@ import Runeblade from '@/components/weapons/Runeblade';
 import PortalSymbol from './PortalSymbols';
 import ArcaneRitualCircle from './ArcaneRitualCircle';
 import { RITUAL_WORLD_SCALE } from './ritualCircleGeometries';
-import { ThroneCircularCastleWalls } from './CastleWalls';
+import {
+  ARCHETYPE_DISPLAY,
+  THRONE_ARCHETYPES,
+  type Archetype,
+  type ThroneArchetype,
+} from '@/utils/archetypes';
 
 /** Shared portal ring geometry — reused across all ThronePortalRing instances. */
 const THRONE_PORTAL_RING_TORUS_GEO = new TorusGeometry(2.1, 0.12, 10, 48);
@@ -41,10 +45,10 @@ export type ThronePillarDef = {
 
 /** Four pillars in a ring — orb colours: green, blue, red, light purple. */
 export const THRONE_PILLAR_DEFS: ThronePillarDef[] = [
-  { position: [-5.5, 0, 1], orbColorHex: '#22c55e' }, // BOW
-  { position: [5.5, 0, 1], orbColorHex: '#FFC300' }, // RUNEBLADE
-  { position: [-3.25, 0, -2], orbColorHex: '#ef4444' }, // SABRES
-  { position: [3.25, 0, -2], orbColorHex: '#00B7FF' }, // SCYTHE 8667E5
+  { position: [-5.5, 0.15, -2], orbColorHex: '#22c55e' }, // BOW
+  { position: [5.5, 0.15, -2], orbColorHex: '#FFC300' }, // RUNEBLADE
+  { position: [-3.25, 0.15, -5], orbColorHex: '#ef4444' }, // SABRES
+  { position: [3.25, 0.15, -5], orbColorHex: '#00B7FF' }, // SCYTHE 8667E5
 ];
 
 /** Stable reference for `PillarCollision` (avoid new array identity every React render). */
@@ -192,7 +196,7 @@ export type ThroneTrainingDummyVisual = 'knight';
 /**
  * North rim, centered on X (mirrors portal pair on south rim). Keep in sync with `backend/gameRoom.js` `THRONE_TRAINING_DUMMY_*`.
  */
-export const THRONE_TRAINING_DUMMY_SPAWN_Z = 10.75;
+export const THRONE_TRAINING_DUMMY_SPAWN_Z = 16;
 
 /** Server spawn list: stable id, foot XZ, and which model the client draws. */
 export const THRONE_TRAINING_DUMMY_SPAWNS: ReadonlyArray<{
@@ -238,6 +242,35 @@ export const THRONE_TALENT_PEDESTAL_POSITION = Object.freeze({
 
 export const THRONE_TALENT_PEDESTAL_INTERACT_RADIUS = THRONE_ABILITY_PEDESTAL_INTERACT_RADIUS;
 
+/** West rim — three plain stone pillars for archetype selection (press X). */
+export const THRONE_ARCHETYPE_PEDESTAL_EDGE_X = -(COOP_THRONE_LAYOUT_RADIUS - THRONE_RIM_INSET);
+
+export const THRONE_ARCHETYPE_PEDESTAL_POSITIONS: ReadonlyArray<{
+  readonly archetype: ThroneArchetype;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}> = Object.freeze([
+  Object.freeze({ archetype: 'ROGUE' as const, x: THRONE_ARCHETYPE_PEDESTAL_EDGE_X+14.5, y: 0, z: 7.5 }),
+  Object.freeze({ archetype: 'GLADIATOR' as const, x: THRONE_ARCHETYPE_PEDESTAL_EDGE_X+18, y: 0, z: 6 }),
+  Object.freeze({ archetype: 'ACOLYTE' as const, x: THRONE_ARCHETYPE_PEDESTAL_EDGE_X+11, y: 0, z: 6 }),
+]);
+
+export const THRONE_ARCHETYPE_INTERACT_RADIUS = THRONE_WEAPON_INTERACT_RADIUS;
+
+export type ThroneArchetypeInteractDef = {
+  archetype: ThroneArchetype;
+  x: number;
+  z: number;
+};
+
+export const THRONE_ARCHETYPE_INTERACT_DEFS: ThroneArchetypeInteractDef[] =
+  THRONE_ARCHETYPE_PEDESTAL_POSITIONS.map((p) => ({
+    archetype: p.archetype,
+    x: p.x,
+    z: p.z,
+  }));
+
 /** West rim X (opposite east ability/talent pedestals), just inside grass border — matches south-rim inset. */
 export const THRONE_DEV_BOSS_EDGE_X = -(COOP_THRONE_LAYOUT_RADIUS - THRONE_RIM_INSET);
 
@@ -270,6 +303,13 @@ export const COOP_DEV_LOCALHOST_FEATURES = process.env.NODE_ENV !== 'production'
 /** Pillars + ability + talent pedestal hulls for movement / charge collision in the prep room. */
 export function getThronePrepPhysicsObstacles(): Array<{ x: number; z: number; radius: number }> {
   const obstacles = [...getThronePillarPhysicsObstacles()];
+  for (const pedestal of THRONE_ARCHETYPE_PEDESTAL_POSITIONS) {
+    obstacles.push({
+      x: pedestal.x,
+      z: pedestal.z,
+      radius: THRONE_PILLAR_HULL_RADIUS,
+    });
+  }
   if (COOP_DEV_LOCALHOST_FEATURES) {
     obstacles.push(
       {
@@ -288,7 +328,7 @@ export function getThronePrepPhysicsObstacles(): Array<{ x: number; z: number; r
 }
 
 /** Area scales ~r²; keep blade density similar when expanding grass radius. */
-const THRONE_GRASS_COUNT = Math.round(18000 * (COOP_THRONE_ROOM_RADIUS / 10) ** 2);
+const THRONE_GRASS_COUNT = Math.round(6000 * (COOP_THRONE_ROOM_RADIUS / 10) ** 2);
 /** Match main-map purple sparsity vs green (`StylizedGrass` THEME_COUNTS). */
 const THRONE_PURPLE_GRASS_COUNT = Math.round(THRONE_GRASS_COUNT * (16000 / 80000));
 
@@ -515,6 +555,161 @@ function ThroneFloatingWeapon({
   );
 }
 
+function ThroneArchetypeSymbol({ archetype }: { archetype: ThroneArchetype }) {
+  const meta = ARCHETYPE_DISPLAY[archetype];
+  const ringRef = useRef<Group>(null);
+  const coreRef = useRef<Group>(null);
+
+  const coreMat = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: meta.primaryColor,
+        transparent: true,
+        opacity: 0.95,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      }),
+    [meta.primaryColor],
+  );
+  const accentMat = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: meta.accentColor,
+        transparent: true,
+        opacity: 0.75,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      }),
+    [meta.accentColor],
+  );
+  const haloMat = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: meta.secondaryColor,
+        transparent: true,
+        opacity: 0.35,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      }),
+    [meta.secondaryColor],
+  );
+
+  useFrame((state) => {
+    const t = state.clock.elapsedTime;
+    if (ringRef.current) {
+      ringRef.current.rotation.y = t * 0.65;
+      ringRef.current.rotation.x = Math.sin(t * 0.8) * 0.12;
+    }
+    if (coreRef.current) {
+      coreRef.current.rotation.z = Math.sin(t * 1.2) * 0.08;
+    }
+  });
+
+  if (archetype === 'ROGUE') {
+    return (
+      <group>
+        <group ref={ringRef}>
+          {[0, 1, 2].map((i) => (
+            <mesh
+              key={`rogue-chevron-${i}`}
+              position={[0.55 - i * 0.42, 0, 0]}
+              rotation={[0, 0, -Math.PI / 2]}
+              material={accentMat}
+            >
+              <boxGeometry args={[0.12, 0.42, 0.08]} />
+            </mesh>
+          ))}
+        </group>
+        <mesh ref={coreRef as any} material={coreMat}>
+          <sphereGeometry args={[0.22, 12, 12]} />
+        </mesh>
+        <mesh material={haloMat}>
+          <torusGeometry args={[0.72, 0.04, 8, 24]} />
+        </mesh>
+      </group>
+    );
+  }
+
+  if (archetype === 'GLADIATOR') {
+    return (
+      <group>
+        <group ref={ringRef}>
+          <mesh material={accentMat} rotation={[0, 0, Math.PI / 4]}>
+            <boxGeometry args={[0.95, 0.14, 0.14]} />
+          </mesh>
+          <mesh material={accentMat} rotation={[0, 0, -Math.PI / 4]}>
+            <boxGeometry args={[0.95, 0.14, 0.14]} />
+          </mesh>
+        </group>
+        <mesh ref={coreRef as any} material={coreMat}>
+          <octahedronGeometry args={[0.34, 0]} />
+        </mesh>
+        <mesh material={haloMat}>
+          <torusGeometry args={[0.78, 0.05, 8, 24]} />
+        </mesh>
+      </group>
+    );
+  }
+
+  return (
+    <group>
+      <group ref={ringRef}>
+        {[0, 1, 2, 3].map((i) => {
+          const angle = (i / 4) * Math.PI * 2;
+          return (
+            <mesh
+              key={`locust-mote-${i}`}
+              position={[Math.cos(angle) * 0.62, Math.sin(angle * 2) * 0.08, Math.sin(angle) * 0.62]}
+              material={accentMat}
+            >
+              <sphereGeometry args={[0.1, 8, 8]} />
+            </mesh>
+          );
+        })}
+      </group>
+      <mesh ref={coreRef as any} material={coreMat}>
+        <icosahedronGeometry args={[0.28, 0]} />
+      </mesh>
+      <mesh material={haloMat}>
+        <torusGeometry args={[0.74, 0.045, 8, 24]} />
+      </mesh>
+    </group>
+  );
+}
+
+function ThroneArchetypePedestals({ selectedArchetype = 'NONE' }: { selectedArchetype?: Archetype }) {
+  const slots = useMemo(
+    () =>
+      THRONE_ARCHETYPE_PEDESTAL_POSITIONS.map((pedestal, index) => ({
+        ...pedestal,
+        phase: index * 1.35,
+      })),
+    [],
+  );
+
+  return (
+    <group name="throne-archetype-pedestals">
+      {slots.map((slot) => {
+        const isTaken = selectedArchetype !== 'NONE' && selectedArchetype === slot.archetype;
+        return (
+          <group key={`archetype-pedestal-${slot.archetype}`}>
+            <Pillar position={[slot.x, slot.y, slot.z]} showOrb={false} />
+            <ThroneFloatingWeapon
+              xz={[slot.x + 0.55, slot.z]}
+              phase={slot.phase}
+              isTaken={isTaken}
+            >
+              <group scale={0.75} position={[-0.5, 1.25, 0]}>
+                <ThroneArchetypeSymbol archetype={slot.archetype} />
+              </group>
+            </ThroneFloatingWeapon>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
+
 export function ThronePortalRing({
   campType,
   locked = false,
@@ -626,6 +821,8 @@ interface ThroneRoomProps {
   thronePortalsLocked?: boolean;
   /** Local player's equipped weapon — hides that weapon's floating replica on its pedestal. */
   equippedWeapon?: WeaponType;
+  /** Local player's selected archetype — hides that archetype symbol on its pedestal. */
+  selectedArchetype?: Archetype;
 }
 
 /**
@@ -640,6 +837,7 @@ function ThroneRoom({
   coopClearedRoomColor = null,
   thronePortalsLocked = false,
   equippedWeapon = WeaponType.NONE,
+  selectedArchetype = 'NONE',
 }: ThroneRoomProps) {
   /** All co-op boss tiers + post-boss intermission share the same purple shell (legacy Boss 2 / Archon look). */
   const usePurpleBossArenaShell = layout === 'bossArena';
@@ -673,17 +871,13 @@ function ThroneRoom({
       ) : (
         <CustomSky skyPreset="throneBlue" />
       )}
-      <PerimeterCloudSystem
-        radius={COOP_THRONE_ROOM_RADIUS}
-        cloudTheme={usePurpleBossArenaShell ? 'red' : 'gold'}
-      />
 
  
 
       <StylizedGrass
         radius={COOP_THRONE_ROOM_RADIUS}
         count={usePurpleBossArenaShell ? THRONE_PURPLE_GRASS_COUNT : THRONE_GRASS_COUNT}
-        bladeHeight={0.42}
+        bladeHeight={0.55}
         windStrength={0.2}
         isSnowTheme={false}
         roomTheme={usePurpleBossArenaShell ? 'purple' : undefined}
@@ -716,17 +910,11 @@ function ThroneRoom({
           ))}
           {COOP_DEV_LOCALHOST_FEATURES && (
             <>
-              <Pillar
-                position={[THRONE_ABILITY_PEDESTAL_POSITION.x, THRONE_ABILITY_PEDESTAL_POSITION.y, THRONE_ABILITY_PEDESTAL_POSITION.z]}
-                showOrb={false}
-              />
-              <Pillar
-                position={[THRONE_TALENT_PEDESTAL_POSITION.x, THRONE_TALENT_PEDESTAL_POSITION.y, THRONE_TALENT_PEDESTAL_POSITION.z]}
-                showOrb={false}
-              />
+
             </>
           )}
           <ThroneWeaponPedestals equippedWeapon={equippedWeapon} />
+          <ThroneArchetypePedestals selectedArchetype={selectedArchetype} />
           <group>
             {THRONE_PORTAL_POSITIONS.map((pos, i) => (
               <group key={`throne-portal-${i}`} position={[pos.x, pos.y, pos.z]}>
@@ -736,36 +924,7 @@ function ThroneRoom({
           </group>
           {COOP_DEV_LOCALHOST_FEATURES && (
             <>
-              <group
-                position={[
-                  THRONE_DEV_BOSS_PORTAL_POSITION.x,
-                  THRONE_DEV_BOSS_PORTAL_POSITION.y,
-                  THRONE_DEV_BOSS_PORTAL_POSITION.z,
-                ]}
-                scale={0.34}
-              >
-                <ThronePortalRing campType="boss" locked />
-              </group>
-              <group
-                position={[
-                  THRONE_DEV_BOSS2_PORTAL_POSITION.x,
-                  THRONE_DEV_BOSS2_PORTAL_POSITION.y,
-                  THRONE_DEV_BOSS2_PORTAL_POSITION.z,
-                ]}
-                scale={0.34}
-              >
-                <ThronePortalRing campType="red" locked />
-              </group>
-              <group
-                position={[
-                  THRONE_DEV_BOSS3_PORTAL_POSITION.x,
-                  THRONE_DEV_BOSS3_PORTAL_POSITION.y,
-                  THRONE_DEV_BOSS3_PORTAL_POSITION.z,
-                ]}
-                scale={0.34}
-              >
-                <ThronePortalRing campType="green" locked />
-              </group>
+
             </>
           )}
         </>

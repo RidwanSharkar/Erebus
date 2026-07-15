@@ -4,6 +4,7 @@ import { useLayoutEffect, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import type { Mesh } from 'three';
 import { STAGGER_MAX } from '@/utils/talents';
+import { ENEMY_HP_BAR_WIDTH } from '@/utils/enemyHealthBar';
 import { SharedMesh } from '@/utils/SharedMesh';
 import { MeshBasicMaterial, PlaneGeometry } from 'three';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
@@ -47,7 +48,7 @@ export default function EnemyStaggerBar({
   stagger,
   staggerMax = STAGGER_MAX,
   y = -0.22,
-  width = 1.6,
+  width = ENEMY_HP_BAR_WIDTH,
 }: EnemyStaggerBarProps) {
   const { enemiesRef } = useMultiplayerActions();
   const fillRef = useRef<Mesh | null>(null);

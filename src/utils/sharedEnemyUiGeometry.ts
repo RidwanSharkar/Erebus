@@ -15,7 +15,7 @@ export const SOUL_ORB_GLOW_GEO = new SphereGeometry(0.3, 14, 14);
 export const SOUL_ORB_PARTICLE_GEO = new SphereGeometry(0.08, 8, 8);
 export const SOUL_ORB_RING_GEO = new RingGeometry(0.6, 0.825, 32);
 
-export type SharedSoulType = 'green' | 'red' | 'blue' | 'purple' | 'yellow';
+export type SharedSoulType = 'green' | 'red' | 'blue' | 'purple' | 'yellow' | 'orange';
 
 const SOUL_PALETTE: Record<SharedSoulType, { core: string; glow: string }> = {
   green: { core: '#00ff88', glow: '#00cc55' },
@@ -23,6 +23,7 @@ const SOUL_PALETTE: Record<SharedSoulType, { core: string; glow: string }> = {
   blue: { core: '#44aaff', glow: '#2266dd' },
   purple: { core: '#cc44ff', glow: '#8811cc' },
   yellow: { core: '#ffe433', glow: '#cc9900' },
+  orange: { core: '#ff8833', glow: '#cc5500' },
 };
 
 function createSoulTypeMaterials(core: string, glow: string) {

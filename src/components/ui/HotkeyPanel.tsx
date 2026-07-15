@@ -12,6 +12,12 @@ import type { TalentId, TalentLoadout } from '@/utils/talents';
 import { partitionTalentsForHud } from '@/utils/talents';
 import { getWeaponHudIconSrc } from '@/utils/weaponIcons';
 import {
+  ARCHETYPE_DISPLAY,
+  getArchetypeIconSrc,
+  isSelectableArchetype,
+  type Archetype,
+} from '@/utils/archetypes';
+import {
   AbilityIcon,
   HotkeyTooltip,
   TalentSlot,
@@ -37,6 +43,8 @@ interface HotkeyPanelProps {
   onUnlockAbility?: (unlock: AbilityUnlock) => void;
   purchasedItems?: string[];
   talentLoadout?: TalentLoadout | null;
+  selectedArchetype?: Archetype;
+  gameMode?: 'menu' | 'singleplayer' | 'multiplayer' | 'pvp' | 'coop';
 }
 
 interface WeaponData {
@@ -110,6 +118,8 @@ export default function HotkeyPanel({
   onUnlockAbility,
   purchasedItems = [],
   talentLoadout = null,
+  selectedArchetype = 'NONE',
+  gameMode,
 }: HotkeyPanelProps) {
   const [tooltipContent, setTooltipContent] = useState<{
     name: string;
@@ -660,6 +670,95 @@ export default function HotkeyPanel({
                 </div>
               );
             })}
+
+            {gameMode === 'coop' && isSelectableArchetype(selectedArchetype) && (() => {
+              const meta = ARCHETYPE_DISPLAY[selectedArchetype];
+              const iconSrc = getArchetypeIconSrc(selectedArchetype);
+              const deflectCd = controlSystem?.getAbilityCooldowns?.()?.DEFLECT_SHIFT;
+              const isOnCooldown = selectedArchetype === 'GLADIATOR' && (deflectCd?.current ?? 0) > 0;
+              const isActive = selectedArchetype === 'GLADIATOR' && !!deflectCd?.isActive;
+              const accentRgb =
+                selectedArchetype === 'ROGUE'
+                  ? '34,211,238'
+                  : selectedArchetype === 'GLADIATOR'
+                    ? '251,191,36'
+                    : '168,85,247';
+
+              return (
+                <>
+                  <div className="flex flex-col items-center justify-center gap-1.5 px-0.5">
+                    <div className="w-px h-3 rounded" style={{ background: 'rgba(120,120,160,0.3)' }} />
+                    <span className="text-[9px]" style={{ color: 'rgba(120,120,160,0.55)' }}>◆</span>
+                    <div className="w-px h-3 rounded" style={{ background: 'rgba(120,120,160,0.3)' }} />
+                  </div>
+                  <div
+                    className="relative w-12 h-12 rounded-lg flex items-center justify-center cursor-default"
+                    style={{
+                      background: `linear-gradient(135deg, rgba(${accentRgb},0.18), rgba(10,10,22,0.82))`,
+                      border: isOnCooldown
+                        ? '1px solid rgba(239,68,68,0.5)'
+                        : `1px solid rgba(${accentRgb},0.75)`,
+                      boxShadow: isOnCooldown
+                        ? 'inset 0 1px 0 rgba(255,255,255,0.04)'
+                        : `0 0 12px rgba(${accentRgb},0.35), inset 0 1px 0 rgba(255,255,255,0.07)`,
+                    }}
+                    onMouseEnter={(e) => {
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setTooltipContent({
+                        name: meta.label,
+                        description: meta.description,
+                      });
+                      setTooltipPosition({
+                        x: rect.left + rect.width / 2,
+                        y: rect.top,
+                      });
+                    }}
+                    onMouseLeave={handleAbilityLeave}
+                  >
+                    <div
+                      className="absolute -top-2.5 left-1/2 -translate-x-1/2 rounded-full px-2 py-px text-[10px] font-mono font-bold"
+                      style={{
+                        background: 'rgba(18,18,34,0.97)',
+                        border: `1px solid rgba(${accentRgb},0.55)`,
+                        color: meta.primaryColor,
+                        boxShadow: '0 1px 4px rgba(0,0,0,0.7)',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      SHIFT
+                    </div>
+                    {iconSrc && (
+                      <img
+                        src={iconSrc}
+                        alt=""
+                        className="h-7 w-7 object-contain"
+                        style={{
+                          filter: isOnCooldown
+                            ? 'opacity(0.65)'
+                            : `drop-shadow(0 0 5px rgba(${accentRgb},0.55))`,
+                        }}
+                      />
+                    )}
+                    {isOnCooldown && deflectCd && (
+                      <>
+                        <div className="absolute inset-0 rounded-lg" style={{ background: 'rgba(0,0,0,0.52)' }} />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span
+                            className="text-white text-sm font-bold tabular-nums"
+                            style={{ textShadow: '0 1px 4px rgba(0,0,0,1)' }}
+                          >
+                            {Math.ceil(deflectCd.current)}
+                          </span>
+                        </div>
+                      </>
+                    )}
+                    {isActive && (
+                      <div className="absolute inset-0 rounded-lg bg-yellow-400 bg-opacity-20 border-2 border-yellow-400 animate-pulse" />
+                    )}
+                  </div>
+                </>
+              );
+            })()}
 
             {totalRoomBoonCount > 0 && (
               <>

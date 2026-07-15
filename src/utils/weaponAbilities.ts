@@ -119,8 +119,8 @@ export const universalAbilityPool: UniversalAbility[] = [
   },
   {
     id: 'BOW_F', sourceWeapon: WeaponType.BOW, sourceKey: 'F',
-    name: 'Rejuvenating Shot', cooldown: 4.0, icon: '🍃',
-    description: 'Fires a healing projectile that restores 80 HP to the first allied player it hits.',
+    name: 'Rejuvenating Shot', cooldown: 4.0, icon: '/icons/rejuvShot.svg',
+    description: 'Fires a healing projectile that restores 50 + 3 HP per point of Intellect to the first allied target it hits. 4 second cooldown.',
     allowedWeapons: [WeaponType.SCYTHE, WeaponType.BOW],
   },
   {
@@ -261,7 +261,7 @@ export function getDefaultLoadoutForWeapon(weapon: WeaponType): AbilityLoadout {
     case WeaponType.SPEAR:
       return { Q: 'SPEAR_Q', E: 'SPEAR_E', R: 'SPEAR_F' }; // Wind Shear / Tempest Sweep / Storm Shroud
     case WeaponType.BOW:
-      return { Q: 'BOW_Q', E: 'BOW_R', R: null }; // Frostbite / Reaping Talons / (R unlocks later)
+      return { Q: 'BOW_Q', E: 'BOW_R', R: 'BOW_F' }; // Frostbite / Reaping Talons / Rejuvenating Shot
     case WeaponType.SABRES:
       return { Q: 'SABRES_Q', E: 'SABRES_E', R: 'SABRES_R' }; // Backstab / Flourish / Divebomb
     default:
@@ -336,7 +336,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Rejuvenating Shot',
       key: 'F',
       cooldown: 4.0,
-      description: 'Fires a healing projectile that restores 80 HP to the first allied player it hits.'
+      description: 'Fires a healing projectile that restores 50 + 3 HP per point of Intellect to the first allied target it hits. 4 second cooldown.'
     },
     {
       name: 'Tempest Rounds',

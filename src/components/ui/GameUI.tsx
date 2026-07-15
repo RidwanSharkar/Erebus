@@ -7,6 +7,7 @@ import { AbilityLoadout } from '@/utils/weaponAbilities';
 import type { TalentLoadout } from '@/utils/talents';
 import { RuneCounter } from './RuneCounter';
 import ChatUI from './ChatUI';
+import type { Archetype } from '@/utils/archetypes';
 
 interface GameUIProps {
   currentWeapon: WeaponType;
@@ -14,6 +15,8 @@ interface GameUIProps {
   maxHealth: number;
   playerShield?: number;
   maxShield?: number;
+  playerEnergy?: number;
+  maxEnergy?: number;
   controlSystem?: any;
   selectedWeapons?: {
     primary: WeaponType;
@@ -32,6 +35,7 @@ interface GameUIProps {
   /** Shown above the health bar when near a co-op interactable (e.g. pedestal, portal). */
   interactHint?: string | null;
   gameMode?: 'menu' | 'singleplayer' | 'multiplayer' | 'pvp' | 'coop';
+  selectedArchetype?: Archetype;
 }
 
 
@@ -259,6 +263,8 @@ export default function GameUI({
   maxHealth,
   playerShield = 200,
   maxShield = 200,
+  playerEnergy = 100,
+  maxEnergy = 100,
   controlSystem,
   selectedWeapons,
   onWeaponSwitch,
@@ -273,6 +279,7 @@ export default function GameUI({
   talentLoadout,
   interactHint = null,
   gameMode,
+  selectedArchetype,
 }: GameUIProps) {
 
   // Wrapper for unlockAbility to ensure ControlSystem is updated immediately
@@ -363,6 +370,16 @@ export default function GameUI({
               glowColor="#DC2626"
               icon="♥"
             />
+
+            {/* Energy Bar */}
+            <ResourceBar
+              current={playerEnergy}
+              max={maxEnergy}
+              gradientFrom="#7a6a10"
+              gradientTo="#f0d040"
+              glowColor="#EAB308"
+              icon="⚡"
+            />
           </div>
         </div>
       </div>
@@ -385,6 +402,8 @@ export default function GameUI({
         onUnlockAbility={handleUnlockAbility}
         purchasedItems={purchasedItems}
         talentLoadout={talentLoadout ?? null}
+        selectedArchetype={selectedArchetype}
+        gameMode={gameMode}
       />
 
       {/* Chat UI */}

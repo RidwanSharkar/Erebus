@@ -9,6 +9,7 @@ function handlePlayerEvents(socket, gameRooms) {
     dashDirection: { x: 0, y: 0, z: 0 },
     isAttackSlowed: false,
     isIcebeaming: false,
+    isSprinting: false,
   };
 
   const PLAYER_MOVE_REBROADCAST_MIN_MS = 50; // 20 Hz
@@ -268,6 +269,22 @@ function handlePlayerEvents(socket, gameRooms) {
     });
   });
 
+  // Handle archetype selection changes (co-op throne prep)
+  socket.on('archetype-changed', (data) => {
+    const { roomId, archetype } = data || {};
+
+    if (!roomId || !gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    const normalized = room.updatePlayerArchetype(socket.id, archetype);
+    if (!normalized) return;
+
+    socket.to(roomId).emit('player-archetype-changed', {
+      playerId: socket.id,
+      archetype: normalized,
+    });
+  });
+
   // Handle attack animations (visual only)
   socket.on('player-attack', (data) => {
     const { roomId, attackType, position, direction, animationData } = data;
@@ -512,6 +529,23 @@ function handlePlayerEvents(socket, gameRooms) {
     });
   });
 
+  // Handle player energy changes
+  socket.on('player-energy-changed', (data) => {
+    const { roomId, energy, maxEnergy } = data;
+
+    if (!gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    room.updatePlayerEnergy(socket.id, energy, maxEnergy);
+
+    // Broadcast energy change to other players
+    socket.to(roomId).emit('player-energy-changed', {
+      playerId: socket.id,
+      energy,
+      maxEnergy
+    });
+  });
+
   // Handle player level changes (for tertiary weapon unlocks)
   socket.on('player-level-changed', (data) => {
     const { roomId, playerId, level } = data;
@@ -694,6 +728,51 @@ function handlePlayerEvents(socket, gameRooms) {
         healingType: healingType,
         position: position,
         timestamp: Date.now()
+      });
+    }
+  });
+
+  // Handle player-initiated allied unit healing (e.g. Rejuvenating Shot on allied knight)
+  socket.on('allied-healing', (data) => {
+    const { roomId, healingAmount, healingType, position, targetEnemyId } = data;
+
+    if (!gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    if (!room.getPlayer(socket.id)) return;
+    if (healingType !== 'rejuvenating_shot') return;
+    if (targetEnemyId !== 'allied-knight') return;
+
+    const targetEnemy = room.getEnemy(targetEnemyId);
+    if (!targetEnemy || !room.isAlliedUnitEnemy(targetEnemy)) return;
+    if (targetEnemy.isDying || targetEnemy.health <= 0) return;
+
+    const caster = room.getPlayer(socket.id);
+    const intellect = caster?.coopStaggerRoomBoons?.intellect ?? 0;
+    const maxHeal = 50 + 3 * Math.max(0, Math.floor(intellect));
+    const requestedHeal = Math.min(
+      typeof healingAmount === 'number' ? healingAmount : 0,
+      maxHeal,
+    );
+    if (requestedHeal <= 0) return;
+
+    const previousHealth = targetEnemy.health;
+    targetEnemy.health = Math.min(targetEnemy.maxHealth, targetEnemy.health + requestedHeal);
+    const actualHealingAmount = targetEnemy.health - previousHealth;
+
+    if (actualHealingAmount > 0) {
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(`💚 Player ${socket.id} healed allied knight for ${actualHealingAmount} HP (${healingType})`);
+      }
+
+      room.io.to(roomId).emit('enemy-healed', {
+        enemyId: targetEnemyId,
+        healAmount: actualHealingAmount,
+        newHealth: targetEnemy.health,
+        maxHealth: targetEnemy.maxHealth,
+        healingType,
+        position,
+        timestamp: Date.now(),
       });
     }
   });

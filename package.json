@@ -11,6 +11,7 @@
     "assets:startup-report": "node scripts/startup-asset-report.mjs",
     "assets:optimize-models": "node scripts/optimize-model-assets.mjs",
     "assets:retarget-knight-blocks": "node scripts/retarget-knight-block.mjs",
+    "assets:retarget-character-sprint": "node scripts/retarget-character-sprint.mjs",
     "assets:validate-models": "node scripts/validate-model-assets.mjs"
   },
   "dependencies": {

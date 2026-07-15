@@ -7,6 +7,7 @@ import { WeaponType } from '@/components/dragon/weapons';
 import {
   EREBUS_STRIKE_INDICATOR_EVENT,
   type ErebusStrikeIndicatorDetail,
+  type StrikeIndicatorVariant,
 } from '@/utils/strikeIndicatorEvent';
 
 declare global {
@@ -21,6 +22,9 @@ interface StrikeIndicatorProps {
   size: { width: number; height: number } | null;
 }
 
+const KILL_FLASH_DURATION_MS = 550;
+const WEAPON_HIT_DURATION_MS = 400;
+
 const StrikeIndicator = memo(function StrikeIndicator({
   enabled,
   camera,
@@ -28,28 +32,34 @@ const StrikeIndicator = memo(function StrikeIndicator({
 }: StrikeIndicatorProps) {
   const [isShowingStrike, setIsShowingStrike] = useState(false);
   const [strikeWeapon, setStrikeWeapon] = useState<WeaponType>(WeaponType.BOW);
+  const [strikeVariant, setStrikeVariant] = useState<StrikeIndicatorVariant>('weapon-hit');
   const [strikeWorldPos, setStrikeWorldPos] = useState<Vector3 | null>(null);
   const strikeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleStrikeEvent = useCallback((ev: Event) => {
     const e = ev as CustomEvent<ErebusStrikeIndicatorDetail>;
-    const weapon = e.detail?.weapon;
-    if (weapon !== WeaponType.BOW && weapon !== WeaponType.SCYTHE) return;
+    const variant = e.detail?.variant ?? 'weapon-hit';
+
+    if (variant === 'weapon-hit') {
+      const weapon = e.detail?.weapon;
+      if (weapon !== WeaponType.BOW && weapon !== WeaponType.SCYTHE) return;
+      setStrikeWeapon(weapon);
+    }
 
     const p = e.detail?.position;
     setStrikeWorldPos(p != null ? new Vector3(p.x, p.y, p.z) : null);
-
-    setStrikeWeapon(weapon);
+    setStrikeVariant(variant);
 
     if (strikeTimeoutRef.current != null) {
       clearTimeout(strikeTimeoutRef.current);
     }
     setIsShowingStrike(true);
+    const duration = variant === 'kill' ? KILL_FLASH_DURATION_MS : WEAPON_HIT_DURATION_MS;
     strikeTimeoutRef.current = setTimeout(() => {
       setIsShowingStrike(false);
       setStrikeWorldPos(null);
       strikeTimeoutRef.current = null;
-    }, 400);
+    }, duration);
   }, []);
 
   useEffect(() => {
@@ -96,9 +106,13 @@ const StrikeIndicator = memo(function StrikeIndicator({
     return null;
   }
 
+  const isKill = strikeVariant === 'kill';
   const isBowEquipped = strikeWeapon === WeaponType.BOW;
-
-  const scale = 1.0;
+  const sizePx = isKill ? 72 : isBowEquipped ? 48 : 60;
+  const dotColor = isKill ? '#ff2d2d' : '#cccccc';
+  const glowColor = isKill ? '#ff5555' : '#cccccc';
+  const dotRadius = isKill ? 2.5 : 2;
+  const centerDotSize = isKill ? '8px' : '6px';
   const opacity = 1.0;
 
   return (
@@ -109,23 +123,33 @@ const StrikeIndicator = memo(function StrikeIndicator({
         background: 'transparent',
       }}
     >
+      <style>{`
+        @keyframes strike-kill-pulse {
+          0% { transform: translate(-50%, -50%) scale(0.85); opacity: 0.7; }
+          40% { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+          100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+        }
+      `}</style>
       <div
         className="absolute"
         style={{
           left: `${screenPx.x}px`,
           top: `${screenPx.y}px`,
-          transform: `translate(-50%, -50%) scale(${scale})`,
+          transform: isKill ? undefined : 'translate(-50%, -50%) scale(1)',
+          animation: isKill ? 'strike-kill-pulse 0.35s ease-out forwards' : undefined,
           transition:
-            screenPx.mode === 'projected'
+            !isKill && screenPx.mode === 'projected'
               ? 'transform 0.05s ease-out, left 0.05s ease-out, top 0.05s ease-out'
-              : 'transform 0.05s ease-out',
+              : !isKill
+                ? 'transform 0.05s ease-out'
+                : undefined,
         }}
       >
         <div
           className="relative"
           style={{
-            width: isBowEquipped ? '48px' : '60px',
-            height: isBowEquipped ? '48px' : '60px',
+            width: `${sizePx}px`,
+            height: `${sizePx}px`,
             overflow: 'visible',
             background: 'transparent',
             border: 'none',
@@ -134,9 +158,25 @@ const StrikeIndicator = memo(function StrikeIndicator({
             isolation: 'isolate',
           }}
         >
+          {isKill && (
+            <div
+              className="absolute rounded-full"
+              style={{
+                width: `${sizePx}px`,
+                height: `${sizePx}px`,
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                border: '1.5px solid rgba(255, 45, 45, 0.55)',
+                boxShadow: '0 0 14px rgba(255, 85, 85, 0.7), inset 0 0 10px rgba(255, 45, 45, 0.25)',
+                background: 'transparent',
+                pointerEvents: 'none',
+              }}
+            />
+          )}
           <svg
-            width={isBowEquipped ? 48 : 60}
-            height={isBowEquipped ? 48 : 60}
+            width={sizePx}
+            height={sizePx}
             style={{
               position: 'absolute',
               left: '50%',
@@ -148,8 +188,7 @@ const StrikeIndicator = memo(function StrikeIndicator({
             }}
           >
             {[1, 2, 3, 4].map((i) => {
-              const sizeSvg = isBowEquipped ? 48 : 60;
-              const spacing = sizeSvg / 6;
+              const spacing = sizePx / 6;
               const x = (i + 0.5) * spacing;
               const y = (i + 0.5) * spacing;
               return (
@@ -157,25 +196,24 @@ const StrikeIndicator = memo(function StrikeIndicator({
                   key={`diag1-${i}`}
                   cx={x}
                   cy={y}
-                  r={2}
-                  fill="#cccccc"
-                  style={{ filter: 'drop-shadow(0 0 4px #cccccc)' }}
+                  r={dotRadius}
+                  fill={dotColor}
+                  style={{ filter: `drop-shadow(0 0 ${isKill ? 6 : 4}px ${glowColor})` }}
                 />
               );
             })}
             {[1, 2, 3, 4].map((i) => {
-              const sizeSvg = isBowEquipped ? 48 : 60;
-              const spacing = sizeSvg / 6;
-              const x = sizeSvg - (i + 0.5) * spacing;
+              const spacing = sizePx / 6;
+              const x = sizePx - (i + 0.5) * spacing;
               const y = (i + 0.5) * spacing;
               return (
                 <circle
                   key={`diag2-${i}`}
                   cx={x}
                   cy={y}
-                  r={2}
-                  fill="#cccccc"
-                  style={{ filter: 'drop-shadow(0 0 4px #cccccc)' }}
+                  r={dotRadius}
+                  fill={dotColor}
+                  style={{ filter: `drop-shadow(0 0 ${isKill ? 6 : 4}px ${glowColor})` }}
                 />
               );
             })}
@@ -183,10 +221,10 @@ const StrikeIndicator = memo(function StrikeIndicator({
           <div
             className="absolute rounded-full"
             style={{
-              width: '6px',
-              height: '6px',
-              backgroundColor: '#cccccc',
-              boxShadow: '0 0 8px #cccccc',
+              width: centerDotSize,
+              height: centerDotSize,
+              backgroundColor: dotColor,
+              boxShadow: `0 0 ${isKill ? 12 : 8}px ${glowColor}`,
               opacity: opacity * 0.9,
               transform: 'translate(-50%, -50%)',
               left: '50%',

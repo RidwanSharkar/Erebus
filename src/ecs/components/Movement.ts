@@ -51,6 +51,9 @@ export class Movement extends Component {
   // Attack-cast movement slow (Sword ColossusStrike, Bow/Scythe/Runeblade/Spear primary, abilities, Spear charges)
   public isAttackSlowed: boolean;
 
+  // Hold-Shift sprint (any locomotion except backward)
+  public isSprinting: boolean;
+
   // Input-based movement
   public moveDirection: Vector3;
   public inputStrength: number;
@@ -84,6 +87,9 @@ export class Movement extends Component {
   public knockbackDuration: number;
   public knockbackDistance: number;
   public knockbackStartPosition: Vector3;
+
+  /** Timestamp (seconds) until which movement input should not override a forced halt (Shift-Deflect). */
+  public movementLockUntil: number;
 
   constructor(
     maxSpeed: number = 3.575,
@@ -124,6 +130,9 @@ export class Movement extends Component {
 
     // Initialize attack-cast slow state
     this.isAttackSlowed = false;
+
+    // Initialize sprint state
+    this.isSprinting = false;
     
     this.moveDirection = new Vector3(0, 0, 0);
     this.inputStrength = 0;
@@ -156,6 +165,8 @@ export class Movement extends Component {
     this.knockbackDuration = 0.5; // 500ms knockback duration
     this.knockbackDistance = 10; // 10 unit knockback distance
     this.knockbackStartPosition = new Vector3(0, 0, 0);
+
+    this.movementLockUntil = 0;
   }
 
   public addForce(force: Vector3): void {
@@ -255,12 +266,17 @@ export class Movement extends Component {
 
     // Apply Ice Beam movement speed reduction (50% slower)
     if (this.isIcebeaming) {
-      speed *= 0.1;
+      speed *= 0.2;
     }
 
     // Apply attack-cast movement slow (50% slower while casting restricted abilities)
     if (this.isAttackSlowed) {
       speed *= 0.5;
+    }
+
+    // Apply sprint speed boost (50% faster while holding Shift, except backward locomotion)
+    if (this.isSprinting) {
+      speed *= 1.97;
     }
 
     return speed;
@@ -464,6 +480,7 @@ export class Movement extends Component {
   /** Stop all locomotion immediately (death, stun, etc.). */
   public haltLocomotion(): void {
     this.stop();
+    this.isSprinting = false;
     this.cancelDash();
     this.cancelCharge();
     this.cancelKnockback();
@@ -679,6 +696,7 @@ export class Movement extends Component {
     this.movementSpeedMultiplier = 1.0;
     this.isIcebeaming = false;
     this.isAttackSlowed = false;
+    this.isSprinting = false;
 
     // Reset dash properties
     this.isDashing = false;
@@ -711,6 +729,8 @@ export class Movement extends Component {
     this.knockbackDuration = 0.5;
     this.knockbackDistance = 10;
     this.knockbackStartPosition.set(0, 0, 0);
+
+    this.movementLockUntil = 0;
   }
 
   public clone(): Movement {
@@ -732,6 +752,7 @@ export class Movement extends Component {
     clone.movementSpeedMultiplier = this.movementSpeedMultiplier;
     clone.isIcebeaming = this.isIcebeaming;
     clone.isAttackSlowed = this.isAttackSlowed;
+    clone.isSprinting = this.isSprinting;
 
     // Clone dash properties
     clone.isDashing = this.isDashing;
@@ -765,6 +786,8 @@ export class Movement extends Component {
     clone.knockbackDuration = this.knockbackDuration;
     clone.knockbackDistance = this.knockbackDistance;
     clone.knockbackStartPosition.copy(this.knockbackStartPosition);
+
+    clone.movementLockUntil = this.movementLockUntil;
 
     return clone;
   }

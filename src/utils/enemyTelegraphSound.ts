@@ -106,12 +106,17 @@ const TEMPLAR_BLINK_TELEGRAPH_EVENTS = ['templar-blink-smite-charge'] as const;
 /** Martyr self-detonation windup — bomb arming SFX while the ground ring is active. */
 const MARTYR_ARMING_TELEGRAPH_EVENTS = ['martyr-detonation-telegraph'] as const;
 
-/** High-impact windups only — Knight spin, Warlock casts, Weaver lightning. */
+/** Weaver lightning strike ground indicators — dedicated thunder SFX. */
+const WEAVER_LIGHTNING_TELEGRAPH_EVENTS = ['weaver-lightning-telegraph'] as const;
+
+/** Knight reactive block — shield raise SFX at cast start. */
+const KNIGHT_BLOCK_TELEGRAPH_EVENTS = ['knight-block-telegraph'] as const;
+
+/** High-impact windups only — Knight spin, Warlock casts. */
 const TELEGRAPH_EVENTS = [
   'knight-spin-charge',
   'warlock-attack-telegraph',
   'warlock-archon-shock',
-  'weaver-lightning-telegraph',
 ] as const;
 
 export interface RegisterEnemyTelegraphSoundsOptions {
@@ -152,6 +157,18 @@ export function registerEnemyAttackTelegraphSounds(
     });
   };
 
+  const weaverLightningHandler = (data: TelegraphPayload) => {
+    playFromPayload(data, getEnemyPosition, (pos) => {
+      (window as any).audioSystem?.playWeaverLightningTelegraphSound(pos);
+    });
+  };
+
+  const knightBlockHandler = (data: TelegraphPayload) => {
+    playFromPayload(data, getEnemyPosition, (pos) => {
+      (window as any).audioSystem?.playKnightBlockSound(pos);
+    });
+  };
+
   for (const event of TELEGRAPH_EVENTS) {
     socket.on(event, handler);
   }
@@ -172,6 +189,14 @@ export function registerEnemyAttackTelegraphSounds(
     socket.on(event, quakeHandler);
   }
 
+  for (const event of WEAVER_LIGHTNING_TELEGRAPH_EVENTS) {
+    socket.on(event, weaverLightningHandler);
+  }
+
+  for (const event of KNIGHT_BLOCK_TELEGRAPH_EVENTS) {
+    socket.on(event, knightBlockHandler);
+  }
+
   return () => {
     for (const event of TELEGRAPH_EVENTS) {
       socket.off(event, handler);
@@ -187,6 +212,12 @@ export function registerEnemyAttackTelegraphSounds(
     }
     for (const event of QUAKE_TELEGRAPH_EVENTS) {
       socket.off(event, quakeHandler);
+    }
+    for (const event of WEAVER_LIGHTNING_TELEGRAPH_EVENTS) {
+      socket.off(event, weaverLightningHandler);
+    }
+    for (const event of KNIGHT_BLOCK_TELEGRAPH_EVENTS) {
+      socket.off(event, knightBlockHandler);
     }
   };
 }

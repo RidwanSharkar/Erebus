@@ -7,6 +7,8 @@ import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 const DURATION_MS = 450;
 const SKY_Y = 22;
+const BEAM_RADIUS = 0.11;
+const GLOW_RADIUS_SCALE = 1.5;
 
 export type KnightSmiteLightningVariant =
   | 'enemy-red'
@@ -45,25 +47,6 @@ export default function KnightSmiteLightning({
 
   const strikeLight = useDynamicLight({ color: palette.light, distance: 16, decay: 2, priority: 1 });
 
-  const segments = useMemo(() => {
-    const baseX = position.x;
-    const baseY = position.y;
-    const baseZ = position.z;
-    const n = 14;
-    const pts: { x: number; y: number; z: number; h: number }[] = [];
-    for (let i = 0; i < n; i++) {
-      const t = i / (n - 1);
-      const jitter = (1 - t) * 0.35 * beamScale;
-      pts.push({
-        x: baseX + (Math.random() - 0.5) * jitter,
-        y: baseY + SKY_Y * (1 - t),
-        z: baseZ + (Math.random() - 0.5) * jitter,
-        h: (0.12 + (1 - t) * 0.08) * beamScale,
-      });
-    }
-    return pts;
-  }, [position.x, position.y, position.z, beamScale]);
-
   const matCore = useMemo(
     () =>
       new MeshBasicMaterial({
@@ -87,7 +70,10 @@ export default function KnightSmiteLightning({
     [palette.glow],
   );
 
-  const cyl = useMemo(() => new CylinderGeometry(0.085 * beamScale, 0.085 * beamScale, 1, 6), [beamScale]);
+  const cyl = useMemo(
+    () => new CylinderGeometry(BEAM_RADIUS * beamScale, BEAM_RADIUS * beamScale, 1, 6),
+    [beamScale],
+  );
 
   useEffect(() => {
     return () => {
@@ -113,25 +99,9 @@ export default function KnightSmiteLightning({
   });
 
   return (
-    <group>
-      {segments.slice(0, -1).map((p, i) => {
-        const q = segments[i + 1];
-        const midX = (p.x + q.x) / 2;
-        const midY = (p.y + q.y) / 2;
-        const midZ = (p.z + q.z) / 2;
-        const dx = q.x - p.x;
-        const dy = q.y - p.y;
-        const dz = q.z - p.z;
-        const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 0.001;
-        const yaw = Math.atan2(dx, dz);
-        const pitch = -Math.asin(dy / len) + Math.PI / 2;
-        return (
-          <group key={i} position={[midX, midY, midZ]} rotation={[pitch, yaw, 0]}>
-            <mesh geometry={cyl} material={matGlow} scale={[1.4, len, 1.4]} />
-            <mesh geometry={cyl} material={matCore} scale={[1, len, 1]} />
-          </group>
-        );
-      })}
+    <group position={[position.x, position.y + SKY_Y / 2, position.z]}>
+      <mesh geometry={cyl} material={matGlow} scale={[GLOW_RADIUS_SCALE, SKY_Y, GLOW_RADIUS_SCALE]} />
+      <mesh geometry={cyl} material={matCore} scale={[1, SKY_Y, 1]} />
     </group>
   );
 }

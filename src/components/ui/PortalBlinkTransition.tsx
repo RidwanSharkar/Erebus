@@ -158,10 +158,14 @@ export default function PortalBlinkTransition({
 
   useEffect(() => {
     if (!active && mounted) {
+      const wasInProgress = phaseRef.current !== 'idle';
       clearTimers();
       setMounted(false);
       phaseRef.current = 'idle';
       setPhase('idle');
+      if (wasInProgress) {
+        onCompleteRef.current();
+      }
     }
   }, [active, mounted, clearTimers]);
 

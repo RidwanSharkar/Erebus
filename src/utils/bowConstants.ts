@@ -35,3 +35,14 @@ export function isBowPerfectShotProgress(progress: number): boolean {
     progress >= BOW_PERFECT_SHOT_MIN_PROGRESS && progress <= BOW_PERFECT_SHOT_MAX_PROGRESS
   );
 }
+
+export const REJUVENATING_SHOT_BASE_HEAL = 50;
+export const REJUVENATING_SHOT_HEAL_PER_INTELLECT = 3;
+export const REJUVENATING_SHOT_COOLDOWN_SEC = 4;
+
+export function getRejuvenatingShotHealAmount(intellect: number): number {
+  return (
+    REJUVENATING_SHOT_BASE_HEAL
+    + REJUVENATING_SHOT_HEAL_PER_INTELLECT * Math.max(0, Math.floor(intellect))
+  );
+}

@@ -31,7 +31,7 @@ interface WarlockRendererProps {
   isDying?: boolean;
   campType?: string;
   /** Co-op camp soul colour; drives CubeSoulEffect (purple = meteor warlock, red = default). */
-  soulType?: 'red' | 'purple' | 'green' | 'blue' | 'yellow';
+  soulType?: 'red' | 'purple' | 'green' | 'blue' | 'yellow' | 'orange';
   staggerBuildup?: number;
 }
 

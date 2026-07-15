@@ -60,9 +60,11 @@ import type { AbilityLoadout } from '../utils/weaponAbilities';
 import { getDefaultLoadoutForWeapon } from '../utils/weaponAbilities';
 import {
   buildRoomTitleAnnouncement,
+  buildRunePickupAnnouncement,
   BOON_REROLL_GOLD_COST,
   BOSS_SLAIN_ANNOUNCEMENTS,
   GUIDE_ANNOUNCEMENTS,
+  LEVEL_UP_ANNOUNCEMENT,
   REWARD_ANNOUNCEMENT_COLORS,
   ROOM_TITLE_ANNOUNCEMENT_MS,
   STAT_ROOM_PEDESTAL_POINTS,
@@ -241,6 +243,7 @@ function HomeContent() {
     registerMerchantPurchaseSuccessHandler,
     registerBossDefeatedHandler,
     registerBossItemPickupHandler,
+    registerRunePickupHandler,
     clearCoopClearedRoomColor,
     hideCoopPortalTransition,
     confirmCoopPortalTransitionComplete,
@@ -277,6 +280,7 @@ function HomeContent() {
     coopColoredRoomVisitIndex,
     coopBossRoomVisitIndex,
     lateJoinCombatLoadout,
+    selectedArchetype,
   } = useMultiplayerRoom();
 
   const combatOverlayCallbacksRef = useRef<CombatOverlayCallbacks>(NOOP_COMBAT_OVERLAY_CALLBACKS);
@@ -288,6 +292,8 @@ function HomeContent() {
     maxHealth: 200,
     playerShield: 100,
     maxShield: 100,
+    playerEnergy: 100,
+    maxEnergy: 100,
     currentWeapon: WeaponType.NONE,
     currentSubclass: WeaponSubclass.ELEMENTAL,
     mana: 150,
@@ -539,6 +545,8 @@ function HomeContent() {
     maxHealth: number;
     playerShield: number;
     maxShield: number;
+    playerEnergy: number;
+    maxEnergy: number;
     currentWeapon: WeaponType;
     currentSubclass: WeaponSubclass;
     mana?: number;
@@ -1026,7 +1034,12 @@ function HomeContent() {
   const handlePlayerLevelUp = useCallback((level: number) => {
     updateSkillPointsForLevel(level);
     updateStatPointsForLvl(level);
-  }, [updateSkillPointsForLevel, updateStatPointsForLvl]);
+    enqueueAnnouncement(
+      LEVEL_UP_ANNOUNCEMENT.title,
+      LEVEL_UP_ANNOUNCEMENT.color,
+      `level-up-${level}`,
+    );
+  }, [updateSkillPointsForLevel, updateStatPointsForLvl, enqueueAnnouncement]);
 
   const handleEssenceUpdate = useCallback((essence: number) => {
     setPlayerEssence(essence);
@@ -1213,6 +1226,13 @@ function HomeContent() {
       );
     });
   }, [registerBossItemPickupHandler, enqueueAnnouncement]);
+
+  useEffect(() => {
+    return registerRunePickupHandler(({ stat }) => {
+      const { title, color } = buildRunePickupAnnouncement(stat);
+      enqueueAnnouncement(title, color, `rune-${stat}-${Date.now()}`);
+    });
+  }, [registerRunePickupHandler, enqueueAnnouncement]);
 
   const pvpMerchantItems = [
     {
@@ -1470,6 +1490,8 @@ function HomeContent() {
                 maxHealth={gameState.maxHealth}
                 playerShield={gameState.playerShield}
                 maxShield={gameState.maxShield}
+                playerEnergy={gameState.playerEnergy}
+                maxEnergy={gameState.maxEnergy}
                 controlSystem={controlSystem}
                 selectedWeapons={selectedWeapons}
                 onWeaponSwitch={(slot) => {
@@ -1488,6 +1510,7 @@ function HomeContent() {
                 talentLoadout={talentLoadout}
                 interactHint={gameMode === 'coop' ? coopInteractHint : null}
                 gameMode={gameMode}
+                selectedArchetype={selectedArchetype}
               />
             </div>
 

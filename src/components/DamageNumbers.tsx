@@ -23,6 +23,111 @@ function isHealDamageType(type?: string): boolean {
   return type === 'healing' || (!!type && type.endsWith('_healing'));
 }
 
+/** Left-click primary attacks (all weapons). */
+const PRIMARY_DAMAGE_TYPES = new Set([
+  'sword',
+  'runeblade_combo',
+  'sabre_left',
+  'sabre_right',
+  'sabres_left',
+  'sabres_right',
+  'entropic',
+  'projectile',
+]);
+
+/** Q / E / R hotkey abilities and spells. */
+const ABILITY_DAMAGE_TYPES = new Set([
+  'crossentropy',
+  'summon_totem',
+  'wraith_strike',
+  'smite',
+  'colossus_strike',
+  'barrage',
+  'reaping_talons',
+  'reaping_talons_explosion',
+  'lightning_storm',
+  'backstab',
+  'sunder',
+  'fan_of_knives',
+  'mortal_strike',
+  'skyfall',
+  'charge',
+  'viper_sting',
+  'aftershock',
+]);
+
+function getOutgoingDamageNumberClass(damageType?: string, isCritical?: boolean): string {
+  if (isCritical) {
+    return 'text-amber-200 text-2xl font-black tracking-wide drop-shadow-[0_0_12px_rgba(251,191,36,0.95)]';
+  }
+
+  if (damageType === 'experience_gain') {
+    return 'text-sky-300 text-sm font-bold tracking-wide drop-shadow-[0_0_6px_rgba(125,211,252,0.65)]';
+  }
+  if (damageType === 'gold_pickup') {
+    return 'text-amber-300 text-sm font-bold tracking-wide drop-shadow-[0_0_6px_rgba(252,211,77,0.55)]';
+  }
+  if (isHealDamageType(damageType)) {
+    return 'text-green-400 text-lg font-extrabold';
+  }
+  if (damageType === 'ignite') {
+    return 'text-orange-500 text-lg font-bold drop-shadow-[0_0_6px_rgba(234,88,12,0.85)]';
+  }
+  if (damageType === 'cobra_shot' || damageType === 'venom') {
+    return 'text-green-400 text-lg';
+  }
+  if (damageType === 'stagger_break') {
+    return 'text-blue-400 text-xl font-extrabold drop-shadow-[0_0_8px_rgba(96,165,250,0.9)]';
+  }
+  if (damageType === 'blizzard') {
+    return 'text-sky-300 text-lg font-bold drop-shadow-[0_0_6px_rgba(125,211,252,0.75)]';
+  }
+  if (damageType && PRIMARY_DAMAGE_TYPES.has(damageType)) {
+    return 'text-slate-300 text-lg font-bold drop-shadow-[0_0_6px_rgba(125,211,252,0.75)]';
+  }
+  if (damageType && ABILITY_DAMAGE_TYPES.has(damageType)) {
+    return 'text-yellow-400 text-lg font-bold';
+  }
+
+  // Unrelated specialty colors — leave unchanged
+  if (damageType === 'cloudkill') return 'text-teal-400 text-lg';
+  if (damageType === 'mushroom') {
+    return 'text-emerald-300 text-lg font-bold drop-shadow-[0_0_8px_rgba(52,211,153,0.85)]';
+  }
+  if (damageType === 'mushroom_eruption') {
+    return 'text-teal-300 text-lg font-bold drop-shadow-[0_0_10px_rgba(45,212,191,0.9)]';
+  }
+  if (damageType === 'frost_nova' || damageType === 'icebeam') return 'text-blue-300 text-lg';
+  if (damageType === 'entropic_cryoflame') return 'text-cyan-400 text-lg';
+  if (damageType === 'player_zombie') {
+    return 'text-lime-400 text-lg drop-shadow-[0_0_6px_rgba(163,230,53,0.75)]';
+  }
+  if (damageType === 'allied_knight') {
+    return 'text-slate-300 text-lg drop-shadow-[0_0_6px_rgba(180,180,190,0.65)]';
+  }
+  if (damageType === 'psionic_blades' || damageType === 'locust') {
+    return 'text-purple-300 text-lg drop-shadow-[0_0_8px_rgba(168,85,247,0.75)]';
+  }
+
+  return 'text-white text-lg font-bold drop-shadow-[0_0_4px_rgba(255,255,255,0.35)]';
+}
+
+function getDisplayTextClass(damageType?: string): string {
+  if (damageType === 'aegis_blocked') {
+    return 'text-sky-200 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(56,189,248,0.95)] tracking-widest';
+  }
+  if (damageType === 'deflect_blocked') {
+    return 'text-amber-200 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(255,193,7,0.95)] tracking-widest';
+  }
+  if (damageType === 'dodge_blocked') {
+    return 'text-emerald-200 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(52,211,153,0.95)] tracking-widest';
+  }
+  if (damageType === 'knight_blocked') {
+    return 'text-slate-200 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(203,213,225,0.95)] tracking-widest';
+  }
+  return 'text-slate-200 text-lg font-bold';
+}
+
 const getStableScreenJitter = (id: string, amplitudePx: number) => {
   let hash = 0;
   for (let i = 0; i < id.length; i += 1) {
@@ -159,62 +264,10 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
       <span
         className={`inline-block ${
           damageData.displayText
-            ? damageData.damageType === 'aegis_blocked'
-              ? 'text-sky-200 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(56,189,248,0.95)] tracking-widest'
-              : damageData.damageType === 'dodge_blocked'
-              ? 'text-emerald-200 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(52,211,153,0.95)] tracking-widest'
-              : damageData.damageType === 'knight_blocked'
-              ? 'text-slate-200 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(203,213,225,0.95)] tracking-widest'
-              : 'text-slate-200 text-lg font-bold'
+            ? getDisplayTextClass(damageData.damageType)
             : damageData.isIncomingDamage
-            ? // Incoming damage: red for all damage
-              'text-red-400 text-lg font-bold'
-            : // Outgoing damage: original logic
-              damageData.damageType === 'experience_gain'
-                ? 'text-sky-300 text-sm font-bold tracking-wide drop-shadow-[0_0_6px_rgba(125,211,252,0.65)]'
-                : damageData.damageType === 'gold_pickup'
-                ? 'text-amber-300 text-sm font-bold tracking-wide drop-shadow-[0_0_6px_rgba(252,211,77,0.55)]'
-                : damageData.isCritical
-                ? 'text-amber-200 text-2xl font-black tracking-wide drop-shadow-[0_0_12px_rgba(251,191,36,0.95)]'
-                : damageData.damageType === 'crossentropy'
-                ? 'text-orange-400'
-                : isHealDamageType(damageData.damageType)
-                ? 'text-green-400 text-lg font-extrabold'
-                : damageData.damageType === 'colossus_strike' ||
-                  damageData.damageType === 'lightning_storm'
-                ? 'text-yellow-400 text-lg'
-                : damageData.damageType === 'barrage'
-                ? 'text-blue-400 text-lg'
-                : damageData.damageType === 'ignite'
-                ? 'text-orange-500 text-lg font-bold drop-shadow-[0_0_6px_rgba(234,88,12,0.85)]'
-                : damageData.damageType === 'cobra_shot' ||
-                  damageData.damageType === 'venom'
-                ? 'text-green-400 text-lg'
-                : damageData.damageType === 'viper_sting'
-                ? 'text-purple-300 text-lg'
-                : damageData.damageType === 'cloudkill'
-                ? 'text-teal-400 text-lg'
-                : damageData.damageType === 'mushroom'
-                ? 'text-emerald-300 text-lg font-bold drop-shadow-[0_0_8px_rgba(52,211,153,0.85)]'
-                : damageData.damageType === 'mushroom_eruption'
-                ? 'text-teal-300 text-lg font-bold drop-shadow-[0_0_10px_rgba(45,212,191,0.9)]'
-                : damageData.damageType === 'frost_nova'
-                ? 'text-blue-300 text-lg'
-                : damageData.damageType === 'stagger_break'
-                ? 'text-sky-200 text-xl font-extrabold drop-shadow-[0_0_8px_rgba(56,189,248,0.9)]'
-                : damageData.damageType === 'entropic_cryoflame'
-                ? 'text-cyan-400 text-lg'
-                : damageData.damageType === 'icebeam'
-                ? 'text-blue-300 text-lg'
-                : damageData.damageType === 'summon_totem'
-                ? 'text-violet-300 text-lg drop-shadow-[0_0_8px_rgba(167,139,250,0.75)]'
-                : damageData.damageType === 'player_zombie'
-                ? 'text-lime-400 text-lg drop-shadow-[0_0_6px_rgba(163,230,53,0.75)]'
-                : damageData.damageType === 'allied_knight'
-                ? 'text-slate-300 text-lg drop-shadow-[0_0_6px_rgba(180,180,190,0.65)]'
-                : damageData.damageType === 'psionic_blades'
-                ? 'text-purple-300 text-lg drop-shadow-[0_0_8px_rgba(168,85,247,0.75)]'
-                : 'text-red-400'
+            ? 'text-red-400 text-lg font-bold'
+            : getOutgoingDamageNumberClass(damageData.damageType, damageData.isCritical)
         }`}
         style={damageData.isCritical ? {
           animation: 'damage-number-critical-pop 620ms cubic-bezier(0.16, 1, 0.3, 1)',

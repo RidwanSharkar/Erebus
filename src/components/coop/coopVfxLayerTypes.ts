@@ -403,6 +403,28 @@ export interface EnemyTauntEffectState {
   duration: number;
 }
 
+export interface DeflectBoltEffectState {
+  id: number;
+  playerId: string;
+  startPosition: Vector3;
+  /** Live-resolved enemy id to home in on; null if no enemy was available at cast time. */
+  targetEnemyId: string | null;
+  /** Aim point at cast time, used as the initial visual target before live tracking kicks in. */
+  fallbackTargetPosition: Vector3;
+}
+
+export interface LocustProjectileEffectState {
+  id: number;
+  playerId: string;
+  startPosition: Vector3;
+  initialDirection: Vector3;
+  spreadIndex: number;
+  volleyId: number;
+  targetEnemyId: string | null;
+  fallbackTargetPosition: Vector3;
+  damage: number;
+}
+
 export interface TentacleSpineFxState {
   windSeq: number;
   slamSeq: number;

@@ -8,6 +8,7 @@ import { Transform } from '@/ecs/components/Transform';
 import { Movement } from '@/ecs/components/Movement';
 import { Health } from '@/ecs/components/Health';
 import { Shield } from '@/ecs/components/Shield';
+import { Energy } from '@/ecs/components/Energy';
 import { Enemy, EnemyType, capFreezeMsForEnemy } from '@/ecs/components/Enemy';
 import { Renderer } from '@/ecs/components/Renderer';
 import { Collider } from '@/ecs/components/Collider';
@@ -249,6 +250,13 @@ import {
   METEOR_STRIKE_COOLDOWN_SEC,
   AEGIS_ROOM_COOLDOWN_SEC,
   AEGIS_ROOM_DURATION_SEC,
+  DEFLECT_SHIFT_COOLDOWN_SEC,
+  DEFLECT_SHIFT_DURATION_SEC,
+  DEFLECT_SHIFT_ENERGY_COST,
+  computeLocustMissileDamage,
+  LOCUST_ENERGY_PER_VOLLEY,
+  LOCUST_MISSILE_INTERVAL_SEC,
+  LOCUST_MISSILES_PER_VOLLEY,
   applyManaShieldRestoreForDashCharges,
   shouldApplyBloodmageTalent,
   shouldApplyOverrideTalent,
@@ -256,6 +264,13 @@ import {
   OVERRIDE_BYPASS_ICD_SEC,
 } from '@/utils/talents';
 import { DEFAULT_ENTROPIC_COLOR_VARIANT } from '@/utils/entropicColorThemes';
+import {
+  type Archetype,
+  ARCHETYPE_NONE,
+  ARCHETYPE_ROGUE,
+  ARCHETYPE_GLADIATOR,
+  ARCHETYPE_ACOLYTE,
+} from '@/utils/archetypes';
 import type { AegisPaletteVariant } from '@/utils/aegisShieldPalette';
 import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
 import { triggerGlobalFireStorm } from '@/components/weapons/fireStormSpawnBridge';
@@ -277,7 +292,7 @@ import {
   acceleratorOwnedTotemTripletCount,
 } from '@/components/projectiles/SummonTotemManager';
 import { MAIN_ARENA_BOUNDS, MAIN_MAP_HALF_X, MAIN_MAP_HALF_Z, MAIN_MAP_RADIUS, isInsideMainArenaXZ } from '@/utils/mapConstants';
-import { computeBowPrimaryScaledDamage, getBowFullChargeMs, isBowPerfectShotProgress } from '@/utils/bowConstants';
+import { computeBowPrimaryScaledDamage, getBowFullChargeMs, getRejuvenatingShotHealAmount, isBowPerfectShotProgress, REJUVENATING_SHOT_COOLDOWN_SEC } from '@/utils/bowConstants';
 import { CASTLE_WALL_HALF_THICKNESS, CASTLE_WALL_X_OFFSET, CASTLE_WALL_Z_OFFSET } from '@/components/environment/CastleWalls';
 
 export type RoomBoomDashVariant = 'infernal' | 'glacial' | 'mending' | 'staggering';
@@ -403,6 +418,20 @@ export class ControlSystem extends System {
     direction: Vector3,
     extra?: { aegisRoomBoon?: boolean },
   ) => void;
+
+  // Callback for Shift-tap Deflect activation (separate from the Q-Aegis onDeflectCallback above)
+  private onDeflectShiftCallback?: (position: Vector3, direction: Vector3) => void;
+  private onLocustSpawnCallback?: (payload: {
+    startPosition: Vector3;
+    spreadIndex: number;
+    volleyId: number;
+    forward: Vector3;
+    damage: number;
+  }) => void;
+
+  /** Co-op throne archetype routing — when false, legacy tap-deflect / hold-sprint applies (PvP). */
+  private useArchetypeShiftRouting = false;
+  private playerArchetype: Archetype = ARCHETYPE_NONE;
   
   // Callback for broadcasting debuff effects in PVP
   private onDebuffCallback?: (targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', duration: number, position: Vector3) => void;
@@ -535,7 +564,7 @@ export class ControlSystem extends System {
   private viperStingFireRate = 7.0; // Viper Sting rate (2 seconds cooldown)
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
   private cobraShotFireRate = 5.0; // Cobra Shot rate (2 seconds cooldown)
-  private rejuvenatingShotFireRate = 3.0; // Rejuvenating Shot rate (4 seconds cooldown)
+  private rejuvenatingShotFireRate = REJUVENATING_SHOT_COOLDOWN_SEC;
   private lastBurstFireTime = 0; // Separate tracking for Bow burst fire
   private burstFireRate = 0.925; // 1 second cooldown between bursts
   /** Monotonic id per Tempest Rounds arrow (EtherBow muzzle flash + PVP sync). */
@@ -616,6 +645,23 @@ export class ControlSystem extends System {
   private deflectDuration = AEGIS_ROOM_DURATION_SEC;
   private aegisRoomDeflectActive = false;
   private deflectBarrier: DeflectBarrier;
+
+  // Shift-tap Deflect ability state (mutually exclusive with Sprint; shares the Shift key/Energy pool)
+  private isBlockingDeflect = false;
+  private lastDeflectShiftTime = 0;
+  /** Timestamp (seconds) recorded on Shift keydown; null while Shift is not held. */
+  private shiftPressStartTime: number | null = null;
+  /** Once true for the current hold, the hold has crossed the tap window and behaves as plain Sprint. */
+  private shiftHeldPastTapWindow = false;
+  private static readonly DEFLECT_SHIFT_TAP_WINDOW_SEC = 0.22;
+  /** Previous-frame Shift state for Gladiator key-down edge detection. */
+  private shiftWasPressedLastFrame = false;
+  /** Acolyte Locust channel — volley cadence while Shift is held. */
+  private isChannelingLocusts = false;
+  private locustMissilesFiredInVolley = 0;
+  private locustNextMissileAt = 0;
+  private locustVolleyId = 0;
+  private locustVolleyEnergyPaid = false;
   /** Wraith Guard talent: barrier spawned without Aegis; separate from `isDeflecting` for UI/cooldown. */
   private wraithGuardShieldActive = false;
   private wraithGuardOwnsBarrier = false;
@@ -673,12 +719,15 @@ export class ControlSystem extends System {
   private backstabDamageApplied = false;
   
   // Sunder ability state (Sabres)
+  private static readonly SUNDER_DAMAGE_TIMING_PERCENT = 0.3;
+  private static readonly SABRES_FLOURISH_SOUND_LEAD_SEC = 0.35;
   private lastSunderTime = 0;
   private sunderCooldown = 1.75; // 1.5 second cooldown
   private isSundering = false;
   private sunderStartTime = 0;
   private sunderDuration = 1.0; // Same animation duration as backstab
   private sunderDamageApplied = false; // Track if damage has been applied during current sunder
+  private sunderSoundPlayed = false;
   private lastFireAffinityStormTime = 0;
   
   // Stealth ability state (Sabres)
@@ -1047,6 +1096,10 @@ export class ControlSystem extends System {
     // Handle weapon switching
     this.handleWeaponSwitching();
 
+    // Shift tap-vs-hold disambiguation — runs unconditionally every frame (not gated behind the
+    // dash/charge/frozen skip below) so a quick Shift tap is never lost mid-dash/charge/etc.
+    this.updateShiftBehavior(playerTransform, crossentropyWallNowSec);
+
     // Handle knockback movement first (overrides regular movement)
     this.handleKnockbackMovement(playerMovement, playerTransform);
 
@@ -1057,11 +1110,31 @@ export class ControlSystem extends System {
     this.handleChargeMovement(playerMovement, playerTransform);
 
     // Handle player movement input (only prevent for abilities that truly override movement)
-    // Most abilities should allow movement - only prevent for dashing, charging, and debuffs
-    if (!playerMovement.isDashing && !playerMovement.isCharging && !playerMovement.isFrozen && !playerMovement.isKnockbacked) {
+    // Most abilities should allow movement - only prevent for dashing, charging, debuffs, and the
+    // brief forced-halt lock right after a Shift-Deflect tap.
+    if (
+      !playerMovement.isDashing &&
+      !playerMovement.isCharging &&
+      !playerMovement.isFrozen &&
+      !playerMovement.isKnockbacked &&
+      crossentropyWallNowSec >= playerMovement.movementLockUntil
+    ) {
       this.handleMovementInput(playerMovement);
     } else {
+      playerMovement.isSprinting = false;
       this.clearMovementControlState();
+    }
+
+    const playerEnergy = this.playerEntity.getComponent(Energy);
+    if (playerEnergy) {
+      if (playerMovement.isSprinting) {
+        playerEnergy.spend(playerEnergy.drainRate * deltaTime);
+        if (!playerEnergy.canSprint()) {
+          playerMovement.isSprinting = false;
+        }
+      } else {
+        playerEnergy.update(deltaTime);
+      }
     }
 
     // Handle combat input
@@ -1135,6 +1208,25 @@ export class ControlSystem extends System {
       this.isThrowSpearCharging;
   }
 
+  private isSprintInputActive(hasInput: boolean): boolean {
+    if (!this.inputManager.isKeyPressed('shift') || this.isBlockingDeflect) {
+      return false;
+    }
+
+    if (this.useArchetypeShiftRouting) {
+      if (this.playerArchetype !== ARCHETYPE_ROGUE || !hasInput) {
+        return false;
+      }
+    } else if (!hasInput) {
+      return false;
+    }
+
+    const backward =
+      this.inputManager.isKeyPressed('s') || this.inputManager.isKeyPressed('arrowdown');
+
+    return !backward;
+  }
+
   private handleMovementInput(movement: Movement): void {
     if (!this.playerEntity) return;
 
@@ -1145,6 +1237,9 @@ export class ControlSystem extends System {
     this.checkForDashInput(movement, playerTransform);
 
     const { inputDirection, hasInput } = this.getMovementInputDirection();
+    const desiredSprint = this.isSprintInputActive(hasInput);
+    const energy = this.playerEntity?.getComponent(Energy);
+    movement.isSprinting = desiredSprint && (!energy || energy.canSprint());
 
     // Convert input to world space based on camera orientation
     if (hasInput) {
@@ -1172,6 +1267,7 @@ export class ControlSystem extends System {
         movement.setMoveDirection(this.movementWorldDirection, backwardsMultiplier);
       }
     } else {
+      movement.isSprinting = false;
       this.clearFreeLookMoveLock();
       movement.setMoveDirection(this.movementZeroDirection, 0);
     }
@@ -1533,11 +1629,12 @@ export class ControlSystem extends System {
    * Handle Q/E/R key presses by routing to the ability assigned in the loadout.
    * This is called after the per-weapon primary attack handler every frame.
    */
-  private handleLoadoutAbilityKeys(playerTransform: Transform): void {
+  private handleLoadoutAbilityKeys(playerTransform: Transform, blockQuickSlots = false): void {
     if (!this.abilityLoadout) return;
     const slots: Array<'Q' | 'E' | 'R'> = ['Q', 'E', 'R'];
     const keys = ['q', 'e', 'r'] as const;
     for (let i = 0; i < slots.length; i++) {
+      if (blockQuickSlots && slots[i] !== 'R') continue;
       const abilityId = this.abilityLoadout[slots[i]];
       if (abilityId && this.inputManager.isKeyPressed(keys[i])) {
         this.dispatchAbility(abilityId, playerTransform);
@@ -2231,7 +2328,10 @@ export class ControlSystem extends System {
       return;
     }
 
-    if (this.currentWeapon !== WeaponType.NONE) {
+    const playerMovement = this.playerEntity?.getComponent(Movement);
+    const isSprinting = playerMovement?.isSprinting ?? false;
+
+    if (!isSprinting && this.currentWeapon !== WeaponType.NONE) {
     if (this.currentWeapon === WeaponType.BOW) {
       this.handleBowInput(playerTransform);
     } else if (this.currentWeapon === WeaponType.SCYTHE) {
@@ -2248,7 +2348,7 @@ export class ControlSystem extends System {
     }
 
     // Dispatch Q/E/R to the player's chosen ability loadout (cross-weapon)
-    this.handleLoadoutAbilityKeys(playerTransform);
+    this.handleLoadoutAbilityKeys(playerTransform, isSprinting);
 
     // Update ongoing ability states regardless of current weapon
     this.updateCrossWeaponStates(playerTransform, Date.now() / 1000);
@@ -2339,10 +2439,12 @@ export class ControlSystem extends System {
         // Release the bow
         const didFireProjectile = this.fireProjectile(playerTransform);
         if (didFireProjectile) {
+          const isPerfectShot = isBowPerfectShotProgress(finalChargeProgress);
           this.audioSystem?.playBowReleaseSound(
             playerTransform.position,
             finalChargeProgress,
-            isBowPerfectShotProgress(finalChargeProgress)
+            isPerfectShot,
+            this.bowHighCaliberActive() && isPerfectShot,
           );
         }
         this.isCharging = false;
@@ -6215,12 +6317,9 @@ export class ControlSystem extends System {
     this.isSundering = true;
     this.sunderStartTime = currentTime;
     this.sunderDamageApplied = false; // Reset damage flag for new sunder
+    this.sunderSoundPlayed = false;
 
-    // Play flourish sound
-    this.audioSystem?.playSabresFlourishSound(playerTransform.position);
-
-    // Don't perform damage immediately - wait for the right moment in animation
-    // This ensures damage happens during the actual sunder animation, not just at the start
+    // Flourish hit/miss sound plays in updateSunderState (lead time before damage window)
   }
   
   private updateSunderState(playerTransform: Transform): void {
@@ -6228,9 +6327,14 @@ export class ControlSystem extends System {
     const elapsedTime = currentTime - this.sunderStartTime;
     
     // Apply damage at the right moment in the animation (30% through, like backstab)
-    const damageTimingPercent = 0.3; // 30% through the animation
-    const damageWindow = this.sunderDuration * damageTimingPercent;
+    const damageWindow = this.sunderDuration * ControlSystem.SUNDER_DAMAGE_TIMING_PERCENT;
+    const soundWindow = Math.max(0, damageWindow - ControlSystem.SABRES_FLOURISH_SOUND_LEAD_SEC);
     const damageWindowEnd = damageWindow + 0.1; // Small window to ensure damage is applied
+
+    if (elapsedTime >= soundWindow && !this.sunderSoundPlayed) {
+      this.playSunderFlourishSound(playerTransform);
+      this.sunderSoundPlayed = true;
+    }
     
     if (elapsedTime >= damageWindow && elapsedTime <= damageWindowEnd) {
       // Only apply damage once during this window
@@ -6244,6 +6348,50 @@ export class ControlSystem extends System {
     if (elapsedTime >= this.sunderDuration) {
       this.isSundering = false;
       this.sunderDamageApplied = false; // Reset for next use
+      this.sunderSoundPlayed = false;
+    }
+  }
+
+  private countSunderConeHits(playerTransform: Transform): number {
+    const playerPosition = playerTransform.position;
+    const playerDirection = new Vector3();
+    this.camera.getWorldDirection(playerDirection);
+    playerDirection.normalize();
+
+    const sunderRange = 4;
+    let hitCount = 0;
+    const allEntities = this.queryNearbyEntities(playerPosition, sunderRange);
+
+    for (const entity of allEntities) {
+      if (entity === this.playerEntity) continue;
+      if (isCoopPlayerAllyEntity(entity)) continue;
+
+      const targetHealth = entity.getComponent(Health);
+      const targetTransform = entity.getComponent(Transform);
+      if (!targetHealth || !targetTransform || targetHealth.isDead) continue;
+
+      const distance = playerPosition.distanceTo(targetTransform.position);
+      if (distance > sunderRange) continue;
+
+      const directionToTarget = new Vector3()
+        .subVectors(targetTransform.position, playerPosition)
+        .normalize();
+      const dotProduct = playerDirection.dot(directionToTarget);
+      const angleThreshold = Math.cos(Math.PI / 4);
+
+      if (dotProduct < angleThreshold) continue;
+      hitCount++;
+    }
+
+    return hitCount;
+  }
+
+  private playSunderFlourishSound(playerTransform: Transform): void {
+    const playerPosition = playerTransform.position;
+    if (this.countSunderConeHits(playerTransform) > 0) {
+      this.audioSystem?.playSabresFlourishSound(playerPosition);
+    } else {
+      this.audioSystem?.playSabresFlourishMissSound(playerPosition);
     }
   }
   
@@ -6259,7 +6407,6 @@ export class ControlSystem extends System {
     this.performFireAffinityStorm(playerTransform);
 
     const sunderRange = 4; // Same range as backstab
-    let hitCount = 0;
     const currentTime = Date.now() / 1000;
 
     // Only consider entities within sunder range instead of scanning the whole world
@@ -6387,8 +6534,6 @@ export class ControlSystem extends System {
           }
           }
         }
-        
-        hitCount++;
       }
       
       // Trigger callback for multiplayer/visual effects
@@ -6651,6 +6796,7 @@ export class ControlSystem extends System {
     this.backstabDamageApplied = false;
     this.isSundering = false;
     this.sunderDamageApplied = false; // Reset sunder damage flag
+    this.sunderSoundPlayed = false;
 
     // Clean up stealth state and ensure visibility is restored
     if (this.isStealthing || this.isInvisible) {
@@ -8104,6 +8250,262 @@ export class ControlSystem extends System {
     this.isSwordCharging = false;
   }
 
+  /**
+   * Routes Shift by game mode + archetype. PvP keeps legacy tap-deflect / hold-sprint.
+   */
+  private updateShiftBehavior(playerTransform: Transform, currentTime: number): void {
+    if (!this.useArchetypeShiftRouting) {
+      this.updateShiftTapHoldTracking(playerTransform, currentTime);
+      return;
+    }
+
+    const shiftPressed = this.inputManager.isKeyPressed('shift');
+
+    switch (this.playerArchetype) {
+      case ARCHETYPE_NONE:
+        this.resetLocustChannelState();
+        this.shiftPressStartTime = null;
+        this.shiftHeldPastTapWindow = false;
+        break;
+      case ARCHETYPE_ROGUE:
+        this.resetLocustChannelState();
+        this.shiftPressStartTime = null;
+        this.shiftHeldPastTapWindow = false;
+        break;
+      case ARCHETYPE_GLADIATOR:
+        this.resetLocustChannelState();
+        if (shiftPressed && !this.shiftWasPressedLastFrame) {
+          this.tryPerformDeflectBlock(playerTransform, currentTime, { ignoreFreeLookGuard: true });
+        }
+        this.shiftPressStartTime = null;
+        this.shiftHeldPastTapWindow = false;
+        break;
+      case ARCHETYPE_ACOLYTE:
+        this.shiftPressStartTime = null;
+        this.shiftHeldPastTapWindow = false;
+        if (shiftPressed) {
+          this.updateLocustChannel(playerTransform, currentTime);
+        } else {
+          this.resetLocustChannelState();
+        }
+        break;
+      default:
+        this.resetLocustChannelState();
+        this.shiftPressStartTime = null;
+        this.shiftHeldPastTapWindow = false;
+        break;
+    }
+
+    this.shiftWasPressedLastFrame = shiftPressed;
+  }
+
+  private resetLocustChannelState(): void {
+    this.isChannelingLocusts = false;
+    this.locustMissilesFiredInVolley = 0;
+    this.locustNextMissileAt = 0;
+    this.locustVolleyEnergyPaid = false;
+  }
+
+  private updateLocustChannel(playerTransform: Transform, currentTime: number): void {
+    if (!this.playerEntity || !this.onLocustSpawnCallback) return;
+
+    const playerMovement = this.playerEntity.getComponent(Movement);
+    if (!playerMovement) return;
+
+    if (
+      playerMovement.isDashing ||
+      playerMovement.isCharging ||
+      playerMovement.isFrozen ||
+      playerMovement.isKnockbacked ||
+      this.isPlayerDead ||
+      this.isDeflecting ||
+      this.isBlockingDeflect
+    ) {
+      this.resetLocustChannelState();
+      return;
+    }
+
+    const energy = this.playerEntity.getComponent(Energy);
+    if (!energy) return;
+
+    if (!this.isChannelingLocusts) {
+      this.isChannelingLocusts = true;
+      this.locustMissilesFiredInVolley = 0;
+      this.locustNextMissileAt = currentTime;
+      this.locustVolleyEnergyPaid = false;
+    }
+
+    if (currentTime < this.locustNextMissileAt) return;
+
+    if (this.locustMissilesFiredInVolley === 0 && !this.locustVolleyEnergyPaid) {
+      if (energy.currentEnergy < LOCUST_ENERGY_PER_VOLLEY) {
+        this.resetLocustChannelState();
+        return;
+      }
+      energy.spend(LOCUST_ENERGY_PER_VOLLEY);
+      this.locustVolleyEnergyPaid = true;
+      this.locustVolleyId += 1;
+    }
+
+    const spreadIndex = this.locustMissilesFiredInVolley;
+    const damage = computeLocustMissileDamage(this.allocatedPlayerStats);
+
+    const forward = new Vector3();
+    this.camera.getWorldDirection(forward);
+    forward.y = 0;
+    if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
+    forward.normalize();
+
+    const startPosition = playerTransform.position.clone().add(new Vector3(0, 1.15, 0));
+    this.onLocustSpawnCallback({
+      startPosition,
+      spreadIndex,
+      volleyId: this.locustVolleyId,
+      forward: forward.clone(),
+      damage,
+    });
+
+    this.locustMissilesFiredInVolley += 1;
+    this.locustNextMissileAt = currentTime + LOCUST_MISSILE_INTERVAL_SEC;
+
+    if (this.locustMissilesFiredInVolley >= LOCUST_MISSILES_PER_VOLLEY) {
+      this.locustMissilesFiredInVolley = 0;
+      this.locustVolleyEnergyPaid = false;
+    }
+  }
+
+  /**
+   * Shift tap-vs-hold disambiguation. Tracks how long Shift has been held; on release within the
+   * tap window, attempts to trigger Deflect-Block. Runs every frame regardless of movement-lock
+   * state so a tap during e.g. a dash/charge is never dropped.
+   */
+  private updateShiftTapHoldTracking(playerTransform: Transform, currentTime: number): void {
+    const shiftPressed = this.inputManager.isKeyPressed('shift');
+
+    if (shiftPressed) {
+      if (this.shiftPressStartTime === null) {
+        this.shiftPressStartTime = currentTime;
+        this.shiftHeldPastTapWindow = false;
+      } else if (
+        !this.shiftHeldPastTapWindow &&
+        currentTime - this.shiftPressStartTime > ControlSystem.DEFLECT_SHIFT_TAP_WINDOW_SEC
+      ) {
+        this.shiftHeldPastTapWindow = true;
+      }
+      return;
+    }
+
+    if (this.shiftPressStartTime !== null && !this.shiftHeldPastTapWindow) {
+      this.tryPerformDeflectBlock(playerTransform, currentTime);
+    }
+    this.shiftPressStartTime = null;
+    this.shiftHeldPastTapWindow = false;
+  }
+
+  /** Gate-checks then activates Deflect-Block off a qualifying Shift tap. */
+  private tryPerformDeflectBlock(
+    playerTransform: Transform,
+    currentTime: number,
+    opts?: { ignoreFreeLookGuard?: boolean },
+  ): void {
+    if (!this.playerEntity) return;
+    const playerMovement = this.playerEntity.getComponent(Movement);
+    if (!playerMovement) return;
+
+    if (
+      playerMovement.isDashing ||
+      playerMovement.isCharging ||
+      playerMovement.isFrozen ||
+      playerMovement.isKnockbacked ||
+      this.isPlayerDead ||
+      this.isDeflecting ||
+      this.isBlockingDeflect ||
+      // Don't hijack the Shift+RMB free-look combo — a quick Shift tap while RMB is held for
+      // free-look shouldn't also trigger Deflect-Block (PvP tap path only).
+      (!opts?.ignoreFreeLookGuard && this.inputManager.isMouseButtonPressed(2))
+    ) {
+      return;
+    }
+
+    this.performDeflectBlock(playerTransform, currentTime);
+  }
+
+  private performDeflectBlock(playerTransform: Transform, currentTime: number): void {
+    if (currentTime - this.lastDeflectShiftTime < DEFLECT_SHIFT_COOLDOWN_SEC) return;
+
+    const playerMovement = this.playerEntity?.getComponent(Movement);
+    const playerHealth = this.playerEntity?.getComponent(Health);
+    if (!playerMovement || !playerHealth) return;
+
+    const energy = this.playerEntity?.getComponent(Energy);
+    if (energy && energy.currentEnergy < DEFLECT_SHIFT_ENERGY_COST) return;
+
+    energy?.spend(DEFLECT_SHIFT_ENERGY_COST);
+    this.lastDeflectShiftTime = currentTime;
+
+    playerMovement.haltLocomotion();
+    playerMovement.movementLockUntil = currentTime + 0.3;
+
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('character-block-cast'));
+    }
+
+    playerHealth.setInvulnerable(DEFLECT_SHIFT_DURATION_SEC, 'deflect');
+
+    if (this.onDeflectShiftCallback) {
+      const direction = new Vector3();
+      this.camera.getWorldDirection(direction);
+      direction.normalize();
+      this.onDeflectShiftCallback(playerTransform.position.clone(), direction);
+    }
+
+    this.isBlockingDeflect = true;
+    this.scheduleAbilityTimeout(() => {
+      this.isBlockingDeflect = false;
+    }, DEFLECT_SHIFT_DURATION_SEC * 1000);
+  }
+
+  public setDeflectShiftCallback(callback: (position: Vector3, direction: Vector3) => void): void {
+    this.onDeflectShiftCallback = callback;
+  }
+
+  public setLocustSpawnCallback(
+    callback: (payload: {
+      startPosition: Vector3;
+      spreadIndex: number;
+      volleyId: number;
+      forward: Vector3;
+      damage: number;
+    }) => void,
+  ): void {
+    this.onLocustSpawnCallback = callback;
+  }
+
+  public setUseArchetypeShiftRouting(enabled: boolean): void {
+    this.useArchetypeShiftRouting = enabled;
+    if (!enabled) {
+      this.resetLocustChannelState();
+      this.shiftWasPressedLastFrame = false;
+    }
+  }
+
+  public setPlayerArchetype(archetype: Archetype): void {
+    if (this.playerArchetype === archetype) return;
+    this.playerArchetype = archetype;
+    this.resetLocustChannelState();
+    this.shiftPressStartTime = null;
+    this.shiftHeldPastTapWindow = false;
+    this.shiftWasPressedLastFrame = false;
+  }
+
+  public getPlayerArchetype(): Archetype {
+    return this.playerArchetype;
+  }
+
+  public isBlockingDeflectActive(): boolean {
+    return this.isBlockingDeflect;
+  }
+
   private performDeflect(
     playerTransform: Transform,
     options?: { fromAegisRoom?: boolean },
@@ -8334,19 +8736,22 @@ export class ControlSystem extends System {
     // Play bow release sound (reuse existing bow sound)
     this.audioSystem?.playBowReleaseSound(playerTransform.position);
 
+    const intellect = this.allocatedPlayerStats.intellect ?? 0;
+    const healAmount = getRejuvenatingShotHealAmount(intellect);
+
     // Trigger Rejuvenating Shot callback for multiplayer broadcast
     if (this.onRejuvenatingShotCallback) {
       this.onRejuvenatingShotCallback(spawnPosition, direction);
     }
     
     // Trigger global rejuvenating shot for local visual effects
-    triggerGlobalRejuvenatingShot(spawnPosition, direction);
+    triggerGlobalRejuvenatingShot(spawnPosition, direction, { healAmount, authoritative: true });
     
     // Broadcast projectile creation to other players
     if (this.onProjectileCreatedCallback) {
       this.onProjectileCreatedCallback('rejuvenating_shot_projectile', spawnPosition, direction, {
         speed: 20, // Consistent speed for multiplayer
-        healAmount: 80,
+        healAmount,
         lifetime: 8
       });
     }
@@ -9090,6 +9495,13 @@ export class ControlSystem extends System {
   > {
     const currentTime = Date.now() / 1000;
     const cooldowns: Record<string, { current: number; max: number; isActive: boolean }> = {};
+
+    // Shift-tap Deflect-Block — independent of weapon/loadout (shares Shift + Energy with Sprint).
+    cooldowns['DEFLECT_SHIFT'] = {
+      current: Math.max(0, DEFLECT_SHIFT_COOLDOWN_SEC - (currentTime - this.lastDeflectShiftTime)),
+      max: DEFLECT_SHIFT_COOLDOWN_SEC,
+      isActive: this.isBlockingDeflect,
+    };
 
     // If a loadout is assigned, return per-slot cooldowns based on it
     if (this.abilityLoadout) {

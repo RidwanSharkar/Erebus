@@ -140,6 +140,8 @@ interface DragonRendererProps {
   deflectShieldActive?: boolean;
   deflectShieldDurationSec?: number;
   deflectShieldPaletteVariant?: import('@/utils/aegisShieldPalette').AegisPaletteVariant;
+  /** Shift-tap Deflect-Block — independent gold shield instance, unrelated to Q-Aegis fields above. */
+  isBlockingDeflect?: boolean;
   isSmiting?: boolean;
   isColossusStriking?: boolean;
   isDeathGrasping?: boolean;
@@ -292,6 +294,7 @@ function DragonRenderer({
   deflectShieldActive: deflectShieldActiveProp,
   deflectShieldDurationSec = 3,
   deflectShieldPaletteVariant = 'default',
+  isBlockingDeflect = false,
   isDead = false,
   isSmiting = false,
   isColossusStriking = false,
@@ -924,6 +927,7 @@ function DragonRenderer({
           deflectShieldActive={effectiveDeflectShieldActive}
           deflectShieldDurationSec={deflectShieldDurationSec}
           deflectShieldPaletteVariant={deflectShieldPaletteVariant}
+          isBlockingDeflect={isBlockingDeflect}
           isSmiting={isSmiting}
           isColossusStriking={isColossusStriking}
           isDeathGrasping={isDeathGrasping}

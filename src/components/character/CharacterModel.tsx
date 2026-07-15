@@ -10,10 +10,11 @@ import { loadAllGltfAnimationClips, loadGltfAnimationClips } from '@/utils/gltfA
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
 export type AnimState =
-  | 'Idle' | 'Run' | 'Walk' | 'WalkBack' | 'WalkLeft' | 'WalkRight' | 'Backwards'
+  | 'Idle' | 'Run' | 'Sprint' | 'Walk' | 'WalkBack' | 'WalkLeft' | 'WalkRight' | 'Backwards'
   | 'LeftStrafe' | 'RightStrafe'
   | 'Jump' | 'JumpFront' | 'JumpBack'
   | 'Cast' | 'CastSingle' | 'SwordCast' | 'DrawBow' | 'ReleaseBow'
+  | 'Block'
   | 'Death';
 
 interface CharacterModelProps {
@@ -27,6 +28,7 @@ type CharacterDeferredClips = Record<CharacterDeferredAnimState, AnimationClip[]
 const CHARACTER_INITIAL_MODEL_PATHS = [
   '/models/character_idle.glb',
   '/models/character_run.glb',
+  '/models/character_sprint.glb',
   '/models/character_walk.glb',
   '/models/character_walkBack.glb',
   '/models/character_walkLeft.glb',
@@ -44,6 +46,7 @@ const CHARACTER_DEFERRED_MODEL_PATHS = {
   SwordCast: '/models/character_swordCast.glb',
   DrawBow: '/models/character_drawBow.glb',
   ReleaseBow: '/models/character_releaseBow.glb',
+  Block: '/models/character_block.glb',
   Death: '/models/character_death.glb',
 } as const satisfies Partial<Record<AnimState, string>>;
 
@@ -168,8 +171,21 @@ function stripRootMotionXZ(clip: AnimationClip): AnimationClip {
   return clip;
 }
 
+/** Working character clips target Assimp _$AssimpFbx$_Rotation helpers; flat Mixamo bone tracks shear the rig. */
+function hasAssimpRotationTracks(clips: AnimationClip[]): boolean {
+  return clips.some((clip) =>
+    clip.tracks.some((track) => track.name.includes('$AssimpFbx$_Rotation')),
+  );
+}
+
+/** Fallback when sprint GLB was exported without Assimp helpers — reuse Run at higher playback speed. */
+const SPRINT_FALLBACK_TIME_SCALE = 1.5;
+
 /** Eager-load all deferred clips before mounting the rig so useAnimations never sees a mid-game clips change. */
-export default function CharacterModel({ animState, isDead = false }: CharacterModelProps) {
+export default function CharacterModel({
+  animState,
+  isDead = false,
+}: CharacterModelProps) {
   const [deferredAnimationClips, setDeferredAnimationClips] = useState<CharacterDeferredClips | null>(null);
 
   useEffect(() => {
@@ -213,6 +229,7 @@ function CharacterModelRig({
 
   const { scene, animations: idleAnims }        = useGLTF('/models/character_idle.glb');
   const { animations: runAnims }                = useGLTF('/models/character_run.glb');
+  const { animations: sprintAnims }             = useGLTF('/models/character_sprint.glb');
   const { animations: walkAnims }               = useGLTF('/models/character_walk.glb');
   const { animations: walkBackAnims }          = useGLTF('/models/character_walkBack.glb');
   const { animations: walkLeftAnims }         = useGLTF('/models/character_walkLeft.glb');
@@ -238,13 +255,32 @@ function CharacterModelRig({
 
   useDisposeClonedMaterials(clonedScene);
 
+  const sprintUsesFallback = useMemo(
+    () => !hasAssimpRotationTracks(sprintAnims),
+    [sprintAnims],
+  );
+
+  const blockUsesFallback = useMemo(
+    () => !hasAssimpRotationTracks(deferredAnimationClips.Block),
+    [deferredAnimationClips.Block],
+  );
+
   const animations = useMemo(() => {
     const rename = (clips: AnimationClip[], name: string) =>
       clips.map(c => { const r = c.clone(); r.name = name; return r; });
 
+    const sprintClips = sprintUsesFallback
+      ? rename(runAnims, 'Sprint')
+      : rename(sprintAnims, 'Sprint');
+
+    const blockClips = blockUsesFallback
+      ? rename(idleAnims, 'Block')
+      : rename(deferredAnimationClips.Block, 'Block');
+
     return [
       ...rename(idleAnims,           'Idle'          ).map(stripRootMotionXZ),
       ...rename(runAnims,            'Run'           ).map(stripRootMotionXZ),
+      ...sprintClips.map(stripRootMotionXZ),
       ...rename(walkAnims,           'Walk'          ).map(stripRootMotionXZ),
       ...rename(walkBackAnims,       'WalkBack'      ).map(stripRootMotionXZ),
       ...rename(walkLeftAnims,       'WalkLeft'      ).map(stripRootMotionXZ),
@@ -260,9 +296,10 @@ function CharacterModelRig({
       ...rename(deferredAnimationClips.SwordCast,  'SwordCast'  ).map(stripRootMotionXZ),
       ...rename(deferredAnimationClips.DrawBow,    'DrawBow'    ).map(stripRootMotionXZ),
       ...rename(deferredAnimationClips.ReleaseBow, 'ReleaseBow' ).map(stripRootMotionXZ),
+      ...blockClips.map(stripRootMotionXZ),
       ...rename(deferredAnimationClips.Death,      'Death'      ).map(stripRootMotionXZ),
     ];
-  }, [idleAnims, runAnims, walkAnims, walkBackAnims, walkLeftAnims, walkRightAnims, backAnims, leftAnims, rightAnims, deferredAnimationClips]);
+  }, [idleAnims, runAnims, sprintAnims, sprintUsesFallback, blockUsesFallback, walkAnims, walkBackAnims, walkLeftAnims, walkRightAnims, backAnims, leftAnims, rightAnims, deferredAnimationClips]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
@@ -334,7 +371,13 @@ function CharacterModelRig({
         return;
       }
 
+      const sprintTimeScale =
+        playAnim === 'Sprint' && sprintUsesFallback ? SPRINT_FALLBACK_TIME_SCALE : 1;
+
       if (nextAction === currentActionRef.current) {
+        if (nextAction.timeScale !== sprintTimeScale) {
+          nextAction.timeScale = sprintTimeScale;
+        }
         if (JUMP_CLAMP_ANIMS.has(playAnim)) {
           holdJumpEndPoseIfFinished(nextAction, mixer);
         }
@@ -346,6 +389,7 @@ function CharacterModelRig({
       const fadeIn  = fadeOut;
 
       nextAction.enabled = true;
+      nextAction.timeScale = sprintTimeScale;
 
       const configureNextAction = (): void => {
         if (JUMP_CLAMP_ANIMS.has(playAnim)) {
@@ -354,7 +398,7 @@ function CharacterModelRig({
         } else if (playAnim === 'ReleaseBow') {
           nextAction.setLoop(LoopOnce, 1);
           nextAction.clampWhenFinished = false;
-        } else if (playAnim === 'CastSingle') {
+        } else if (playAnim === 'CastSingle' || playAnim === 'Block') {
           nextAction.setLoop(LoopOnce, 1);
           nextAction.clampWhenFinished = true;
         } else {
@@ -367,7 +411,6 @@ function CharacterModelRig({
         configureNextAction();
         nextAction.reset();
         nextAction.setEffectiveWeight(1);
-        nextAction.setEffectiveTimeScale(1);
         nextAction.play();
         currentActionRef.current = nextAction;
         mixer?.update(0.016);
@@ -385,7 +428,7 @@ function CharacterModelRig({
         nextAction.clampWhenFinished = false;
         fadeOutCurrentAction(fadeOut);
         nextAction.reset().fadeIn(fadeIn).play();
-      } else if (playAnim === 'CastSingle') {
+      } else if (playAnim === 'CastSingle' || playAnim === 'Block') {
         nextAction.setLoop(LoopOnce, 1);
         nextAction.clampWhenFinished = true;
         fadeOutCurrentAction(fadeOut);
@@ -411,7 +454,7 @@ function CharacterModelRig({
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [animState, isDead, actions, mixer, animations]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [animState, isDead, actions, mixer, animations, sprintUsesFallback]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset death flag when the component is re-mounted (e.g. after respawn).
   useEffect(() => {

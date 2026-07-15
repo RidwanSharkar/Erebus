@@ -144,6 +144,9 @@ io.on('connection', (socket) => {
       thronePortalLayout: room.getThronePortalLayout(),
       coopMainArenaPortalPhase: room.getCoopMainArenaPortalPhase(),
       coopBossThroneArena: room.getCoopBossThroneArena(),
+      coopCombatTransitionId: typeof room.getCoopCombatTransitionId === 'function'
+        ? room.getCoopCombatTransitionId()
+        : null,
       coopThroneBossKind: typeof room.getCoopThroneBossKind === 'function' ? room.getCoopThroneBossKind() : null,
       coopTerrainTheme: typeof room.getCoopTerrainTheme === 'function' ? room.getCoopTerrainTheme() : null,
       coopCurrentRoomKind: typeof room.getCoopCurrentRoomKind === 'function' ? room.getCoopCurrentRoomKind() : null,

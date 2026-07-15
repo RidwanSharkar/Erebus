@@ -28,17 +28,23 @@ import HauntedSoulEffect from '@/components/weapons/HauntedSoulEffect';
 import DragonBreath from '@/components/weapons/DragonBreath';
 import FrozenEffect from '@/components/weapons/FrozenEffect';
 import StunnedEffect from '@/components/weapons/StunnedEffect';
+import DeflectBolt from '@/components/weapons/DeflectBolt';
+import LocustProjectile from '@/components/weapons/LocustProjectile';
 import {
   shouldApplyInfestedSmiteTalent,
   shouldApplyInfernalSmiteTalent,
   shouldApplyStaggeringSmiteTalent,
   LIGHTNING_BOLT_ROOM_STAGGER,
+  DEFLECT_BOLT_DAMAGE,
+  LOCUST_TARGET_RADIUS,
   type TalentLoadout,
 } from '@/utils/talents';
 import type { AbilityLoadout } from '@/utils/weaponAbilities';
 import type {
   LocalPlayerStatusEffectState,
   RoomBoomMendingEffectState,
+  DeflectBoltEffectState,
+  LocustProjectileEffectState,
 } from '@/components/coop/coopVfxLayerTypes';
 import type { World } from '@/ecs/World';
 
@@ -153,6 +159,10 @@ export type CoopPvpAbilityLayerHandle = {
   removeLocalPlayerFrozen: (id: number) => void;
   addLocalPlayerStunned: (effect: LocalPlayerStatusEffectState) => void;
   removeLocalPlayerStunned: (id: number) => void;
+  addDeflectBolt: (effect: DeflectBoltEffectState) => void;
+  removeDeflectBolt: (id: number) => void;
+  addLocustProjectile: (effect: LocustProjectileEffectState) => void;
+  removeLocustProjectile: (id: number) => void;
 };
 
 type CoopPvpAbilityLayerProps = {
@@ -173,6 +183,9 @@ type CoopPvpAbilityLayerProps = {
     attackerId: string,
   ) => void;
   onLightningStormHitEnemy: (enemyId: string, damage: number) => void;
+  onDeflectBoltHitEnemy: (enemyId: string, damage: number) => void;
+  onLocustHitEnemy: (enemyId: string, damage: number) => void;
+  deflectBoltChargeMs?: number;
   onSmiteBeamEnemyHitColossusGuard?: () => void;
   getVengeanceSmiteDamageMultiplier?: () => number;
 };
@@ -313,6 +326,9 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
     onSmiteHitEnemy,
     onDeathGraspHitEnemy,
     onLightningStormHitEnemy,
+    onDeflectBoltHitEnemy,
+    onLocustHitEnemy,
+    deflectBoltChargeMs,
     onSmiteBeamEnemyHitColossusGuard,
     getVengeanceSmiteDamageMultiplier,
   }, ref) {
@@ -327,6 +343,8 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
     const [flurryHealingEffects, setFlurryHealingEffects] = useState<FlurryHealingEffectState[]>([]);
     const [localPlayerFrozenEffects, setLocalPlayerFrozenEffects] = useState<LocalPlayerStatusEffectState[]>([]);
     const [localPlayerStunnedEffects, setLocalPlayerStunnedEffects] = useState<LocalPlayerStatusEffectState[]>([]);
+    const [deflectBoltEffects, setDeflectBoltEffects] = useState<DeflectBoltEffectState[]>([]);
+    const [locustProjectileEffects, setLocustProjectileEffects] = useState<LocustProjectileEffectState[]>([]);
 
     const [, setSmiteDamageNumbers] = useState<SmiteDamageNumber[]>([]);
     const nextDamageNumberId = useRef(0);
@@ -346,6 +364,8 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
       setFlurryHealingEffects([]);
       setLocalPlayerFrozenEffects([]);
       setLocalPlayerStunnedEffects([]);
+      setDeflectBoltEffects([]);
+      setLocustProjectileEffects([]);
       setSmiteDamageNumbers([]);
       nextDamageNumberId.current = 0;
     }, []);
@@ -427,6 +447,20 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
       setLocalPlayerStunnedEffects((prev) => prev.filter((e) => e.id !== id));
     }, []);
 
+    const addDeflectBolt = useCallback((effect: DeflectBoltEffectState) => {
+      setDeflectBoltEffects((prev) => [...prev, effect]);
+    }, []);
+    const removeDeflectBolt = useCallback((id: number) => {
+      setDeflectBoltEffects((prev) => prev.filter((e) => e.id !== id));
+    }, []);
+
+    const addLocustProjectile = useCallback((effect: LocustProjectileEffectState) => {
+      setLocustProjectileEffects((prev) => [...prev, effect]);
+    }, []);
+    const removeLocustProjectile = useCallback((id: number) => {
+      setLocustProjectileEffects((prev) => prev.filter((e) => e.id !== id));
+    }, []);
+
     useImperativeHandle(ref, () => ({
       clearAll,
       addSmite,
@@ -451,6 +485,10 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
       removeLocalPlayerFrozen,
       addLocalPlayerStunned,
       removeLocalPlayerStunned,
+      addDeflectBolt,
+      removeDeflectBolt,
+      addLocustProjectile,
+      removeLocustProjectile,
     }), [
       clearAll,
       addSmite,
@@ -475,6 +513,10 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
       removeLocalPlayerFrozen,
       addLocalPlayerStunned,
       removeLocalPlayerStunned,
+      addDeflectBolt,
+      removeDeflectBolt,
+      addLocustProjectile,
+      removeLocustProjectile,
     ]);
 
     const combatSystem = world?.getSystem(CombatSystem) ?? null;
@@ -569,6 +611,78 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
               setDamageNumbers={setDamageNumbers}
               nextDamageNumberId={nextDamageNumberId}
               combatSystem={combatSystem}
+            />
+          );
+        })}
+
+        {deflectBoltEffects.map((effect) => {
+          const isLocalPlayerBolt = !!localSocketId && effect.playerId === localSocketId;
+
+          const getTargetPosition = () => {
+            if (!effect.targetEnemyId) return null;
+            const enemy = getLiveCoopEnemyData().find((e) => e.id === effect.targetEnemyId);
+            return enemy && enemy.health > 0 ? enemy.position : null;
+          };
+
+          return (
+            <DeflectBolt
+              key={`deflect-bolt-${effect.id}`}
+              startPosition={effect.startPosition}
+              targetPosition={effect.fallbackTargetPosition}
+              getTargetPosition={getTargetPosition}
+              chargeDurationMs={deflectBoltChargeMs}
+              onHitEnemy={() => {
+                if (isLocalPlayerBolt && effect.targetEnemyId) {
+                  onDeflectBoltHitEnemy(effect.targetEnemyId, DEFLECT_BOLT_DAMAGE);
+                }
+              }}
+              onComplete={() => removeDeflectBolt(effect.id)}
+            />
+          );
+        })}
+
+        {locustProjectileEffects.map((effect) => {
+          const isLocalPlayerLocust = !!localSocketId && effect.playerId === localSocketId;
+          let lockedTargetId = effect.targetEnemyId;
+
+          const getTargetPosition = () => {
+            const liveEnemies = getLiveCoopEnemyData().filter((e) => e.health > 0);
+            const radiusSq = LOCUST_TARGET_RADIUS * LOCUST_TARGET_RADIUS;
+            if (lockedTargetId) {
+              const locked = liveEnemies.find((e) => e.id === lockedTargetId);
+              if (locked && locked.position.distanceToSquared(effect.startPosition) <= radiusSq) {
+                return locked.position;
+              }
+              lockedTargetId = null;
+            }
+            let bestId: string | null = null;
+            let bestDistSq = Infinity;
+            for (const enemy of liveEnemies) {
+              const distSq = enemy.position.distanceToSquared(effect.startPosition);
+              if (distSq > radiusSq || distSq >= bestDistSq) continue;
+              bestDistSq = distSq;
+              bestId = enemy.id;
+            }
+            lockedTargetId = bestId;
+            const fallback = bestId ? liveEnemies.find((e) => e.id === bestId) : undefined;
+            return fallback ? fallback.position : null;
+          };
+
+          return (
+            <LocustProjectile
+              key={`locust-${effect.id}-${effect.volleyId}-${effect.spreadIndex}`}
+              startPosition={effect.startPosition}
+              initialDirection={effect.initialDirection}
+              spreadIndex={effect.spreadIndex}
+              targetPosition={effect.fallbackTargetPosition}
+              getTargetPosition={getTargetPosition}
+              damage={effect.damage}
+              onHitEnemy={() => {
+                if (isLocalPlayerLocust && lockedTargetId) {
+                  onLocustHitEnemy(lockedTargetId, effect.damage);
+                }
+              }}
+              onComplete={() => removeLocustProjectile(effect.id)}
             />
           );
         })}

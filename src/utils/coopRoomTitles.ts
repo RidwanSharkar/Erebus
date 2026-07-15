@@ -1,5 +1,5 @@
 import type { CoopRoomKind } from '../contexts/MultiplayerContext';
-import { StatSystem } from './StatSystem';
+import { StatSystem, type StatKey } from './StatSystem';
 
 export interface RoomTitleAnnouncement {
   title: string;
@@ -26,6 +26,15 @@ export const GUIDE_ANNOUNCEMENTS = {
   claimReward: { title: 'CLAIM YOUR REWARD', color: '#94a3b8' },
   chooseGateway: { title: 'CHOOSE A GATEWAY', color: '#94a3b8' },
 } as const;
+
+export const LEVEL_UP_ANNOUNCEMENT = { title: 'LEVEL UP', color: '#eab308' } as const;
+
+export function buildRunePickupAnnouncement(stat: StatKey): { title: string; color: string } {
+  return {
+    title: `+1 ${stat.toUpperCase()}`,
+    color: StatSystem.getStatColor(stat),
+  };
+}
 
 export type BossSlainLabel = 'hate' | 'knights' | 'envy' | 'fear' | 'trinity';
 

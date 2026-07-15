@@ -138,10 +138,10 @@ const ABILITY_LABELS: Record<string, string> = {
 const FLAVOR_SUBTITLES: Record<string, string> = {
   class:  'A power that shall define your fighting style for this run.',
   room:   'A blessing earned through the blood of your enemies.',
-  blue:   'The lightning does not strike twice — but the stagger might.', // lol ima keep it
-  green:  'Nature reclaims what was taken from it by force.',
-  purple: 'Ice settles where steel fell — chill first, then silence.',
-  red:    'Those who walk through fire emerge forever changed.',
+  blue:   'A blessing earned through the blood of your enemies.', // lAem
+  green:  'A blessing earned through the blood of your enemies.',
+  purple: 'A blessing earned through the blood of your enemies.',
+  red:    'A blessing earned through the blood of your enemies.',
 };
 
 const ROOM_TRIAL_TITLES: Record<string, string> = {

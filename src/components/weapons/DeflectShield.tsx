@@ -52,8 +52,12 @@ interface DeflectShieldProps {
   weaponType?: WeaponType;
   /** Purple room Aegis boon uses distinct Scythe/Bow palettes. */
   paletteVariant?: AegisPaletteVariant;
-  /** Local player only: pulse shell on `aegis-block` window event. */
+  /** Local player only: pulse shell on `blockEventName` window event. */
   enableBlockFlash?: boolean;
+  /** Window event that triggers the block-flash pulse (default: the Q-Aegis `'aegis-block'` event). */
+  blockEventName?: string;
+  /** Called on each block-flash pulse instead of the default Aegis sound. */
+  onBlockFlash?: () => void;
 }
 
 export default function DeflectShield({
@@ -66,6 +70,8 @@ export default function DeflectShield({
   weaponType = WeaponType.RUNEBLADE,
   paletteVariant = 'default',
   enableBlockFlash = false,
+  blockEventName = 'aegis-block',
+  onBlockFlash,
 }: DeflectShieldProps) {
   const bodyShellRef = useRef<Group>(null);
   const forwardGroupRef = useRef<Group>(null);
@@ -81,11 +87,15 @@ export default function DeflectShield({
     if (!enableBlockFlash || typeof window === 'undefined') return;
     const onBlock = () => {
       blockFlashEndMs.current = Date.now() + 150;
-      window.audioSystem?.playAegisBlockSound?.();
+      if (onBlockFlash) {
+        onBlockFlash();
+      } else {
+        window.audioSystem?.playAegisBlockSound?.();
+      }
     };
-    window.addEventListener('aegis-block', onBlock);
-    return () => window.removeEventListener('aegis-block', onBlock);
-  }, [enableBlockFlash]);
+    window.addEventListener(blockEventName, onBlock);
+    return () => window.removeEventListener(blockEventName, onBlock);
+  }, [enableBlockFlash, blockEventName, onBlockFlash]);
 
   useEffect(() => {
     if (isActive) {
