@@ -238,7 +238,7 @@ export interface InventoryItem {
 
 export interface MerchantStockItem {
   id: string;
-  kind: 'boss_drop' | 'dash_charge' | 'weapon_talent';
+  kind: 'boss_drop' | 'dash_charge' | 'weapon_talent' | 'oxygen' | 'warpdrive';
   cost: number;
   sold?: boolean;
   label?: string;
@@ -249,9 +249,16 @@ export interface MerchantStockItem {
 export interface MerchantPurchaseState {
   dashChargePurchased: boolean;
   weaponTalentPurchases: number;
+  oxygenPurchases: number;
+  warpdrivePurchases: number;
 }
 
-export type MerchantPurchaseSuccessKind = 'boss_drop' | 'dash_charge' | 'weapon_talent';
+export type MerchantPurchaseSuccessKind =
+  | 'boss_drop'
+  | 'dash_charge'
+  | 'weapon_talent'
+  | 'oxygen'
+  | 'warpdrive';
 
 export interface MerchantPurchaseSuccessPayload {
   stockId: string;
@@ -808,7 +815,10 @@ function normalizeMerchantInventory(v: unknown): MerchantStockItem[] {
     if (typeof e.id !== 'string' || typeof e.cost !== 'number') return false;
     const kind = e.kind || 'boss_drop';
     if (kind === 'boss_drop') return e.item != null;
-    return kind === 'dash_charge' || kind === 'weapon_talent';
+    return kind === 'dash_charge'
+      || kind === 'weapon_talent'
+      || kind === 'oxygen'
+      || kind === 'warpdrive';
   }).map((entry) => ({
     ...entry,
     kind: entry.kind || 'boss_drop',
@@ -817,12 +827,19 @@ function normalizeMerchantInventory(v: unknown): MerchantStockItem[] {
 
 function normalizeMerchantPurchaseState(v: unknown): MerchantPurchaseState {
   if (v == null || typeof v !== 'object') {
-    return { dashChargePurchased: false, weaponTalentPurchases: 0 };
+    return {
+      dashChargePurchased: false,
+      weaponTalentPurchases: 0,
+      oxygenPurchases: 0,
+      warpdrivePurchases: 0,
+    };
   }
   const s = v as MerchantPurchaseState;
   return {
     dashChargePurchased: !!s.dashChargePurchased,
     weaponTalentPurchases: Math.max(0, Number(s.weaponTalentPurchases) || 0),
+    oxygenPurchases: Math.max(0, Number(s.oxygenPurchases) || 0),
+    warpdrivePurchases: Math.max(0, Number(s.warpdrivePurchases) || 0),
   };
 }
 
@@ -1080,7 +1097,12 @@ function applyCoopSessionSnapshot(
   }
   setters.setMerchantInventory(normalizeMerchantInventory(data?.merchantInventory));
   if (resetMerchantPurchaseState) {
-    setters.setMerchantPurchaseState({ dashChargePurchased: false, weaponTalentPurchases: 0 });
+    setters.setMerchantPurchaseState({
+      dashChargePurchased: false,
+      weaponTalentPurchases: 0,
+      oxygenPurchases: 0,
+      warpdrivePurchases: 0,
+    });
   }
   if (data?.mushroomState?.health && Array.isArray(data.mushroomState.health)) {
     setters.setMushroomState({
@@ -1245,6 +1267,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [merchantPurchaseState, setMerchantPurchaseState] = useState<MerchantPurchaseState>({
     dashChargePurchased: false,
     weaponTalentPurchases: 0,
+    oxygenPurchases: 0,
+    warpdrivePurchases: 0,
   });
   const merchantPurchaseSuccessHandlersRef = useRef<
     Set<(payload: MerchantPurchaseSuccessPayload) => void>

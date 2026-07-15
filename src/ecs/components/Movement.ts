@@ -1,6 +1,7 @@
 // Movement component for velocity and movement properties
 import { Vector3 } from '@/utils/three-exports';
 import { Component } from '../Entity';
+import { getWarpdriveDashDistance } from '@/utils/merchantShopUtils';
 
 /** Per-charge dash recharge delay (matches existing setTimeout behavior). */
 const DASH_CHARGE_RECHARGE_MS = 8000;
@@ -65,6 +66,7 @@ export class Movement extends Component {
   public dashDuration: number;
   public dashDistance: number;
   public dashStartPosition: Vector3;
+  public warpdrivePurchases: number;
   
   // Multiple dash charges system
   public dashCharges: Array<DashChargeSlot>;
@@ -90,6 +92,11 @@ export class Movement extends Component {
 
   /** Timestamp (seconds) until which movement input should not override a forced halt (Shift-Deflect). */
   public movementLockUntil: number;
+
+  /** Forced portal-fall jump animation (co-op room transitions). */
+  public isPortalFalling: boolean;
+  public portalFallPhase: 'rise' | 'fall';
+  public portalFallProgress: number;
 
   constructor(
     maxSpeed: number = 3.575,
@@ -144,6 +151,7 @@ export class Movement extends Component {
     this.dashDuration = 0.35; // 350ms dash duration (same as old implementation)
     this.dashDistance = 4.125; // Increased from 3.125 for more noticeable dash
     this.dashStartPosition = new Vector3(0, 0, 0);
+    this.warpdrivePurchases = 0;
     
     // Initialize multiple dash charges (3 charges, each with 8s cooldown)
     this.maxDashCharges = 3;
@@ -167,6 +175,10 @@ export class Movement extends Component {
     this.knockbackStartPosition = new Vector3(0, 0, 0);
 
     this.movementLockUntil = 0;
+
+    this.isPortalFalling = false;
+    this.portalFallPhase = 'rise';
+    this.portalFallProgress = 0;
   }
 
   public addForce(force: Vector3): void {
@@ -393,6 +405,11 @@ export class Movement extends Component {
       this.dashCharges.length = target;
     }
     this.maxDashCharges = target;
+  }
+
+  public setWarpdrivePurchases(count: number): void {
+    this.warpdrivePurchases = Math.max(0, Math.min(3, Math.floor(count)));
+    this.dashDistance = getWarpdriveDashDistance(this.warpdrivePurchases);
   }
 
   /**
@@ -703,7 +720,7 @@ export class Movement extends Component {
     this.dashDirection.set(0, 0, 0);
     this.dashStartTime = 0;
     this.dashDuration = 0.35;
-    this.dashDistance = 4;
+    this.dashDistance = getWarpdriveDashDistance(this.warpdrivePurchases);
     this.dashStartPosition.set(0, 0, 0);
     
     // Reset dash charges
@@ -731,6 +748,10 @@ export class Movement extends Component {
     this.knockbackStartPosition.set(0, 0, 0);
 
     this.movementLockUntil = 0;
+
+    this.isPortalFalling = false;
+    this.portalFallPhase = 'rise';
+    this.portalFallProgress = 0;
   }
 
   public clone(): Movement {
@@ -761,6 +782,7 @@ export class Movement extends Component {
     clone.dashDuration = this.dashDuration;
     clone.dashDistance = this.dashDistance;
     clone.dashStartPosition.copy(this.dashStartPosition);
+    clone.warpdrivePurchases = this.warpdrivePurchases;
     
     // Clone dash charges
     clone.maxDashCharges = this.maxDashCharges;
@@ -788,6 +810,10 @@ export class Movement extends Component {
     clone.knockbackStartPosition.copy(this.knockbackStartPosition);
 
     clone.movementLockUntil = this.movementLockUntil;
+
+    clone.isPortalFalling = this.isPortalFalling;
+    clone.portalFallPhase = this.portalFallPhase;
+    clone.portalFallProgress = this.portalFallProgress;
 
     return clone;
   }

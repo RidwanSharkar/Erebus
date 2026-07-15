@@ -181,6 +181,7 @@ export default function CharacterRenderer({
   /** Shift-tap Deflect-Block — plays regardless of movement state (unlike CastSingle's stationary-only gate). */
   const isBlockCasting       = useRef(false);
   const blockAnimTimer       = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const portalFallAnimRef    = useRef({ active: false, phase: 'rise' as 'rise' | 'fall', progress: 0 });
 
   // Snap to spawn position before first paint so the character never flashes at origin.
   const setGroupRef = useCallback((group: Group | null) => {
@@ -395,6 +396,19 @@ export default function CharacterRenderer({
       }
     };
 
+    if (movement.isPortalFalling) {
+      portalFallAnimRef.current.active = true;
+      portalFallAnimRef.current.phase = movement.portalFallPhase;
+      portalFallAnimRef.current.progress = movement.portalFallProgress;
+      if (prevAnimState.current !== 'JumpFront') {
+        prevAnimState.current = 'JumpFront';
+        setAnimState('JumpFront');
+      }
+      applyModelYawOffset('JumpFront', null);
+      return;
+    }
+    portalFallAnimRef.current.active = false;
+
     if (!movement.isGrounded) {
       // Capture the jump direction at take-off so it stays consistent mid-air.
       if (wasGrounded.current) {
@@ -579,6 +593,7 @@ export default function CharacterRenderer({
           <CharacterModel
             animState={animState}
             isDead={isDead}
+            portalFallRef={portalFallAnimRef}
           />
         </group>
         <group position={[0, 1.0, -0.12]}>

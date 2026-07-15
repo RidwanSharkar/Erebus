@@ -5,6 +5,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 const BLINK_IN_MS = 320;
 const BLINK_OUT_MS = 380;
 const MIN_HOLD_AFTER_ENTER_MS = 450;
+/** Peak dim strength during blink-in / hold (0 = none, 1 = full blackout). */
+const OVERLAY_PEAK_OPACITY = 0.42;
+/** Max opacity of petal panels when fully closed. */
+const PETAL_PEAK_OPACITY = 0.68;
 
 type BlinkPhase = 'idle' | 'blinkIn' | 'hold' | 'blinkOut';
 
@@ -183,10 +187,10 @@ export default function PortalBlinkTransition({
       aria-hidden
     >
       <div
-        className="absolute inset-0 bg-black"
+        className="absolute inset-0 bg-neutral-950"
         style={{
-          opacity: phase === 'blinkOut' ? 0 : 1,
-          transition: phase === 'blinkOut' ? `opacity ${BLINK_OUT_MS}ms ease-out` : undefined,
+          opacity: phase === 'blinkOut' ? 0 : OVERLAY_PEAK_OPACITY,
+          transition: `opacity ${phase === 'blinkOut' ? BLINK_OUT_MS : BLINK_IN_MS}ms ease-out`,
         }}
       />
 
@@ -233,14 +237,14 @@ export default function PortalBlinkTransition({
             transform: scale(1.45) translate(14vw, 12vh);
           }
           100% {
-            opacity: 1;
+            opacity: ${PETAL_PEAK_OPACITY};
             transform: scale(1) translate(0, 0);
           }
         }
 
         @keyframes portalBlinkOut {
           0% {
-            opacity: 1;
+            opacity: ${PETAL_PEAK_OPACITY};
             transform: scale(1) translate(0, 0);
           }
           100% {

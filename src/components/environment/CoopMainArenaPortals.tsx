@@ -46,7 +46,12 @@ export function CoopMainArenaPortals({
   if (isBoss) {
     return (
       <group name="coop-main-arena-boss-portal" position={[MAIN_COMBAT_BOSS_PORTAL_POSITION.x, MAIN_COMBAT_BOSS_PORTAL_POSITION.y, MAIN_COMBAT_BOSS_PORTAL_POSITION.z]}>
-        <ThronePortalRing campType="boss" locked={!portalsUnlocked} />
+        <VoidPortal
+          position={[0, 0.05, 0]}
+          open={portalsUnlocked ? 1 : 0}
+          visible={portalsUnlocked}
+          effectHeightOffset={0.3}
+        />
       </group>
     );
   }

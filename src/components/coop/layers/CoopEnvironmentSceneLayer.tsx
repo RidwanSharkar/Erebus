@@ -180,6 +180,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           <MerchantShopPedestals
             inventory={merchantInventory}
             purchaseState={merchantPurchaseState}
+            playerPositionRef={realTimePlayerPositionRef}
           />
           <MerchantNpcRenderer playerPositionRef={realTimePlayerPositionRef} />
         </>

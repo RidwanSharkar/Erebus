@@ -239,14 +239,14 @@ const TELEPORT_BEHIND_DISTANCE = 2.2; // same as boss blink (templar blink smite
 
 // Wraith — stealth flank + buzzsaw cone
 const WRAITH_STEALTH_DURATION_MS = 5000;
-const WRAITH_STEALTH_COOLDOWN_MS = 6000;
-const WRAITH_BUZZSAW_COOLDOWN_MS = 4000;
-const WRAITH_BUZZSAW_DURATION_MS = 1400;
-const WRAITH_BUZZSAW_DAMAGE = 17;
+const WRAITH_STEALTH_COOLDOWN_MS = 5000;
+const WRAITH_BUZZSAW_COOLDOWN_MS = 5000;
+const WRAITH_BUZZSAW_DURATION_MS = 1200;
+const WRAITH_BUZZSAW_DAMAGE = 14;
 const WRAITH_BUZZSAW_TICK_MS = 333;
 const WRAITH_BUZZSAW_RANGE = 5.5;
 const WRAITH_BUZZSAW_HALF_ANGLE_RAD = Math.PI / 6;
-const WRAITH_ENGAGE_RANGE = 3.0;
+const WRAITH_ENGAGE_RANGE = 3.5;
 const WRAITH_AGGRO_RADIUS = 18;
 
 // Co-op main boss (GLB): melee + leap + tectonic
@@ -325,6 +325,12 @@ const TEMPLAR_LEAP_DAMAGE = 60;
 const PLAYER_COOP_MAX_SPEED = 3.575;
 const PLAYER_COOP_SPRINT_MULTIPLIER = 1.5;
 const PLAYER_DASH_DISTANCE = 4.125;
+const WARPDRIVE_DASH_DISTANCES = [4.125, 4.5, 4.875, 5.125];
+
+function getPlayerDashDistance(player) {
+  const purchases = Math.max(0, Math.min(3, Number(player?.merchantWarpdrivePurchases) || 0));
+  return WARPDRIVE_DASH_DISTANCES[purchases] ?? PLAYER_DASH_DISTANCE;
+}
 const PLAYER_DASH_DURATION_S = 0.35;
 const MOB_LEAP_PREDICTION_MAX_OFFSET = 12;
 
@@ -5648,7 +5654,7 @@ class EnemyAI {
       if (mag > 0.01) {
         dirX /= mag;
         dirZ /= mag;
-        speed = PLAYER_DASH_DISTANCE / PLAYER_DASH_DURATION_S;
+        speed = getPlayerDashDistance(targetPlayer) / PLAYER_DASH_DURATION_S;
       }
     } else {
       dirX = md.x;

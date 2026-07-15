@@ -112,9 +112,14 @@ export const MERCHANT_NPC_DEFAULT_ROTATION_Y = Math.PI;
 /** XZ distance within which the merchant rotates to track the local player. */
 export const MERCHANT_NPC_FACE_RANGE = 7;
 
-export type MerchantShopSlotKind = 'dash_charge' | 'weapon_talent' | 'heal' | 'boss_drop';
+export type MerchantShopSlotKind =
+  | 'dash_charge'
+  | 'weapon_talent'
+  | 'utility'
+  | 'heal'
+  | 'boss_drop';
 
-/** Four shop pedestals in a row in front of the merchant NPC (toward arena center). */
+/** Five shop pedestals in a row in front of the merchant NPC (toward arena center). */
 export const MERCHANT_SHOP_PEDESTAL_POSITIONS: ReadonlyArray<{
   readonly slot: MerchantShopSlotKind;
   readonly x: number;
@@ -122,8 +127,9 @@ export const MERCHANT_SHOP_PEDESTAL_POSITIONS: ReadonlyArray<{
   readonly z: number;
 }> = Object.freeze([
   Object.freeze({ slot: 'dash_charge' as const, x: -6.75, y: 0, z: 12.5 }),
-  Object.freeze({ slot: 'weapon_talent' as const, x: -2.25, y: 0, z: 12.5 }),
-  Object.freeze({ slot: 'heal' as const, x: 2.25, y: 0, z: 12.5 }),
+  Object.freeze({ slot: 'weapon_talent' as const, x: -3.375, y: 0, z: 12.5 }),
+  Object.freeze({ slot: 'utility' as const, x: 0, y: 0, z: 12.5 }),
+  Object.freeze({ slot: 'heal' as const, x: 3.375, y: 0, z: 12.5 }),
   Object.freeze({ slot: 'boss_drop' as const, x: 6.75, y: 0, z: 12.5 }),
 ]);
 

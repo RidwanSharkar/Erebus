@@ -345,6 +345,7 @@ import {
 import CastleWallCollision from '@/components/environment/CastleWallCollision';
 import PillarCollision from '@/components/environment/PillarCollision';
 import { MAIN_ARENA_HEX_RADIUS, MAIN_MAP_RADIUS, CASTLE_ROOM_BOUNDS, clampToMainArenaXZ } from '@/utils/mapConstants';
+import { getOxygenMaxEnergy } from '@/utils/merchantShopUtils';
 import { VOID_PORTAL_INTERACT_RADIUS } from '@/components/environment/VoidPortal';
 import { HEALING_FOUNTAIN_INTERACT_RADIUS } from '@/components/environment/HealingFountain';
 import { COOP_MAIN_ENTRY_Z, rotationYTowardArenaCenter } from '@/utils/coopArenaLayout';
@@ -359,6 +360,12 @@ const COOP_MAIN_DEFAULT_SPAWN_Z = COOP_MAIN_ENTRY_Z;
 const COOP_POST_PORTAL_POSITION_GRACE_MS = 1500;
 /** Spawn height when descending into the next combat room. */
 const VOID_PORTAL_FALL_SPAWN_Y = 20;
+/** Natural-speed takeoff-to-peak duration for portal-fall jump (ms). */
+const PORTAL_FALL_RISE_DURATION_MS = 2550;
+/** Ground Y used for portal-fall animation progress (matches PhysicsSystem ground clamp). */
+const PORTAL_FALL_GROUND_Y = 0.52;
+/** Fraction of Jump clip duration treated as peak of arc (tune by eye). */
+const PORTAL_FALL_PEAK_FRACTION = 0.45;
 import { useBowPowershot } from '@/components/projectiles/useBowPowershot';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 import PVPSummonTotemManager from '@/components/projectiles/PVPSummonTotemManager';
@@ -1810,6 +1817,10 @@ export function CoopGameScene({
   resetLocalPositionEmitThrottleRef.current = resetLocalPositionEmitThrottle;
   /** Blocks authoritative server Y snaps while the local player is falling into an intro room. */
   const voidPortalFallActiveRef = useRef(false);
+  /** Timestamp (ms) when portal-fall rise phase began. */
+  const portalFallRiseStartMsRef = useRef(0);
+  /** Y position captured when portal-fall transitions from rise to fall. */
+  const portalFallStartYRef = useRef(VOID_PORTAL_FALL_SPAWN_Y);
 
   useEffect(() => {
     const playWhenReady = (play: () => void) => {
@@ -1923,6 +1934,8 @@ export function CoopGameScene({
   throneAbilityModalOpenRef.current = throneAbilityModalOpen;
   const isChatOpenRef = useRef(false);
   isChatOpenRef.current = isChatOpen;
+  const uiBlocksGameInputRef = useRef(false);
+  uiBlocksGameInputRef.current = uiBlocksGameInput;
   const onRequestThroneAbilityModalRef = useRef(onRequestThroneAbilityModal);
   onRequestThroneAbilityModalRef.current = onRequestThroneAbilityModal;
   const onRequestThroneTalentModalRef = useRef(onRequestThroneTalentModal);
@@ -2524,6 +2537,8 @@ export function CoopGameScene({
   const syncCoopEnemyEcsTransformsRef = useRef<() => void>(() => {});
   /** Emit local player position from Engine loop (independent of R3F render frameloop). */
   const syncLocalPlayerNetworkPositionRef = useRef<() => void>(() => {});
+  /** Drive portal-fall jump animation progress each engine tick. */
+  const syncPortalFallAnimationProgressRef = useRef<() => void>(() => {});
   /** One-shot ECS death-freeze per enemy (co-op death VFX window). */
   const coopEnemyDeathFrozenRef = useRef<Set<string>>(new Set());
   const mushroomEntityByIndexRef = useRef<Map<number, number>>(new Map());
@@ -3845,6 +3860,35 @@ export function CoopGameScene({
       movement.setMaxDashCharges(4);
     }
   }, [extraDashChargePurchased, engineReady]);
+
+  useEffect(() => {
+    if (!engineReady || playerEntityRef.current === null) return;
+    const world = engineRef.current?.getWorld();
+    const ent = world?.getEntity(playerEntityRef.current);
+    const energy = ent?.getComponent(Energy);
+    const movement = ent?.getComponent(Movement);
+    const oxygenPurchases = merchantPurchaseState.oxygenPurchases;
+    const warpdrivePurchases = merchantPurchaseState.warpdrivePurchases;
+
+    if (energy) {
+      const newMaxEnergy = getOxygenMaxEnergy(oxygenPurchases);
+      if (energy.maxEnergy !== newMaxEnergy) {
+        const gained = newMaxEnergy - energy.maxEnergy;
+        energy.setEnergy(energy.currentEnergy + gained, newMaxEnergy);
+        updatePlayerEnergy(socket?.id || '', energy.currentEnergy, energy.maxEnergy);
+      }
+    }
+
+    if (movement) {
+      movement.setWarpdrivePurchases(warpdrivePurchases);
+    }
+  }, [
+    merchantPurchaseState.oxygenPurchases,
+    merchantPurchaseState.warpdrivePurchases,
+    engineReady,
+    socket?.id,
+    updatePlayerEnergy,
+  ]);
 
   useEffect(() => {
     if (!engineReady || playerEntityRef.current === null) return;
@@ -7184,11 +7228,6 @@ export function CoopGameScene({
         templarPendingMissTimers.current.delete(data.templarId);
       }
 
-      // Play alternating hit sound
-      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
-      window.audioSystem?.playTemplarDamageSound(pos, templarDamageVariant.current);
-      templarDamageVariant.current = templarDamageVariant.current === 1 ? 2 : 1;
-
       const deathState = playerDeathStates.get(socket.id);
       if (deathState?.isDead) return;
 
@@ -7196,32 +7235,40 @@ export function CoopGameScene({
       const shield = playerEntity.getComponent(Shield);
       if (health) {
         const wasAlive = !health.isDead;
+        const transform = playerEntity.getComponent(Transform);
+        const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+        const incomingPos = transform?.position.clone();
+        if (incomingPos) incomingPos.y -= 0.5;
 
-        const healthBefore = health.currentHealth;
-        const shieldBefore = shield?.currentShield;
-        const damageApplied = health.takeDamage(data.damage, Date.now() / 1000, playerEntity, false);
+        const { damageApplied, healthBefore, shieldBefore } = applyIncomingCoopDamage({
+          damage: data.damage,
+          damageType: 'physical',
+          sourceEnemyId: data.templarId,
+          playerEntity,
+          health,
+          shield,
+          damageNumberManager,
+          damageNumberPosition: incomingPos,
+        });
 
-        if (playerEntity) {
-          const transform = playerEntity.getComponent(Transform);
-          if (transform) {
-            const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
-            if (damageNumberManager && damageNumberManager.addDamageNumber) {
-              const pos = transform.position.clone();
-              pos.y -= 0.5;
-              damageNumberManager.addDamageNumber(data.damage, false, pos, 'physical', true);
-            }
-            triggerAppliedLocalPlayerDamageFeedback({
-              damage: data.damage,
-              damageType: 'physical',
-              damageApplied,
-              health,
-              healthBefore,
-              shield,
-              shieldBefore,
-              position: transform.position,
-              attackerServerEnemyId: data.templarId,
-            });
-          }
+        if (damageApplied) {
+          const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+          window.audioSystem?.playTemplarDamageSound(pos, templarDamageVariant.current);
+          templarDamageVariant.current = templarDamageVariant.current === 1 ? 2 : 1;
+        }
+
+        if (transform) {
+          triggerAppliedLocalPlayerDamageFeedback({
+            damage: data.damage,
+            damageType: 'physical',
+            damageApplied,
+            health,
+            healthBefore,
+            shield,
+            shieldBefore,
+            position: transform.position,
+            attackerServerEnemyId: data.templarId,
+          });
         }
 
         if (shield) {
@@ -8381,7 +8428,6 @@ export function CoopGameScene({
       const id = `templar-blink-smite-${templarId}-${timestamp}`;
       const pos = new Vector3(position.x, position.y, position.z);
       explosionBurstLayerRef.current?.addTemplarBlinkSmiteStrike({ id, position: pos, timestamp });
-      window.audioSystem?.playEnemyTemplarSmiteSound(pos);
 
       const playerEntity = getLocalPlayerEntity();
       if (!playerEntity || !socket?.id) return;
@@ -8392,38 +8438,53 @@ export function CoopGameScene({
       if (!transform) return;
       const playerGroundPos = new Vector3(transform.position.x, 0, transform.position.z);
       const smiteGroundPos = new Vector3(pos.x, 0, pos.z);
-      if (playerGroundPos.distanceTo(smiteGroundPos) > radius) return;
+      const inRadius = playerGroundPos.distanceTo(smiteGroundPos) <= radius;
 
       const health = playerEntity.getComponent(Health);
       const shield = playerEntity.getComponent(Shield);
       if (!health) return;
       const wasAlive = !health.isDead;
 
-      const healthBefore = health.currentHealth;
-      const shieldBefore = shield?.currentShield;
-      const damageApplied = health.takeDamage(damage, Date.now() / 1000, playerEntity, false);
+      let damageApplied = false;
+      let healthBefore = health.currentHealth;
+      let shieldBefore = shield?.currentShield;
 
-      if (playerEntity) {
-        const t = playerEntity.getComponent(Transform);
-        if (t) {
-          const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
-          if (damageNumberManager && damageNumberManager.addDamageNumber) {
-            const p = t.position.clone();
-            p.y -= 0.5;
-            damageNumberManager.addDamageNumber(damage, false, p, 'physical', true);
-          }
-          triggerAppliedLocalPlayerDamageFeedback({
-            damage,
-            damageType: 'smite',
-            damageApplied,
-            health,
-            healthBefore,
-            shield,
-            shieldBefore,
-            position: t.position,
-            attackerServerEnemyId: templarId,
-          });
+      if (inRadius) {
+        const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+        const incomingPos = transform.position.clone();
+        incomingPos.y -= 0.5;
+
+        const result = applyIncomingCoopDamage({
+          damage,
+          damageType: 'smite',
+          sourceEnemyId: templarId,
+          playerEntity,
+          health,
+          shield,
+          damageNumberManager,
+          damageNumberPosition: incomingPos,
+        });
+        damageApplied = result.damageApplied;
+        healthBefore = result.healthBefore;
+        shieldBefore = result.shieldBefore;
+
+        if (damageApplied) {
+          window.audioSystem?.playEnemyTemplarSmiteSound(pos);
         }
+
+        triggerAppliedLocalPlayerDamageFeedback({
+          damage,
+          damageType: 'smite',
+          damageApplied,
+          health,
+          healthBefore,
+          shield,
+          shieldBefore,
+          position: transform.position,
+          attackerServerEnemyId: templarId,
+        });
+      } else {
+        window.audioSystem?.playEnemyTemplarSmiteSound(pos);
       }
 
       if (shield) {
@@ -9873,7 +9934,7 @@ export function CoopGameScene({
     if (entity && voidPortalFallActiveRef.current) {
       const transform = entity.getComponent(Transform);
       const movement = entity.getComponent(Movement);
-      if (transform && (movement?.isGrounded || transform.position.y <= 0.52)) {
+      if (transform && (movement?.isGrounded || transform.position.y <= PORTAL_FALL_GROUND_Y)) {
         voidPortalFallActiveRef.current = false;
       }
     }
@@ -9908,6 +9969,60 @@ export function CoopGameScene({
     pendingPortalSnapRef,
   ]);
 
+  const syncPortalFallAnimationProgress = useCallback(() => {
+    const engine = engineRef.current;
+    if (!engine?.isEngineRunning() || !gameStarted) return;
+    if (playerEntityRef.current === null) return;
+
+    const entity = engine.getWorld().getEntity(playerEntityRef.current);
+    if (!entity) return;
+
+    const movement = entity.getComponent(Movement);
+    const transform = entity.getComponent(Transform);
+    if (!movement || !transform) return;
+
+    if (!movement.isPortalFalling) return;
+
+    controlSystemRef.current?.setInputDisabled(true);
+    engine.getInputManager().setGameInputBlocked(true);
+
+    if (movement.portalFallPhase === 'rise') {
+      const elapsedMs = Date.now() - portalFallRiseStartMsRef.current;
+      movement.portalFallProgress = Math.min(1, elapsedMs / PORTAL_FALL_RISE_DURATION_MS);
+
+      if (voidPortalFallActiveRef.current) {
+        movement.portalFallPhase = 'fall';
+        portalFallStartYRef.current = transform.position.y;
+        movement.portalFallProgress = 0;
+      }
+      return;
+    }
+
+    const startY = portalFallStartYRef.current;
+    const fallDistance = startY - PORTAL_FALL_GROUND_Y;
+    if (fallDistance > 0.01) {
+      movement.portalFallProgress = Math.max(
+        0,
+        Math.min(1, (startY - transform.position.y) / fallDistance),
+      );
+    } else {
+      movement.portalFallProgress = 1;
+    }
+
+    if (!voidPortalFallActiveRef.current) {
+      movement.isPortalFalling = false;
+      movement.portalFallPhase = 'rise';
+      movement.portalFallProgress = 0;
+
+      const inputBlocked =
+        isChatOpenRef.current ||
+        uiBlocksGameInputRef.current ||
+        coopTransitionOverlayRef.current;
+      controlSystemRef.current?.setInputDisabled(inputBlocked);
+      engine.getInputManager().setGameInputBlocked(inputBlocked);
+    }
+  }, [gameStarted, coopTransitionOverlayRef]);
+
   useEffect(() => {
     syncCoopEnemyEcsTransformsRef.current = syncCoopEnemyEcsTransforms;
   }, [syncCoopEnemyEcsTransforms]);
@@ -9915,6 +10030,10 @@ export function CoopGameScene({
   useEffect(() => {
     syncLocalPlayerNetworkPositionRef.current = syncLocalPlayerNetworkPosition;
   }, [syncLocalPlayerNetworkPosition]);
+
+  useEffect(() => {
+    syncPortalFallAnimationProgressRef.current = syncPortalFallAnimationProgress;
+  }, [syncPortalFallAnimationProgress]);
 
   /** Force-clear portal overlay if it stays active too long (blocks position sync + enemy AI). */
   useEffect(() => {
@@ -9949,6 +10068,7 @@ export function CoopGameScene({
     const preWorldUpdateHook = () => {
       syncCoopEnemyEcsTransformsRef.current();
       syncLocalPlayerNetworkPositionRef.current();
+      syncPortalFallAnimationProgressRef.current();
     };
     engine.addPreWorldUpdateHook(preWorldUpdateHook);
 
@@ -10157,7 +10277,16 @@ export function CoopGameScene({
       engineRef.current
     ) {
       const haltEnt = engineRef.current.getWorld().getEntity(playerEntityRef.current);
-      haltEnt?.getComponent(Movement)?.haltLocomotion();
+      const haltMovement = haltEnt?.getComponent(Movement);
+      haltMovement?.haltLocomotion();
+      if (haltMovement) {
+        haltMovement.isPortalFalling = true;
+        haltMovement.portalFallPhase = 'rise';
+        haltMovement.portalFallProgress = 0;
+        portalFallRiseStartMsRef.current = Date.now();
+      }
+      controlSystemRef.current?.setInputDisabled(true);
+      engineRef.current.getInputManager().setGameInputBlocked(true);
       portalOverlayLocomotionHaltedRef.current = true;
     }
 
@@ -10611,7 +10740,7 @@ export function CoopGameScene({
                 offer.length >= 1 &&
                 String(offer[0]).toLowerCase() === 'boss'
               ) {
-                const rPortal = 2.9;
+                const rPortal = VOID_PORTAL_INTERACT_RADIUS;
                 const pos = MAIN_COMBAT_BOSS_PORTAL_POSITION;
                 const dx = px - pos.x;
                 const dz = pz - pos.z;
@@ -10689,7 +10818,8 @@ export function CoopGameScene({
               const pos = MAIN_COMBAT_BOSS_PORTAL_POSITION;
               const dx = px - pos.x;
               const dz = pz - pos.z;
-              if (dx * dx + dz * dz < r2) {
+              const bossR2 = VOID_PORTAL_INTERACT_RADIUS * VOID_PORTAL_INTERACT_RADIUS;
+              if (dx * dx + dz * dz < bossR2) {
                 portalUseSentRef.current = true;
                 enterCombatArena('boss');
               }
@@ -11252,7 +11382,7 @@ export function CoopGameScene({
                     offer.length >= 1 &&
                     String(offer[0]).toLowerCase() === 'boss'
                   ) {
-                    const rPortal = 2.9;
+                    const rPortal = VOID_PORTAL_INTERACT_RADIUS;
                     const pos = MAIN_COMBAT_BOSS_PORTAL_POSITION;
                     const d2 = (px - pos.x) * (px - pos.x) + (pz - pos.z) * (pz - pos.z);
                     if (d2 < rPortal * rPortal) {
@@ -11307,7 +11437,8 @@ export function CoopGameScene({
                 ) {
                   const pos = MAIN_COMBAT_BOSS_PORTAL_POSITION;
                   const d2 = (px - pos.x) * (px - pos.x) + (pz - pos.z) * (pz - pos.z);
-                  portalClose = d2 < r2;
+                  const bossR2 = VOID_PORTAL_INTERACT_RADIUS * VOID_PORTAL_INTERACT_RADIUS;
+                  portalClose = d2 < bossR2;
                 }
                 if (portalClose) nextHint = COOP_INTERACT_HINT_TEXT;
               }

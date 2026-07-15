@@ -246,6 +246,9 @@ const MERCHANT_ITEM_COUNT = 1;
 const MERCHANT_DASH_CHARGE_COST = 1000;
 const MERCHANT_WEAPON_TALENT_COST = 600;
 const MERCHANT_WEAPON_TALENT_MAX = 3;
+const MERCHANT_UTILITY_MAX = 3;
+const MERCHANT_OXYGEN_COST = 300;
+const MERCHANT_WARPDRIVE_COST = 300;
 const MERCHANT_BOSS_ITEM_POOL = Object.freeze([
   { type: 'MANA_SHIELD', label: 'Mana Shield', stat: 'intellect', bonuses: { common: 8, rare: 15, epic: 20, legendary: 30 } },
   { type: 'COLOSSUS_LUNGS', label: 'Colossus Lungs', stat: 'stamina', bonuses: { common: 6, rare: 10, epic: 14, legendary: 20 } },
@@ -888,6 +891,8 @@ class GameRoom {
       for (const player of this.players.values()) {
         player.merchantDashChargePurchased = false;
         player.merchantWeaponTalentPurchases = 0;
+        player.merchantOxygenPurchases = 0;
+        player.merchantWarpdrivePurchases = 0;
       }
     }
 
@@ -3072,6 +3077,8 @@ class GameRoom {
       },
       merchantDashChargePurchased: false,
       merchantWeaponTalentPurchases: 0,
+      merchantOxygenPurchases: 0,
+      merchantWarpdrivePurchases: 0,
     });
 
     // Position players for co-op mode
@@ -7130,6 +7137,8 @@ class GameRoom {
     return {
       dashChargePurchased: !!player.merchantDashChargePurchased,
       weaponTalentPurchases: player.merchantWeaponTalentPurchases || 0,
+      oxygenPurchases: player.merchantOxygenPurchases || 0,
+      warpdrivePurchases: player.merchantWarpdrivePurchases || 0,
     };
   }
 
@@ -7155,6 +7164,17 @@ class GameRoom {
   generateMerchantInventory() {
     const pool = [...MERCHANT_BOSS_ITEM_POOL];
     const inventory = [...this._buildFixedMerchantStock()];
+    const utilityKind = Math.random() < 0.5 ? 'oxygen' : 'warpdrive';
+    inventory.push({
+      id: `merchant-stock-utility-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      kind: utilityKind,
+      cost: utilityKind === 'oxygen' ? MERCHANT_OXYGEN_COST : MERCHANT_WARPDRIVE_COST,
+      label: utilityKind === 'oxygen' ? 'Oxygen' : 'Warpdrive',
+      description:
+        utilityKind === 'oxygen'
+          ? 'Increases max Energy by 20 (up to 160).'
+          : 'Increases dash distance (up to 3 purchases).',
+    });
     const n = Math.min(MERCHANT_ITEM_COUNT, pool.length);
     for (let i = 0; i < n; i++) {
       const pickIndex = Math.floor(Math.random() * pool.length);
@@ -7230,6 +7250,16 @@ class GameRoom {
         this._emitMerchantPurchaseFailure(playerId, 'weapon_talent_limit_reached');
         return false;
       }
+    } else if (kind === 'oxygen') {
+      if ((player.merchantOxygenPurchases || 0) >= MERCHANT_UTILITY_MAX) {
+        this._emitMerchantPurchaseFailure(playerId, 'oxygen_limit_reached');
+        return false;
+      }
+    } else if (kind === 'warpdrive') {
+      if ((player.merchantWarpdrivePurchases || 0) >= MERCHANT_UTILITY_MAX) {
+        this._emitMerchantPurchaseFailure(playerId, 'warpdrive_limit_reached');
+        return false;
+      }
     } else {
       this._emitMerchantPurchaseFailure(playerId, 'item_unavailable');
       return false;
@@ -7274,6 +7304,49 @@ class GameRoom {
           kind: 'weapon_talent',
           cost: entry.cost,
           purchaseCount: player.merchantWeaponTalentPurchases,
+          merchantPurchaseState: this._getMerchantPurchaseState(player),
+          timestamp: Date.now(),
+        });
+      }
+      return true;
+    }
+
+    if (kind === 'oxygen') {
+      player.merchantOxygenPurchases = (player.merchantOxygenPurchases || 0) + 1;
+      const nextMaxEnergy = 100 + player.merchantOxygenPurchases * 20;
+      player.maxEnergy = nextMaxEnergy;
+      player.energy = Math.min(nextMaxEnergy, (player.energy || 0) + 20);
+      if (this.io) {
+        this.io.to(this.roomId).emit('player-gold-changed', {
+          playerId,
+          gold: player.gold,
+          timestamp: Date.now(),
+        });
+        this.io.to(playerId).emit('merchant-purchase-succeeded', {
+          stockId,
+          kind: 'oxygen',
+          cost: entry.cost,
+          purchaseCount: player.merchantOxygenPurchases,
+          merchantPurchaseState: this._getMerchantPurchaseState(player),
+          timestamp: Date.now(),
+        });
+      }
+      return true;
+    }
+
+    if (kind === 'warpdrive') {
+      player.merchantWarpdrivePurchases = (player.merchantWarpdrivePurchases || 0) + 1;
+      if (this.io) {
+        this.io.to(this.roomId).emit('player-gold-changed', {
+          playerId,
+          gold: player.gold,
+          timestamp: Date.now(),
+        });
+        this.io.to(playerId).emit('merchant-purchase-succeeded', {
+          stockId,
+          kind: 'warpdrive',
+          cost: entry.cost,
+          purchaseCount: player.merchantWarpdrivePurchases,
           merchantPurchaseState: this._getMerchantPurchaseState(player),
           timestamp: Date.now(),
         });

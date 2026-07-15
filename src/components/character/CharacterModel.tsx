@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useFrame } from '@react-three/fiber';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import { peek as suspendPeek } from 'suspend-react';
 import { GLTFLoader } from 'three-stdlib';
@@ -20,6 +21,7 @@ export type AnimState =
 interface CharacterModelProps {
   animState: AnimState;
   isDead?: boolean;
+  portalFallRef?: React.MutableRefObject<{ active: boolean; phase: 'rise' | 'fall'; progress: number }>;
 }
 
 type CharacterDeferredAnimState = keyof typeof CHARACTER_DEFERRED_MODEL_PATHS;
@@ -182,9 +184,14 @@ function hasAssimpRotationTracks(clips: AnimationClip[]): boolean {
 const SPRINT_FALLBACK_TIME_SCALE = 1.5;
 
 /** Eager-load all deferred clips before mounting the rig so useAnimations never sees a mid-game clips change. */
+/** Fraction of JumpFront clip duration treated as peak of arc (matches CoopGameScene portal-fall). */
+const PORTAL_FALL_PEAK_FRACTION = 0.45;
+const PORTAL_FALL_ANIM: AnimState = 'JumpFront';
+
 export default function CharacterModel({
   animState,
   isDead = false,
+  portalFallRef,
 }: CharacterModelProps) {
   const [deferredAnimationClips, setDeferredAnimationClips] = useState<CharacterDeferredClips | null>(null);
 
@@ -208,6 +215,7 @@ export default function CharacterModel({
     <CharacterModelRig
       animState={animState}
       isDead={isDead}
+      portalFallRef={portalFallRef}
       deferredAnimationClips={deferredAnimationClips}
     />
   );
@@ -220,6 +228,7 @@ interface CharacterModelRigProps extends CharacterModelProps {
 function CharacterModelRig({
   animState,
   isDead = false,
+  portalFallRef,
   deferredAnimationClips,
 }: CharacterModelRigProps) {
   const sceneGroupRef   = useRef<Group>(null);
@@ -358,6 +367,9 @@ function CharacterModelRig({
       // Block any animation changes once death has been triggered.
       if (deathTriggeredRef.current) return;
 
+      // Portal-fall sequence owns Jump scrubbing via useFrame.
+      if (portalFallRef?.current.active) return;
+
       const useIdleFallback =
         animState !== 'Idle' &&
         !clipRegistered(animState) &&
@@ -455,6 +467,34 @@ function CharacterModelRig({
       if (rafId) cancelAnimationFrame(rafId);
     };
   }, [animState, isDead, actions, mixer, animations, sprintUsesFallback]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useFrame(() => {
+    if (!portalFallRef?.current.active) return;
+    if (!actions) return;
+
+    const jumpAction = actions[PORTAL_FALL_ANIM];
+    if (!jumpAction) return;
+
+    if (currentActionRef.current !== jumpAction) {
+      currentActionRef.current?.fadeOut(FADE_JUMP);
+      jumpAction.reset();
+      jumpAction.enabled = true;
+      jumpAction.setEffectiveWeight(1);
+      jumpAction.setLoop(LoopOnce, 1);
+      jumpAction.clampWhenFinished = true;
+      jumpAction.fadeIn(FADE_JUMP).play();
+      currentActionRef.current = jumpAction;
+    }
+
+    const duration = jumpAction.getClip().duration;
+    const peakTime = duration * PORTAL_FALL_PEAK_FRACTION;
+    const { phase, progress } = portalFallRef.current;
+    jumpAction.paused = true;
+    jumpAction.time = phase === 'rise'
+      ? peakTime * progress
+      : peakTime + (duration - peakTime) * progress;
+    mixer?.update(0);
+  });
 
   // Reset death flag when the component is re-mounted (e.g. after respawn).
   useEffect(() => {
