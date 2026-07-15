@@ -403,14 +403,15 @@ export interface EnemyTauntEffectState {
   duration: number;
 }
 
-export interface DeflectBoltEffectState {
+export interface DeflectSmiteEffectState {
   id: number;
   playerId: string;
-  startPosition: Vector3;
-  /** Live-resolved enemy id to home in on; null if no enemy was available at cast time. */
-  targetEnemyId: string | null;
-  /** Aim point at cast time, used as the initial visual target before live tracking kicks in. */
-  fallbackTargetPosition: Vector3;
+  /** Strike point at the target enemy's position. */
+  position: Vector3;
+  /** Precomputed flat damage for the local caster; 0 for remote visual-only mirrors. */
+  damage: number;
+  startTime: number;
+  duration: number;
 }
 
 export interface LocustProjectileEffectState {

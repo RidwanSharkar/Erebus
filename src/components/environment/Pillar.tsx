@@ -1,6 +1,7 @@
 import React, { useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { CylinderGeometry, SphereGeometry, MeshStandardMaterial, Mesh } from '../../utils/three-exports';
+import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
 
 /** Shared stone meshes — one geometry set for all pillar instances (never disposed). */
 export const PILLAR_SHARED_GEOMETRIES = {
@@ -81,14 +82,15 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], orbColorHex = '#5
       />
 
       {showOrb && (
-        <mesh
-          ref={orbRef}
-          geometry={PILLAR_SHARED_GEOMETRIES.orb}
-          material={orbMaterial}
-          position={[0, 5, 0]}
-        >
-          <pointLight color={orbColorHex} intensity={1} distance={5} />
-        </mesh>
+        <>
+          <mesh
+            ref={orbRef}
+            geometry={PILLAR_SHARED_GEOMETRIES.orb}
+            material={orbMaterial}
+            position={[0, 5, 0]}
+          />
+          <PooledEffectLight color={orbColorHex} intensity={1} distance={5} position={[0, 5, 0]} />
+        </>
       )}
     </group>
   );

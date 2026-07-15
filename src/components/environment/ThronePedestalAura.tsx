@@ -2,6 +2,7 @@ import { useMemo, useRef, memo } from 'react';
 import { Group, Mesh } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { WeaponType } from '@/components/dragon/weapons';
+import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
 
 interface AuraPalette {
   outer: string;
@@ -241,7 +242,12 @@ function ThronePedestalAura({ weapon, equippedWeapon, position }: ThronePedestal
       </mesh>
 
       {/* Point light for ground bloom */}
-      <pointLight color={pal.glow} intensity={isActive ? 1.65 : 0.75} distance={6} position={[0, 0.3, 0]} />
+      <PooledEffectLight
+        color={pal.glow}
+        intensity={isActive ? 1.65 : 0.75}
+        distance={6}
+        position={[0, 0.3, 0]}
+      />
     </group>
   );
 }

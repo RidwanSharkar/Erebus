@@ -5,6 +5,7 @@ import { useFrame } from '@react-three/fiber';
 import { Vector3, Color, Group, Mesh, MeshStandardMaterial } from '@/utils/three-exports';
 import { World } from '@/ecs/World';
 import { PILLAR_SHARED_GEOMETRIES, PILLAR_STONE_MATERIAL } from './Pillar';
+import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
 
 interface PillarRendererProps {
   entityId: number;
@@ -124,9 +125,8 @@ function PillarRenderer({
           geometry={PILLAR_SHARED_GEOMETRIES.orb}
           material={orbMaterial}
           position={[0, 5, 0]}
-        >
-          <pointLight color={pillarColor} intensity={0.25} distance={5} />
-        </mesh>
+        />
+        <PooledEffectLight color={pillarColor} intensity={0.25} distance={5} position={[0, 5, 0]} />
       </group>
 
       {/* Health Bar */}

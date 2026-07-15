@@ -3,6 +3,9 @@ const EnemyAI = require('./enemyAI');
 const {
   COOP_MAIN_ENTRY_X,
   COOP_MAIN_ENTRY_Z,
+  CASTLE_ROOM_HALF_SIZE,
+  CASTLE_ROOM_ENTRY_X,
+  CASTLE_ROOM_ENTRY_Z,
   COOP_PLAYER_START_CLEAR_RADIUS,
   rotationYTowardEntry,
   rotationYTowardArenaCenter,
@@ -178,7 +181,7 @@ const BLIZZARD_CHILL_STACK_DURATION_MS = 6000;
 const BLIZZARD_CHILL_STACKS_TO_FREEZE = 5;
 const BLIZZARD_CHILL_SLOW_PER_STACK = 0.15;
 /** Arctic Sting Tempest Rounds — keep in sync with src/utils/talents.ts CHILL_STACKS_TO_FREEZE */
-const ARCTIC_STING_TEMPEST_CHILL_STACKS_TO_FREEZE = 6;
+const ARCTIC_STING_TEMPEST_CHILL_STACKS_TO_FREEZE = 5;
 const ARCTIC_STING_TEMPEST_FREEZE_MS = 4000;
 /** Explosive Talons — keep in sync with src/utils/talents.ts */
 const EXPLOSIVE_TALONS_MAX_TRAVEL = 13;
@@ -192,16 +195,27 @@ const EXPLOSIVE_TALONS_RADIUS_TOLERANCE = 0.85;
  */
 const COOP_COLORED_ROOM_TYPES = Object.freeze(['blue', 'red', 'green', 'purple']);
 const COOP_SPECIAL_ROOM_TYPES = Object.freeze(['stat', 'trial', 'merchant']);
-const COOP_ROOM_TYPES = Object.freeze([...COOP_COLORED_ROOM_TYPES, ...COOP_SPECIAL_ROOM_TYPES, 'boss']);
+/** Mid-act dual-portal specials — merchant only appears in the forced pre-boss sequence. */
+const COOP_MID_ACT_SPECIAL_ROOM_TYPES = Object.freeze(['stat', 'trial']);
+const COOP_PRE_BOSS_SPECIAL_TYPES = Object.freeze(['stat', 'trial']);
+const COOP_PRE_BOSS_REWARD_TO_MERCHANT_MS = 5000;
+const COOP_ROOM_TYPES = Object.freeze([...COOP_COLORED_ROOM_TYPES, ...COOP_SPECIAL_ROOM_TYPES, 'boss', 'intro', 'deep_sanctum']);
+const COOP_INTRO_ROOM_GOLD = Object.freeze([50, 75, 100]);
+const COOP_VOID_PORTAL_CHANCE = .20;
+const COOP_DEEP_SANCTUM_START_LEVEL = 4;
+const COOP_DEEP_SANCTUM_GOLD_MIN = 150;
+const COOP_DEEP_SANCTUM_GOLD_MAX = 300;
+const COOP_DEEP_SANCTUM_STAT_POINTS = 8;
+const COOP_INTRO_FOUNTAIN_HEAL = 60;
 const COOP_ROOMS_BEFORE_BOSS = 3;
 const COOP_ROOMS_BEFORE_BOSS_LATE = 4; // after 2nd boss defeated
 const COOP_COUNTABLE_COMBAT_ROOM_TYPES = Object.freeze([
-  ...COOP_COLORED_ROOM_TYPES, 'stat', 'trial',
+  ...COOP_COLORED_ROOM_TYPES, 'stat', 'trial', 'deep_sanctum',
 ]);
 const COOP_TERRAIN_THEMES = Object.freeze(['purple', 'blue', 'green']);
 const COOP_WAVE_MARTYR_ROOM_CHANCE = 0.33; // 30% of colored rooms have martyr spawns
-const COOP_WAVE_TITAN_ROOM_CHANCE = 0.4; // 40% of colored rooms spawn 1 titan after boss 1 (chance tier)
-const COOP_WAVE_BOSS1_ROOM_CHANCE = 0.33; // 33% of colored rooms have a mini-boss1 spawn after boss2 is defeated
+const COOP_WAVE_TITAN_ROOM_CHANCE = 0.25; // 40% of colored rooms spawn 1 titan after boss 1 (chance tier)
+const COOP_WAVE_BOSS1_ROOM_CHANCE = 0.20; // 33% of colored rooms have a mini-boss1 spawn after boss2 is defeated
 const COOP_BOSS1_ELITE_KNIGHTS_CHANCE = 0.5; // 50% of 1st boss encounters are 2 elite knights instead of the GLB boss
 const BOSS1_ELITE_SIZE_SCALE = 1.33;
 const BOSS1_ELITE_SPEED_MULT = 1.15;
@@ -226,9 +240,9 @@ const COOP_WAVE_SOFTCAP_KILLS_PER_STEP = 2;
 const COOP_WAVE_QUOTA_BY_TIER = Object.freeze([6, 7, 8, 9]);
 const GOLD_DROP_EXPIRE_MS = 60000;
 const GOLD_VISUAL_PIECE_CAP = 20;
-const MERCHANT_HEAL_COST = 50;
-const MERCHANT_HEAL_AMOUNT = 100;
-const MERCHANT_ITEM_COUNT = 2;
+const MERCHANT_HEAL_COST = 60;
+const MERCHANT_HEAL_AMOUNT = 125;
+const MERCHANT_ITEM_COUNT = 1;
 const MERCHANT_DASH_CHARGE_COST = 1000;
 const MERCHANT_WEAPON_TALENT_COST = 600;
 const MERCHANT_WEAPON_TALENT_MAX = 3;
@@ -290,6 +304,16 @@ function clampPositionToMainArenaXZ(x, z) {
   if (len <= maxR || len < 1e-6) return { x, z };
   const s = maxR / len;
   return { x: x * s, z: z * s };
+}
+
+function clampPositionToCastleRoomXZ(x, z) {
+  const inset = MAIN_ARENA_SPAWN_INSET;
+  const mx = CASTLE_ROOM_HALF_SIZE - inset;
+  const mz = CASTLE_ROOM_HALF_SIZE - inset;
+  return {
+    x: Math.max(-mx, Math.min(mx, x)),
+    z: Math.max(-mz, Math.min(mz, z)),
+  };
 }
 
 function maxCircleAbsXAtZ(z, radius = MAIN_CIRCLE_INNER_RADIUS) {
@@ -385,9 +409,15 @@ class GameRoom {
     this.coopBossRoomVisitCount = 0;
     /**
      * Set between waves on the main combat map (not throne): players pick next wave / boss in arena center.
-     * @type {null | 'pick_wave2' | 'pick_boss' | 'pick_post_boss'}
+     * @type {null | 'pick_wave2' | 'pick_pre_boss' | 'pre_boss_reward' | 'pre_boss_merchant' | 'pick_boss' | 'pick_post_boss'}
      */
     this.coopMainArenaPortalPhase = null;
+    /** Co-op: true during the mandatory Trial/Stat → Merchant → Boss sequence before each boss. */
+    this.coopPreBossSequenceActive = false;
+    /** Co-op: true while inside the pre-boss Trial or Stat room (post-quota; does not increment segment). */
+    this.coopInPreBossSpecialRoom = false;
+    /** Co-op: idempotent guard — first reward claim schedules the in-place merchant transition. */
+    this._preBossRewardClaimScheduled = false;
 
     /** Co-op: true during boss fight on stripped throne shell and post-boss portal pause. */
     this.coopBossThroneArena = false;
@@ -451,6 +481,33 @@ class GameRoom {
     this.coopRoomWhisperPlayed = false;
     /** Co-op: pending post-teleport initial wave spawn (`_schedulePostTeleportEnemyWave`). */
     this._coopDelayedEnemyWaveTimeoutId = null;
+
+    /** Co-op intro: one-time 3-room sequence before the normal loop (start of run only). */
+    this.coopIntroPending = false;
+    this.coopIntroActive = false;
+    /** @type {0|1|2|3} 0 = not started; 1–3 = current intro room index. */
+    this.coopIntroRoomIndex = 0;
+    /** True after an intro room is cleared — void portal at center is interactable. */
+    this.coopIntroPortalOpen = false;
+    /** True after intro room 3 cleared — fountain + dual portals before normal loop. */
+    this.coopIntroFountainPhase = false;
+    /** True after any player uses the intro healing fountain. */
+    this.coopIntroFountainUsed = false;
+    /** Living intro enemies remaining (fixed compositions, no bonus spawns). */
+    this.coopIntroLivingCount = 0;
+
+    /** Main-loop optional void portal at center of dual gateway intermissions. */
+    this.coopVoidPortalOffered = false;
+    /** True while inside a deep sanctum (Inner Sanctum IV+) castle encounter. */
+    this.coopDeepSanctumActive = false;
+    /** @type {number} Roman level index for deep sanctum (starts at 4 on first entry). */
+    this.coopDeepSanctumLevel = 0;
+    /** @type {'gold'|'stat'|'talent'|null} Pre-rolled reward after deep sanctum clear. */
+    this.coopDeepSanctumRewardKind = null;
+    /** Living deep sanctum enemies remaining (fixed compositions). */
+    this.coopDeepSanctumLivingCount = 0;
+    /** Portal phase to restore after deep sanctum if segment quota was already met. */
+    this.coopSavedPortalPhase = null;
   }
 
   /** Schedule a one-shot timer tracked for bulk cancellation on room teardown. */
@@ -812,6 +869,20 @@ class GameRoom {
     this._devSpawnBoss2 = false;
     this._devSpawnBoss3 = false;
     this._resetMushroomState();
+    this.coopIntroPending = false;
+    this.coopIntroActive = false;
+    this.coopIntroRoomIndex = 0;
+    this.coopIntroPortalOpen = false;
+    this.coopIntroFountainPhase = false;
+    this.coopIntroFountainUsed = false;
+    this.coopIntroLivingCount = 0;
+    this.coopVoidPortalOffered = false;
+    this.coopDeepSanctumActive = false;
+    this.coopDeepSanctumLevel = 0;
+    this.coopDeepSanctumRewardKind = null;
+    this.coopDeepSanctumLivingCount = 0;
+    this.coopSavedPortalPhase = null;
+    this._clearPreBossSequenceState();
 
     if (this.gameMode === 'coop') {
       for (const player of this.players.values()) {
@@ -820,10 +891,11 @@ class GameRoom {
       }
     }
 
-    // Co-op: begin in the throne prep room — combat arena + enemies start after portal
+    // Co-op: begin in the throne prep room — void portal opens after weapon pick
     if (this.gameMode === 'coop') {
       this.combatArenaActive = false;
-      this._pickThronePortalOffer();
+      this.coopIntroPending = true;
+      this.thronePortalOffer = [];
       this.teleportAllPlayersToThroneRoom();
       this.spawnThroneTrainingDummy();
     } else {
@@ -856,6 +928,13 @@ class GameRoom {
         coopClearedRoomKind: this.gameMode === 'coop' ? this.getCoopClearedRoomKind() : null,
         merchantInventory: this.gameMode === 'coop' ? this.getMerchantInventory() : [],
         mushroomState: this.getMushroomState(),
+        coopIntroPending: this.gameMode === 'coop' ? this.coopIntroPending : false,
+        coopIntroActive: this.gameMode === 'coop' ? this.coopIntroActive : false,
+        coopIntroRoomIndex: this.gameMode === 'coop' ? this.coopIntroRoomIndex : 0,
+        coopIntroPortalOpen: this.gameMode === 'coop' ? this.coopIntroPortalOpen : false,
+        coopIntroFountainPhase: this.gameMode === 'coop' ? this.coopIntroFountainPhase : false,
+        coopIntroFountainUsed: this.gameMode === 'coop' ? this.coopIntroFountainUsed : false,
+        ...this.gameMode === 'coop' ? this._getDeepSanctumPayloadFields() : {},
       });
     }
     
@@ -881,6 +960,13 @@ class GameRoom {
       coopClearedRoomKind: this.getCoopClearedRoomKind(),
       merchantInventory: this.getMerchantInventory(),
       mushroomState: this.getMushroomState(),
+      coopIntroPending: this.coopIntroPending,
+      coopIntroActive: this.coopIntroActive,
+      coopIntroRoomIndex: this.coopIntroRoomIndex,
+      coopIntroPortalOpen: this.coopIntroPortalOpen,
+      coopIntroFountainPhase: this.coopIntroFountainPhase,
+      coopIntroFountainUsed: this.coopIntroFountainUsed,
+      ...this._getDeepSanctumPayloadFields(),
     };
   }
 
@@ -994,7 +1080,13 @@ class GameRoom {
 
   spawnOrReviveAlliedUnitsForEnemyRoom() {
     if (this.gameMode !== 'coop' || !this.gameStarted || !this.combatArenaActive) return null;
-    if (this.coopBossThroneArena || this.bossSpawned || this.currentCoopRoomKind === 'boss' || this.currentCoopRoomKind === 'merchant') {
+    if (
+      this.coopBossThroneArena
+      || this.bossSpawned
+      || this.currentCoopRoomKind === 'boss'
+      || this.currentCoopRoomKind === 'merchant'
+      || this.currentCoopRoomKind === 'intro'
+    ) {
       return null;
     }
 
@@ -1079,8 +1171,754 @@ class GameRoom {
 
   _pickPostFirstRoomPortalOffer() {
     const color = COOP_COLORED_ROOM_TYPES[Math.floor(Math.random() * COOP_COLORED_ROOM_TYPES.length)];
-    const special = COOP_SPECIAL_ROOM_TYPES[Math.floor(Math.random() * COOP_SPECIAL_ROOM_TYPES.length)];
+    const special = COOP_MID_ACT_SPECIAL_ROOM_TYPES[
+      Math.floor(Math.random() * COOP_MID_ACT_SPECIAL_ROOM_TYPES.length)
+    ];
     this.thronePortalOffer = [color, special];
+  }
+
+  _pickPreBossPortalOffer() {
+    const a = COOP_PRE_BOSS_SPECIAL_TYPES[0];
+    const b = COOP_PRE_BOSS_SPECIAL_TYPES[1];
+    this.thronePortalOffer = Math.random() < 0.5 ? [a, b] : [b, a];
+  }
+
+  _clearPreBossSequenceState() {
+    this.coopPreBossSequenceActive = false;
+    this.coopInPreBossSpecialRoom = false;
+    this._preBossRewardClaimScheduled = false;
+  }
+
+  _getIntroPayloadFields() {
+    return {
+      coopIntroPending: this.coopIntroPending,
+      coopIntroActive: this.coopIntroActive,
+      coopIntroRoomIndex: this.coopIntroRoomIndex,
+      coopIntroPortalOpen: this.coopIntroPortalOpen,
+      coopIntroFountainPhase: this.coopIntroFountainPhase,
+      coopIntroFountainUsed: this.coopIntroFountainUsed,
+    };
+  }
+
+  _getDeepSanctumPayloadFields() {
+    return {
+      coopVoidPortalOffered: this.coopVoidPortalOffered,
+      coopDeepSanctumActive: this.coopDeepSanctumActive,
+      coopDeepSanctumLevel: this.coopDeepSanctumLevel,
+      deepSanctumRewardKind: this.coopDeepSanctumRewardKind,
+    };
+  }
+
+  _maybeOfferVoidPortal() {
+    this.coopVoidPortalOffered = Math.random() < COOP_VOID_PORTAL_CHANCE;
+  }
+
+  _rollDeepSanctumRewardKind() {
+    const roll = Math.random();
+    if (roll < 0.40) return 'gold';
+    if (roll < 0.80) return 'stat';
+    return 'talent';
+  }
+
+  _pickRandomCampColor() {
+    return COOP_COLORED_ROOM_TYPES[Math.floor(Math.random() * COOP_COLORED_ROOM_TYPES.length)];
+  }
+
+  _generateIntroSpawnPositions(count) {
+    const inset = 3.5;
+    const half = CASTLE_ROOM_HALF_SIZE - inset;
+    const positions = [];
+    for (let i = 0; i < count; i++) {
+      let placed = false;
+      for (let attempt = 0; attempt < 60; attempt++) {
+        const x = (Math.random() * 2 - 1) * half;
+        const z = (Math.random() * 2 - 1) * half;
+        const distFromEntry = Math.hypot(x - CASTLE_ROOM_ENTRY_X, z - CASTLE_ROOM_ENTRY_Z);
+        if (distFromEntry < 6) continue;
+        if (positions.some((p) => Math.hypot(p.x - x, p.z - z) < 3.5)) continue;
+        positions.push({ x, z });
+        placed = true;
+        break;
+      }
+      if (!placed) {
+        const angle = (Math.PI * 2 * i) / Math.max(count, 1);
+        positions.push({
+          x: Math.sin(angle) * (half * 0.55),
+          z: Math.cos(angle) * (half * 0.55),
+        });
+      }
+    }
+    return positions;
+  }
+
+  _buildIntroEnemySpecs(roomIndex) {
+    const positions = this._generateIntroSpawnPositions(3);
+    const pickColor = () => this._pickRandomCampColor();
+    const camp = (color) => GameRoom.CAMP_TYPES[color];
+
+    if (roomIndex === 1) {
+      const c1 = pickColor();
+      let c2 = pickColor();
+      while (c2 === c1) c2 = pickColor();
+      return [
+        { unitType: 'knight', campDef: camp(c1), pos: positions[0] },
+        { unitType: 'knight', campDef: camp(c2), pos: positions[1] },
+      ];
+    }
+
+    if (roomIndex === 2) {
+      const recipes = [
+        () => Array.from({ length: 3 }, (_, i) => ({
+          unitType: 'viper',
+          campDef: camp(i % 2 === 0 ? 'green' : 'blue'),
+          pos: positions[i],
+        })),
+        () => {
+          const colors = [...COOP_COLORED_ROOM_TYPES];
+          return Array.from({ length: 3 }, (_, i) => ({
+            unitType: 'shade',
+            campDef: camp(colors[i % colors.length]),
+            pos: positions[i],
+          }));
+        },
+        () => Array.from({ length: 2 }, (_, i) => ({
+          unitType: 'weaver',
+          campDef: camp('green'),
+          pos: positions[i],
+        })),
+        () => Array.from({ length: 2 }, (_, i) => ({
+          unitType: 'warlock',
+          campDef: camp('red'),
+          pos: positions[i],
+        })),
+      ];
+      return recipes[Math.floor(Math.random() * recipes.length)]();
+    }
+
+    const room3Recipes = [
+      () => [
+        { unitType: 'knight', campDef: camp(pickColor()), pos: positions[0] },
+        { unitType: 'viper', campDef: camp('green'), pos: positions[1] },
+        { unitType: 'viper', campDef: camp('blue'), pos: positions[2] },
+      ],
+      () => [
+        { unitType: 'knight', campDef: camp(pickColor()), pos: positions[0] },
+        { unitType: 'shade', campDef: camp(pickColor()), pos: positions[1] },
+        { unitType: 'shade', campDef: camp(pickColor()), pos: positions[2] },
+      ],
+      () => [
+        { unitType: 'knight', campDef: camp(pickColor()), pos: positions[0] },
+        { unitType: 'knight', campDef: camp(pickColor()), pos: positions[1] },
+        { unitType: 'weaver', campDef: camp('green'), pos: positions[2] },
+      ],
+      () => [
+        { unitType: 'knight', campDef: camp('red'), pos: positions[0] },
+        { unitType: 'templar', campDef: camp('red'), pos: positions[1] },
+        { unitType: 'templar', campDef: camp('purple'), pos: positions[2] },
+      ],
+      () => [
+        { unitType: 'weaver', campDef: camp('green'), pos: positions[0] },
+        { unitType: 'weaver', campDef: camp('blue'), pos: positions[1] },
+        { unitType: 'viper', campDef: camp('green'), pos: positions[2] },
+      ],
+      () => [
+        { unitType: 'viper', campDef: camp('green'), pos: positions[0] },
+        { unitType: 'viper', campDef: camp('blue'), pos: positions[1] },
+        { unitType: 'shade', campDef: camp(pickColor()), pos: positions[2] },
+      ],
+      () => [
+        { unitType: 'warlock', campDef: camp('purple'), pos: positions[0] },
+        { unitType: 'warlock', campDef: camp('purple'), pos: positions[1] },
+        { unitType: 'knight', campDef: camp('purple'), pos: positions[2] },
+      ],
+    ];
+    return room3Recipes[Math.floor(Math.random() * room3Recipes.length)]();
+  }
+
+  spawnIntroWave(roomIndex) {
+    this.coopWaveSpawnPlan = null;
+    this.coopRequiredQueue = [];
+    this.roomHasMartyrs = false;
+    this.roomHasTitans = false;
+    this.roomTitanQuota = 0;
+    this.roomHasMiniBoss1 = false;
+    this.roomHasWraith = false;
+
+    const specs = this._buildIntroEnemySpecs(roomIndex);
+    this.coopIntroLivingCount = specs.length;
+    this.coopWaveQuota = specs.length;
+    this.skeletonKillCount = 0;
+    this.sessionCampTypes = ['intro'];
+    this.currentCoopRoomKind = 'intro';
+
+    specs.forEach((spec, slotIndex) => {
+      const enemy = this._buildEnemy(spec.unitType, 0, slotIndex, spec.pos, spec.campDef);
+      this.enemies.set(enemy.id, enemy);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+      }
+    });
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
+        skeletonKillCount: 0,
+        required: specs.length,
+        timestamp: Date.now(),
+      });
+      this.io.to(this.roomId).emit('camps-initialized', {
+        campTypes: this.sessionCampTypes,
+        coopTerrainTheme: this.getCoopTerrainTheme(),
+        coopCurrentRoomKind: this.currentCoopRoomKind,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  _buildDeepSanctumEnemySpecs(level) {
+    const camp = (color) => GameRoom.CAMP_TYPES[color];
+    const pickColor = () => this._pickRandomCampColor();
+
+    if (level <= 4) {
+      const positions = this._generateIntroSpawnPositions(4);
+      const recipes = [
+        () => [
+          { unitType: 'weaver', campDef: camp('green'), pos: positions[0] },
+          { unitType: 'weaver', campDef: camp('blue'), pos: positions[1] },
+          { unitType: 'knight', campDef: camp(pickColor()), pos: positions[2] },
+          { unitType: 'knight', campDef: camp(pickColor()), pos: positions[3] },
+        ],
+        () => [
+          { unitType: 'knight', campDef: camp(pickColor()), pos: positions[0] },
+          { unitType: 'knight', campDef: camp(pickColor()), pos: positions[1] },
+          { unitType: 'viper', campDef: camp('green'), pos: positions[2] },
+          { unitType: 'viper', campDef: camp('blue'), pos: positions[3] },
+        ],
+        () => {
+          const greedColor = GREED_COLORS[Math.floor(Math.random() * GREED_COLORS.length)];
+          const specs = [
+            { unitType: 'greed', greedColor, pos: positions[0] },
+          ];
+          for (let i = 1; i < 4; i++) {
+            const color = pickColor();
+            specs.push({
+              unitType: this._pickBasicUnitType(camp(color)),
+              campDef: camp(color),
+              pos: positions[i],
+            });
+          }
+          return specs;
+        },
+        () => [
+          { unitType: 'warlock', campDef: camp('purple'), pos: positions[0] },
+          { unitType: 'weaver', campDef: camp('blue'), pos: positions[1] },
+          { unitType: 'weaver', campDef: camp('blue'), pos: positions[2] },
+          { unitType: 'weaver', campDef: camp('blue'), pos: positions[3] },
+        ],
+        () => [
+          { unitType: 'knight', campDef: camp(pickColor()), pos: positions[0] },
+          { unitType: 'warlock', campDef: camp('red'), pos: positions[1] },
+          { unitType: 'warlock', campDef: camp('red'), pos: positions[2] },
+          { unitType: 'warlock', campDef: camp('red'), pos: positions[3] },
+        ],
+        () => [
+          { unitType: 'templar', campDef: camp('red'), pos: positions[0] },
+          { unitType: 'templar', campDef: camp('purple'), pos: positions[1] },
+          { unitType: 'shade', campDef: camp(pickColor()), pos: positions[2] },
+          { unitType: 'shade', campDef: camp(pickColor()), pos: positions[3] },
+        ],
+      ];
+      return recipes[Math.floor(Math.random() * recipes.length)]();
+    }
+
+    const positions = this._generateIntroSpawnPositions(3);
+    const pairTypes = ['viper', 'shade', 'templar', 'weaver', 'warlock', 'knight'];
+    const pairType = pairTypes[Math.floor(Math.random() * pairTypes.length)];
+    const titanCamp = camp(pickColor());
+    const pairCamp = pairType === 'viper'
+      ? (i) => camp(i % 2 === 0 ? 'green' : 'blue')
+      : pairType === 'warlock'
+        ? (i) => camp(i % 2 === 0 ? 'red' : 'purple')
+        : pairType === 'weaver'
+          ? (i) => camp(i % 2 === 0 ? 'green' : 'blue')
+          : pairType === 'templar'
+            ? (i) => camp(i % 2 === 0 ? 'red' : 'purple')
+            : () => camp(pickColor());
+
+    return [
+      { unitType: 'titan', campDef: titanCamp, pos: positions[0] },
+      { unitType: pairType, campDef: pairCamp(0), pos: positions[1] },
+      { unitType: pairType, campDef: pairCamp(1), pos: positions[2] },
+    ];
+  }
+
+  spawnDeepSanctumWave(level) {
+    this.coopWaveSpawnPlan = null;
+    this.coopRequiredQueue = [];
+    this.roomHasMartyrs = false;
+    this.roomHasTitans = false;
+    this.roomTitanQuota = 0;
+    this.roomHasMiniBoss1 = false;
+    this.roomHasWraith = false;
+
+    const specs = this._buildDeepSanctumEnemySpecs(level);
+    this.coopDeepSanctumLivingCount = specs.length;
+    this.coopWaveQuota = specs.length;
+    this.skeletonKillCount = 0;
+    this.sessionCampTypes = ['deep_sanctum'];
+    this.currentCoopRoomKind = 'deep_sanctum';
+
+    specs.forEach((spec, slotIndex) => {
+      let enemy;
+      if (spec.unitType === 'greed') {
+        enemy = this._buildGreedEnemy(spec.greedColor, spec.pos);
+        enemy._deepSanctumRequired = true;
+      } else {
+        enemy = this._buildEnemy(spec.unitType, 0, slotIndex, spec.pos, spec.campDef);
+      }
+      this.enemies.set(enemy.id, enemy);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+      }
+    });
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
+        skeletonKillCount: 0,
+        required: specs.length,
+        timestamp: Date.now(),
+      });
+      this.io.to(this.roomId).emit('camps-initialized', {
+        campTypes: this.sessionCampTypes,
+        coopTerrainTheme: this.getCoopTerrainTheme(),
+        coopCurrentRoomKind: this.currentCoopRoomKind,
+        timestamp: Date.now(),
+      });
+    }
+    this.startEnemyAI();
+  }
+
+  _registerDeepSanctumKill(emojiLog) {
+    if (!this.coopDeepSanctumActive || this.bossSpawned) return;
+    this.skeletonKillCount += 1;
+    const killTarget = this.coopDeepSanctumLivingCount || this.coopWaveQuota || 1;
+    console.log(`${emojiLog} (deep sanctum ${this.coopDeepSanctumLevel}: ${this.skeletonKillCount}/${killTarget})`);
+    if (this.io) {
+      this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
+        skeletonKillCount: this.skeletonKillCount,
+        required: killTarget,
+        timestamp: Date.now(),
+      });
+    }
+    if (this.skeletonKillCount >= killTarget) {
+      this._onDeepSanctumCleared();
+    }
+  }
+
+  _onDeepSanctumCleared() {
+    this._clearAllCombatEnemies();
+    this.skeletonKillCount = 0;
+    this.clearedCoopRoomKind = 'deep_sanctum';
+    this.sessionCampTypes = [];
+    this.coopDeepSanctumRewardKind = this._rollDeepSanctumRewardKind();
+    this._emitDeepSanctumIntermission();
+    console.log(`✨ Deep sanctum ${this.coopDeepSanctumLevel} cleared — reward: ${this.coopDeepSanctumRewardKind}`);
+  }
+
+  _emitDeepSanctumIntermission(extra = {}) {
+    if (!this.io) return;
+    this.io.to(this.roomId).emit('coop-deep-sanctum-intermission', {
+      combatArenaActive: true,
+      coopCurrentRoomKind: this.currentCoopRoomKind,
+      coopClearedRoomKind: this.clearedCoopRoomKind,
+      coopMainArenaPortalPhase: null,
+      coopBossThroneArena: false,
+      coopThroneBossKind: null,
+      coopTerrainTheme: this.getCoopTerrainTheme(),
+      merchantInventory: this.getMerchantInventory(),
+      players: this.getPlayers(),
+      enemies: this.getEnemies(),
+      ...this._getDeepSanctumPayloadFields(),
+      ...extra,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Enter a deep sanctum (Inner Sanctum IV+) from the main-loop void portal.
+   * @returns {boolean}
+   */
+  beginDeepSanctumRoom() {
+    if (!this.gameStarted || this.gameMode !== 'coop' || !this.combatArenaActive) return false;
+    const phase = this.coopMainArenaPortalPhase;
+    if (!phase || !['pick_wave2', 'pick_pre_boss', 'pick_post_boss'].includes(phase)) return false;
+    if (!this.coopVoidPortalOffered) return false;
+
+    this.coopSavedPortalPhase = phase;
+    if (this.coopDeepSanctumLevel < COOP_DEEP_SANCTUM_START_LEVEL) {
+      this.coopDeepSanctumLevel = COOP_DEEP_SANCTUM_START_LEVEL;
+    } else {
+      this.coopDeepSanctumLevel += 1;
+    }
+
+    this.coopVoidPortalOffered = false;
+    this.coopDeepSanctumActive = true;
+    this.coopDeepSanctumRewardKind = null;
+    this.thronePortalOffer = [];
+    this.coopMainArenaPortalPhase = null;
+    this.coopBossThroneArena = false;
+    this.coopThroneBossKind = null;
+    this.currentCoopRoomKind = 'deep_sanctum';
+    this.clearedCoopRoomKind = null;
+    this.combatArenaActive = true;
+    this.skeletonKillCount = 0;
+    this.bossSpawned = false;
+    this.merchantInventory = [];
+    this._resetMushroomState();
+
+    const coopCombatTransitionId = this._beginCoopCombatTransition({ spawnInitialWave: true });
+    this.teleportAllPlayersToIntroSpawn();
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('combat-arena-entered', {
+        players: this.getPlayers(),
+        coopBossThroneArena: false,
+        coopThroneBossKind: null,
+        coopTerrainTheme: this.getCoopTerrainTheme(),
+        coopCurrentRoomKind: this.currentCoopRoomKind,
+        coopClearedRoomKind: null,
+        merchantInventory: this.getMerchantInventory(),
+        coopColoredRoomVisitIndex: null,
+        coopBossRoomVisitIndex: null,
+        coopCombatTransitionId,
+        coopRoomEntryToken: this.coopRoomEntryToken,
+        mushroomState: this.getMushroomState(),
+        ...this._getDeepSanctumPayloadFields(),
+        timestamp: Date.now(),
+      });
+    }
+    return true;
+  }
+
+  /**
+   * Client claimed the deep sanctum pedestal reward — grant gold server-side, resume main loop.
+   * @param {string} playerId
+   * @returns {boolean}
+   */
+  claimDeepSanctumReward(playerId) {
+    if (!this.coopDeepSanctumActive || !this.coopDeepSanctumRewardKind) return false;
+    if (!this.players.get(playerId)) return false;
+
+    let goldGranted = 0;
+    if (this.coopDeepSanctumRewardKind === 'gold') {
+      goldGranted = COOP_DEEP_SANCTUM_GOLD_MIN
+        + Math.floor(Math.random() * (COOP_DEEP_SANCTUM_GOLD_MAX - COOP_DEEP_SANCTUM_GOLD_MIN + 1));
+      for (const player of this.players.values()) {
+        player.gold = (player.gold || 0) + goldGranted;
+        if (this.io) {
+          this.io.to(this.roomId).emit('player-gold-changed', {
+            playerId: player.id,
+            gold: player.gold,
+            timestamp: Date.now(),
+          });
+        }
+      }
+    }
+
+    const savedPhase = this.coopSavedPortalPhase;
+    const rewardKind = this.coopDeepSanctumRewardKind;
+    this.coopSavedPortalPhase = null;
+    this.coopDeepSanctumActive = false;
+    this.coopDeepSanctumRewardKind = null;
+    this.coopDeepSanctumLivingCount = 0;
+    this.currentCoopRoomKind = null;
+    this.clearedCoopRoomKind = null;
+    this.sessionCampTypes = [];
+    this.skeletonKillCount = 0;
+    this._resetMushroomState();
+
+    this.teleportAllPlayersToCombatSpawn();
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('coop-deep-sanctum-reward-claimed', {
+        rewardKind,
+        goldGranted,
+        deepSanctumStatPoints: COOP_DEEP_SANCTUM_STAT_POINTS,
+        timestamp: Date.now(),
+      });
+    }
+
+    if (savedPhase === 'pick_pre_boss') {
+      this.startMainArenaPortalIntermission('pre_boss_gate');
+    } else {
+      this.coopSegmentCombatRoomsCleared += 1;
+      const required = this._getCoopRoomsRequiredBeforeBoss();
+      if (this.coopSegmentCombatRoomsCleared >= required) {
+        this.startMainArenaPortalIntermission('pre_boss_gate');
+      } else {
+        this.startMainArenaPortalIntermission('second_wave');
+      }
+    }
+
+    return true;
+  }
+
+  teleportAllPlayersToIntroSpawn() {
+    if (this.gameMode === 'coop') {
+      this.coopRoomEntryToken += 1;
+      this.coopPostTeleportPositionGuardUntil = Date.now() + COOP_POST_TELEPORT_POSITION_GUARD_MS;
+    }
+    const spawnBaseX = CASTLE_ROOM_ENTRY_X;
+    const spawnBaseZ = CASTLE_ROOM_ENTRY_Z;
+    const totalPlayers = Math.max(this.players.size, 1);
+    let idx = 0;
+    for (const player of this.players.values()) {
+      const angleStep = (Math.PI * 2) / Math.max(3, totalPlayers);
+      const angle = idx * angleStep;
+      const spawnRadius = 1.25;
+      const rawX = spawnBaseX + Math.sin(angle) * spawnRadius;
+      const rawZ = spawnBaseZ + Math.cos(angle) * spawnRadius;
+      const c = clampPositionToCastleRoomXZ(rawX, rawZ);
+      player.position = { x: c.x, y: 1, z: c.z };
+      const y = rotationYTowardArenaCenter(c.x, c.z);
+      player.rotation = { x: 0, y, z: 0 };
+      idx++;
+    }
+  }
+
+  /**
+   * Enter an introductory castle room (1–3). Called from throne void portal or post-clear void portal.
+   * @param {1|2|3} roomIndex
+   * @returns {boolean}
+   */
+  beginIntroRoom(roomIndex) {
+    if (!this.gameStarted || this.gameMode !== 'coop') return false;
+    const n = Number(roomIndex);
+    if (!Number.isFinite(n) || n < 1 || n > 3) return false;
+
+    if (n === 1) {
+      if (this.combatArenaActive || !this.coopIntroPending) return false;
+      for (const player of this.players.values()) {
+        if (!this._playerThronePrepReady(player)) return false;
+      }
+    } else {
+      if (!this.coopIntroActive || !this.coopIntroPortalOpen || this.coopIntroRoomIndex !== n - 1) {
+        return false;
+      }
+    }
+
+    this.removeThroneTrainingDummy();
+    this._clearAllCombatEnemies();
+    this.coopIntroPending = false;
+    this.coopIntroActive = true;
+    this.coopIntroRoomIndex = n;
+    this.coopIntroPortalOpen = false;
+    this.coopIntroFountainPhase = false;
+    this.coopIntroFountainUsed = false;
+    this.thronePortalOffer = [];
+    this.coopMainArenaPortalPhase = null;
+    this.coopBossThroneArena = false;
+    this.coopThroneBossKind = null;
+    this.currentCoopRoomKind = 'intro';
+    this.clearedCoopRoomKind = null;
+    this.combatArenaActive = true;
+    this.skeletonKillCount = 0;
+    this.bossSpawned = false;
+    this.merchantInventory = [];
+    this._resetMushroomState();
+
+    const coopCombatTransitionId = this._beginCoopCombatTransition({ spawnInitialWave: true });
+    this.teleportAllPlayersToIntroSpawn();
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('combat-arena-entered', {
+        players: this.getPlayers(),
+        coopBossThroneArena: false,
+        coopThroneBossKind: null,
+        coopTerrainTheme: this.getCoopTerrainTheme(),
+        coopCurrentRoomKind: this.currentCoopRoomKind,
+        coopClearedRoomKind: null,
+        merchantInventory: this.getMerchantInventory(),
+        coopColoredRoomVisitIndex: null,
+        coopBossRoomVisitIndex: null,
+        coopCombatTransitionId,
+        coopRoomEntryToken: this.coopRoomEntryToken,
+        mushroomState: this.getMushroomState(),
+        ...this._getIntroPayloadFields(),
+        timestamp: Date.now(),
+      });
+    }
+    return true;
+  }
+
+  _registerIntroKill(emojiLog) {
+    if (!this.coopIntroActive || this.bossSpawned) return;
+    this.skeletonKillCount += 1;
+    const killTarget = this.coopIntroLivingCount || this.coopWaveQuota || 1;
+    console.log(`${emojiLog} (intro ${this.coopIntroRoomIndex}: ${this.skeletonKillCount}/${killTarget})`);
+    if (this.io) {
+      this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
+        skeletonKillCount: this.skeletonKillCount,
+        required: killTarget,
+        timestamp: Date.now(),
+      });
+    }
+    if (this.skeletonKillCount >= killTarget) {
+      this._onIntroRoomCleared(this.coopIntroRoomIndex);
+    }
+  }
+
+  _awardIntroRoomGold(roomIndex) {
+    const gold = COOP_INTRO_ROOM_GOLD[roomIndex - 1] || 0;
+    if (gold <= 0) return gold;
+    for (const player of this.players.values()) {
+      player.gold = (player.gold || 0) + gold;
+      if (this.io) {
+        this.io.to(this.roomId).emit('player-gold-changed', {
+          playerId: player.id,
+          gold: player.gold,
+          timestamp: Date.now(),
+        });
+      }
+    }
+    return gold;
+  }
+
+  _emitIntroIntermission(extra = {}) {
+    if (!this.io) return;
+    this.io.to(this.roomId).emit('coop-intro-intermission', {
+      combatArenaActive: true,
+      coopCurrentRoomKind: this.currentCoopRoomKind,
+      coopClearedRoomKind: this.clearedCoopRoomKind,
+      thronePortalOffer: [...this.thronePortalOffer],
+      coopMainArenaPortalPhase: this.coopMainArenaPortalPhase,
+      coopBossThroneArena: false,
+      coopThroneBossKind: null,
+      coopTerrainTheme: this.getCoopTerrainTheme(),
+      merchantInventory: this.getMerchantInventory(),
+      players: this.getPlayers(),
+      enemies: this.getEnemies(),
+      ...this._getIntroPayloadFields(),
+      ...extra,
+      timestamp: Date.now(),
+    });
+  }
+
+  _onIntroRoomCleared(roomIndex) {
+    const goldAmount = this._awardIntroRoomGold(roomIndex);
+    this._clearAllCombatEnemies();
+    this.skeletonKillCount = 0;
+    this.clearedCoopRoomKind = 'intro';
+    this.sessionCampTypes = [];
+
+    if (roomIndex < 3) {
+      this.coopIntroPortalOpen = true;
+      this._emitIntroIntermission({ introGoldReward: goldAmount, fountainPhase: false });
+      console.log(`✨ Intro room ${roomIndex} cleared (+${goldAmount} gold) — void portal open.`);
+      return;
+    }
+
+    this.coopIntroPortalOpen = false;
+    this.coopIntroFountainPhase = true;
+    this.coopIntroFountainUsed = false;
+    this._pickThronePortalOffer();
+    this._emitIntroIntermission({ introGoldReward: goldAmount, fountainPhase: true });
+    console.log(`✨ Intro room 3 cleared (+${goldAmount} gold) — fountain + portal choice.`);
+  }
+
+  /** Heal all players +50 HP and unlock the dual colored portals after intro room 3. */
+  useCoopFountain(playerId) {
+    if (!this.coopIntroFountainPhase || this.coopIntroFountainUsed) return false;
+    const trigger = this.players.get(playerId);
+    if (!trigger) return false;
+
+    for (const player of this.players.values()) {
+      const previousHealth = player.health;
+      const nextHealth = Math.min(player.maxHealth, previousHealth + COOP_INTRO_FOUNTAIN_HEAL);
+      const actualHealingAmount = nextHealth - previousHealth;
+      if (actualHealingAmount <= 0) continue;
+      this.updatePlayerHealth(player.id, nextHealth);
+      const position = player.position || { x: 0, y: 0, z: 0 };
+      if (this.io) {
+        this.io.to(this.roomId).emit('player-health-updated', {
+          playerId: player.id,
+          health: player.health,
+          maxHealth: player.maxHealth,
+          timestamp: Date.now(),
+        });
+        this.io.to(this.roomId).emit('player-healing', {
+          sourcePlayerId: playerId,
+          targetPlayerId: player.id,
+          healingAmount: actualHealingAmount,
+          healingType: 'fountain',
+          position,
+          timestamp: Date.now(),
+        });
+      }
+    }
+
+    this.coopIntroFountainUsed = true;
+    this._emitIntroIntermission({ fountainUsed: true });
+    return true;
+  }
+
+  /**
+   * After intro sequence: enter the first normal colored room and resume the standard loop.
+   * @param {string} chosenCampType
+   * @returns {boolean}
+   */
+  enterFirstNormalRoomAfterIntro(chosenCampType) {
+    if (!this.coopIntroFountainPhase || !this.coopIntroFountainUsed) return false;
+    const offer = this.thronePortalOffer;
+    if (!offer || offer.length !== 2) return false;
+
+    let pick = chosenCampType != null ? String(chosenCampType).toLowerCase() : '';
+    if (!pick || !offer.includes(pick)) pick = offer[0];
+    if (!GameRoom.CAMP_TYPES[pick]) return false;
+
+    this.coopIntroActive = false;
+    this.coopIntroPending = false;
+    this.coopIntroFountainPhase = false;
+    this.coopIntroPortalOpen = false;
+    this.coopIntroFountainUsed = false;
+    this.coopIntroRoomIndex = 0;
+    this.coopIntroLivingCount = 0;
+    this.coopSegmentCombatRoomsCleared = 0;
+    this._clearPreBossSequenceState();
+
+    this.pendingCoopArchetype = pick;
+    this.pendingCoopRoomKind = pick;
+    this.currentCoopRoomKind = pick;
+    this.clearedCoopRoomKind = null;
+    this._bumpColoredRoomVisit(pick);
+    this._resetCoopRoomWhisperForEntry(pick);
+    this.thronePortalOffer = [];
+    this.coopMainArenaPortalPhase = null;
+    this.merchantInventory = [];
+    this._resetMushroomState();
+    this.skeletonKillCount = 0;
+
+    const coopCombatTransitionId = this._beginCoopCombatTransition({ spawnInitialWave: true });
+    this.teleportAllPlayersToCombatSpawn();
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('combat-arena-entered', {
+        players: this.getPlayers(),
+        coopBossThroneArena: false,
+        coopThroneBossKind: null,
+        coopTerrainTheme: this.getCoopTerrainTheme(),
+        coopCurrentRoomKind: this.currentCoopRoomKind,
+        coopClearedRoomKind: null,
+        merchantInventory: this.getMerchantInventory(),
+        coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
+        coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
+        coopCombatTransitionId,
+        coopRoomEntryToken: this.coopRoomEntryToken,
+        mushroomState: this.getMushroomState(),
+        ...this._getIntroPayloadFields(),
+        timestamp: Date.now(),
+      });
+    }
+    return true;
   }
 
   _normalizeCoopRoomKind(value) {
@@ -1405,9 +2243,9 @@ class GameRoom {
   }
 
   /**
-   * After clearing a main-map combat room: dual portals until the segment quota is met, then a boss portal.
+   * After clearing a main-map combat room: dual portals until the segment quota is met, then pre-boss Trial/Stat.
    * Colored/stat/trial rooms count; merchant (pink) never does. Quota is 3, or 4 after Boss 2.
-   * @param {'second_wave'|'boss_gate'} phase
+   * @param {'second_wave'|'pre_boss_gate'|'boss_gate'} phase
    */
   startMainArenaPortalIntermission(phase) {
     this._clearAllCombatEnemies();
@@ -1428,6 +2266,12 @@ class GameRoom {
     if (phase === 'second_wave') {
       this._pickPostFirstRoomPortalOffer();
       this.coopMainArenaPortalPhase = 'pick_wave2';
+      this._maybeOfferVoidPortal();
+    } else if (phase === 'pre_boss_gate') {
+      this._pickPreBossPortalOffer();
+      this.coopMainArenaPortalPhase = 'pick_pre_boss';
+      this.coopPreBossSequenceActive = true;
+      this._maybeOfferVoidPortal();
     } else {
       this.thronePortalOffer = ['boss'];
       this.coopMainArenaPortalPhase = 'pick_boss';
@@ -1447,23 +2291,137 @@ class GameRoom {
         merchantInventory: this.getMerchantInventory(),
         players: this.getPlayers(),
         enemies: this.getEnemies(),
+        ...this._getDeepSanctumPayloadFields(),
         timestamp: Date.now(),
       });
     }
   }
 
   _onCoopWaveThresholdMet() {
+    if (this.coopInPreBossSpecialRoom) {
+      this._onPreBossSpecialRoomCleared();
+      return;
+    }
+
     this.coopSegmentCombatRoomsCleared += 1;
     const required = this._getCoopRoomsRequiredBeforeBoss();
     if (this.coopSegmentCombatRoomsCleared >= required) {
-      console.log(`🌀 Segment complete (${required} combat rooms cleared) — main arena: boss portal.`);
-      this.startMainArenaPortalIntermission('boss_gate');
+      console.log(`🌀 Segment complete (${required} combat rooms cleared) — pre-boss Trial/Stat choice.`);
+      this.startMainArenaPortalIntermission('pre_boss_gate');
     } else {
       console.log(
         `🌀 Combat room ${this.coopSegmentCombatRoomsCleared}/${required} cleared — choose next room (center portals).`,
       );
       this.startMainArenaPortalIntermission('second_wave');
     }
+  }
+
+  /** Pre-boss Trial/Stat room cleared — reward pedestal only; merchant follows after claim + delay. */
+  _onPreBossSpecialRoomCleared() {
+    this.coopInPreBossSpecialRoom = false;
+    this._clearAllCombatEnemies();
+    this.skeletonKillCount = 0;
+    this.pendingCoopArchetype = null;
+    this.pendingCoopRoomKind = null;
+    this.sessionCampTypes = [];
+    this.combatArenaActive = true;
+    this.coopBossThroneArena = false;
+    this.coopThroneBossKind = null;
+    this.clearedCoopRoomKind = this.currentCoopRoomKind;
+    this.thronePortalOffer = [];
+    this.coopMainArenaPortalPhase = 'pre_boss_reward';
+    this._preBossRewardClaimScheduled = false;
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('coop-main-arena-intermission', {
+        combatArenaActive: true,
+        thronePortalOffer: [],
+        coopMainArenaPortalPhase: this.coopMainArenaPortalPhase,
+        coopBossThroneArena: false,
+        coopThroneBossKind: null,
+        coopTerrainTheme: this.getCoopTerrainTheme(),
+        coopClearedRoomColor: null,
+        coopCurrentRoomKind: this.currentCoopRoomKind,
+        coopClearedRoomKind: this.clearedCoopRoomKind,
+        merchantInventory: this.getMerchantInventory(),
+        players: this.getPlayers(),
+        enemies: this.getEnemies(),
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  /**
+   * Client claimed the pre-boss Trial/Stat pedestal reward — schedule in-place merchant after 5s.
+   * @param {string} _playerId
+   * @returns {boolean}
+   */
+  claimPreBossReward(_playerId) {
+    if (!this.gameStarted || this.gameMode !== 'coop' || !this.combatArenaActive) return false;
+    if (!this.coopPreBossSequenceActive) return false;
+    if (this.coopMainArenaPortalPhase !== 'pre_boss_reward') return false;
+    if (this._preBossRewardClaimScheduled) return true;
+
+    this._preBossRewardClaimScheduled = true;
+    this._scheduleTimeout(() => {
+      if (!this.gameStarted || this.gameMode !== 'coop' || !this.combatArenaActive) return;
+      if (!this.coopPreBossSequenceActive) return;
+      if (this.coopMainArenaPortalPhase !== 'pre_boss_reward') return;
+      this._beginInPlacePreBossMerchant();
+    }, COOP_PRE_BOSS_REWARD_TO_MERCHANT_MS);
+    return true;
+  }
+
+  /** Swap the hex arena to merchant in place — no teleport or combat-arena-entered. */
+  _beginInPlacePreBossMerchant() {
+    this._clearAllCombatEnemies();
+    this.skeletonKillCount = 0;
+    this.pendingCoopArchetype = null;
+    this.pendingCoopRoomKind = null;
+    this.sessionCampTypes = [];
+    this.combatArenaActive = true;
+    this.coopBossThroneArena = false;
+    this.coopThroneBossKind = null;
+    this.currentCoopRoomKind = 'merchant';
+    this.clearedCoopRoomKind = 'merchant';
+    this.thronePortalOffer = ['boss'];
+    this.coopMainArenaPortalPhase = 'pre_boss_merchant';
+    this.generateMerchantInventory();
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('coop-main-arena-intermission', {
+        combatArenaActive: true,
+        thronePortalOffer: [...this.thronePortalOffer],
+        coopMainArenaPortalPhase: this.coopMainArenaPortalPhase,
+        coopBossThroneArena: false,
+        coopThroneBossKind: null,
+        coopTerrainTheme: this.getCoopTerrainTheme(),
+        coopClearedRoomColor: null,
+        coopCurrentRoomKind: this.currentCoopRoomKind,
+        coopClearedRoomKind: this.clearedCoopRoomKind,
+        merchantInventory: this.getMerchantInventory(),
+        players: this.getPlayers(),
+        enemies: this.getEnemies(),
+        timestamp: Date.now(),
+      });
+    }
+    this._emitMerchantNpcGreet('arrival');
+    this._maybeSpawnGreedInMerchantRoom();
+  }
+
+  /**
+   * Client finished the pre-boss merchant transaction — reveal the boss portal in place.
+   * @param {string} _playerId
+   * @returns {boolean}
+   */
+  finishPreBossMerchant(_playerId) {
+    if (!this.gameStarted || this.gameMode !== 'coop' || !this.combatArenaActive) return false;
+    if (!this.coopPreBossSequenceActive) return false;
+    if (this.coopMainArenaPortalPhase !== 'pre_boss_merchant') return false;
+
+    this._clearPreBossSequenceState();
+    this.startMainArenaPortalIntermission('boss_gate');
+    return true;
   }
 
   /**
@@ -1474,6 +2432,14 @@ class GameRoom {
    */
   _registerCoopWaveKill(emojiLog) {
     if (this.gameMode !== 'coop' || !this.combatArenaActive || this.bossSpawned) return;
+    if (this.coopDeepSanctumActive) {
+      this._registerDeepSanctumKill(emojiLog);
+      return;
+    }
+    if (this.coopIntroActive) {
+      this._registerIntroKill(emojiLog);
+      return;
+    }
     if (!this._isCountableCoopCombatRoom(this.currentCoopRoomKind)) return;
 
     this.skeletonKillCount++;
@@ -1780,17 +2746,24 @@ class GameRoom {
       return false;
     }
 
-    if (phase === 'pick_wave2') {
+    if (phase === 'pick_pre_boss' || phase === 'pick_wave2') {
       const offer = this.thronePortalOffer;
       if (!offer || offer.length !== 2) {
         return false;
       }
       let pick = chosenCampType != null ? String(chosenCampType).toLowerCase() : '';
+      if (pick === 'void') {
+        if (!this.coopVoidPortalOffered) return false;
+        return this.beginDeepSanctumRoom();
+      }
       if (!pick || !offer.includes(pick)) {
         pick = offer[0];
       }
       const roomKind = this._normalizeCoopRoomKind(pick);
       if (!roomKind || roomKind === 'boss') {
+        return false;
+      }
+      if (phase === 'pick_pre_boss' && !COOP_PRE_BOSS_SPECIAL_TYPES.includes(roomKind)) {
         return false;
       }
       this.pendingCoopArchetype = GameRoom.CAMP_TYPES[roomKind] ? roomKind : null;
@@ -1803,6 +2776,9 @@ class GameRoom {
       this.coopMainArenaPortalPhase = null;
       this.skeletonKillCount = 0;
       this._resetMushroomState();
+      if (phase === 'pick_pre_boss') {
+        this.coopInPreBossSpecialRoom = true;
+      }
       const coopCombatTransitionId = roomKind === 'merchant'
         ? null
         : this._beginCoopCombatTransition({ spawnInitialWave: true });
@@ -1839,13 +2815,16 @@ class GameRoom {
       return true;
     }
 
-    if (phase === 'pick_boss') {
+    if (phase === 'pick_boss' || phase === 'pre_boss_merchant') {
       const offer = this.thronePortalOffer;
       if (!offer || offer.length !== 1 || String(offer[0]).toLowerCase() !== 'boss') {
         return false;
       }
       if (String(chosenCampType != null ? chosenCampType : 'boss').toLowerCase() !== 'boss') {
         return false;
+      }
+      if (phase === 'pre_boss_merchant') {
+        this._clearPreBossSequenceState();
       }
       this.thronePortalOffer = [];
       this.coopMainArenaPortalPhase = null;
@@ -1902,6 +2881,10 @@ class GameRoom {
         return false;
       }
       let pick = chosenCampType != null ? String(chosenCampType).toLowerCase() : '';
+      if (pick === 'void') {
+        if (!this.coopVoidPortalOffered) return false;
+        return this.beginDeepSanctumRoom();
+      }
       if (!pick || !offer.includes(pick)) {
         pick = offer[0];
       }
@@ -1966,6 +2949,7 @@ class GameRoom {
       this.bossSpawned = false;
       this.skeletonKillCount = 0;
       this.coopSegmentCombatRoomsCleared = 0;
+      this._clearPreBossSequenceState();
       this.pendingCoopArchetype = null;
       this.pendingCoopRoomKind = null;
       this.clearedCoopRoomKind = 'boss';
@@ -1978,6 +2962,7 @@ class GameRoom {
 
       this._pickThronePortalOffer();
       this.coopMainArenaPortalPhase = 'pick_post_boss';
+      this._maybeOfferVoidPortal();
 
       if (this.io) {
         this.io.to(this.roomId).emit('coop-main-arena-intermission', {
@@ -1993,6 +2978,7 @@ class GameRoom {
           merchantInventory: this.getMerchantInventory(),
           players: this.getPlayers(),
           enemies: this.getEnemies(),
+          ...this._getDeepSanctumPayloadFields(),
           timestamp: Date.now(),
         });
       }
@@ -2178,6 +3164,7 @@ class GameRoom {
     this.coopBossThroneArena = false;
     this.coopThroneBossKind = null;
     this._postBossIntermissionScheduled = false;
+    this._clearPreBossSequenceState();
     this.coopSegmentCombatRoomsCleared = 0;
     this.coopBossesDefeatedCount = 0;
     this.coopWaveSpawnPlan = null;
@@ -2849,7 +3836,13 @@ class GameRoom {
     if (!this.gameStarted) return;
 
     if (this.gameMode === 'coop') {
-      this.initializeEnemies();
+      if (this.coopDeepSanctumActive) {
+        this.spawnDeepSanctumWave(this.coopDeepSanctumLevel);
+      } else if (this.coopIntroActive && this.coopIntroRoomIndex > 0) {
+        this.spawnIntroWave(this.coopIntroRoomIndex);
+      } else {
+        this.initializeEnemies();
+      }
       this.spawnOrReviveAlliedUnitsForEnemyRoom();
       if (this.enemyAI?.clearNonPlayerAggroTargets) {
         this.enemyAI.clearNonPlayerAggroTargets();
@@ -2948,15 +3941,15 @@ class GameRoom {
     if (type === 'wraith') {
       return { id: `wraith-${campIndex}-${slotIndex}-${ts}`, type: 'wraith', ...base,
         health: 800 + hpBonus, maxHealth: 800 + hpBonus,
-        damage: 0, moveSpeed: 2.5, soulType: 'orange' };
+        damage: 0, moveSpeed: 2.75, soulType: 'orange' };
     }
     if (type === 'titan') {
       // Excluded from HP scaling.
       const TITAN_STATS_BY_SOUL = {
-        blue:   { health: 4000, maxHealth: 3500, damage: 148 },
-        red:    { health: 4500, maxHealth: 4000, damage: 134 },
-        green:  { health: 5000, maxHealth: 5000, damage: 100 },
-        purple: { health: 3500, maxHealth: 3000, damage: 166 },
+        blue:   { health: 4000, maxHealth: 3500, damage: 134 },
+        red:    { health: 4500, maxHealth: 4000, damage: 126 },
+        green:  { health: 5000, maxHealth: 5000, damage: 112 },
+        purple: { health: 3500, maxHealth: 3000, damage: 148 },
       };
       const soulType = this._resolveTitanSoulType(campDef);
       const stats = TITAN_STATS_BY_SOUL[soulType];
@@ -5300,6 +6293,9 @@ class GameRoom {
         return result;
 
       } else if (enemy.type === 'greed') {
+        if (this.coopDeepSanctumActive && enemy._deepSanctumRequired) {
+          this._registerDeepSanctumKill('💰 Greed killed');
+        }
         // Bonus enemy: gold stacks only, no EXP, never counts toward the room's kill quota.
         this._spawnGreedGoldDrops(enemy);
         if (this.enemyAI) {
@@ -6497,6 +7493,7 @@ class GameRoom {
     this.coopBossThroneArena = false;
     this.coopThroneBossKind = null;
     this._postBossIntermissionScheduled = false;
+    this._clearPreBossSequenceState();
     this.coopSegmentCombatRoomsCleared = 0;
     this.coopBossesDefeatedCount = 0;
     this.coopWaveSpawnPlan = null;
@@ -6564,13 +7561,11 @@ class GameRoom {
     return normalized;
   }
 
-  /** True when a co-op player has chosen a weapon and archetype in the throne prep room. */
+  /** True when a co-op player has chosen a weapon in the throne prep room. */
   _playerThronePrepReady(player) {
     if (!player) return false;
     const weapon = player.weapon != null ? String(player.weapon).toLowerCase() : 'none';
-    if (!weapon || weapon === 'none') return false;
-    const archetype = player.archetype != null ? String(player.archetype).toUpperCase() : 'NONE';
-    return archetype !== 'NONE';
+    return !!(weapon && weapon !== 'none');
   }
 
   updatePlayerHealth(playerId, health) {

@@ -20,11 +20,18 @@ export const REWARD_ANNOUNCEMENT_COLORS = {
   unlocked: '#c084fc',
 } as const;
 
+export const INTRO_ROOM_GOLD_REWARDS = [50, 75, 100] as const;
+export const DEEP_SANCTUM_STAT_POINTS = 8;
+export const DEEP_SANCTUM_GOLD_MIN = 150;
+
 export const GUIDE_ANNOUNCEMENTS = {
   chooseWeapon: { title: 'CHOOSE YOUR WEAPON', color: '#eab308' },
   enterPortal: { title: 'ENTER A PORTAL', color: '#eab308' },
+  descendPortal: { title: 'DESCEND', color: '#c084fc' },
+  drinkFountain: { title: 'DRINK FROM THE FOUNTAIN', color: '#22d3ee' },
   claimReward: { title: 'CLAIM YOUR REWARD', color: '#94a3b8' },
   chooseGateway: { title: 'CHOOSE A GATEWAY', color: '#94a3b8' },
+  descendVoid: { title: 'DESCEND', color: '#c084fc' },
 } as const;
 
 export const LEVEL_UP_ANNOUNCEMENT = { title: 'LEVEL UP', color: '#eab308' } as const;
@@ -60,6 +67,7 @@ const ROOM_TITLE_COLORS = {
   green: '#22c55e',
   purple: '#6c3dff',
   boss: '#dc2626',
+  intro: '#f5e6b8',
 } as const;
 
 const COLORED_HALL_BASE: Record<'red' | 'blue' | 'green' | 'purple', string> = {
@@ -114,7 +122,7 @@ export function buildRoomTitleAnnouncement(
 
   if (kind === 'merchant') {
     return {
-      title: 'MERCHANT',
+      title: 'CRYPT',
       color: ROOM_TITLE_COLORS.merchant,
       glowColor: ROOM_TITLE_COLORS.merchant,
     };
@@ -142,6 +150,24 @@ export function buildRoomTitleAnnouncement(
       title: `CHAMBER OF DEATH ${toRomanNumeral(index)}`,
       color: ROOM_TITLE_COLORS.boss,
       glowColor: ROOM_TITLE_COLORS.boss,
+    };
+  }
+
+  if (kind === 'intro') {
+    const index = visitIndex != null && visitIndex > 0 ? visitIndex : 1;
+    return {
+      title: `INNER SANCTUM ${toRomanNumeral(index)}`,
+      color: ROOM_TITLE_COLORS.intro,
+      glowColor: ROOM_TITLE_COLORS.intro,
+    };
+  }
+
+  if (kind === 'deep_sanctum') {
+    const index = visitIndex != null && visitIndex > 0 ? visitIndex : 4;
+    return {
+      title: `INNER SANCTUM ${toRomanNumeral(index)}`,
+      color: ROOM_TITLE_COLORS.intro,
+      glowColor: ROOM_TITLE_COLORS.intro,
     };
   }
 

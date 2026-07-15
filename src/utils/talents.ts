@@ -326,15 +326,21 @@ export const AEGIS_ROOM_DURATION_SEC = 3;
 export const MANA_SHIELD_RESTORE_PER_INTELLECT = 2;
 
 /** Shift-tap Deflect — cooldown between activations (seconds). */
-export const DEFLECT_SHIFT_COOLDOWN_SEC = 1.25;
+export const DEFLECT_SHIFT_COOLDOWN_SEC = 1.6;
 /** Shift-tap Deflect — invulnerability + block duration (seconds). */
-export const DEFLECT_SHIFT_DURATION_SEC = 1.0;
+export const DEFLECT_SHIFT_DURATION_SEC = 1.25;
 /** Shift-tap Deflect — Energy cost to activate. */
 export const DEFLECT_SHIFT_ENERGY_COST = 30;
-/** Shift-tap Deflect — damage dealt by the homing bolt on the first negated hit. */
-export const DEFLECT_BOLT_DAMAGE = 375;
-/** Shift-tap Deflect — bolt grow-in-place charge duration before it homes in (ms). */
-export const DEFLECT_BOLT_CHARGE_MS = 1000;
+/** Shift-tap Deflect — flat base damage for the gold smite counter on first negated hit. */
+export const DEFLECT_SMITE_BASE_DAMAGE = 225;
+/** Shift-tap Deflect — bonus damage per point of Stamina for the gold smite counter. */
+export const DEFLECT_SMITE_STAMINA_DAMAGE_PER_POINT = 10;
+
+/** Compute Deflect Smite counter damage from allocated stats. */
+export function computeDeflectSmiteDamage(stats: { stamina?: number }): number {
+  const stamina = Math.max(0, Math.floor(stats.stamina ?? 0));
+  return DEFLECT_SMITE_BASE_DAMAGE + DEFLECT_SMITE_STAMINA_DAMAGE_PER_POINT * stamina;
+}
 
 /** Acolyte Locusts — nearest hostile acquisition radius (units). */
 export const LOCUST_TARGET_RADIUS = 16;

@@ -11,11 +11,12 @@ import {
   AnimationAction,
   AnimationClip,
   VectorKeyframeTrack,
-  PointLight,
+  Vector3,
 } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
 import { filterAnimationClipsForRoot } from '@/utils/enemyAnimationClipCache';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
 // Target ≈ 2+ units — tune if asset scale differs
 const SCALE = 0.0205;
@@ -35,54 +36,42 @@ const FILL_LIGHT_COLOR = '#ddd8e8';
 
 function BossLightRig({ isDying }: { isDying: boolean }) {
   const fadeRef = useRef(1);
-  const keyLightRef = useRef<PointLight>(null);
-  const rimLightRef = useRef<PointLight>(null);
-  const fillLightRef = useRef<PointLight>(null);
+  const markerRef = useRef<Group>(null);
+  const worldPos = useMemo(() => new Vector3(), []);
+  const fillLight = useDynamicLight({ color: FILL_LIGHT_COLOR, distance: FILL_LIGHT_DISTANCE, decay: 2, priority: 2 });
+  const keyLight = useDynamicLight({ color: BOSS_CORE_GLOW, distance: KEY_LIGHT_DISTANCE, decay: 2, priority: 2 });
+  const rimLight = useDynamicLight({ color: BOSS_TECTONIC_ACCENT, distance: RIM_LIGHT_DISTANCE, decay: 2, priority: 2 });
 
   useFrame((_, delta) => {
     const target = isDying ? 0 : 1;
     fadeRef.current += (target - fadeRef.current) * Math.min(1, delta * 5);
 
     const f = fadeRef.current;
-    if (keyLightRef.current) {
-      keyLightRef.current.intensity = KEY_LIGHT_INTENSITY * f;
+    if (markerRef.current) {
+      markerRef.current.getWorldPosition(worldPos);
     }
-    if (rimLightRef.current) {
-      rimLightRef.current.intensity = RIM_LIGHT_INTENSITY * f;
+    const x = worldPos.x;
+    const y = worldPos.y;
+    const z = worldPos.z;
+
+    const fill = fillLight.current;
+    if (fill?.active) {
+      fill.setPosition(x, y + 1.95, z);
+      fill.setIntensity(FILL_LIGHT_INTENSITY * f);
     }
-    if (fillLightRef.current) {
-      fillLightRef.current.intensity = FILL_LIGHT_INTENSITY * f;
+    const key = keyLight.current;
+    if (key?.active) {
+      key.setPosition(x, y + 2.2, z);
+      key.setIntensity(KEY_LIGHT_INTENSITY * f);
+    }
+    const rim = rimLight.current;
+    if (rim?.active) {
+      rim.setPosition(x - 0.55, y + 1.95, z + 0.45);
+      rim.setIntensity(RIM_LIGHT_INTENSITY * f);
     }
   });
 
-  return (
-    <>
-      <pointLight
-        ref={fillLightRef}
-        color={FILL_LIGHT_COLOR}
-        intensity={FILL_LIGHT_INTENSITY}
-        distance={FILL_LIGHT_DISTANCE}
-        decay={2}
-        position={[0, 1.95, 0]}
-      />
-      <pointLight
-        ref={keyLightRef}
-        color={BOSS_CORE_GLOW}
-        intensity={KEY_LIGHT_INTENSITY}
-        distance={KEY_LIGHT_DISTANCE}
-        decay={2}
-        position={[0, 2.2, 0]}
-      />
-      <pointLight
-        ref={rimLightRef}
-        color={BOSS_TECTONIC_ACCENT}
-        intensity={RIM_LIGHT_INTENSITY}
-        distance={RIM_LIGHT_DISTANCE}
-        decay={2}
-        position={[-0.55, 1.95, 0.45]}
-      />
-    </>
-  );
+  return <group ref={markerRef} />;
 }
 
 const BOSS_MODEL_PATHS = [

@@ -21,7 +21,7 @@
 
 import { Color, PointLight } from '@/utils/three-exports';
 
-export const DYNAMIC_LIGHT_POOL_SIZE = 12;
+export const DYNAMIC_LIGHT_POOL_SIZE = 16;
 
 export type DynamicLightColor = string | number | Color;
 
@@ -199,7 +199,7 @@ export function acquireEnemyLight(opts?: AcquireOptions): DynamicLightHandle {
 // change shifted the scene light count and recompiled every lit material (e.g. the
 // hitch when an ally dies and their dragon's lights vanish). Pooling keeps the count
 // constant. Gated by the main dynamic-lights flag (not the enemy-lights flag).
-export const EFFECT_LIGHT_POOL_SIZE = 10;
+export const EFFECT_LIGHT_POOL_SIZE = 16;
 export const effectLightPool = new DynamicLightPool();
 
 export function acquireEffectLight(opts?: AcquireOptions): DynamicLightHandle {

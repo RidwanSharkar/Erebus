@@ -160,6 +160,7 @@ io.on('connection', (socket) => {
         p.lateJoinCombatLoadout = false;
         return { weapon: p.weapon, subclass: p.subclass };
       })(),
+      ...(typeof room._getDeepSanctumPayloadFields === 'function' ? room._getDeepSanctumPayloadFields() : {}),
     });
 
     if (typeof room.isInCoopThronePrep === 'function' && room.isInCoopThronePrep()) {
@@ -274,6 +275,12 @@ io.on('connection', (socket) => {
       ok = room.activateDevBoss2Arena();
     } else if (camp === 'dev_boss3') {
       ok = room.activateDevBoss3Arena();
+    } else if (room.isInCoopThronePrep()) {
+      ok = room.beginIntroRoom(1);
+    } else if (room.coopIntroPortalOpen && room.coopIntroActive) {
+      ok = room.beginIntroRoom(room.coopIntroRoomIndex + 1);
+    } else if (room.coopIntroFountainPhase && room.coopIntroFountainUsed) {
+      ok = room.enterFirstNormalRoomAfterIntro(chosenCampType);
     } else if (room.coopMainArenaPortalPhase) {
       ok = room.resolveMainArenaPortal(chosenCampType);
     } else {
@@ -282,6 +289,56 @@ io.on('connection', (socket) => {
     if (ok) {
       socket.emit('enter-combat-arena-success', { roomId, timestamp: Date.now() });
     }
+  });
+
+  socket.on('coop-use-fountain', (data) => {
+    const { roomId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    if (!room.getPlayer(socket.id)) return;
+    if (typeof room.useCoopFountain !== 'function') return;
+
+    const ok = room.useCoopFountain(socket.id);
+    if (ok) {
+      socket.emit('coop-use-fountain-success', { roomId, timestamp: Date.now() });
+    }
+  });
+
+  socket.on('coop-pre-boss-reward-claimed', (data) => {
+    const { roomId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    if (!room.getPlayer(socket.id)) return;
+    if (typeof room.claimPreBossReward !== 'function') return;
+
+    room.claimPreBossReward(socket.id);
+  });
+
+  socket.on('coop-deep-sanctum-reward-claimed', (data) => {
+    const { roomId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    if (!room.getPlayer(socket.id)) return;
+    if (typeof room.claimDeepSanctumReward !== 'function') return;
+
+    const ok = room.claimDeepSanctumReward(socket.id);
+    if (ok) {
+      socket.emit('coop-deep-sanctum-reward-claimed-success', { roomId, timestamp: Date.now() });
+    }
+  });
+
+  socket.on('coop-pre-boss-merchant-finished', (data) => {
+    const { roomId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    if (!room.getPlayer(socket.id)) return;
+    if (typeof room.finishPreBossMerchant !== 'function') return;
+
+    room.finishPreBossMerchant(socket.id);
   });
 
   socket.on('coop-combat-transition-ready', (data) => {

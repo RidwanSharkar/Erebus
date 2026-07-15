@@ -33,6 +33,7 @@ function smiteVividColorPair(
   infernal: boolean,
   infested: boolean,
   staggering: boolean,
+  deflect: boolean,
 ): { primary: Color; secondary: Color } {
   const p = new Color();
   const s = new Color();
@@ -48,6 +49,9 @@ function smiteVividColorPair(
   } else if (staggering) {
     p.set('#00b8ff');
     s.set('#a8f0ff');
+  } else if (deflect) {
+    p.set('#fbbf24');
+    s.set('#fde68a');
   } else {
     p.set('#ff8c00');
     s.set('#ffe033');
@@ -107,6 +111,12 @@ interface SmiteProps {
   onBeamEnemyHit?: () => void;
   /** Local caster: Vengeance talent — called at strike time; scales damage after crit roll. */
   getVengeanceSmiteDamageMultiplier?: () => number;
+  /** Gladiator Deflect counter — gold beam theme. */
+  deflectSmiteVisual?: boolean;
+  /** Flat damage override (skips weapon crit / vengeance scaling). */
+  baseDamageOverride?: number;
+  /** Custom damage type for combat system and floating numbers. */
+  damageTypeOverride?: string;
 }
 
 const SmiteComponent = memo(function Smite({
@@ -126,6 +136,9 @@ const SmiteComponent = memo(function Smite({
   sequenceDelaySec = 0,
   onBeamEnemyHit,
   getVengeanceSmiteDamageMultiplier,
+  deflectSmiteVisual = false,
+  baseDamageOverride,
+  damageTypeOverride,
 }: SmiteProps) {
   const lightningRef = useRef<Group>(null);
   const progressRef = useRef(0);
@@ -163,8 +176,9 @@ const SmiteComponent = memo(function Smite({
       infernalSmiteVisual,
       infestedSmiteVisual,
       staggeringSmiteVisual,
+      deflectSmiteVisual,
     ),
-    [isCorruptedAuraActive, infernalSmiteVisual, infestedSmiteVisual, staggeringSmiteVisual],
+    [isCorruptedAuraActive, infernalSmiteVisual, infestedSmiteVisual, staggeringSmiteVisual, deflectSmiteVisual],
   );
 
   const burstPointColor = useMemo(
@@ -301,7 +315,9 @@ const SmiteComponent = memo(function Smite({
     if (damageTriggered.current) return;
     damageTriggered.current = true;
 
-    const baseSmiteDamage = 245;
+    const baseSmiteDamage = baseDamageOverride ?? 245;
+    const useFlatDamage = baseDamageOverride != null;
+    const resolvedDamageType = damageTypeOverride ?? 'smite';
     const damageRadius = 3.0; // Horizontal radius around impact (Y ignored so hovering units still hit)
     let totalDamage = 0;
     let targetsHit = 0;
@@ -314,14 +330,21 @@ const SmiteComponent = memo(function Smite({
       const horizontalDist = Math.hypot(dx, dz);
 
       if (horizontalDist <= damageRadius) {
-        // Calculate critical hit damage (Corrupted Aura bonuses are already applied via global rune count modifications)
-        const damageResult: DamageResult = infernalSmiteVisual
-          ? calculateDamage(baseSmiteDamage, weaponType ?? WeaponType.RUNEBLADE, {
-              critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD,
-            })
-          : calculateDamage(baseSmiteDamage, weaponType ?? WeaponType.RUNEBLADE);
-        const vengeanceMult = getVengeanceSmiteDamageMultiplier?.() ?? 1;
-        const finalDamage = Math.max(0, Math.floor(damageResult.damage * vengeanceMult));
+        let finalDamage: number;
+        let isCritical = false;
+
+        if (useFlatDamage) {
+          finalDamage = Math.max(0, Math.floor(baseSmiteDamage));
+        } else {
+          const damageResult: DamageResult = infernalSmiteVisual
+            ? calculateDamage(baseSmiteDamage, weaponType ?? WeaponType.RUNEBLADE, {
+                critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD,
+              })
+            : calculateDamage(baseSmiteDamage, weaponType ?? WeaponType.RUNEBLADE);
+          const vengeanceMult = getVengeanceSmiteDamageMultiplier?.() ?? 1;
+          finalDamage = Math.max(0, Math.floor(damageResult.damage * vengeanceMult));
+          isCritical = damageResult.isCritical;
+        }
 
         // Enemy is within damage radius - deal damage
         if (onHit) {
@@ -336,18 +359,18 @@ const SmiteComponent = memo(function Smite({
           const enemyEntity = allEntities.find((entity: any) => entity.userData?.serverEnemyId === enemy.id);
 
           if (enemyEntity) {
-            const staggerToAdd = staggeringSmiteVisual ? STAGGERING_SMITE_BEAM_STAGGER : undefined;
+            const staggerToAdd = !useFlatDamage && staggeringSmiteVisual ? STAGGERING_SMITE_BEAM_STAGGER : undefined;
             combatSystem.queueDamage(
               enemyEntity,
               finalDamage,
               null,
-              'smite',
+              resolvedDamageType,
               undefined,
-              damageResult.isCritical,
+              isCritical,
               undefined,
               staggerToAdd,
-              infestedSmiteVisual,
-              infernalSmiteVisual,
+              !useFlatDamage && infestedSmiteVisual,
+              !useFlatDamage && infernalSmiteVisual,
             );
             queuedToCombatSystem = true;
             onBeamEnemyHit?.();
@@ -360,9 +383,9 @@ const SmiteComponent = memo(function Smite({
           addEnemyHitDamageNumber(combatSystem.damageNumberManager, {
             enemyId: enemy.id,
             damage: finalDamage,
-            isCritical: damageResult.isCritical,
+            isCritical,
             position: damagePosition,
-            damageType: 'smite',
+            damageType: resolvedDamageType,
           });
         }
 
@@ -371,8 +394,8 @@ const SmiteComponent = memo(function Smite({
             id: nextDamageNumberId.current++,
             damage: finalDamage,
             position: enemy.position.clone(),
-            isCritical: damageResult.isCritical,
-            isSmite: true,
+            isCritical,
+            isSmite: resolvedDamageType === 'smite',
           }]);
         }
 

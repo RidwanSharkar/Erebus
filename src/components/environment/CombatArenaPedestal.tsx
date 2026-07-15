@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { AdditiveBlending } from '@/utils/three-exports';
+import { useDynamicLight, PooledEffectLight } from '@/components/effects/DynamicLightPool';
 import type { CoopPortalKind } from './ThroneRoom';
 import { MAIN_COMBAT_PEDESTAL_POSITION } from './ThroneRoom';
 
@@ -24,9 +25,12 @@ export default function CombatArenaPedestal({ campType, showAura }: CombatArenaP
   const orbRef       = useRef<any>(null);
   const aura1Ref     = useRef<any>(null);
   const aura2Ref     = useRef<any>(null);
-  const auraLightRef = useRef<any>(null);
 
   const color = CAMP_ORB_COLOR[campType];
+  const px = MAIN_COMBAT_PEDESTAL_POSITION.x;
+  const py = MAIN_COMBAT_PEDESTAL_POSITION.y;
+  const pz = MAIN_COMBAT_PEDESTAL_POSITION.z;
+  const auraLight = useDynamicLight({ color, distance: 12, priority: 1 });
 
   useFrame((state) => {
     const t = state.clock.elapsedTime;
@@ -35,6 +39,16 @@ export default function CombatArenaPedestal({ campType, showAura }: CombatArenaP
     if (orbRef.current) {
       orbRef.current.position.y = 1.85 + Math.sin(t * 1.4) * 0.1;
       orbRef.current.rotation.y = t * 0.9;
+    }
+
+    const aura = auraLight.current;
+    if (aura?.active) {
+      if (showAura) {
+        aura.setPosition(px, py + 0.3, pz);
+        aura.setIntensity(1.2 + Math.sin(t * 2.5) * 0.6);
+      } else {
+        aura.setIntensity(0);
+      }
     }
 
     if (!showAura) return;
@@ -56,16 +70,7 @@ export default function CombatArenaPedestal({ campType, showAura }: CombatArenaP
       const m = aura2Ref.current.material;
       m.opacity = (1 - cycle) * 0.55;
     }
-
-    // Pulse the aura point light
-    if (auraLightRef.current) {
-      auraLightRef.current.intensity = 1.2 + Math.sin(t * 2.5) * 0.6;
-    }
   });
-
-  const px = MAIN_COMBAT_PEDESTAL_POSITION.x;
-  const py = MAIN_COMBAT_PEDESTAL_POSITION.y;
-  const pz = MAIN_COMBAT_PEDESTAL_POSITION.z;
 
   return (
     <group position={[px, py, pz]}>
@@ -98,7 +103,7 @@ export default function CombatArenaPedestal({ campType, showAura }: CombatArenaP
           <sphereGeometry args={[0.18, 16, 16]} />
           <meshBasicMaterial color="#ffffff" transparent opacity={0.6} depthWrite={false} blending={AdditiveBlending} />
         </mesh>
-        <pointLight color={color} intensity={1.4} distance={8} position={[0, 0, 0]} />
+        <PooledEffectLight color={color} intensity={1.4} distance={8} position={[0, 0, 0]} />
       </group>
 
       {/* --- Ground aura (only when showAura) --- */}
@@ -141,9 +146,6 @@ export default function CombatArenaPedestal({ campType, showAura }: CombatArenaP
               blending={AdditiveBlending}
             />
           </mesh>
-
-          {/* Aura point light */}
-          <pointLight ref={auraLightRef} color={color} intensity={1.8} distance={12} position={[0, 0.3, 0]} />
         </>
       )}
     </group>

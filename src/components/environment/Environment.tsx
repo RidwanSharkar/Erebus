@@ -1,10 +1,8 @@
 import React, { useMemo } from 'react';
 import type { RoomBorderTheme } from './SimpleBorderEffects';
 import CustomSky from './CustomSky';
-import Planet from './Planet';
 import Pillar from './Pillar';
 import PillarCollision from './PillarCollision';
-import AtmosphericParticles from './AtmosphericParticles';
 import StylizedGrass from './StylizedGrass';
 import InstancedForest from './InstancedForest';
 import StoneGround from './StoneGround';
@@ -13,11 +11,8 @@ import InstancedMountains from './InstancedMountains';
 import InstancedEmbers from './InstancedEmbers';
 import InstancedDebris from './InstancedDebris';
 import InstancedMushrooms from './InstancedMushrooms';
-import GroundCracks from './GroundCracks';
-import VolumetricMoonRays from './VolumetricMoonRays';
 import { generateBorderMountains } from '@/utils/MountainGenerator';
 import { MAIN_ARENA_HEX_RADIUS } from '@/utils/mapConstants';
-
 import { World } from '@/ecs/World';
 import { PerspectiveCamera } from '@/utils/three-exports';
 interface EnvironmentProps {
@@ -111,7 +106,7 @@ const Environment: React.FC<EnvironmentProps> = ({
 
       {/* Instanced grass field — density per room (purple sparse), GPU-animated wind */}
       {enableGrass && (
-        <StylizedGrass fieldShape="disc" radius={35} roomTheme={visualRoomTheme} />
+        <StylizedGrass fieldShape="disc" radius={26} roomTheme={visualRoomTheme} />
       )}
 
       {/* Stone road + branch connectors + combat platforms — single draw call */}

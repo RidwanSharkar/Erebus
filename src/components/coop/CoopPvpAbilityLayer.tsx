@@ -14,8 +14,8 @@ import {
   Vector3,
   Mesh,
   MeshStandardMaterial,
-  PointLight,
 } from '@/utils/three-exports';
+import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import { WeaponType } from '@/components/dragon/weapons';
 import { CombatSystem } from '@/systems/CombatSystem';
 import { Transform } from '@/ecs/components/Transform';
@@ -28,14 +28,12 @@ import HauntedSoulEffect from '@/components/weapons/HauntedSoulEffect';
 import DragonBreath from '@/components/weapons/DragonBreath';
 import FrozenEffect from '@/components/weapons/FrozenEffect';
 import StunnedEffect from '@/components/weapons/StunnedEffect';
-import DeflectBolt from '@/components/weapons/DeflectBolt';
 import LocustProjectile from '@/components/weapons/LocustProjectile';
 import {
   shouldApplyInfestedSmiteTalent,
   shouldApplyInfernalSmiteTalent,
   shouldApplyStaggeringSmiteTalent,
   LIGHTNING_BOLT_ROOM_STAGGER,
-  DEFLECT_BOLT_DAMAGE,
   LOCUST_TARGET_RADIUS,
   type TalentLoadout,
 } from '@/utils/talents';
@@ -43,7 +41,7 @@ import type { AbilityLoadout } from '@/utils/weaponAbilities';
 import type {
   LocalPlayerStatusEffectState,
   RoomBoomMendingEffectState,
-  DeflectBoltEffectState,
+  DeflectSmiteEffectState,
   LocustProjectileEffectState,
 } from '@/components/coop/coopVfxLayerTypes';
 import type { World } from '@/ecs/World';
@@ -159,8 +157,8 @@ export type CoopPvpAbilityLayerHandle = {
   removeLocalPlayerFrozen: (id: number) => void;
   addLocalPlayerStunned: (effect: LocalPlayerStatusEffectState) => void;
   removeLocalPlayerStunned: (id: number) => void;
-  addDeflectBolt: (effect: DeflectBoltEffectState) => void;
-  removeDeflectBolt: (id: number) => void;
+  addDeflectSmite: (effect: DeflectSmiteEffectState) => void;
+  removeDeflectSmite: (id: number) => void;
   addLocustProjectile: (effect: LocustProjectileEffectState) => void;
   removeLocustProjectile: (id: number) => void;
 };
@@ -183,9 +181,8 @@ type CoopPvpAbilityLayerProps = {
     attackerId: string,
   ) => void;
   onLightningStormHitEnemy: (enemyId: string, damage: number) => void;
-  onDeflectBoltHitEnemy: (enemyId: string, damage: number) => void;
+  onDeflectSmiteHitEnemy: (enemyId: string, damage: number) => void;
   onLocustHitEnemy: (enemyId: string, damage: number) => void;
-  deflectBoltChargeMs?: number;
   onSmiteBeamEnemyHitColossusGuard?: () => void;
   getVengeanceSmiteDamageMultiplier?: () => number;
 };
@@ -207,7 +204,7 @@ function RoomBoomMendingEffect({
   const sphereMat = useRef<MeshStandardMaterial>(null);
   const particleMeshes = useRef<(Mesh | null)[]>([]);
   const particleMats = useRef<(MeshStandardMaterial | null)[]>([]);
-  const lightRef = useRef<PointLight>(null);
+  const mendingLight = useDynamicLight({ color: '#22c95e', distance: 5, decay: 2, priority: 1 });
 
   const rings = useMemo(() => [...Array(3)], []);
   const particles = useMemo(() => [...Array(12)], []);
@@ -249,7 +246,11 @@ function RoomBoomMendingEffect({
       if (mat) mat.opacity = opacity * 0.8;
     }
 
-    if (lightRef.current) lightRef.current.intensity = 4 * opacity;
+    const light = mendingLight.current;
+    if (light?.active) {
+      light.setPosition(position.x, position.y, position.z);
+      light.setIntensity(4 * opacity);
+    }
 
     if (time >= duration && !hasCompletedRef.current) {
       hasCompletedRef.current = true;
@@ -306,8 +307,6 @@ function RoomBoomMendingEffect({
           />
         </mesh>
       ))}
-
-      <pointLight ref={lightRef} color="#22c95e" intensity={0} distance={5} decay={2} />
     </group>
   );
 }
@@ -326,9 +325,8 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
     onSmiteHitEnemy,
     onDeathGraspHitEnemy,
     onLightningStormHitEnemy,
-    onDeflectBoltHitEnemy,
+    onDeflectSmiteHitEnemy,
     onLocustHitEnemy,
-    deflectBoltChargeMs,
     onSmiteBeamEnemyHitColossusGuard,
     getVengeanceSmiteDamageMultiplier,
   }, ref) {
@@ -343,7 +341,7 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
     const [flurryHealingEffects, setFlurryHealingEffects] = useState<FlurryHealingEffectState[]>([]);
     const [localPlayerFrozenEffects, setLocalPlayerFrozenEffects] = useState<LocalPlayerStatusEffectState[]>([]);
     const [localPlayerStunnedEffects, setLocalPlayerStunnedEffects] = useState<LocalPlayerStatusEffectState[]>([]);
-    const [deflectBoltEffects, setDeflectBoltEffects] = useState<DeflectBoltEffectState[]>([]);
+    const [deflectSmiteEffects, setDeflectSmiteEffects] = useState<DeflectSmiteEffectState[]>([]);
     const [locustProjectileEffects, setLocustProjectileEffects] = useState<LocustProjectileEffectState[]>([]);
 
     const [, setSmiteDamageNumbers] = useState<SmiteDamageNumber[]>([]);
@@ -364,7 +362,7 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
       setFlurryHealingEffects([]);
       setLocalPlayerFrozenEffects([]);
       setLocalPlayerStunnedEffects([]);
-      setDeflectBoltEffects([]);
+      setDeflectSmiteEffects([]);
       setLocustProjectileEffects([]);
       setSmiteDamageNumbers([]);
       nextDamageNumberId.current = 0;
@@ -447,11 +445,11 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
       setLocalPlayerStunnedEffects((prev) => prev.filter((e) => e.id !== id));
     }, []);
 
-    const addDeflectBolt = useCallback((effect: DeflectBoltEffectState) => {
-      setDeflectBoltEffects((prev) => [...prev, effect]);
+    const addDeflectSmite = useCallback((effect: DeflectSmiteEffectState) => {
+      setDeflectSmiteEffects((prev) => [...prev, effect]);
     }, []);
-    const removeDeflectBolt = useCallback((id: number) => {
-      setDeflectBoltEffects((prev) => prev.filter((e) => e.id !== id));
+    const removeDeflectSmite = useCallback((id: number) => {
+      setDeflectSmiteEffects((prev) => prev.filter((e) => e.id !== id));
     }, []);
 
     const addLocustProjectile = useCallback((effect: LocustProjectileEffectState) => {
@@ -485,8 +483,8 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
       removeLocalPlayerFrozen,
       addLocalPlayerStunned,
       removeLocalPlayerStunned,
-      addDeflectBolt,
-      removeDeflectBolt,
+      addDeflectSmite,
+      removeDeflectSmite,
       addLocustProjectile,
       removeLocustProjectile,
     }), [
@@ -513,8 +511,8 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
       removeLocalPlayerFrozen,
       addLocalPlayerStunned,
       removeLocalPlayerStunned,
-      addDeflectBolt,
-      removeDeflectBolt,
+      addDeflectSmite,
+      removeDeflectSmite,
       addLocustProjectile,
       removeLocustProjectile,
     ]);
@@ -615,28 +613,26 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
           );
         })}
 
-        {deflectBoltEffects.map((effect) => {
-          const isLocalPlayerBolt = !!localSocketId && effect.playerId === localSocketId;
-
-          const getTargetPosition = () => {
-            if (!effect.targetEnemyId) return null;
-            const enemy = getLiveCoopEnemyData().find((e) => e.id === effect.targetEnemyId);
-            return enemy && enemy.health > 0 ? enemy.position : null;
-          };
+        {deflectSmiteEffects.map((effect) => {
+          const smiteEnemyData = getLiveCoopEnemyData().filter((enemy) => enemy.health > 0);
+          const isLocalPlayerDeflectSmite = !!localSocketId && effect.playerId === localSocketId;
 
           return (
-            <DeflectBolt
-              key={`deflect-bolt-${effect.id}`}
-              startPosition={effect.startPosition}
-              targetPosition={effect.fallbackTargetPosition}
-              getTargetPosition={getTargetPosition}
-              chargeDurationMs={deflectBoltChargeMs}
-              onHitEnemy={() => {
-                if (isLocalPlayerBolt && effect.targetEnemyId) {
-                  onDeflectBoltHitEnemy(effect.targetEnemyId, DEFLECT_BOLT_DAMAGE);
-                }
-              }}
-              onComplete={() => removeDeflectBolt(effect.id)}
+            <SmiteComponent
+              key={`deflect-smite-${effect.id}`}
+              weaponType={WeaponType.RUNEBLADE}
+              position={effect.position}
+              deflectSmiteVisual
+              baseDamageOverride={isLocalPlayerDeflectSmite ? effect.damage : 0}
+              damageTypeOverride="deflect_smite"
+              onComplete={() => removeDeflectSmite(effect.id)}
+              onHit={isLocalPlayerDeflectSmite
+                ? (targetId, damage) => onDeflectSmiteHitEnemy(targetId, damage)
+                : undefined}
+              enemyData={smiteEnemyData}
+              setDamageNumbers={setDamageNumbers}
+              nextDamageNumberId={nextDamageNumberId}
+              combatSystem={isLocalPlayerDeflectSmite ? combatSystem : undefined}
             />
           );
         })}

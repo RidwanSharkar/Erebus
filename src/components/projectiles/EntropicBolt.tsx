@@ -7,6 +7,7 @@ import {
   Quaternion,
   AdditiveBlending,
   DoubleSide,
+  MeshBasicMaterial,
 } from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import EntropicBoltTrail, { ENTROPIC_TRAIL_FADE_OUT_DURATION } from './EntropicBoltTrail';
@@ -48,6 +49,25 @@ const _basePos = new Vector3();
 const _chaosOffset = new Vector3();
 const WOBBLE_ROLL = 0.1;
 
+const BOLT_ADDITIVE_FLAGS = {
+  transparent: true,
+  blending: AdditiveBlending,
+  depthWrite: false,
+} as const;
+
+function createBoltBodyMaterials() {
+  return {
+    core: new MeshBasicMaterial({ ...BOLT_ADDITIVE_FLAGS, opacity: 0.94 }),
+    shardA: new MeshBasicMaterial({ ...BOLT_ADDITIVE_FLAGS, opacity: 0.82 }),
+    shardB: new MeshBasicMaterial({ ...BOLT_ADDITIVE_FLAGS, opacity: 0.78 }),
+    shardC: new MeshBasicMaterial({ ...BOLT_ADDITIVE_FLAGS, opacity: 0.75 }),
+    corona: new MeshBasicMaterial({ ...BOLT_ADDITIVE_FLAGS, opacity: 0.18, side: DoubleSide }),
+    orbitEven: new MeshBasicMaterial({ ...BOLT_ADDITIVE_FLAGS, opacity: 0.88 }),
+    orbitOdd: new MeshBasicMaterial({ ...BOLT_ADDITIVE_FLAGS, opacity: 0.88 }),
+    tip: new MeshBasicMaterial({ ...BOLT_ADDITIVE_FLAGS, opacity: 0.92 }),
+  };
+}
+
 function alignBoltToDirection(group: Group | null, direction: Vector3) {
   if (!group) return;
   _dir.copy(direction).normalize();
@@ -85,6 +105,32 @@ function EntropicBolt({
   const lightColor = useMemo(() => new Color(theme.light), [theme.light]);
 
   const boltLight = useDynamicLight({ color: theme.light, distance: 7, decay: 2, priority: 2 });
+
+  const bodyMaterials = useMemo(() => createBoltBodyMaterials(), []);
+
+  useEffect(() => {
+    bodyMaterials.core.color.copy(primaryColor);
+    bodyMaterials.shardA.color.copy(secondaryColor);
+    bodyMaterials.shardB.color.copy(secondaryColor);
+    bodyMaterials.shardC.color.copy(primaryColor);
+    bodyMaterials.corona.color.copy(secondaryColor);
+    bodyMaterials.orbitEven.color.copy(secondaryColor);
+    bodyMaterials.orbitOdd.color.copy(primaryColor);
+    bodyMaterials.tip.color.copy(lightColor);
+  }, [bodyMaterials, primaryColor, secondaryColor, lightColor]);
+
+  useEffect(() => {
+    return () => {
+      bodyMaterials.core.dispose();
+      bodyMaterials.shardA.dispose();
+      bodyMaterials.shardB.dispose();
+      bodyMaterials.shardC.dispose();
+      bodyMaterials.corona.dispose();
+      bodyMaterials.orbitEven.dispose();
+      bodyMaterials.orbitOdd.dispose();
+      bodyMaterials.tip.dispose();
+    };
+  }, [bodyMaterials]);
 
   const isTrailFading = trailFadeOutStartElapsed !== undefined;
   const hideBoltBody = isTrailFading;
@@ -182,64 +228,23 @@ function EntropicBolt({
             <group ref={coreRef}>
               {/* Jagged core bolt */}
               <mesh position={[0, 0.18, 0]} geometry={ENTROPIC_CORE_CONE_GEO}>
-                <meshStandardMaterial
-                  color={primaryColor}
-                  emissive={secondaryColor}
-                  emissiveIntensity={2.6}
-                  transparent
-                  opacity={0.94}
-                  blending={AdditiveBlending}
-                  depthWrite={false}
-                />
+                <primitive attach="material" object={bodyMaterials.core} />
               </mesh>
 
               {/* Fractured shaft shards */}
               <mesh position={[0.028, 0.08, 0.012]} rotation={[0.15, 0.4, 0.25]} geometry={ENTROPIC_SHARD_BOX_A_GEO}>
-                <meshStandardMaterial
-                  color={secondaryColor}
-                  emissive={primaryColor}
-                  emissiveIntensity={1.8}
-                  transparent
-                  opacity={0.82}
-                  blending={AdditiveBlending}
-                  depthWrite={false}
-                />
+                <primitive attach="material" object={bodyMaterials.shardA} />
               </mesh>
               <mesh position={[-0.022, 0.12, -0.01]} rotation={[-0.2, -0.35, 0.18]} geometry={ENTROPIC_SHARD_BOX_B_GEO}>
-                <meshStandardMaterial
-                  color={secondaryColor}
-                  emissive={primaryColor}
-                  emissiveIntensity={1.6}
-                  transparent
-                  opacity={0.78}
-                  blending={AdditiveBlending}
-                  depthWrite={false}
-                />
+                <primitive attach="material" object={bodyMaterials.shardB} />
               </mesh>
               <mesh position={[0.01, 0.22, -0.024]} rotation={[0.35, 0.1, -0.3]} geometry={ENTROPIC_SHARD_CONE_GEO}>
-                <meshStandardMaterial
-                  color={primaryColor}
-                  emissive={lightColor}
-                  emissiveIntensity={2.2}
-                  transparent
-                  opacity={0.75}
-                  blending={AdditiveBlending}
-                  depthWrite={false}
-                />
+                <primitive attach="material" object={bodyMaterials.shardC} />
               </mesh>
 
               {/* Outer corona shell */}
               <mesh position={[0, 0.16, 0]} geometry={ENTROPIC_SHAFT_CYL_GEO}>
-                <meshStandardMaterial
-                  color={secondaryColor}
-                  emissive={primaryColor}
-                  emissiveIntensity={1.1}
-                  transparent
-                  opacity={0.18}
-                  blending={AdditiveBlending}
-                  depthWrite={false}
-                  side={DoubleSide}
-                />
+                <primitive attach="material" object={bodyMaterials.corona} />
               </mesh>
             </group>
 
@@ -248,14 +253,9 @@ function EntropicBolt({
               {ORBIT_SHARD_ANGLES.map((angle, i) => (
                 <group key={i} rotation={[0, angle, 0]}>
                   <mesh position={[0.11, 0, 0]} rotation={[0.5, 0.8, 0.3]} geometry={ENTROPIC_SHARD_TETRA_GEO}>
-                    <meshStandardMaterial
-                      color={i % 2 === 0 ? secondaryColor : primaryColor}
-                      emissive={lightColor}
-                      emissiveIntensity={2.8}
-                      transparent
-                      opacity={0.88}
-                      blending={AdditiveBlending}
-                      depthWrite={false}
+                    <primitive
+                      attach="material"
+                      object={i % 2 === 0 ? bodyMaterials.orbitEven : bodyMaterials.orbitOdd}
                     />
                   </mesh>
                 </group>
@@ -264,15 +264,7 @@ function EntropicBolt({
 
             {/* Tip emissive glow */}
             <mesh position={[0, 0.3, 0]} geometry={ENTROPIC_GLOW_SPHERE_GEO}>
-              <meshStandardMaterial
-                color={lightColor}
-                emissive={lightColor}
-                emissiveIntensity={4.2}
-                transparent
-                opacity={0.92}
-                blending={AdditiveBlending}
-                depthWrite={false}
-              />
+              <primitive attach="material" object={bodyMaterials.tip} />
             </mesh>
             </group>
           </group>

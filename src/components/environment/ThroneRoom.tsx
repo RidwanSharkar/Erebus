@@ -7,6 +7,7 @@ import type { RoomBorderTheme, SimpleBorderColorTheme } from './SimpleBorderEffe
 import SimpleBorderEffects from './SimpleBorderEffects';
 import StylizedGrass from './StylizedGrass';
 import StoneGround from './StoneGround';
+import VoidPortal from './VoidPortal';
 import Pillar from './Pillar';
 import ThronePedestalAura from './ThronePedestalAura';
 import { WeaponSubclass, WeaponType } from '@/components/dragon/weapons';
@@ -111,6 +112,36 @@ export const MERCHANT_NPC_DEFAULT_ROTATION_Y = Math.PI;
 /** XZ distance within which the merchant rotates to track the local player. */
 export const MERCHANT_NPC_FACE_RANGE = 7;
 
+export type MerchantShopSlotKind = 'dash_charge' | 'weapon_talent' | 'heal' | 'boss_drop';
+
+/** Four shop pedestals in a row in front of the merchant NPC (toward arena center). */
+export const MERCHANT_SHOP_PEDESTAL_POSITIONS: ReadonlyArray<{
+  readonly slot: MerchantShopSlotKind;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}> = Object.freeze([
+  Object.freeze({ slot: 'dash_charge' as const, x: -6.75, y: 0, z: 12.5 }),
+  Object.freeze({ slot: 'weapon_talent' as const, x: -2.25, y: 0, z: 12.5 }),
+  Object.freeze({ slot: 'heal' as const, x: 2.25, y: 0, z: 12.5 }),
+  Object.freeze({ slot: 'boss_drop' as const, x: 6.75, y: 0, z: 12.5 }),
+]);
+
+export const MERCHANT_SHOP_INTERACT_RADIUS = 2.35;
+
+export type MerchantShopInteractDef = {
+  slot: MerchantShopSlotKind;
+  x: number;
+  z: number;
+};
+
+export const MERCHANT_SHOP_INTERACT_DEFS: MerchantShopInteractDef[] =
+  MERCHANT_SHOP_PEDESTAL_POSITIONS.map((p) => ({
+    slot: p.slot,
+    x: p.x,
+    z: p.z,
+  }));
+
 /** Half-distance on X between the two main-arena choice portals flanking the combat pedestal. */
 export const MAIN_COMBAT_PORTAL_HALF_SPACING_X = THRONE_PORTAL_HALF_SPACING_X;
 
@@ -150,7 +181,7 @@ const THRONE_PORTAL_COLOR_HEX: Record<CoopPortalKind, string> = {
   stat: '#eab308',
   trial: '#f97316',
   merchant: '#ec4899',
-  boss: '#6c3dff',
+  boss: '#d4af37',
 };
 
 const PORTAL_RITUAL_COLORS: Record<CoopPortalKind, { base: string; glow: string }> = {
@@ -161,7 +192,7 @@ const PORTAL_RITUAL_COLORS: Record<CoopPortalKind, { base: string; glow: string 
   stat: { base: '#a16207', glow: '#fde047' },
   trial: { base: '#c2410c', glow: '#fdba74' },
   merchant: { base: '#be185d', glow: '#f9a8d4' },
-  boss: { base: '#4c1d95', glow: '#c4b5fd' },
+  boss: { base: '#92400e', glow: '#fde68a' },
 };
 
 export function normalizeThroneCamp(s: string | undefined): ThroneMainRoomCamp {
@@ -330,7 +361,7 @@ export function getThronePrepPhysicsObstacles(): Array<{ x: number; z: number; r
 /** Area scales ~r²; keep blade density similar when expanding grass radius. */
 const THRONE_GRASS_COUNT = Math.round(6000 * (COOP_THRONE_ROOM_RADIUS / 10) ** 2);
 /** Match main-map purple sparsity vs green (`StylizedGrass` THEME_COUNTS). */
-const THRONE_PURPLE_GRASS_COUNT = Math.round(THRONE_GRASS_COUNT * (16000 / 80000));
+const THRONE_PURPLE_GRASS_COUNT = Math.round(THRONE_GRASS_COUNT * (6000 / 6000));
 
 export function xzTowardRoomCenter(pillar: [number, number, number], inset: number): [number, number] {
   const [px, , pz] = pillar;
@@ -823,6 +854,9 @@ interface ThroneRoomProps {
   equippedWeapon?: WeaponType;
   /** Local player's selected archetype — hides that archetype symbol on its pedestal. */
   selectedArchetype?: Archetype;
+  /** Co-op intro: center void portal opens after weapon selection delay. */
+  voidPortalOpen?: boolean;
+  voidPortalOpenProgress?: number;
 }
 
 /**
@@ -838,6 +872,8 @@ function ThroneRoom({
   thronePortalsLocked = false,
   equippedWeapon = WeaponType.NONE,
   selectedArchetype = 'NONE',
+  voidPortalOpen = false,
+  voidPortalOpenProgress = 0,
 }: ThroneRoomProps) {
   /** All co-op boss tiers + post-boss intermission share the same purple shell (legacy Boss 2 / Archon look). */
   const usePurpleBossArenaShell = layout === 'bossArena';
@@ -915,13 +951,12 @@ function ThroneRoom({
           )}
           <ThroneWeaponPedestals equippedWeapon={equippedWeapon} />
           <ThroneArchetypePedestals selectedArchetype={selectedArchetype} />
-          <group>
-            {THRONE_PORTAL_POSITIONS.map((pos, i) => (
-              <group key={`throne-portal-${i}`} position={[pos.x, pos.y, pos.z]}>
-                <ThronePortalRing campType={i === 0 ? leftCamp : rightCamp} locked={thronePortalsLocked} />
-              </group>
-            ))}
-          </group>
+          <VoidPortal
+            position={[0, 0.05, 0]}
+            open={voidPortalOpenProgress}
+            visible={voidPortalOpen || voidPortalOpenProgress > 0.01}
+            effectHeightOffset={0.3}
+          />
           {COOP_DEV_LOCALHOST_FEATURES && (
             <>
 

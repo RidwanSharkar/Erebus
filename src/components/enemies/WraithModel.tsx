@@ -11,6 +11,8 @@ interface WraithModelProps {
   isWalking: boolean;
   isAttacking: boolean;
   isDying: boolean;
+  /** Incremented on each buzzsaw telegraph to force Attack clip restart. */
+  attackPlayKey?: number;
 }
 
 const WRAITH_MODEL_PATHS = [
@@ -30,6 +32,7 @@ export default React.memo(function WraithModel({
   isWalking,
   isAttacking,
   isDying,
+  attackPlayKey = 0,
 }: WraithModelProps) {
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
@@ -99,6 +102,18 @@ export default React.memo(function WraithModel({
 
     currentActionRef.current = nextAction;
   }, [isWalking, isAttacking, isDying, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!actions || !isAttacking || attackPlayKey <= 0) return;
+    const attack = getAction('Attack');
+    if (!attack) return;
+
+    currentActionRef.current?.fadeOut(0.2);
+    attack.setLoop(LoopOnce, 1);
+    attack.clampWhenFinished = true;
+    attack.reset().fadeIn(0.2).play();
+    currentActionRef.current = attack;
+  }, [attackPlayKey, isAttacking, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!mixer || isDying) return;

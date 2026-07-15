@@ -6,6 +6,12 @@
 export const MAIN_ARENA_HEX_RADIUS = 26;
 /** Stat/trial hex combat arena — must match `HexCombatArena.tsx`. */
 export const HEX_ARENA_RADIUS = 22;
+/** Intro castle rooms — must match `backend/coopArenaLayout.js` CASTLE_ROOM_HALF_SIZE. */
+export const CASTLE_ROOM_HALF_SIZE = 14;
+export const CASTLE_ROOM_BOUNDS: MainArenaBounds = {
+  halfX: CASTLE_ROOM_HALF_SIZE,
+  halfZ: CASTLE_ROOM_HALF_SIZE,
+};
 export const MAIN_ARENA_HEX_FLOOR_MARGIN = 1.4;
 export const MAIN_ARENA_HEX_INNER_APOTHEM =
   MAIN_ARENA_HEX_RADIUS * Math.cos(Math.PI / 6) - MAIN_ARENA_HEX_FLOOR_MARGIN;

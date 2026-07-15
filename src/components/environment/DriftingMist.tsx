@@ -286,7 +286,9 @@ const MIST_PUFF_MATERIALS: ShaderMaterial[] = MIST_CLUSTERS.flatMap((cluster) =>
 
 let mistMaterialIndex = 0;
 
-const DriftingMist: React.FC = () => {
+const DriftingMist: React.FC<{ enabled?: boolean }> = ({ enabled = true }) => {
+  if (!enabled) return null;
+
   let materialOffset = 0;
   return (
     <group name="drifting-mist">

@@ -20,6 +20,21 @@ type SkyThemeUniforms = {
   cloudWarmth: number;
 };
 
+/** Twilight holy sanctum — Inner Sanctum castle rooms (warmer/lighter than purple combat). */
+export const SKY_SANCTUM_HOLY: SkyThemeUniforms = {
+  zenith: '#2a1838',
+  upperMid: '#4a2868',
+  midHorizon: '#8a58a8',
+  horizon: '#d4b8e8',
+  ground: '#1a1420',
+  sunColor: '#fff4d8',
+  sunDir: [0.5, 0.28, -0.45],
+  sunHalo0: '#fff0c8',
+  sunHalo1: '#e8c8f0',
+  sunHalo2: '#a878c8',
+  cloudWarmth: 0.72,
+};
+
 /** Clear daytime blue — throne prep room only (decoupled from perimeter camp tint). */
 export const SKY_THRONE_BLUE: SkyThemeUniforms = {
   zenith: '#1e6fd4',
@@ -232,13 +247,14 @@ const SKY_FRAG = `
   }
 `;
 
-export type CustomSkyPreset = RoomBorderTheme | 'throneBlue';
+export type CustomSkyPreset = RoomBorderTheme | 'throneBlue' | 'sanctumHoly';
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 function skyUniformsForPreset(preset: CustomSkyPreset): SkyThemeUniforms {
   if (preset === 'throneBlue') return SKY_THRONE_BLUE;
+  if (preset === 'sanctumHoly') return SKY_SANCTUM_HOLY;
   return SKY_BY_ROOM[preset] ?? SKY_BY_ROOM.red;
 }
 

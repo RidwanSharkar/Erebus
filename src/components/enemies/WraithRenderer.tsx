@@ -32,7 +32,7 @@ interface WraithRendererProps {
   staggerBuildup?: number;
 }
 
-const BUZZSAW_DURATION_MS = 1500;
+const BUZZSAW_DURATION_MS = 1400;
 const FADE_DURATION = 1.5;
 const LERP_SPEED = 12;
 const WALK_STOP_DELAY = 250;
@@ -56,26 +56,19 @@ function WraithRenderer({
   const [isAttacking, setIsAttacking] = useState(false);
   const [isWalking, setIsWalking] = useState(false);
   const [isInvisible, setIsInvisible] = useState(false);
+  const [buzzsawPlayKey, setBuzzsawPlayKey] = useState(0);
+  const [buzzsawDurationMs, setBuzzsawDurationMs] = useState(BUZZSAW_DURATION_MS);
   const isWalkingRef = useRef(false);
   const isAttackingRef = useRef(false);
+  const buzzsawEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation = useRef(rotation);
   const lastMoveTimeRef = useRef(0);
-  const pendingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const fadeTimer = useRef(0);
   const opacity = useRef(1);
   const cachedDeathMats = useRef<any[]>([]);
   const deathCacheBuilt = useRef(false);
-
-  const trackTimeout = useCallback((fn: () => void, ms: number) => {
-    const timerId = setTimeout(() => {
-      pendingTimersRef.current = pendingTimersRef.current.filter((t) => t !== timerId);
-      fn();
-    }, ms);
-    pendingTimersRef.current.push(timerId);
-    return timerId;
-  }, []);
 
   const setGroupRef = useCallback((group: Group | null) => {
     groupRef.current = group;
@@ -87,8 +80,7 @@ function WraithRenderer({
 
   useEffect(() => {
     return () => {
-      pendingTimersRef.current.forEach(clearTimeout);
-      pendingTimersRef.current = [];
+      if (buzzsawEndTimerRef.current) clearTimeout(buzzsawEndTimerRef.current);
     };
   }, []);
 
@@ -122,13 +114,32 @@ function WraithRenderer({
 
     const handleBuzzsawTelegraph = (data: { wraithId: string; durationMs?: number }) => {
       if (data.wraithId !== id) return;
+
+      const duration = data.durationMs ?? BUZZSAW_DURATION_MS;
+      const wasAttacking = isAttackingRef.current;
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.debug('[WraithBuzzsaw] telegraph', {
+          wraithId: id,
+          wasAttacking,
+          durationMs: duration,
+        });
+      }
+
+      if (buzzsawEndTimerRef.current) clearTimeout(buzzsawEndTimerRef.current);
+
       setIsInvisible(false);
+      setBuzzsawDurationMs(duration);
+      setBuzzsawPlayKey((k) => k + 1);
       setIsAttacking(true);
       isAttackingRef.current = true;
-      trackTimeout(() => {
+
+      buzzsawEndTimerRef.current = setTimeout(() => {
         setIsAttacking(false);
         isAttackingRef.current = false;
-      }, data.durationMs ?? BUZZSAW_DURATION_MS);
+        buzzsawEndTimerRef.current = null;
+      }, duration);
+
       const pos = groupRef.current?.position;
       if (pos) {
         (window as any).audioSystem?.playEnemyBuzzsawSound?.(pos);
@@ -143,7 +154,7 @@ function WraithRenderer({
       socket.off('wraith-stealth-reveal', handleStealthReveal);
       socket.off('wraith-buzzsaw-telegraph', handleBuzzsawTelegraph);
     };
-  }, [id, socket, trackTimeout]);
+  }, [id, socket]);
 
   useLayoutEffect(() => {
     applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth, ENEMY_HP_BAR_WIDTH);
@@ -218,8 +229,13 @@ function WraithRenderer({
         isWalking={isWalking}
         isAttacking={isAttacking}
         isDying={isDying}
+        attackPlayKey={buzzsawPlayKey}
       />
-      <WraithBuzzsawVfx active={isAttacking} durationMs={BUZZSAW_DURATION_MS} />
+      <WraithBuzzsawVfx
+        key={buzzsawPlayKey}
+        active={isAttacking}
+        durationMs={buzzsawDurationMs}
+      />
       {!isDying && !isInvisible && <KnightSoulEffect soulType="orange" />}
 
       <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>

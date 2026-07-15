@@ -68,6 +68,8 @@ import {
   REWARD_ANNOUNCEMENT_COLORS,
   ROOM_TITLE_ANNOUNCEMENT_MS,
   STAT_ROOM_PEDESTAL_POINTS,
+  INTRO_ROOM_GOLD_REWARDS,
+  DEEP_SANCTUM_STAT_POINTS,
   TRIAL_ROOM_PEDESTAL_GOLD,
   type BossSlainLabel,
 } from '../utils/coopRoomTitles';
@@ -238,8 +240,6 @@ function HomeContent() {
     grantStatPoints,
     updatePlayerGold,
     purchaseItem,
-    purchaseMerchantItem,
-    purchaseMerchantHeal,
     registerMerchantPurchaseSuccessHandler,
     registerBossDefeatedHandler,
     registerBossItemPickupHandler,
@@ -249,6 +249,9 @@ function HomeContent() {
     confirmCoopPortalTransitionComplete,
     setSelectedWeapons,
     clearLateJoinCombatLoadout,
+    claimPreBossReward,
+    claimDeepSanctumReward,
+    registerDeepSanctumRewardClaimedHandler,
   } = useMultiplayerActions();
 
   const {
@@ -260,7 +263,6 @@ function HomeContent() {
     skeletonKillCount,
     skeletonKillRequired,
     inventory,
-    merchantInventory,
     merchantPurchaseState,
     currentRoomId,
     isConnected,
@@ -271,6 +273,14 @@ function HomeContent() {
     gameStarted,
     coopCombatArenaEnterSeq,
     coopMainArenaIntermissionSeq,
+    coopIntroIntermissionSeq,
+    coopIntroRoomIndex,
+    coopIntroFountainPhase,
+    coopIntroFountainUsed,
+    coopVoidPortalOffered,
+    coopDeepSanctumLevel,
+    deepSanctumRewardKind,
+    coopDeepSanctumIntermissionSeq,
     coopBossClearedBgmSeq,
     coopMainArenaPortalPhase,
     campTypes,
@@ -390,10 +400,14 @@ function HomeContent() {
   const coopCurrentRoomKindRef = useRef(coopCurrentRoomKind);
   const coopColoredRoomVisitIndexRef = useRef(coopColoredRoomVisitIndex);
   const coopBossRoomVisitIndexRef = useRef(coopBossRoomVisitIndex);
+  const coopIntroRoomIndexRef = useRef(coopIntroRoomIndex);
+  const coopDeepSanctumLevelRef = useRef(coopDeepSanctumLevel);
   const combatArenaActiveRef = useRef(combatArenaActive);
   coopCurrentRoomKindRef.current = coopCurrentRoomKind;
   coopColoredRoomVisitIndexRef.current = coopColoredRoomVisitIndex;
   coopBossRoomVisitIndexRef.current = coopBossRoomVisitIndex;
+  coopIntroRoomIndexRef.current = coopIntroRoomIndex;
+  coopDeepSanctumLevelRef.current = coopDeepSanctumLevel;
   combatArenaActiveRef.current = combatArenaActive;
   const [roomTitleAnnouncement, setRoomTitleAnnouncement] = useState<{
     triggerKey: string | number;
@@ -448,7 +462,7 @@ function HomeContent() {
   const announceThroneEnterPortal = useCallback(() => {
     if (throneEnterPortalAnnouncedRef.current || combatArenaActiveRef.current) return;
     throneEnterPortalAnnouncedRef.current = true;
-    const { title, color } = GUIDE_ANNOUNCEMENTS.enterPortal;
+    const { title, color } = GUIDE_ANNOUNCEMENTS.descendPortal;
     enqueueAnnouncement(title, color, 'throne-enter-portal');
   }, [enqueueAnnouncement]);
 
@@ -507,6 +521,7 @@ function HomeContent() {
   const classBoonPickedWeaponsRef = useRef<Set<WeaponType>>(new Set());
   const lateJoinLoadoutHandledRef = useRef(false);
   const roomBoonIntermissionDoneSeqRef = useRef(-1);
+  const deepSanctumRewardClaimedSeqRef = useRef(-1);
   /** Runeblade colored-room boon mutex: excludes entire combo / strike / smite slot after one pick (per co-op room session). */
   const runebladeRoomBoonExcludedIdsRef = useRef<Set<TalentId>>(new Set());
   /** Scythe Entropic bolt boon mutex (Wrathful / Staggering / Infesting Entropic). */
@@ -624,6 +639,13 @@ function HomeContent() {
     prevPortalsUnlockedRef.current = false;
   }, [coopCombatArenaEnterSeq]);
 
+  useEffect(() => {
+    if (gameMode !== 'coop') return;
+    if (coopMainArenaPortalPhase === 'pre_boss_merchant') {
+      setPortalsUnlocked(true);
+    }
+  }, [gameMode, coopMainArenaPortalPhase]);
+
   /** New wave-clear intermission: ensure pedestal aura / X-interact isn't stuck behind prior `pedestalInteracted`. */
   const lastIntermissionSeqForPedestalRef = useRef<number | undefined>(undefined);
   useEffect(() => {
@@ -632,6 +654,67 @@ function HomeContent() {
     if (gameMode !== 'coop' || coopMainArenaIntermissionSeq <= 0) return;
     setPedestalInteracted(false);
   }, [coopMainArenaIntermissionSeq, gameMode]);
+
+  const lastDeepSanctumIntermissionSeqRef = useRef(-1);
+  useEffect(() => {
+    if (lastDeepSanctumIntermissionSeqRef.current === coopDeepSanctumIntermissionSeq) return;
+    lastDeepSanctumIntermissionSeqRef.current = coopDeepSanctumIntermissionSeq;
+    if (gameMode !== 'coop' || coopDeepSanctumIntermissionSeq <= 0) return;
+    setPedestalInteracted(false);
+  }, [coopDeepSanctumIntermissionSeq, gameMode]);
+
+  useEffect(() => {
+    if (gameMode !== 'coop' || coopMainArenaIntermissionSeq <= 0) return;
+    if (!coopVoidPortalOffered) return;
+    const { title, color } = GUIDE_ANNOUNCEMENTS.descendVoid;
+    enqueueAnnouncementAfter(
+      ROOM_TITLE_ANNOUNCEMENT_MS,
+      title,
+      color,
+      `void-portal-${coopMainArenaIntermissionSeq}`,
+    );
+  }, [coopMainArenaIntermissionSeq, coopVoidPortalOffered, gameMode, enqueueAnnouncementAfter]);
+
+  const lastIntroIntermissionSeqRef = useRef(-1);
+  useEffect(() => {
+    if (lastIntroIntermissionSeqRef.current === coopIntroIntermissionSeq) return;
+    lastIntroIntermissionSeqRef.current = coopIntroIntermissionSeq;
+    if (gameMode !== 'coop' || coopIntroIntermissionSeq <= 0) return;
+
+    const clearedIndex = coopIntroRoomIndexRef.current;
+    const goldAmount = INTRO_ROOM_GOLD_REWARDS[Math.max(0, clearedIndex - 1)] ?? 0;
+    if (goldAmount > 0) {
+      enqueueAnnouncement(
+        `+${goldAmount} GOLD`,
+        REWARD_ANNOUNCEMENT_COLORS.gold,
+        `intro-gold-${coopIntroIntermissionSeq}`,
+      );
+    }
+
+    if (coopIntroFountainPhase) {
+      const { title, color } = GUIDE_ANNOUNCEMENTS.drinkFountain;
+      enqueueAnnouncementAfter(
+        ROOM_TITLE_ANNOUNCEMENT_MS,
+        title,
+        color,
+        `intro-fountain-${coopIntroIntermissionSeq}`,
+      );
+    } else {
+      const { title, color } = GUIDE_ANNOUNCEMENTS.descendPortal;
+      enqueueAnnouncementAfter(
+        ROOM_TITLE_ANNOUNCEMENT_MS,
+        title,
+        color,
+        `intro-descend-${coopIntroIntermissionSeq}`,
+      );
+    }
+  }, [coopIntroIntermissionSeq, coopIntroFountainPhase, gameMode, enqueueAnnouncement, enqueueAnnouncementAfter]);
+
+  useEffect(() => {
+    if (!coopIntroFountainUsed || gameMode !== 'coop') return;
+    const { title, color } = GUIDE_ANNOUNCEMENTS.chooseGateway;
+    enqueueAnnouncement(title, color, `intro-gateway-${coopIntroIntermissionSeq}`);
+  }, [coopIntroFountainUsed, coopIntroIntermissionSeq, gameMode, enqueueAnnouncement]);
 
   useEffect(() => {
     return () => {
@@ -721,12 +804,23 @@ function HomeContent() {
    */
   const handleCombatArenaPedestalInteract = useCallback((rewardKindFromScene?: string | null) => {
     if (gameMode !== 'coop') return;
+
+    const rewardKind = (rewardKindFromScene ?? coopClearedRoomKind ?? coopCurrentRoomKind) as CoopRoomKind | null;
+
+    if (rewardKind === 'deep_sanctum') {
+      if (deepSanctumRewardClaimedSeqRef.current === coopDeepSanctumIntermissionSeq) return;
+      deepSanctumRewardClaimedSeqRef.current = coopDeepSanctumIntermissionSeq;
+      setPedestalInteracted(true);
+      playPedestalInteractAndDelay(() => {
+        claimDeepSanctumReward();
+      });
+      return;
+    }
+
     if (roomBoonIntermissionDoneSeqRef.current === coopMainArenaIntermissionSeq) return;
 
     roomBoonIntermissionDoneSeqRef.current = coopMainArenaIntermissionSeq;
     setPedestalInteracted(true);
-
-    const rewardKind = (rewardKindFromScene ?? coopClearedRoomKind ?? coopCurrentRoomKind) as CoopRoomKind | null;
 
     if (rewardKind === 'boss') {
       const options = rollClassBoonOptions(selectedWeapons.primary, talentLoadout);
@@ -752,15 +846,16 @@ function HomeContent() {
           `stat-points-${coopMainArenaIntermissionSeq}`,
         );
         clearCoopClearedRoomColor();
-        setPortalsUnlocked(true);
+        if (coopMainArenaPortalPhase === 'pre_boss_reward') {
+          claimPreBossReward();
+        } else {
+          setPortalsUnlocked(true);
+        }
       });
       return;
     }
 
     if (rewardKind === 'merchant') {
-      playPedestalInteractAndDelay(() => {
-        setShowMerchantUI(true);
-      });
       return;
     }
 
@@ -774,13 +869,18 @@ function HomeContent() {
           `trial-gold-${coopMainArenaIntermissionSeq}`,
         );
         clearCoopClearedRoomColor();
-        setPortalsUnlocked(true);
+        if (coopMainArenaPortalPhase === 'pre_boss_reward') {
+          claimPreBossReward();
+        } else {
+          setPortalsUnlocked(true);
+        }
       });
       return;
     }
 
     if (
       coopMainArenaPortalPhase === 'pick_wave2' ||
+      coopMainArenaPortalPhase === 'pick_pre_boss' ||
       coopMainArenaPortalPhase === 'pick_boss' ||
       coopMainArenaPortalPhase === 'pick_post_boss'
     ) {
@@ -829,6 +929,9 @@ function HomeContent() {
     socket?.id,
     enqueueAnnouncement,
     playPedestalInteractAndDelay,
+    claimPreBossReward,
+    claimDeepSanctumReward,
+    coopDeepSanctumIntermissionSeq,
   ]);
 
   const handleThroneWeaponEquipped = useCallback(
@@ -965,6 +1068,72 @@ function HomeContent() {
     },
     [clearCoopClearedRoomColor, coopMainArenaPortalPhase, combatArenaActive, setTalentLoadout, setAbilityLoadout, abilityLoadout, enqueueAnnouncement, announceThroneEnterPortal],
   );
+
+  useEffect(() => {
+    return registerDeepSanctumRewardClaimedHandler((payload) => {
+      if (payload.rewardKind === 'gold' && payload.goldGranted > 0) {
+        window.audioSystem?.playUIGoldPickupSound?.();
+        enqueueAnnouncement(
+          `+${payload.goldGranted} GOLD`,
+          REWARD_ANNOUNCEMENT_COLORS.gold,
+          `deep-sanctum-gold-${payload.timestamp ?? Date.now()}`,
+        );
+      } else if (payload.rewardKind === 'stat') {
+        const pts = payload.deepSanctumStatPoints || DEEP_SANCTUM_STAT_POINTS;
+        grantStatPoints(pts);
+        window.audioSystem?.playUIInterface3Sound?.();
+        enqueueAnnouncement(
+          `+${pts} STAT POINTS`,
+          REWARD_ANNOUNCEMENT_COLORS.stat,
+          `deep-sanctum-stat-${payload.timestamp ?? Date.now()}`,
+        );
+      } else if (payload.rewardKind === 'talent') {
+        setTalentLoadout((prev) => {
+          const pool = excludeOwnedTalentsFromBoonPool(
+            buildClassBoonPoolForWeapon(selectedWeapons.primary, prev),
+            prev,
+          );
+          const [id] = pickRandomDistinctFromPool(pool, 1);
+          if (!id) {
+            console.warn('Deep sanctum talent pool empty');
+            return prev;
+          }
+          queueMicrotask(() => {
+            if (
+              id === TALENT_RAISE_DEAD
+              || id === TALENT_METEOR_STRIKE
+              || id === TALENT_COLDSNAP_ROOM
+              || id === TALENT_LIGHTNING_BOLT_ROOM
+              || id === TALENT_AEGIS_ROOM
+            ) {
+              const abilityId =
+                id === TALENT_RAISE_DEAD ? 'RAISE_DEAD'
+                : id === TALENT_METEOR_STRIKE ? 'METEOR_STRIKE'
+                : id === TALENT_COLDSNAP_ROOM ? 'SCYTHE_E'
+                : id === TALENT_AEGIS_ROOM ? 'AEGIS_ROOM'
+                : 'SPEAR_R';
+              setAbilityLoadout(
+                abilityLoadoutRef.current
+                  ? { ...abilityLoadoutRef.current, R: abilityId }
+                  : { Q: null, E: null, R: abilityId },
+              );
+            }
+          });
+          return applyTalentIdToLoadout(prev, id);
+        });
+        enqueueAnnouncement('UNLOCKED', REWARD_ANNOUNCEMENT_COLORS.unlocked, `deep-sanctum-talent-${payload.timestamp ?? Date.now()}`);
+        window.audioSystem?.playUIInterface3Sound?.();
+      }
+      setPortalsUnlocked(true);
+    });
+  }, [
+    registerDeepSanctumRewardClaimedHandler,
+    enqueueAnnouncement,
+    grantStatPoints,
+    selectedWeapons.primary,
+    setTalentLoadout,
+    setAbilityLoadout,
+  ]);
 
   useEffect(() => {
     return registerMerchantPurchaseSuccessHandler(() => {
@@ -1180,6 +1349,14 @@ function HomeContent() {
     enqueueAnnouncement,
   ]);
 
+  // Pre-boss sequence: boss portal appears after merchant — no pedestal reward at pick_boss.
+  useEffect(() => {
+    if (gameMode !== 'coop') return;
+    if (coopMainArenaPortalPhase === 'pick_boss') {
+      setPortalsUnlocked(true);
+    }
+  }, [gameMode, coopMainArenaPortalPhase]);
+
   useEffect(() => {
     const wasUnlocked = prevPortalsUnlockedRef.current;
     prevPortalsUnlockedRef.current = portalsUnlocked;
@@ -1250,51 +1427,9 @@ function HomeContent() {
       currency: 'essence' as const,
     },
   ];
-  const coopMerchantItems = merchantInventory.map((stock) => {
-    if (stock.kind === 'dash_charge') {
-      return {
-        id: stock.id,
-        name: stock.label ?? 'Dash Charge',
-        description: stock.description ?? 'Adds a 4th dash charge for the run.',
-        cost: stock.cost,
-        currency: 'gold' as const,
-        sold: merchantPurchaseState.dashChargePurchased,
-        kind: 'dash_charge' as const,
-        limitLabel: '1 per run',
-      };
-    }
-    if (stock.kind === 'weapon_talent') {
-      const remaining = Math.max(0, 3 - merchantPurchaseState.weaponTalentPurchases);
-      return {
-        id: stock.id,
-        name: stock.label ?? 'Weapon Talent',
-        description: stock.description ?? 'Grants a random unowned class talent from your weapon.',
-        cost: stock.cost,
-        currency: 'gold' as const,
-        sold: merchantPurchaseState.weaponTalentPurchases >= 3,
-        kind: 'weapon_talent' as const,
-        limitLabel: '3 per run',
-        limitRemaining: remaining,
-      };
-    }
-    return {
-      id: stock.id,
-      name: stock.item?.label ?? 'Artifact',
-      description: `${stock.item?.rarity ? `${stock.item.rarity.toUpperCase()} ` : ''}+${stock.item?.statBonus ?? 0} ${stock.item?.stat ?? 'stat'}`,
-      cost: stock.cost,
-      currency: 'gold' as const,
-      sold: stock.sold,
-      kind: 'boss_drop' as const,
-      rarity: stock.item?.rarity,
-    };
-  });
-  const merchantRoomActive =
-    gameMode === 'coop' &&
-    showMerchantUI &&
-    (coopClearedRoomKind === 'merchant' || coopCurrentRoomKind === 'merchant');
 
   const uiBlocksGameInput =
-    showMerchantUI ||
+    (gameMode === 'pvp' && showMerchantUI) ||
     showRulesPanel ||
     defeatDialogOpen ||
     throneAbilityWeapon !== null ||
@@ -1407,7 +1542,20 @@ function HomeContent() {
                   onRequestThroneTalentModal={handleRequestThroneTalentModal}
                   onThroneWeaponEquipped={handleThroneWeaponEquipped}
                   throneDevTalentShortcutEnabled={DEV_TALENT_MODAL}
-                  pedestalBoonReady={coopMainArenaPortalPhase !== null && !pedestalInteracted}
+                  pedestalBoonReady={
+                    (
+                      coopMainArenaPortalPhase !== null
+                      && coopMainArenaPortalPhase !== 'pick_boss'
+                      && coopMainArenaPortalPhase !== 'pre_boss_merchant'
+                      && coopCurrentRoomKind !== 'merchant'
+                      && !pedestalInteracted
+                    )
+                    || (
+                      coopCurrentRoomKind === 'deep_sanctum'
+                      && deepSanctumRewardKind != null
+                      && !pedestalInteracted
+                    )
+                  }
                   portalsUnlocked={portalsUnlocked}
                   onCombatArenaPedestalInteract={handleCombatArenaPedestalInteract}
                   onInteractHintChange={onCoopInteractHintChange}
@@ -1615,27 +1763,6 @@ function HomeContent() {
                 }}
               />
             )}
-            {merchantRoomActive && (
-              <MerchantUI
-                isVisible={showMerchantUI}
-                title="Merchant Room"
-                items={coopMerchantItems}
-                balance={playerGold}
-                balanceLabel="gold"
-                healOffer={{
-                  cost: 50,
-                  amount: 125,
-                }}
-                onClose={() => {
-                  window.audioSystem?.playMerchantExitGreet?.();
-                  setShowMerchantUI(false);
-                  clearCoopClearedRoomColor();
-                  setPortalsUnlocked(true);
-                }}
-                onPurchase={purchaseMerchantItem}
-                onPurchaseHeal={purchaseMerchantHeal}
-              />
-            )}
           </>
         )}
 
@@ -1671,7 +1798,11 @@ function HomeContent() {
             if (roomKind) {
               const visitIndex = roomKind === 'boss'
                 ? coopBossRoomVisitIndexRef.current
-                : coopColoredRoomVisitIndexRef.current;
+                : roomKind === 'intro'
+                  ? coopIntroRoomIndexRef.current
+                  : roomKind === 'deep_sanctum'
+                    ? coopDeepSanctumLevelRef.current
+                    : coopColoredRoomVisitIndexRef.current;
               queueRoomTitleAnnouncement(
                 roomKind,
                 visitIndex,

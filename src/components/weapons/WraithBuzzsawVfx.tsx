@@ -22,7 +22,7 @@ const WRAITH_BUZZSAW_COLORS = {
 
 interface WraithBuzzsawVfxProps {
   active: boolean;
-  /** Channel duration in ms (default 1500). */
+  /** Channel duration in ms (default 1400). */
   durationMs?: number;
 }
 
@@ -69,7 +69,7 @@ type MatRef = { opacity?: number };
 
 export default function WraithBuzzsawVfx({
   active,
-  durationMs = 1500,
+  durationMs = 1400,
 }: WraithBuzzsawVfxProps) {
   const groupRef = useRef<Group>(null);
   const burstRef = useRef<Mesh>(null);
@@ -86,6 +86,7 @@ export default function WraithBuzzsawVfx({
   const tipBurstRef = useRef<Mesh>(null);
   const tipBurstMat = useRef<MeshBasicMaterial & MatRef>(null);
   const startRef = useRef<number | null>(null);
+  const prevActiveRef = useRef(false);
 
   const half = BEAM_LENGTH * 0.5;
   const { beam: beamColor, puff: puffColor, core: coreColor } = WRAITH_BUZZSAW_COLORS;
@@ -104,6 +105,13 @@ export default function WraithBuzzsawVfx({
       tipTorusGeo.dispose();
     };
   }, [outerHelixGeo, innerHelixGeo, tipTorusGeo]);
+
+  useEffect(() => {
+    if (active && !prevActiveRef.current) {
+      startRef.current = null;
+    }
+    prevActiveRef.current = active;
+  }, [active]);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;

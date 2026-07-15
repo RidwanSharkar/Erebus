@@ -21,7 +21,8 @@ import { clearKnightBlock } from '@/utils/knightBlockState';
 import { installWebGlDiagnostics, recordMultiplayerDisconnect } from '@/utils/webglDiagnostics';
 import { type Archetype, ARCHETYPE_NONE, ARCHETYPE_ROGUE, normalizeArchetype } from '@/utils/archetypes';
 
-export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'merchant' | 'boss';
+export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'merchant' | 'boss' | 'intro' | 'deep_sanctum';
+export type DeepSanctumRewardKind = 'gold' | 'stat' | 'talent';
 export type CoopTerrainTheme = 'purple' | 'blue' | 'green';
 
 export type BroadcastPlayerAttackAnimationData = {
@@ -263,6 +264,13 @@ export interface MerchantPurchaseSuccessPayload {
   timestamp?: number;
 }
 
+export interface DeepSanctumRewardClaimedPayload {
+  rewardKind: DeepSanctumRewardKind;
+  goldGranted: number;
+  deepSanctumStatPoints: number;
+  timestamp?: number;
+}
+
 export type BossSlainLabel = 'hate' | 'knights' | 'envy' | 'fear' | 'trinity';
 
 export interface BossDefeatedPayload {
@@ -381,8 +389,15 @@ interface MultiplayerContextType {
   thronePortalOffer: string[];
   /** Co-op: south-rim only in throne; main-map portal rounds use `coopMainArenaPortalPhase`. */
   thronePortalLayout: 'rim' | 'center';
-  /** Co-op: main combat map — two portals (wave 2), boss gate, or post-boss continuation. Null otherwise. */
-  coopMainArenaPortalPhase: 'pick_wave2' | 'pick_boss' | 'pick_post_boss' | null;
+  /** Co-op: main combat map — two portals (wave 2), pre-boss Trial/Stat, reward/merchant pause, boss gate, or post-boss continuation. Null otherwise. */
+  coopMainArenaPortalPhase:
+    | 'pick_wave2'
+    | 'pick_pre_boss'
+    | 'pre_boss_reward'
+    | 'pre_boss_merchant'
+    | 'pick_boss'
+    | 'pick_post_boss'
+    | null;
   /** Co-op: act terrain theme, independent from the selected room color/reward kind. */
   coopTerrainTheme: CoopTerrainTheme;
   /** Co-op: active destination/reward kind for environment and pedestal behavior. */
@@ -414,6 +429,22 @@ interface MultiplayerContextType {
   coopCombatArenaEnterSeq: number;
   /** Increments on each `coop-main-arena-intermission` (wave clear; choice portals; server does not move players). */
   coopMainArenaIntermissionSeq: number;
+  /** Increments on each `coop-intro-intermission` (intro room clear; void portal / fountain phase). */
+  coopIntroIntermissionSeq: number;
+  /** Co-op intro: one-time 3-room sequence before the normal loop. */
+  coopIntroPending: boolean;
+  coopIntroActive: boolean;
+  coopIntroRoomIndex: number;
+  coopIntroPortalOpen: boolean;
+  coopIntroFountainPhase: boolean;
+  coopIntroFountainUsed: boolean;
+  /** Main-loop center void portal offered alongside dual gateways. */
+  coopVoidPortalOffered: boolean;
+  coopDeepSanctumLevel: number;
+  /** Pre-rolled reward kind after deep sanctum clear (pedestal claim). */
+  deepSanctumRewardKind: DeepSanctumRewardKind | null;
+  /** Increments on each `coop-deep-sanctum-intermission`. */
+  coopDeepSanctumIntermissionSeq: number;
   /** Increments on each `boss-defeated` (co-op final boss; no `coop-main-arena-intermission` from the server). Used for BGM. */
   coopBossClearedBgmSeq: number;
   /**
@@ -481,6 +512,10 @@ interface MultiplayerContextType {
   startGame: () => void;
   /** Co-op: request transition from throne room to main combat arena (server-authoritative). */
   enterCombatArena: (chosenCampType?: string) => void;
+  useCoopFountain: () => void;
+  claimPreBossReward: () => void;
+  claimDeepSanctumReward: () => void;
+  finishPreBossMerchant: () => void;
   
   // Player actions
   updatePlayerPosition: (position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number }, movementDirection?: PlayerMovementDirection) => void;
@@ -562,6 +597,9 @@ interface MultiplayerContextType {
   registerMerchantPurchaseSuccessHandler: (
     handler: (payload: MerchantPurchaseSuccessPayload) => void,
   ) => () => void;
+  registerDeepSanctumRewardClaimedHandler: (
+    handler: (payload: DeepSanctumRewardClaimedPayload) => void,
+  ) => () => void;
   registerMerchantNpcGreetHandler: (
     handler: (payload: { kind: string }) => void,
   ) => () => void;
@@ -609,6 +647,10 @@ export type MultiplayerActionsContextType = Pick<
   | 'clearPreview'
   | 'startGame'
   | 'enterCombatArena'
+  | 'useCoopFountain'
+  | 'claimPreBossReward'
+  | 'claimDeepSanctumReward'
+  | 'finishPreBossMerchant'
   | 'updatePlayerPosition'
   | 'updatePlayerWeapon'
   | 'updatePlayerArchetype'
@@ -651,6 +693,7 @@ export type MultiplayerActionsContextType = Pick<
   | 'purchaseMerchantItem'
   | 'purchaseMerchantHeal'
   | 'registerMerchantPurchaseSuccessHandler'
+  | 'registerDeepSanctumRewardClaimedHandler'
   | 'registerMerchantNpcGreetHandler'
   | 'registerPlayerGoldChangedHandler'
   | 'registerBossDefeatedHandler'
@@ -713,15 +756,31 @@ interface MultiplayerProviderProps {
 }
 
 const VALID_CAMP_KEYS = new Set(['red', 'blue', 'green', 'purple']);
-const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'trial', 'merchant', 'boss']);
+const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'trial', 'merchant', 'boss', 'intro', 'deep_sanctum']);
 const VALID_COOP_TERRAIN_THEMES = new Set(['purple', 'blue', 'green']);
 
 function normalizeThronePortalLayout(v: unknown): 'rim' | 'center' {
   return v === 'center' ? 'center' : 'rim';
 }
 
-function normalizeCoopMainArenaPhase(v: unknown): 'pick_wave2' | 'pick_boss' | 'pick_post_boss' | null {
-  if (v === 'pick_wave2' || v === 'pick_boss' || v === 'pick_post_boss') return v;
+function normalizeCoopMainArenaPhase(v: unknown):
+  | 'pick_wave2'
+  | 'pick_pre_boss'
+  | 'pre_boss_reward'
+  | 'pre_boss_merchant'
+  | 'pick_boss'
+  | 'pick_post_boss'
+  | null {
+  if (
+    v === 'pick_wave2'
+    || v === 'pick_pre_boss'
+    || v === 'pre_boss_reward'
+    || v === 'pre_boss_merchant'
+    || v === 'pick_boss'
+    || v === 'pick_post_boss'
+  ) {
+    return v;
+  }
   return null;
 }
 
@@ -830,6 +889,17 @@ type CoopSessionSnapshotPayload = {
   coopBossRoomVisitIndex?: unknown;
   merchantInventory?: unknown;
   mushroomState?: { health?: number[]; maxHealth?: number };
+  coopIntroPending?: boolean;
+  coopIntroActive?: boolean;
+  coopIntroRoomIndex?: number;
+  coopIntroPortalOpen?: boolean;
+  coopIntroFountainPhase?: boolean;
+  coopIntroFountainUsed?: boolean;
+  coopVoidPortalOffered?: boolean;
+  coopDeepSanctumActive?: boolean;
+  coopDeepSanctumLevel?: number;
+  deepSanctumRewardKind?: string;
+  introGoldReward?: number;
 };
 
 type CoopSnapshotSetters = {
@@ -841,7 +911,15 @@ type CoopSnapshotSetters = {
   setThronePortalOffer: React.Dispatch<React.SetStateAction<string[]>>;
   setThronePortalLayout: React.Dispatch<React.SetStateAction<'rim' | 'center'>>;
   setCoopMainArenaPortalPhase: React.Dispatch<
-    React.SetStateAction<'pick_wave2' | 'pick_boss' | 'pick_post_boss' | null>
+    React.SetStateAction<
+      | 'pick_wave2'
+      | 'pick_pre_boss'
+      | 'pre_boss_reward'
+      | 'pre_boss_merchant'
+      | 'pick_boss'
+      | 'pick_post_boss'
+      | null
+    >
   >;
   setCoopBossThroneArena: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopThroneBossKind: React.Dispatch<
@@ -857,6 +935,15 @@ type CoopSnapshotSetters = {
   setMushroomState: React.Dispatch<
     React.SetStateAction<{ health: number[]; maxHealth: number } | null>
   >;
+  setCoopIntroPending: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopIntroActive: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopIntroRoomIndex: React.Dispatch<React.SetStateAction<number>>;
+  setCoopIntroPortalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopIntroFountainPhase: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopIntroFountainUsed: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopVoidPortalOffered: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopDeepSanctumLevel: React.Dispatch<React.SetStateAction<number>>;
+  setDeepSanctumRewardKind: React.Dispatch<React.SetStateAction<DeepSanctumRewardKind | null>>;
 };
 
 function applyCoopCombatArenaActiveFromServer(
@@ -868,6 +955,51 @@ function applyCoopCombatArenaActiveFromServer(
     setCombatArenaActive(!!combatArenaActive);
   } else {
     setCombatArenaActive(true);
+  }
+}
+
+function applyIntroSnapshot(
+  data: CoopSessionSnapshotPayload | null | undefined,
+  setters: Pick<
+    CoopSnapshotSetters,
+    | 'setCoopIntroPending'
+    | 'setCoopIntroActive'
+    | 'setCoopIntroRoomIndex'
+    | 'setCoopIntroPortalOpen'
+    | 'setCoopIntroFountainPhase'
+    | 'setCoopIntroFountainUsed'
+  >,
+) {
+  if (!data) return;
+  if ('coopIntroPending' in data) setters.setCoopIntroPending(!!data.coopIntroPending);
+  if ('coopIntroActive' in data) setters.setCoopIntroActive(!!data.coopIntroActive);
+  if ('coopIntroRoomIndex' in data) {
+    setters.setCoopIntroRoomIndex(Math.max(0, Number(data.coopIntroRoomIndex) || 0));
+  }
+  if ('coopIntroPortalOpen' in data) setters.setCoopIntroPortalOpen(!!data.coopIntroPortalOpen);
+  if ('coopIntroFountainPhase' in data) setters.setCoopIntroFountainPhase(!!data.coopIntroFountainPhase);
+  if ('coopIntroFountainUsed' in data) setters.setCoopIntroFountainUsed(!!data.coopIntroFountainUsed);
+}
+
+function applyDeepSanctumSnapshot(
+  data: CoopSessionSnapshotPayload | null | undefined,
+  setters: Pick<
+    CoopSnapshotSetters,
+    'setCoopVoidPortalOffered' | 'setCoopDeepSanctumLevel' | 'setDeepSanctumRewardKind'
+  >,
+) {
+  if (!data) return;
+  if ('coopVoidPortalOffered' in data) setters.setCoopVoidPortalOffered(!!data.coopVoidPortalOffered);
+  if ('coopDeepSanctumLevel' in data) {
+    setters.setCoopDeepSanctumLevel(Math.max(0, Number(data.coopDeepSanctumLevel) || 0));
+  }
+  if ('deepSanctumRewardKind' in data) {
+    const k = String(data.deepSanctumRewardKind || '').toLowerCase();
+    setters.setDeepSanctumRewardKind(
+      k === 'gold' || k === 'stat' || k === 'talent' ? (k as DeepSanctumRewardKind) : null,
+    );
+  } else if ('coopDeepSanctumActive' in data && !data.coopDeepSanctumActive) {
+    setters.setDeepSanctumRewardKind(null);
   }
 }
 
@@ -956,6 +1088,8 @@ function applyCoopSessionSnapshot(
       maxHealth: data.mushroomState.maxHealth ?? 10,
     });
   }
+  applyIntroSnapshot(data, setters);
+  applyDeepSanctumSnapshot(data, setters);
 }
 
 export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
@@ -1035,7 +1169,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [thronePortalOffer, setThronePortalOffer] = useState<string[]>([]);
   const [thronePortalLayout, setThronePortalLayout] = useState<'rim' | 'center'>('rim');
   const [coopMainArenaPortalPhase, setCoopMainArenaPortalPhase] = useState<
-    'pick_wave2' | 'pick_boss' | 'pick_post_boss' | null
+    | 'pick_wave2'
+    | 'pick_pre_boss'
+    | 'pre_boss_reward'
+    | 'pre_boss_merchant'
+    | 'pick_boss'
+    | 'pick_post_boss'
+    | null
   >(null);
   const [coopCurrentRoomKind, setCoopCurrentRoomKind] = useState<CoopRoomKind | null>(null);
   const [coopClearedRoomKind, setCoopClearedRoomKind] = useState<CoopRoomKind | null>(null);
@@ -1059,6 +1199,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   }, []);
   const [coopCombatArenaEnterSeq, setCoopCombatArenaEnterSeq] = useState(0);
   const [coopMainArenaIntermissionSeq, setCoopMainArenaIntermissionSeq] = useState(0);
+  const [coopIntroIntermissionSeq, setCoopIntroIntermissionSeq] = useState(0);
+  const [coopIntroPending, setCoopIntroPending] = useState(false);
+  const [coopIntroActive, setCoopIntroActive] = useState(false);
+  const [coopIntroRoomIndex, setCoopIntroRoomIndex] = useState(0);
+  const [coopIntroPortalOpen, setCoopIntroPortalOpen] = useState(false);
+  const [coopIntroFountainPhase, setCoopIntroFountainPhase] = useState(false);
+  const [coopIntroFountainUsed, setCoopIntroFountainUsed] = useState(false);
+  const [coopVoidPortalOffered, setCoopVoidPortalOffered] = useState(false);
+  const [coopDeepSanctumLevel, setCoopDeepSanctumLevel] = useState(0);
+  const [deepSanctumRewardKind, setDeepSanctumRewardKind] = useState<DeepSanctumRewardKind | null>(null);
+  const [coopDeepSanctumIntermissionSeq, setCoopDeepSanctumIntermissionSeq] = useState(0);
   const [coopBossClearedBgmSeq, setCoopBossClearedBgmSeq] = useState(0);
   const [coopClearedRoomColor, setCoopClearedRoomColor] = useState<string | null>(null);
   const [lateJoinCombatLoadout, setLateJoinCombatLoadout] = useState<{
@@ -1097,6 +1248,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   });
   const merchantPurchaseSuccessHandlersRef = useRef<
     Set<(payload: MerchantPurchaseSuccessPayload) => void>
+  >(new Set());
+  const deepSanctumRewardClaimedHandlersRef = useRef<
+    Set<(payload: DeepSanctumRewardClaimedPayload) => void>
   >(new Set());
   const merchantNpcGreetHandlersRef = useRef<
     Set<(payload: { kind: string }) => void>
@@ -1342,6 +1496,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         coopPendingPortalSnapRef.current = true;
         setCoopTransitionOverlay(true);
       }
+      applyDeepSanctumSnapshot(data, {
+        setCoopVoidPortalOffered,
+        setCoopDeepSanctumLevel,
+        setDeepSanctumRewardKind,
+      });
     });
 
     addEventHandler('camps-initialized', (data: { campTypes?: string[]; coopTerrainTheme?: unknown; coopCurrentRoomKind?: string }) => {
@@ -1852,6 +2011,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           setMerchantInventory,
           setMerchantPurchaseState,
           setMushroomState,
+          setCoopIntroPending,
+          setCoopIntroActive,
+          setCoopIntroRoomIndex,
+          setCoopIntroPortalOpen,
+          setCoopIntroFountainPhase,
+          setCoopIntroFountainUsed,
+          setCoopVoidPortalOffered,
+          setCoopDeepSanctumLevel,
+          setDeepSanctumRewardKind,
         },
         { resetVisitIndices: true, resetMerchantPurchaseState: true },
       );
@@ -1880,6 +2048,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           setMerchantInventory,
           setMerchantPurchaseState,
           setMushroomState,
+          setCoopIntroPending,
+          setCoopIntroActive,
+          setCoopIntroRoomIndex,
+          setCoopIntroPortalOpen,
+          setCoopIntroFountainPhase,
+          setCoopIntroFountainUsed,
+          setCoopVoidPortalOffered,
+          setCoopDeepSanctumLevel,
+          setDeepSanctumRewardKind,
         },
         { resetVisitIndices: false, resetMerchantPurchaseState: false },
       );
@@ -1896,6 +2073,97 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     addEventHandler('boss-defeated', (data: BossDefeatedPayload) => {
       setCoopBossClearedBgmSeq((s) => s + 1);
       bossDefeatedHandlersRef.current.forEach((handler) => handler(data));
+    });
+
+    addEventHandler('coop-intro-intermission', (data: any) => {
+      cancelPendingEnemyRemovals();
+      setCoopIntroIntermissionSeq((s) => s + 1);
+      if (data && 'combatArenaActive' in data) {
+        setCombatArenaActive(!!data.combatArenaActive);
+      }
+      if (Array.isArray(data?.thronePortalOffer)) {
+        setThronePortalOffer([...data.thronePortalOffer]);
+      }
+      setCoopMainArenaPortalPhase(null);
+      if (data && 'coopCurrentRoomKind' in data) {
+        setCoopCurrentRoomKind(normalizeCoopRoomKind(data.coopCurrentRoomKind));
+      }
+      if (data && 'coopClearedRoomKind' in data) {
+        setCoopClearedRoomKind(normalizeCoopRoomKind(data.coopClearedRoomKind));
+      }
+      applyIntroSnapshot(data, {
+        setCoopIntroPending,
+        setCoopIntroActive,
+        setCoopIntroRoomIndex,
+        setCoopIntroPortalOpen,
+        setCoopIntroFountainPhase,
+        setCoopIntroFountainUsed,
+      });
+      if (data?.players && Array.isArray(data.players)) {
+        setPlayers((prev) => {
+          const next = new Map(prev);
+          for (const p of data.players as Player[]) {
+            const old = next.get(p.id);
+            next.set(p.id, old ? { ...old, ...p } : p);
+          }
+          return next;
+        });
+      }
+      if (data?.enemies && Array.isArray(data.enemies)) {
+        setEnemies(() => {
+          const m = new Map<string, Enemy>();
+          for (const e of data.enemies as Enemy[]) {
+            m.set(e.id, { ...e, staggerBuildup: e.staggerBuildup ?? 0 });
+          }
+          return m;
+        });
+      }
+    });
+
+    addEventHandler('coop-deep-sanctum-intermission', (data: any) => {
+      cancelPendingEnemyRemovals();
+      setCoopDeepSanctumIntermissionSeq((s) => s + 1);
+      if (data && 'combatArenaActive' in data) {
+        setCombatArenaActive(!!data.combatArenaActive);
+      }
+      setCoopMainArenaPortalPhase(null);
+      setThronePortalOffer([]);
+      setCoopVoidPortalOffered(false);
+      if (data && 'coopCurrentRoomKind' in data) {
+        setCoopCurrentRoomKind(normalizeCoopRoomKind(data.coopCurrentRoomKind));
+      }
+      if (data && 'coopClearedRoomKind' in data) {
+        setCoopClearedRoomKind(normalizeCoopRoomKind(data.coopClearedRoomKind));
+      }
+      applyDeepSanctumSnapshot(data, {
+        setCoopVoidPortalOffered,
+        setCoopDeepSanctumLevel,
+        setDeepSanctumRewardKind,
+      });
+      if (data?.players && Array.isArray(data.players)) {
+        setPlayers((prev) => {
+          const next = new Map(prev);
+          for (const p of data.players as Player[]) {
+            const old = next.get(p.id);
+            next.set(p.id, old ? { ...old, ...p } : p);
+          }
+          return next;
+        });
+      }
+      if (data?.enemies && Array.isArray(data.enemies)) {
+        setEnemies(() => {
+          const m = new Map<string, Enemy>();
+          for (const e of data.enemies as Enemy[]) {
+            m.set(e.id, { ...e, staggerBuildup: e.staggerBuildup ?? 0 });
+          }
+          return m;
+        });
+      }
+    });
+
+    addEventHandler('coop-deep-sanctum-reward-claimed', (data: DeepSanctumRewardClaimedPayload) => {
+      setDeepSanctumRewardKind(null);
+      deepSanctumRewardClaimedHandlersRef.current.forEach((handler) => handler(data));
     });
 
     addEventHandler('coop-main-arena-intermission', (data: any) => {
@@ -1949,6 +2217,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           return m;
         });
       }
+      applyDeepSanctumSnapshot(data, {
+        setCoopVoidPortalOffered,
+        setCoopDeepSanctumLevel,
+        setDeepSanctumRewardKind,
+      });
     });
 
     addEventHandler('combat-arena-entered', (data: any) => {
@@ -1973,6 +2246,23 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopTerrainTheme(normalizeCoopTerrainTheme(data?.coopTerrainTheme));
       setCoopCurrentRoomKind(normalizeCoopRoomKind(data?.coopCurrentRoomKind));
       setCoopClearedRoomKind(null);
+      applyIntroSnapshot(data, {
+        setCoopIntroPending,
+        setCoopIntroActive,
+        setCoopIntroRoomIndex,
+        setCoopIntroPortalOpen,
+        setCoopIntroFountainPhase,
+        setCoopIntroFountainUsed,
+      });
+      applyDeepSanctumSnapshot(data, {
+        setCoopVoidPortalOffered,
+        setCoopDeepSanctumLevel,
+        setDeepSanctumRewardKind,
+      });
+      if (normalizeCoopRoomKind(data?.coopCurrentRoomKind) === 'deep_sanctum') {
+        setCoopVoidPortalOffered(false);
+        setDeepSanctumRewardKind(null);
+      }
       setCoopColoredRoomVisitIndex(normalizeCoopColoredRoomVisitIndex(data?.coopColoredRoomVisitIndex));
       setCoopBossRoomVisitIndex(normalizeCoopBossRoomVisitIndex(data?.coopBossRoomVisitIndex));
       setMerchantInventory(normalizeMerchantInventory(data?.merchantInventory));
@@ -2330,6 +2620,30 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       socket.emit('enter-combat-arena', { roomId: currentRoomId, chosenCampType });
     }
   }, [socket, currentRoomId, startCoopPortalBlink]);
+
+  const useCoopFountain = useCallback(() => {
+    if (socket && currentRoomId) {
+      socket.emit('coop-use-fountain', { roomId: currentRoomId });
+    }
+  }, [socket, currentRoomId]);
+
+  const claimPreBossReward = useCallback(() => {
+    if (socket && currentRoomId) {
+      socket.emit('coop-pre-boss-reward-claimed', { roomId: currentRoomId });
+    }
+  }, [socket, currentRoomId]);
+
+  const claimDeepSanctumReward = useCallback(() => {
+    if (socket && currentRoomId) {
+      socket.emit('coop-deep-sanctum-reward-claimed', { roomId: currentRoomId });
+    }
+  }, [socket, currentRoomId]);
+
+  const finishPreBossMerchant = useCallback(() => {
+    if (socket && currentRoomId) {
+      socket.emit('coop-pre-boss-merchant-finished', { roomId: currentRoomId });
+    }
+  }, [socket, currentRoomId]);
 
   const hideCoopPortalTransition = useCallback(() => {
     coopTransitionOverlayRef.current = false;
@@ -2970,6 +3284,16 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     [],
   );
 
+  const registerDeepSanctumRewardClaimedHandler = useCallback(
+    (handler: (payload: DeepSanctumRewardClaimedPayload) => void) => {
+      deepSanctumRewardClaimedHandlersRef.current.add(handler);
+      return () => {
+        deepSanctumRewardClaimedHandlersRef.current.delete(handler);
+      };
+    },
+    [],
+  );
+
   const registerMerchantNpcGreetHandler = useCallback(
     (handler: (payload: { kind: string }) => void) => {
       merchantNpcGreetHandlersRef.current.add(handler);
@@ -3097,6 +3421,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     coopPortalBlinkSeq,
     coopCombatArenaEnterSeq,
     coopMainArenaIntermissionSeq,
+    coopIntroIntermissionSeq,
+    coopIntroPending,
+    coopIntroActive,
+    coopIntroRoomIndex,
+    coopIntroPortalOpen,
+    coopIntroFountainPhase,
+    coopIntroFountainUsed,
+    coopVoidPortalOffered,
+    coopDeepSanctumLevel,
+    deepSanctumRewardKind,
+    coopDeepSanctumIntermissionSeq,
     coopBossClearedBgmSeq,
     coopClearedRoomColor,
     clearCoopClearedRoomColor,
@@ -3117,6 +3452,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     clearPreview,
     startGame,
     enterCombatArena,
+    useCoopFountain,
+    claimPreBossReward,
+    claimDeepSanctumReward,
+    finishPreBossMerchant,
     updatePlayerPosition,
     updatePlayerWeapon,
     updatePlayerArchetype,
@@ -3167,6 +3506,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     purchaseMerchantHeal,
     merchantPurchaseState,
     registerMerchantPurchaseSuccessHandler,
+    registerDeepSanctumRewardClaimedHandler,
     registerMerchantNpcGreetHandler,
     registerPlayerGoldChangedHandler,
     registerBossDefeatedHandler,
@@ -3201,6 +3541,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       clearPreview,
       startGame,
       enterCombatArena,
+      useCoopFountain,
+      claimPreBossReward,
+      claimDeepSanctumReward,
+      finishPreBossMerchant,
       updatePlayerPosition,
       updatePlayerWeapon,
       updatePlayerArchetype,
@@ -3243,6 +3587,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       purchaseMerchantItem,
       purchaseMerchantHeal,
       registerMerchantPurchaseSuccessHandler,
+      registerDeepSanctumRewardClaimedHandler,
       registerMerchantNpcGreetHandler,
       registerPlayerGoldChangedHandler,
       registerBossDefeatedHandler,
@@ -3273,6 +3618,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       clearPreview,
       startGame,
       enterCombatArena,
+      useCoopFountain,
+      claimPreBossReward,
+      claimDeepSanctumReward,
+      finishPreBossMerchant,
       updatePlayerPosition,
       updatePlayerWeapon,
       updatePlayerArchetype,
@@ -3315,6 +3664,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       purchaseMerchantItem,
       purchaseMerchantHeal,
       registerMerchantPurchaseSuccessHandler,
+      registerDeepSanctumRewardClaimedHandler,
       registerMerchantNpcGreetHandler,
       registerPlayerGoldChangedHandler,
       registerBossDefeatedHandler,
@@ -3369,6 +3719,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopPortalBlinkSeq,
       coopCombatArenaEnterSeq,
       coopMainArenaIntermissionSeq,
+      coopIntroIntermissionSeq,
+      coopIntroPending,
+      coopIntroActive,
+      coopIntroRoomIndex,
+      coopIntroPortalOpen,
+      coopIntroFountainPhase,
+      coopIntroFountainUsed,
+      coopVoidPortalOffered,
+      coopDeepSanctumLevel,
+      deepSanctumRewardKind,
+      coopDeepSanctumIntermissionSeq,
       coopBossClearedBgmSeq,
       coopClearedRoomColor,
       lateJoinCombatLoadout,
@@ -3417,6 +3778,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopPortalBlinkSeq,
       coopCombatArenaEnterSeq,
       coopMainArenaIntermissionSeq,
+      coopIntroIntermissionSeq,
+      coopIntroPending,
+      coopIntroActive,
+      coopIntroRoomIndex,
+      coopIntroPortalOpen,
+      coopIntroFountainPhase,
+      coopIntroFountainUsed,
       coopBossClearedBgmSeq,
       coopClearedRoomColor,
       lateJoinCombatLoadout,
