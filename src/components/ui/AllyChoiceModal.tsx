@@ -147,10 +147,12 @@ function DiamondFrame({
 }
 
 interface AllyChoiceModalProps {
+  offer: readonly CoopAllyKind[];
   onPick: (allyKind: CoopAllyKind) => void;
 }
 
-export default function AllyChoiceModal({ onPick }: AllyChoiceModalProps) {
+export default function AllyChoiceModal({ offer, onPick }: AllyChoiceModalProps) {
+  const visibleCards = ALLY_CARDS.filter((card) => offer.includes(card.kind));
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [openingFlash, setOpeningFlash] = useState(true);
 
@@ -162,15 +164,16 @@ export default function AllyChoiceModal({ onPick }: AllyChoiceModalProps) {
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
+      const cards = ALLY_CARDS.filter((card) => offer.includes(card.kind));
       const idx = parseInt(e.key, 10) - 1;
-      if (!isNaN(idx) && idx >= 0 && idx < ALLY_CARDS.length) {
-        const card = ALLY_CARDS[idx];
+      if (!isNaN(idx) && idx >= 0 && idx < cards.length) {
+        const card = cards[idx];
         if (card) onPick(card.kind);
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [onPick]);
+  }, [onPick, offer]);
 
   const handlePick = (kind: CoopAllyKind) => {
     window.audioSystem?.playUISelectionSound?.();
@@ -233,24 +236,23 @@ export default function AllyChoiceModal({ onPick }: AllyChoiceModalProps) {
           <div className="flex-1 h-px bg-gray-700/60" />
           <span className="text-gray-600 text-xs tracking-widest">
             Press&nbsp;
-            <kbd className="px-1 py-0.5 rounded bg-gray-800 border border-gray-600 text-gray-400 font-mono text-xs">1</kbd>
-            &nbsp;·&nbsp;
-            <kbd className="px-1 py-0.5 rounded bg-gray-800 border border-gray-600 text-gray-400 font-mono text-xs">2</kbd>
-            &nbsp;·&nbsp;
-            <kbd className="px-1 py-0.5 rounded bg-gray-800 border border-gray-600 text-gray-400 font-mono text-xs">3</kbd>
-            &nbsp;·&nbsp;
-            <kbd className="px-1 py-0.5 rounded bg-gray-800 border border-gray-600 text-gray-400 font-mono text-xs">4</kbd>
-            &nbsp;·&nbsp;
-            <kbd className="px-1 py-0.5 rounded bg-gray-800 border border-gray-600 text-gray-400 font-mono text-xs">5</kbd>
+            {visibleCards.map((_, idx) => (
+              <React.Fragment key={idx}>
+                {idx > 0 && <>&nbsp;·&nbsp;</>}
+                <kbd className="px-1 py-0.5 rounded bg-gray-800 border border-gray-600 text-gray-400 font-mono text-xs">
+                  {idx + 1}
+                </kbd>
+              </React.Fragment>
+            ))}
           </span>
         </div>
 
-        <div className="border-x-2 border-b-2 border-violet-400 rounded-b-xl overflow-hidden grid grid-cols-1 md:grid-cols-2">
-          {ALLY_CARDS.map((card, idx) => {
+        <div className="border-x-2 border-b-2 border-violet-400 rounded-b-xl overflow-hidden grid grid-cols-1 md:grid-cols-3">
+          {visibleCards.map((card, idx) => {
             const isHovered = hoveredIdx === idx;
             const accent = card.accent;
             const borderClass =
-              idx % 2 === 0 ? 'md:border-r border-b md:border-b-0 border-t-0 border-x-0' : 'border-0';
+              idx % 3 !== 2 ? 'md:border-r border-b md:border-b-0 border-t-0 border-x-0' : 'border-0';
 
             return (
               <button

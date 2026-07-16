@@ -2,14 +2,14 @@ const { WALL_SEGMENTS } = require('./wallData');
 const { rotationYTowardEntry } = require('./coopArenaLayout');
 
 // Mirror client main arena constants (colored rooms use a circle at this radius).
-const MAIN_ARENA_HEX_RADIUS = 24;
+const MAIN_ARENA_HEX_RADIUS = 20;
 const MAIN_CIRCLE_INNER_RADIUS = MAIN_ARENA_HEX_RADIUS - 0.5;
 /** Stat/trial hex combat arena — must match `HexCombatArena.tsx`. */
-const HEX_ARENA_RADIUS = 22;
+const HEX_ARENA_RADIUS = 20;
 const HEX_FLOOR_MARGIN = 1.4;
 const HEX_INNER_APOTHEM = HEX_ARENA_RADIUS * Math.cos(Math.PI / 6) - HEX_FLOOR_MARGIN;
 /** Match `backend/gameRoom.js` COOP_THRONE_ROOM_RADIUS — prep disc; wall resolve when combat not active. */
-const COOP_THRONE_ROOM_RADIUS = 24;
+const COOP_THRONE_ROOM_RADIUS = 20;
 /** Match `ThroneRoom.tsx` THRONE_RIM_INSET — inset from grass rim for portals / foot clearance. */
 const THRONE_RIM_INSET = 1.25;
 const ENEMY_WALL_COLLISION_RADIUS = 0.5;
@@ -269,7 +269,7 @@ const WRAITH_BUZZSAW_COOLDOWN_MS = 5000;
 const WRAITH_BUZZSAW_DURATION_MS = 1024;
 const WRAITH_BUZZSAW_DAMAGE = 14;
 const WRAITH_BUZZSAW_TICK_MS = 333;
-const WRAITH_BUZZSAW_RANGE = 5.0;
+const WRAITH_BUZZSAW_RANGE = 4.5;
 const WRAITH_BUZZSAW_HALF_ANGLE_RAD = Math.PI / 6;
 const WRAITH_ENGAGE_RANGE = 3.75;
 const WRAITH_AGGRO_RADIUS = 18;
@@ -7851,12 +7851,12 @@ class EnemyAI {
       case 'boss2': return 2.0;
       case 'boss3': return 2.0;
       case 'boss-skeleton': return 1.75;
-      case 'shade':   return 2.0;
+      case 'shade':   return 2.22;
       case 'warlock': return 0.0; // Stationary — moves only via blink
       case 'viper':   return 2.0;
-      case 'templar': return 3.0;
+      case 'templar': return 3.2;
       case 'weaver':  return 2.0;
-      case 'ghoul':   return 2;
+      case 'ghoul':   return 2.22;
       case 'titan':   return 2.5;
       case 'martyr':  return 3.0;
       case 'wraith':  return 2.5;
@@ -8999,7 +8999,9 @@ class EnemyAI {
         ALLIED_ENCHANTRESS_GRASPING_VINES_RANGE,
       ).slice(0, ALLIED_ENCHANTRESS_GRASPING_VINES_MAX_TARGETS);
       for (const enemy of targets) {
-        this.room.applyEntanglementOnHit(enemy.id, ownerPlayerId, ownerPlayer);
+        this.room.applyEntanglementOnHit(enemy.id, ownerPlayerId, ownerPlayer, {
+          sourceAlliedUnitId: liveEnchantress.id,
+        });
       }
     }, lockMs);
   }

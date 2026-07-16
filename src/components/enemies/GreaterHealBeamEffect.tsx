@@ -32,7 +32,7 @@ interface GreaterHealBeamEffectProps {
 
 const DURATION = 1.25;
 const MAX_BEAM_HEIGHT = 12;
-const MOTE_COUNT = 26;
+const MOTE_COUNT = 4;
 
 export default function GreaterHealBeamEffect({
   position,

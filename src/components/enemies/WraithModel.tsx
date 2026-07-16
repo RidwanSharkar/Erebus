@@ -26,7 +26,7 @@ export function preloadWraithModels(): void {
   WRAITH_MODEL_PATHS.forEach(path => useGLTF.preload(path));
 }
 
-const SCALE = 0.01125;
+const SCALE = 0.012;
 
 export default React.memo(function WraithModel({
   isWalking,

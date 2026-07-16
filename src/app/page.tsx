@@ -281,6 +281,7 @@ function HomeContent() {
     coopIntroFountainPhase,
     coopIntroFountainUsed,
     coopIntroAllyChoiceMade,
+    coopAllyOffer,
     coopVoidPortalOffered,
     coopDeepSanctumLevel,
     deepSanctumRewardKind,
@@ -1452,7 +1453,7 @@ function HomeContent() {
   ];
 
   const showAllyChoiceModal =
-    gameMode === 'coop' && coopIntroFountainPhase && !coopIntroAllyChoiceMade;
+    gameMode === 'coop' && coopIntroFountainPhase && !coopIntroAllyChoiceMade && coopAllyOffer.length > 0;
 
   const uiBlocksGameInput =
     (gameMode === 'pvp' && showMerchantUI) ||
@@ -1744,7 +1745,7 @@ function HomeContent() {
             )}
 
             {showAllyChoiceModal && (
-              <AllyChoiceModal onPick={chooseCoopAlly} />
+              <AllyChoiceModal offer={coopAllyOffer} onPick={chooseCoopAlly} />
             )}
 
             {gameMode === 'coop' && coopBoon !== null && (

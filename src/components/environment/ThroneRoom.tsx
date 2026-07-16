@@ -33,7 +33,7 @@ const THRONE_PORTAL_INNER_SPHERE_GEO = new SphereGeometry(1.35, 24, 24);
 export const COOP_THRONE_LAYOUT_RADIUS = 16;
 
 /** Grass, VFX, physics clamp, outer perimeter — 2× the legacy 16m playable disk. */
-export const COOP_THRONE_ROOM_RADIUS = 21
+export const COOP_THRONE_ROOM_RADIUS = 16
 
 
 /** XZ radius for movement physics, sword charge, and ECS `PillarCollision` cylinders on these pillars. */

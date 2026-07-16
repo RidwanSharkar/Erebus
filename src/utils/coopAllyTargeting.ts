@@ -7,6 +7,20 @@ export function parseCoopAllyKind(kind: string | null | undefined): CoopAllyKind
   return COOP_ALLY_KINDS.includes(k as CoopAllyKind) ? (k as CoopAllyKind) : 'knight';
 }
 
+export function parseCoopAllyOffer(offer: unknown): CoopAllyKind[] {
+  if (!Array.isArray(offer)) return [];
+  const seen = new Set<CoopAllyKind>();
+  const result: CoopAllyKind[] = [];
+  for (const entry of offer) {
+    const k = String(entry || '').toLowerCase() as CoopAllyKind;
+    if (COOP_ALLY_KINDS.includes(k) && !seen.has(k)) {
+      seen.add(k);
+      result.push(k);
+    }
+  }
+  return result;
+}
+
 /** Co-op player-owned allies — not valid targets for player attacks or debuffs. */
 export function isCoopPlayerAllyEntity(entity: {
   userData?: { isCoopAlliedUnit?: boolean; coopServerEnemyType?: string };

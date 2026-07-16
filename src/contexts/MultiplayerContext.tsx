@@ -14,7 +14,7 @@ import type { ItemRarity } from '@/utils/itemRarity';
 import { Vector3 } from '@/utils/three-exports';
 import { applyEnemyMoveBatch, type EnemyLiveTransform } from '@/utils/enemyLiveTransform';
 import { applyPlayerMove, type PlayerLiveTransform } from '@/utils/playerLiveTransform';
-import { parseCoopAllyKind, type CoopAllyKind } from '@/utils/coopAllyTargeting';
+import { parseCoopAllyKind, parseCoopAllyOffer, type CoopAllyKind } from '@/utils/coopAllyTargeting';
 
 import { patchEnemyRef, patchPlayerRef } from '@/utils/multiplayerRefPatch';
 import { buildMushroomInstances, getMushroomColliderCenter } from '@/utils/mushroomLayout';
@@ -449,6 +449,8 @@ interface MultiplayerContextType {
   coopIntroAllyChoiceMade: boolean;
   /** Chosen co-op ally for the rest of the run after intro room IV. */
   coopAllyKind: CoopAllyKind;
+  /** Three random ally kinds offered at intro room IV (server-authoritative). */
+  coopAllyOffer: CoopAllyKind[];
   /** Main-loop center void portal offered alongside dual gateways. */
   coopVoidPortalOffered: boolean;
   coopDeepSanctumLevel: number;
@@ -920,6 +922,7 @@ type CoopSessionSnapshotPayload = {
   coopIntroFountainUsed?: boolean;
   coopIntroAllyChoiceMade?: boolean;
   coopAllyKind?: string;
+  coopAllyOffer?: string[];
   coopVoidPortalOffered?: boolean;
   coopDeepSanctumActive?: boolean;
   coopDeepSanctumLevel?: number;
@@ -968,6 +971,7 @@ type CoopSnapshotSetters = {
   setCoopIntroFountainUsed: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopIntroAllyChoiceMade: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopAllyKind: React.Dispatch<React.SetStateAction<CoopAllyKind>>;
+  setCoopAllyOffer: React.Dispatch<React.SetStateAction<CoopAllyKind[]>>;
   setCoopVoidPortalOffered: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopDeepSanctumLevel: React.Dispatch<React.SetStateAction<number>>;
   setDeepSanctumRewardKind: React.Dispatch<React.SetStateAction<DeepSanctumRewardKind | null>>;
@@ -997,6 +1001,7 @@ function applyIntroSnapshot(
     | 'setCoopIntroFountainUsed'
     | 'setCoopIntroAllyChoiceMade'
     | 'setCoopAllyKind'
+    | 'setCoopAllyOffer'
   >,
 ) {
   if (!data) return;
@@ -1011,6 +1016,9 @@ function applyIntroSnapshot(
   if ('coopIntroAllyChoiceMade' in data) setters.setCoopIntroAllyChoiceMade(!!data.coopIntroAllyChoiceMade);
   if ('coopAllyKind' in data) {
     setters.setCoopAllyKind(parseCoopAllyKind(data.coopAllyKind));
+  }
+  if ('coopAllyOffer' in data) {
+    setters.setCoopAllyOffer(parseCoopAllyOffer(data.coopAllyOffer));
   }
 }
 
@@ -1246,6 +1254,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopIntroFountainUsed, setCoopIntroFountainUsed] = useState(false);
   const [coopIntroAllyChoiceMade, setCoopIntroAllyChoiceMade] = useState(false);
   const [coopAllyKind, setCoopAllyKind] = useState<CoopAllyKind>('knight');
+  const [coopAllyOffer, setCoopAllyOffer] = useState<CoopAllyKind[]>([]);
   const [coopVoidPortalOffered, setCoopVoidPortalOffered] = useState(false);
   const [coopDeepSanctumLevel, setCoopDeepSanctumLevel] = useState(0);
   const [deepSanctumRewardKind, setDeepSanctumRewardKind] = useState<DeepSanctumRewardKind | null>(null);
@@ -1731,10 +1740,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         (data.damageType === 'ignite' ||
           data.damageType === 'venom' ||
           data.damageType === 'entanglement' ||
+          data.damageType === 'allied_enchantress_entanglement' ||
           data.damageType === 'wyvern_talons_detonate' ||
           data.damageType === 'player_zombie' ||
           data.damageType === 'zombie_explosion' ||
           data.damageType === 'allied_knight' ||
+          data.damageType === 'allied_huntress' ||
+          data.damageType === 'allied_phantom' ||
+          data.damageType === 'allied_demon' ||
+          data.damageType === 'allied_enchantress' ||
           data.damageType === 'mushroom_eruption' ||
           (data.damageType === 'crossentropy' && data.crossentropyMeteorDamage === true) ||
           (data.damageType === 'cloudkill' && data.cloudkillDamage === true)) &&
@@ -1748,6 +1762,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           const dt =
             data.damageType === 'venom' || data.damageType === 'wyvern_talons_detonate' || data.damageType === 'entanglement'
               ? 'venom'
+              : data.damageType === 'allied_enchantress_entanglement'
+                ? 'allied_enchantress_entanglement'
               : data.damageType === 'crossentropy'
                 ? 'crossentropy'
                 : data.damageType === 'cloudkill'
@@ -1756,6 +1772,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
                   ? 'player_zombie'
                   : data.damageType === 'allied_knight'
                   ? 'allied_knight'
+                  : data.damageType === 'allied_huntress'
+                  ? 'allied_huntress'
+                  : data.damageType === 'allied_phantom'
+                  ? 'allied_phantom'
+                  : data.damageType === 'allied_demon'
+                  ? 'allied_demon'
+                  : data.damageType === 'allied_enchantress'
+                  ? 'allied_enchantress'
                   : data.damageType === 'mushroom_eruption'
                   ? 'mushroom_eruption'
                   : 'ignite';
@@ -2062,6 +2086,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           setCoopIntroFountainUsed,
           setCoopIntroAllyChoiceMade,
           setCoopAllyKind,
+          setCoopAllyOffer,
           setCoopVoidPortalOffered,
           setCoopDeepSanctumLevel,
           setDeepSanctumRewardKind,
@@ -2101,6 +2126,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           setCoopIntroFountainUsed,
           setCoopIntroAllyChoiceMade,
           setCoopAllyKind,
+          setCoopAllyOffer,
           setCoopVoidPortalOffered,
           setCoopDeepSanctumLevel,
           setDeepSanctumRewardKind,
@@ -2147,6 +2173,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopIntroFountainUsed,
         setCoopIntroAllyChoiceMade,
         setCoopAllyKind,
+        setCoopAllyOffer,
       });
       if (data?.players && Array.isArray(data.players)) {
         setPlayers((prev) => {
@@ -2304,6 +2331,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopIntroFountainUsed,
         setCoopIntroAllyChoiceMade,
         setCoopAllyKind,
+        setCoopAllyOffer,
       });
       applyDeepSanctumSnapshot(data, {
         setCoopVoidPortalOffered,
@@ -3487,6 +3515,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     coopIntroFountainUsed,
     coopIntroAllyChoiceMade,
     coopAllyKind,
+    coopAllyOffer,
     coopVoidPortalOffered,
     coopDeepSanctumLevel,
     deepSanctumRewardKind,
@@ -3790,6 +3819,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopIntroFountainUsed,
       coopIntroAllyChoiceMade,
       coopAllyKind,
+      coopAllyOffer,
       coopVoidPortalOffered,
       coopDeepSanctumLevel,
       deepSanctumRewardKind,

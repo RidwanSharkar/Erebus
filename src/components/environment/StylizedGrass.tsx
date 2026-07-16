@@ -217,7 +217,7 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
   radius = MAIN_MAP_RADIUS,
   halfX = MAIN_MAP_HALF_X,
   halfZ = MAIN_MAP_HALF_Z,
-  bladeHeight = 0.55,
+  bladeHeight = 0.50,
   windStrength: windOverride,
   roomTheme,
   grassPalette = 'theme',

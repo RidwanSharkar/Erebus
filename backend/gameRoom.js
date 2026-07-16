@@ -306,7 +306,7 @@ const GOLD_REWARD_TABLE = Object.freeze({
   'boss3': { fixed: 150 },
 });
 /** Mirror client main arena constants (colored rooms use a circle at this radius). */
-const MAIN_ARENA_HEX_RADIUS = 24;
+const MAIN_ARENA_HEX_RADIUS = 20;
 const MAIN_MAP_HALF_X = MAIN_ARENA_HEX_RADIUS;
 const MAIN_MAP_HALF_Z = MAIN_ARENA_HEX_RADIUS;
 /** Keep foot XZ inside the playable disc with margin for collision radius. */
@@ -317,7 +317,7 @@ const MAIN_CIRCLE_INNER_RADIUS = MAIN_ARENA_HEX_RADIUS - MAIN_ARENA_SPAWN_INSET;
  * Hex combat arena (stat / trial) — must match `HexCombatArena.tsx`:
  * `HEX_ARENA_RADIUS` and `HexTileField` apothem − `HEX_FLOOR_MARGIN`.
  */
-const HEX_ARENA_RADIUS = 22;
+const HEX_ARENA_RADIUS = 20;
 const HEX_FLOOR_MARGIN = 1.4;
 const HEX_INNER_APOTHEM = HEX_ARENA_RADIUS * Math.cos(Math.PI / 6) - HEX_FLOOR_MARGIN;
 
@@ -530,8 +530,10 @@ class GameRoom {
     this.coopIntroFountainUsed = false;
     /** True after a player picks Knight or Huntress at the end of intro room 4. */
     this.coopIntroAllyChoiceMade = false;
-    /** @type {'knight'|'huntress'} Chosen co-op ally for the rest of the run. */
+    /** @type {'knight'|'huntress'|'phantom'|'demon'|'enchantress'} Chosen co-op ally for the rest of the run. */
     this.coopAllyKind = 'knight';
+    /** @type {string[]} Three random ally kinds offered at intro room 4 (subset of COOP_ALLY_KINDS). */
+    this.coopAllyOffer = [];
     /** Living intro enemies remaining (fixed compositions, no bonus spawns). */
     this.coopIntroLivingCount = 0;
 
@@ -916,6 +918,7 @@ class GameRoom {
     this.coopIntroFountainUsed = false;
     this.coopIntroAllyChoiceMade = false;
     this.coopAllyKind = 'knight';
+    this.coopAllyOffer = [];
     this.coopIntroLivingCount = 0;
     this.coopVoidPortalOffered = false;
     this.coopDeepSanctumActive = false;
@@ -979,6 +982,7 @@ class GameRoom {
         coopIntroFountainUsed: this.gameMode === 'coop' ? this.coopIntroFountainUsed : false,
         coopIntroAllyChoiceMade: this.gameMode === 'coop' ? this.coopIntroAllyChoiceMade : false,
         coopAllyKind: this.gameMode === 'coop' ? this.coopAllyKind : 'knight',
+        coopAllyOffer: this.gameMode === 'coop' ? [...this.coopAllyOffer] : [],
         ...this.gameMode === 'coop' ? this._getDeepSanctumPayloadFields() : {},
       });
     }
@@ -1013,6 +1017,7 @@ class GameRoom {
       coopIntroFountainUsed: this.coopIntroFountainUsed,
       coopIntroAllyChoiceMade: this.coopIntroAllyChoiceMade,
       coopAllyKind: this.coopAllyKind,
+      coopAllyOffer: [...this.coopAllyOffer],
       ...this._getDeepSanctumPayloadFields(),
     };
   }
@@ -1304,6 +1309,15 @@ class GameRoom {
     this.thronePortalOffer = [a, b];
   }
 
+  _pickCoopAllyOffer() {
+    const pool = [...COOP_ALLY_KINDS];
+    for (let i = pool.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    this.coopAllyOffer = pool.slice(0, 3);
+  }
+
   _pickPostFirstRoomPortalOffer() {
     const color = COOP_COLORED_ROOM_TYPES[Math.floor(Math.random() * COOP_COLORED_ROOM_TYPES.length)];
     const special = COOP_MID_ACT_SPECIAL_ROOM_TYPES[
@@ -1334,6 +1348,7 @@ class GameRoom {
       coopIntroFountainUsed: this.coopIntroFountainUsed,
       coopIntroAllyChoiceMade: this.coopIntroAllyChoiceMade,
       coopAllyKind: this.coopAllyKind,
+      coopAllyOffer: [...this.coopAllyOffer],
     };
   }
 
@@ -2036,6 +2051,7 @@ class GameRoom {
     this.coopIntroFountainPhase = true;
     this.coopIntroFountainUsed = false;
     this.coopIntroAllyChoiceMade = false;
+    this._pickCoopAllyOffer();
     this._pickThronePortalOffer();
     this._emitIntroIntermission({ introGoldReward: goldAmount, fountainPhase: true });
     console.log(`✨ Intro room 4 cleared (+${goldAmount} gold) — ally choice + fountain + portal choice.`);
@@ -2052,6 +2068,7 @@ class GameRoom {
     if (!this.players.get(playerId)) return false;
 
     const kind = normalizeCoopAllyKind(allyKind);
+    if (!this.coopAllyOffer.includes(kind)) return false;
     this.coopAllyKind = kind;
     this.coopIntroAllyChoiceMade = true;
     this._emitIntroIntermission({ allyChoiceMade: true, coopAllyKind: kind });
@@ -4870,13 +4887,16 @@ class GameRoom {
     });
   }
 
-  applyEntanglementOnHit(enemyId, fromPlayerId, player) {
+  applyEntanglementOnHit(enemyId, fromPlayerId, player, options = {}) {
     const enemy = this.enemies.get(enemyId);
     if (!enemy || enemy.isDying || enemy.health <= 0) return;
+
+    const sourceAlliedUnitId = options.sourceAlliedUnitId || null;
 
     this.applyStatusEffect(enemyId, 'entangle', ENTANGLEMENT_DURATION_MS);
     enemy.entanglementExpireAt = Date.now() + ENTANGLEMENT_DURATION_MS;
     enemy.entanglementLastPlayerId = fromPlayerId;
+    enemy.entanglementSourceAlliedUnitId = sourceAlliedUnitId;
     enemy.entanglementTicksRemaining = Math.ceil(ENTANGLEMENT_DURATION_MS / 1000);
 
     if (enemy._entanglementIntervalId) {
@@ -4903,8 +4923,12 @@ class GameRoom {
       const tickPlayerId = e.entanglementLastPlayerId || fromPlayerId;
       const tickPlayer = this.players.get(tickPlayerId) || player || null;
       e.entanglementTicksRemaining -= 1;
+      const tickDamageType = e.entanglementSourceAlliedUnitId
+        ? 'allied_enchantress_entanglement'
+        : 'entanglement';
       this.damageEnemy(enemyId, ENTANGLEMENT_DAMAGE_PER_SECOND, tickPlayerId, tickPlayer, {
-        damageType: 'entanglement',
+        damageType: tickDamageType,
+        sourceAlliedUnitId: e.entanglementSourceAlliedUnitId || undefined,
       });
     }, 1000);
 
@@ -5080,7 +5104,7 @@ class GameRoom {
 
     // Always sync HP to clients (socket `enemy-damage` and internal sources e.g. player-zombie hits).
     if (this.io) {
-      const dotDamageTypes = new Set(['ignite', 'venom', 'entanglement', 'blizzard', 'cloudkill']);
+      const dotDamageTypes = new Set(['ignite', 'venom', 'entanglement', 'allied_enchantress_entanglement', 'blizzard', 'cloudkill']);
       const damageType = hitMeta && hitMeta.damageType;
       const isThrottledDot = damageType && dotDamageTypes.has(damageType);
       let shouldEmitHp = true;
@@ -5134,6 +5158,13 @@ class GameRoom {
           y: enemy.position.y,
           z: enemy.position.z,
         };
+      } else if (hitMeta && hitMeta.damageType === 'allied_enchantress_entanglement') {
+        damagedPayload.damageType = 'allied_enchantress_entanglement';
+        damagedPayload.position = {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        };
       } else if (hitMeta && hitMeta.damageType === 'crossentropy' && hitMeta.crossentropyMeteorDamage) {
         damagedPayload.damageType = 'crossentropy';
         damagedPayload.crossentropyMeteorDamage = true;
@@ -5166,6 +5197,34 @@ class GameRoom {
         };
       } else if (hitMeta && (hitMeta.damageType === 'allied_knight_melee' || hitMeta.damageType === 'allied_knight_smite')) {
         damagedPayload.damageType = 'allied_knight';
+        damagedPayload.position = {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        };
+      } else if (hitMeta && hitMeta.damageType === 'allied_huntress_arrow') {
+        damagedPayload.damageType = 'allied_huntress';
+        damagedPayload.position = {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        };
+      } else if (hitMeta && hitMeta.damageType === 'allied_phantom_dagger') {
+        damagedPayload.damageType = 'allied_phantom';
+        damagedPayload.position = {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        };
+      } else if (hitMeta && (hitMeta.damageType === 'allied_demon_leap' || hitMeta.damageType === 'allied_demon_melee')) {
+        damagedPayload.damageType = 'allied_demon';
+        damagedPayload.position = {
+          x: enemy.position.x,
+          y: enemy.position.y,
+          z: enemy.position.z,
+        };
+      } else if (hitMeta && hitMeta.damageType === 'enchantress_earth_shock') {
+        damagedPayload.damageType = 'allied_enchantress';
         damagedPayload.position = {
           x: enemy.position.x,
           y: enemy.position.y,

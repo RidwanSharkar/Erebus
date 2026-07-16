@@ -106,7 +106,7 @@ const Environment: React.FC<EnvironmentProps> = ({
 
       {/* Instanced grass field — density per room (purple sparse), GPU-animated wind */}
       {enableGrass && (
-        <StylizedGrass fieldShape="disc" radius={18} roomTheme={visualRoomTheme} />
+        <StylizedGrass fieldShape="disc" radius={17} roomTheme={visualRoomTheme} />
       )}
 
       {/* Stone road + branch connectors + combat platforms — single draw call */}

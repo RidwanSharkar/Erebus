@@ -105,6 +105,18 @@ function getOutgoingDamageNumberClass(damageType?: string, isCritical?: boolean)
   if (damageType === 'allied_knight') {
     return 'text-slate-300 text-lg drop-shadow-[0_0_6px_rgba(180,180,190,0.65)]';
   }
+  if (damageType === 'allied_huntress') {
+    return 'text-lime-300 text-lg drop-shadow-[0_0_6px_rgba(132,204,22,0.75)]';
+  }
+  if (damageType === 'allied_phantom') {
+    return 'text-yellow-300 text-lg drop-shadow-[0_0_6px_rgba(250,204,21,0.75)]';
+  }
+  if (damageType === 'allied_demon') {
+    return 'text-red-400 text-lg drop-shadow-[0_0_6px_rgba(248,113,113,0.75)]';
+  }
+  if (damageType === 'allied_enchantress' || damageType === 'allied_enchantress_entanglement') {
+    return 'text-emerald-300 text-lg drop-shadow-[0_0_6px_rgba(52,211,153,0.75)]';
+  }
   if (damageType === 'psionic_blades' || damageType === 'locust') {
     return 'text-purple-300 text-lg drop-shadow-[0_0_8px_rgba(168,85,247,0.75)]';
   }
