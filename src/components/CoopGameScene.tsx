@@ -76,7 +76,6 @@ import BossTectonicSpikeTelegraph, {
   TECTONIC_HIT_RADIUS,
 } from './enemies/BossTectonicSpikeTelegraph';
 import SpikeGroundCracksVfx from './environment/SpikeGroundCracksVfx';
-import TemplarBlinkSmiteGround from './enemies/TemplarBlinkSmiteGround';
 import CoopProjectileLayer, { type CoopProjectileLayerHandle } from './coop/CoopProjectileLayer';
 import CoopBossTelegraphLayer, { type CoopBossTelegraphLayerHandle } from './coop/CoopBossTelegraphLayer';
 import CoopGroundTelegraphLayer, { type CoopGroundTelegraphLayerHandle } from './coop/CoopGroundTelegraphLayer';
@@ -360,6 +359,8 @@ const COOP_MAIN_DEFAULT_SPAWN_Z = COOP_MAIN_ENTRY_Z;
 const COOP_POST_PORTAL_POSITION_GRACE_MS = 1500;
 /** Spawn height when descending into the next combat room. */
 const VOID_PORTAL_FALL_SPAWN_Y = 20;
+const THRONE_VOID_PORTAL_DELAY_MS = 4000;
+const THRONE_VOID_PORTAL_OPEN_DURATION_MS = 900;
 /** Natural-speed takeoff-to-peak duration for portal-fall jump (ms). */
 const PORTAL_FALL_RISE_DURATION_MS = 2550;
 /** Ground Y used for portal-fall animation progress (matches PhysicsSystem ground clamp). */
@@ -995,14 +996,24 @@ function preloadEnemyModelsForTypes(types: Iterable<string>): void {
         case 'allied-knight':
           void import('./enemies/KnightModel').then(mod => mod.preloadKnightModels());
           break;
+        case 'allied-huntress':
+        case 'viper':
+          void import('./enemies/ViperModel').then(mod => mod.preloadViperModels());
+          break;
+        case 'allied-phantom':
+        case 'shade':
+          void import('./enemies/ShadeModel').then(mod => mod.preloadShadeModels());
+          break;
         case 'allied-healer':
           void import('./enemies/AlliedHealerModel').then(mod => mod.preloadAlliedHealerModels());
           break;
+        case 'allied-demon':
         case 'ghoul':
           void import('./enemies/GhoulModel').then(mod => mod.preloadGhoulModels());
           break;
-        case 'shade':
-          void import('./enemies/ShadeModel').then(mod => mod.preloadShadeModels());
+        case 'allied-enchantress':
+        case 'greed':
+          void import('./enemies/GreedModel').then(mod => mod.preloadGreedModels());
           break;
         case 'warlock':
         case 'boss2':
@@ -1014,9 +1025,6 @@ function preloadEnemyModelsForTypes(types: Iterable<string>): void {
         case 'weaver':
         case 'boss3':
           void import('./enemies/WeaverModel').then(mod => mod.preloadWeaverModels());
-          break;
-        case 'viper':
-          void import('./enemies/ViperModel').then(mod => mod.preloadViperModels());
           break;
         case 'zombie':
         case 'player-zombie':
@@ -1033,9 +1041,6 @@ function preloadEnemyModelsForTypes(types: Iterable<string>): void {
           break;
         case 'boss':
           void import('./enemies/BossGlbModel').then(mod => mod.preloadBossModels());
-          break;
-        case 'greed':
-          void import('./enemies/GreedModel').then(mod => mod.preloadGreedModels());
           break;
       }
     }, 1200);
@@ -1537,6 +1542,7 @@ export function CoopGameScene({
     coopIntroPortalOpen,
     coopIntroFountainPhase,
     coopIntroFountainUsed,
+    coopIntroAllyChoiceMade,
     coopVoidPortalOffered,
     coopDeepSanctumLevel,
     deepSanctumRewardKind,
@@ -1992,6 +1998,8 @@ export function CoopGameScene({
   coopIntroFountainPhaseRef.current = coopIntroFountainPhase;
   const coopIntroFountainUsedRef = useRef(coopIntroFountainUsed);
   coopIntroFountainUsedRef.current = coopIntroFountainUsed;
+  const coopIntroAllyChoiceMadeRef = useRef(coopIntroAllyChoiceMade);
+  coopIntroAllyChoiceMadeRef.current = coopIntroAllyChoiceMade;
   const coopVoidPortalOfferedRef = useRef(coopVoidPortalOffered);
   coopVoidPortalOfferedRef.current = coopVoidPortalOffered;
   const deepSanctumRewardKindRef = useRef(deepSanctumRewardKind);
@@ -2058,20 +2066,25 @@ export function CoopGameScene({
       return;
     }
     if (throneVoidPortalOpenAtRef.current == null) {
-      throneVoidPortalOpenAtRef.current = Date.now() + 5000;
+      throneVoidPortalOpenAtRef.current = Date.now() + THRONE_VOID_PORTAL_DELAY_MS;
     }
     const tick = () => {
       const openAt = throneVoidPortalOpenAtRef.current;
       if (openAt == null) return;
       const remaining = openAt - Date.now();
-      if (remaining <= 0) {
-        setThroneVoidPortalOpen(true);
-        setThroneVoidPortalOpenProgress(1);
+      if (remaining > 0) {
+        setThroneVoidPortalOpen(false);
+        setThroneVoidPortalOpenProgress(0);
+        requestAnimationFrame(tick);
         return;
       }
-      const progress = Math.max(0, Math.min(1, 1 - remaining / 5000));
+      const elapsed = -remaining;
+      const progress = Math.min(1, elapsed / THRONE_VOID_PORTAL_OPEN_DURATION_MS);
+      setThroneVoidPortalOpen(progress >= 1);
       setThroneVoidPortalOpenProgress(progress);
-      requestAnimationFrame(tick);
+      if (progress < 1) {
+        requestAnimationFrame(tick);
+      }
     };
     const id = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(id);
@@ -2079,7 +2092,7 @@ export function CoopGameScene({
 
   useEffect(() => {
     portalUseSentRef.current = false;
-  }, [coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopIntroIntermissionSeq, coopDeepSanctumIntermissionSeq, coopIntroPortalOpen, coopIntroFountainPhase, coopIntroFountainUsed]);
+  }, [coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopIntroIntermissionSeq, coopDeepSanctumIntermissionSeq, coopIntroPortalOpen, coopIntroFountainPhase, coopIntroFountainUsed, coopIntroAllyChoiceMade]);
 
   // Layout: apply before paint so physics boundary mode matches the active arena shell.
   useLayoutEffect(() => {
@@ -2354,7 +2367,7 @@ export function CoopGameScene({
             health: p.health,
           }))),
       ...Array.from(enemies.values())
-        .filter((e) => !e.isDying && e.health > 0 && e.alliedUnit !== true && e.type !== 'allied-knight' && e.type !== 'allied-healer' && e.type !== 'player-zombie')
+        .filter((e) => !e.isDying && e.health > 0 && e.alliedUnit !== true && e.type !== 'allied-knight' && e.type !== 'allied-huntress' && e.type !== 'allied-phantom' && e.type !== 'allied-demon' && e.type !== 'allied-enchantress' && e.type !== 'allied-healer' && e.type !== 'player-zombie')
         .map((e) => {
           const live = enemyTransformsRef.current.get(e.id);
           const p = live?.position ?? e.position;
@@ -2370,7 +2383,7 @@ export function CoopGameScene({
 
   const getLiveCoopEnemyData = useCallback(() => {
     return Array.from(enemiesRef.current.values())
-      .filter((e) => !e.isDying && e.health > 0 && e.alliedUnit !== true && e.type !== 'allied-knight' && e.type !== 'allied-healer' && e.type !== 'player-zombie')
+      .filter((e) => !e.isDying && e.health > 0 && e.alliedUnit !== true && e.type !== 'allied-knight' && e.type !== 'allied-huntress' && e.type !== 'allied-phantom' && e.type !== 'allied-demon' && e.type !== 'allied-enchantress' && e.type !== 'allied-healer' && e.type !== 'player-zombie')
       .map((e) => {
         const live = enemyTransformsRef.current.get(e.id);
         const p = live?.position ?? e.position;
@@ -4697,6 +4710,7 @@ export function CoopGameScene({
             startPosition: start.clone(),
             targetPosition: staleTarget.clone(),
             damage: data.damage,
+            maxRange: data.maxRange,
           });
       }, VIPER_DRAWBOW_DURATION);
       viperAttackScheduleTimeoutsRef.current.push(tArrow);
@@ -8769,7 +8783,9 @@ export function CoopGameScene({
       const staleTarget = new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z);
 
       const shadeEnemy = enemiesRef.current.get(data.shadeId);
-      const isBlueShade = shadeEnemy?.soulType === 'blue';
+      const isAlliedPhantom = shadeEnemy?.type === 'allied-phantom' || data.shadeId === 'allied-phantom';
+      const isYellowShade = shadeEnemy?.soulType === 'yellow' || isAlliedPhantom;
+      const isBlueShade = !isYellowShade && shadeEnemy?.soulType === 'blue';
       const daggerCount = isBlueShade ? 2 : 3;
 
       // Spawn daggers staggered after the throw animation release point.
@@ -8779,11 +8795,13 @@ export function CoopGameScene({
       for (let i = 0; i < daggerCount; i++) {
         setTimeout(() => {
           let target = staleTarget.clone();
-          const playerEntity = getLocalPlayerEntity();
-          if (playerEntity) {
-            const t = playerEntity.getComponent(Transform);
-            if (t) {
-              target = new Vector3(t.position.x, data.targetPosition.y, t.position.z);
+          if (!isAlliedPhantom) {
+            const playerEntity = getLocalPlayerEntity();
+            if (playerEntity) {
+              const t = playerEntity.getComponent(Transform);
+              if (t) {
+                target = new Vector3(t.position.x, data.targetPosition.y, t.position.z);
+              }
             }
           }
 
@@ -8804,7 +8822,7 @@ export function CoopGameScene({
               startPosition: start.clone(),
               targetPosition: target,
               damage: data.damage,
-              soulType: liveShade?.soulType ?? shadeEnemy?.soulType,
+              soulType: isYellowShade ? 'yellow' : (liveShade?.soulType ?? shadeEnemy?.soulType),
               daggerIndex: i,
             });
         }, SHADE_THROW_DURATION + i * SHADE_DAGGER_INTERVAL);
@@ -8821,7 +8839,12 @@ export function CoopGameScene({
     }) => {
       const ts = data.timestamp ?? Date.now();
       const shadeEnemy = enemiesRef.current.get(data.shadeId);
-      const theme = shadeEnemy?.soulType === 'blue' ? 'blue' : 'purple';
+      const isAlliedPhantom = shadeEnemy?.type === 'allied-phantom' || data.shadeId === 'allied-phantom';
+      const theme = isAlliedPhantom || shadeEnemy?.soulType === 'yellow'
+        ? 'yellow'
+        : shadeEnemy?.soulType === 'blue'
+          ? 'blue'
+          : 'purple';
 
       explosionBurstLayerRef.current?.addTeleportEffect({
         id: `${data.shadeId}-blink-start-${ts}`,
@@ -9016,6 +9039,33 @@ export function CoopGameScene({
     };
 
     socket.on('greed-fireball-impact', handleGreedFireballImpact);
+
+    const handleEnchantressEarthShockTelegraph = (data: {
+      enchantressId: string;
+      startPosition: { x: number; y: number; z: number };
+      targetPosition: { x: number; y: number; z: number };
+      damage: number;
+    }) => {
+      if (!coopServerEnemyLiving(data.enchantressId)) return;
+      projectileLayerRef.current?.addEnchantressEarthShock({
+        id: `enchantress-earth-shock-${data.enchantressId}-${Date.now()}`,
+        startPosition: new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z),
+        targetPosition: new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z),
+        enchantressId: data.enchantressId,
+      });
+    };
+
+    socket.on('enchantress-earth-shock-telegraph', handleEnchantressEarthShockTelegraph);
+
+    const handleEnchantressEarthShockImpact = (data: {
+      enchantressId: string;
+      position: { x: number; y: number; z: number };
+      hit: boolean;
+    }) => {
+      projectileLayerRef.current?.removeEnchantressEarthShockByEnchantressId(data.enchantressId);
+    };
+
+    socket.on('enchantress-earth-shock-impact', handleEnchantressEarthShockImpact);
 
     const handleGreedEmberZoneSpawned = (data: {
       id: string;
@@ -9493,6 +9543,8 @@ export function CoopGameScene({
       socket.off('warlock-orb-impact', handleWarlockOrbImpact);
       socket.off('greed-launch-telegraph', handleGreedLaunchTelegraph);
       socket.off('greed-fireball-impact', handleGreedFireballImpact);
+      socket.off('enchantress-earth-shock-telegraph', handleEnchantressEarthShockTelegraph);
+      socket.off('enchantress-earth-shock-impact', handleEnchantressEarthShockImpact);
       socket.off('greed-ember-zone-spawned', handleGreedEmberZoneSpawned);
       socket.off('greed-ember-zone-expired', handleGreedEmberZoneExpired);
       socket.off('warlock-meteor-ember-zone-spawned', handleWarlockMeteorEmberZoneSpawned);
@@ -9597,6 +9649,10 @@ export function CoopGameScene({
       const isCoopAlliedEnemy =
         serverEnemy.alliedUnit === true ||
         serverEnemy.type === 'allied-knight' ||
+        serverEnemy.type === 'allied-huntress' ||
+        serverEnemy.type === 'allied-phantom' ||
+        serverEnemy.type === 'allied-demon' ||
+        serverEnemy.type === 'allied-enchantress' ||
         serverEnemy.type === 'allied-healer' ||
         serverEnemy.type === 'player-zombie';
 
@@ -9624,8 +9680,11 @@ export function CoopGameScene({
       collider.radius = serverEnemy.type === 'boss' ? 2.0
         : serverEnemy.type === 'boss2' || serverEnemy.type === 'boss3' ? 1.8
         : serverEnemy.type === 'boss-skeleton' ? 1.2
-        : serverEnemy.type === 'allied-healer' || serverEnemy.type === 'greed' ? 0.75
+        : serverEnemy.type === 'allied-healer' || serverEnemy.type === 'greed' || serverEnemy.type === 'allied-enchantress' ? 0.75
         : serverEnemy.type === 'allied-knight' ? 0.85
+        : serverEnemy.type === 'allied-huntress' ? 0.75
+        : serverEnemy.type === 'allied-phantom' ? 0.75
+        : serverEnemy.type === 'allied-demon' ? 0.85
         : serverEnemy.type === 'knight' ? 0.85 * (serverEnemy.visualScale ?? 1)
         : serverEnemy.type === 'templar' || serverEnemy.type === 'ghoul' ? 0.95
         : serverEnemy.type === 'titan' ? 1.2
@@ -9855,6 +9914,10 @@ export function CoopGameScene({
       const isCoopAlliedEnemy =
         serverEnemy.alliedUnit === true ||
         serverEnemy.type === 'allied-knight' ||
+        serverEnemy.type === 'allied-huntress' ||
+        serverEnemy.type === 'allied-phantom' ||
+        serverEnemy.type === 'allied-demon' ||
+        serverEnemy.type === 'allied-enchantress' ||
         serverEnemy.type === 'allied-healer' ||
         serverEnemy.type === 'player-zombie';
       const dyingNonDummy =
@@ -10652,7 +10715,7 @@ export function CoopGameScene({
           const inIntroRoom = coopCurrentRoomKindRef.current === 'intro';
 
           if (xEdge && inIntroRoom && !portalUseSentRef.current) {
-            if (coopIntroFountainPhaseRef.current) {
+            if (coopIntroFountainPhaseRef.current && coopIntroAllyChoiceMadeRef.current) {
               const fountainR2 = HEALING_FOUNTAIN_INTERACT_RADIUS * HEALING_FOUNTAIN_INTERACT_RADIUS;
               const fountainD2 = px * px + pz * pz;
               if (!coopIntroFountainUsedRef.current && fountainD2 < fountainR2) {
@@ -11329,7 +11392,7 @@ export function CoopGameScene({
               }
             } else if (!inThroneRoom && combatArenaActiveRef.current) {
               const inIntroRoomHint = coopCurrentRoomKindRef.current === 'intro';
-              if (inIntroRoomHint && coopIntroFountainPhaseRef.current) {
+              if (inIntroRoomHint && coopIntroFountainPhaseRef.current && coopIntroAllyChoiceMadeRef.current) {
                 const fountainR2 = HEALING_FOUNTAIN_INTERACT_RADIUS * HEALING_FOUNTAIN_INTERACT_RADIUS;
                 if (!coopIntroFountainUsedRef.current && px * px + pz * pz < fountainR2) {
                   nextHint = COOP_INTERACT_HINT_TEXT;
@@ -11972,6 +12035,10 @@ export function CoopGameScene({
       const hasValidTargets = Array.from(enemiesRef.current.values()).some(enemy => {
         if (enemy.isDying || enemy.health <= 0) return false;
         if (enemy.alliedUnit === true || enemy.type === 'allied-knight' ||
+            enemy.type === 'allied-huntress' ||
+            enemy.type === 'allied-phantom' ||
+            enemy.type === 'allied-demon' ||
+            enemy.type === 'allied-enchantress' ||
             enemy.type === 'allied-healer' || enemy.type === 'player-zombie') return false;
         const ePos = new Vector3(enemy.position.x, enemy.position.y, enemy.position.z);
         return ePos.distanceTo(position) <= lightningRange;
@@ -12289,6 +12356,7 @@ export function CoopGameScene({
               coopIntroPortalOpen={coopIntroPortalOpen}
               coopIntroFountainPhase={coopIntroFountainPhase}
               coopIntroFountainUsed={coopIntroFountainUsed}
+              coopIntroAllyChoiceMade={coopIntroAllyChoiceMade}
               coopVoidPortalOffered={coopVoidPortalOffered}
               deepSanctumRewardKind={deepSanctumRewardKind}
               world={engineRef.current?.getWorld()}

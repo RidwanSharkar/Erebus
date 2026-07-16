@@ -30,6 +30,7 @@ interface GreedRendererProps {
   isDying?: boolean;
   staggerBuildup?: number;
   soulType?: GreedSoulType;
+  campType?: string;
 }
 
 interface AbilityTelegraphEvent {
@@ -56,8 +57,9 @@ function GreedRenderer({
   isDying = false,
   staggerBuildup = 0,
   soulType = 'green',
+  campType,
 }: GreedRendererProps) {
-  const theme = campHpTheme(soulType);
+  const theme = campHpTheme(campType ?? soulType);
   const { socket, enemyTransformsRef, enemyVisualRotationsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);

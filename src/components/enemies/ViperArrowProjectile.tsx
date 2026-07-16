@@ -10,6 +10,7 @@ interface ViperArrowProjectileProps {
   startPosition: Vector3;
   targetPosition: Vector3;
   damage: number;
+  maxRange?: number;
   getPlayerPosition: () => Vector3 | null;
   onHitPlayer: () => void;
   onComplete: () => void;
@@ -25,6 +26,7 @@ export default function ViperArrowProjectile({
   startPosition,
   targetPosition,
   damage: _damage,
+  maxRange = VIPER_ARROW_MAX_RANGE,
   getPlayerPosition,
   onHitPlayer,
   onComplete,
@@ -43,7 +45,7 @@ export default function ViperArrowProjectile({
     const lenSq = d.lengthSq();
     if (lenSq < 1e-8) d.set(0, 0, -1);
     else d.normalize();
-    const dist = VIPER_ARROW_MAX_RANGE;
+    const dist = maxRange;
     return {
       direction: d,
       totalDist: dist,
@@ -51,7 +53,7 @@ export default function ViperArrowProjectile({
       yaw:   Math.atan2(d.x, d.z),
       pitch: Math.atan2(-d.y, Math.sqrt(d.x * d.x + d.z * d.z)),
     };
-  }, [startPosition, targetPosition]);
+  }, [startPosition, targetPosition, maxRange]);
 
   // ─── Materials ─────────────────────────────────────────────────────────────
   // White-hot core → lime outer glow → dark-green trail — all additive so they

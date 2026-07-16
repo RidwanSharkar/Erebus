@@ -14,6 +14,7 @@ import type { ItemRarity } from '@/utils/itemRarity';
 import { Vector3 } from '@/utils/three-exports';
 import { applyEnemyMoveBatch, type EnemyLiveTransform } from '@/utils/enemyLiveTransform';
 import { applyPlayerMove, type PlayerLiveTransform } from '@/utils/playerLiveTransform';
+import { parseCoopAllyKind, type CoopAllyKind } from '@/utils/coopAllyTargeting';
 
 import { patchEnemyRef, patchPlayerRef } from '@/utils/multiplayerRefPatch';
 import { buildMushroomInstances, getMushroomColliderCenter } from '@/utils/mushroomLayout';
@@ -438,13 +439,16 @@ interface MultiplayerContextType {
   coopMainArenaIntermissionSeq: number;
   /** Increments on each `coop-intro-intermission` (intro room clear; void portal / fountain phase). */
   coopIntroIntermissionSeq: number;
-  /** Co-op intro: one-time 3-room sequence before the normal loop. */
+  /** Co-op intro: one-time 4-room sequence before the normal loop. */
   coopIntroPending: boolean;
   coopIntroActive: boolean;
   coopIntroRoomIndex: number;
   coopIntroPortalOpen: boolean;
   coopIntroFountainPhase: boolean;
   coopIntroFountainUsed: boolean;
+  coopIntroAllyChoiceMade: boolean;
+  /** Chosen co-op ally for the rest of the run after intro room IV. */
+  coopAllyKind: CoopAllyKind;
   /** Main-loop center void portal offered alongside dual gateways. */
   coopVoidPortalOffered: boolean;
   coopDeepSanctumLevel: number;
@@ -520,6 +524,7 @@ interface MultiplayerContextType {
   /** Co-op: request transition from throne room to main combat arena (server-authoritative). */
   enterCombatArena: (chosenCampType?: string) => void;
   useCoopFountain: () => void;
+  chooseCoopAlly: (allyKind: CoopAllyKind) => void;
   claimPreBossReward: () => void;
   claimDeepSanctumReward: () => void;
   finishPreBossMerchant: () => void;
@@ -655,6 +660,7 @@ export type MultiplayerActionsContextType = Pick<
   | 'startGame'
   | 'enterCombatArena'
   | 'useCoopFountain'
+  | 'chooseCoopAlly'
   | 'claimPreBossReward'
   | 'claimDeepSanctumReward'
   | 'finishPreBossMerchant'
@@ -912,6 +918,8 @@ type CoopSessionSnapshotPayload = {
   coopIntroPortalOpen?: boolean;
   coopIntroFountainPhase?: boolean;
   coopIntroFountainUsed?: boolean;
+  coopIntroAllyChoiceMade?: boolean;
+  coopAllyKind?: string;
   coopVoidPortalOffered?: boolean;
   coopDeepSanctumActive?: boolean;
   coopDeepSanctumLevel?: number;
@@ -958,6 +966,8 @@ type CoopSnapshotSetters = {
   setCoopIntroPortalOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopIntroFountainPhase: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopIntroFountainUsed: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopIntroAllyChoiceMade: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopAllyKind: React.Dispatch<React.SetStateAction<CoopAllyKind>>;
   setCoopVoidPortalOffered: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopDeepSanctumLevel: React.Dispatch<React.SetStateAction<number>>;
   setDeepSanctumRewardKind: React.Dispatch<React.SetStateAction<DeepSanctumRewardKind | null>>;
@@ -985,6 +995,8 @@ function applyIntroSnapshot(
     | 'setCoopIntroPortalOpen'
     | 'setCoopIntroFountainPhase'
     | 'setCoopIntroFountainUsed'
+    | 'setCoopIntroAllyChoiceMade'
+    | 'setCoopAllyKind'
   >,
 ) {
   if (!data) return;
@@ -996,6 +1008,10 @@ function applyIntroSnapshot(
   if ('coopIntroPortalOpen' in data) setters.setCoopIntroPortalOpen(!!data.coopIntroPortalOpen);
   if ('coopIntroFountainPhase' in data) setters.setCoopIntroFountainPhase(!!data.coopIntroFountainPhase);
   if ('coopIntroFountainUsed' in data) setters.setCoopIntroFountainUsed(!!data.coopIntroFountainUsed);
+  if ('coopIntroAllyChoiceMade' in data) setters.setCoopIntroAllyChoiceMade(!!data.coopIntroAllyChoiceMade);
+  if ('coopAllyKind' in data) {
+    setters.setCoopAllyKind(parseCoopAllyKind(data.coopAllyKind));
+  }
 }
 
 function applyDeepSanctumSnapshot(
@@ -1228,6 +1244,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopIntroPortalOpen, setCoopIntroPortalOpen] = useState(false);
   const [coopIntroFountainPhase, setCoopIntroFountainPhase] = useState(false);
   const [coopIntroFountainUsed, setCoopIntroFountainUsed] = useState(false);
+  const [coopIntroAllyChoiceMade, setCoopIntroAllyChoiceMade] = useState(false);
+  const [coopAllyKind, setCoopAllyKind] = useState<CoopAllyKind>('knight');
   const [coopVoidPortalOffered, setCoopVoidPortalOffered] = useState(false);
   const [coopDeepSanctumLevel, setCoopDeepSanctumLevel] = useState(0);
   const [deepSanctumRewardKind, setDeepSanctumRewardKind] = useState<DeepSanctumRewardKind | null>(null);
@@ -1712,6 +1730,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         !skipDotFloating &&
         (data.damageType === 'ignite' ||
           data.damageType === 'venom' ||
+          data.damageType === 'entanglement' ||
           data.damageType === 'wyvern_talons_detonate' ||
           data.damageType === 'player_zombie' ||
           data.damageType === 'zombie_explosion' ||
@@ -1727,7 +1746,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         if (mgr?.addDamageNumber) {
           const pos = new Vector3(data.position.x, data.position.y + 1.5, data.position.z);
           const dt =
-            data.damageType === 'venom' || data.damageType === 'wyvern_talons_detonate'
+            data.damageType === 'venom' || data.damageType === 'wyvern_talons_detonate' || data.damageType === 'entanglement'
               ? 'venom'
               : data.damageType === 'crossentropy'
                 ? 'crossentropy'
@@ -2041,6 +2060,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           setCoopIntroPortalOpen,
           setCoopIntroFountainPhase,
           setCoopIntroFountainUsed,
+          setCoopIntroAllyChoiceMade,
+          setCoopAllyKind,
           setCoopVoidPortalOffered,
           setCoopDeepSanctumLevel,
           setDeepSanctumRewardKind,
@@ -2078,6 +2099,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           setCoopIntroPortalOpen,
           setCoopIntroFountainPhase,
           setCoopIntroFountainUsed,
+          setCoopIntroAllyChoiceMade,
+          setCoopAllyKind,
           setCoopVoidPortalOffered,
           setCoopDeepSanctumLevel,
           setDeepSanctumRewardKind,
@@ -2122,6 +2145,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopIntroPortalOpen,
         setCoopIntroFountainPhase,
         setCoopIntroFountainUsed,
+        setCoopIntroAllyChoiceMade,
+        setCoopAllyKind,
       });
       if (data?.players && Array.isArray(data.players)) {
         setPlayers((prev) => {
@@ -2277,6 +2302,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopIntroPortalOpen,
         setCoopIntroFountainPhase,
         setCoopIntroFountainUsed,
+        setCoopIntroAllyChoiceMade,
+        setCoopAllyKind,
       });
       applyDeepSanctumSnapshot(data, {
         setCoopVoidPortalOffered,
@@ -2648,6 +2675,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const useCoopFountain = useCallback(() => {
     if (socket && currentRoomId) {
       socket.emit('coop-use-fountain', { roomId: currentRoomId });
+    }
+  }, [socket, currentRoomId]);
+
+  const chooseCoopAlly = useCallback((allyKind: CoopAllyKind) => {
+    if (socket && currentRoomId) {
+      socket.emit('coop-choose-ally', { roomId: currentRoomId, allyKind });
     }
   }, [socket, currentRoomId]);
 
@@ -3452,6 +3485,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     coopIntroPortalOpen,
     coopIntroFountainPhase,
     coopIntroFountainUsed,
+    coopIntroAllyChoiceMade,
+    coopAllyKind,
     coopVoidPortalOffered,
     coopDeepSanctumLevel,
     deepSanctumRewardKind,
@@ -3477,6 +3512,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     startGame,
     enterCombatArena,
     useCoopFountain,
+    chooseCoopAlly,
     claimPreBossReward,
     claimDeepSanctumReward,
     finishPreBossMerchant,
@@ -3566,6 +3602,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       startGame,
       enterCombatArena,
       useCoopFountain,
+      chooseCoopAlly,
       claimPreBossReward,
       claimDeepSanctumReward,
       finishPreBossMerchant,
@@ -3643,6 +3680,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       startGame,
       enterCombatArena,
       useCoopFountain,
+      chooseCoopAlly,
       claimPreBossReward,
       claimDeepSanctumReward,
       finishPreBossMerchant,
@@ -3750,6 +3788,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopIntroPortalOpen,
       coopIntroFountainPhase,
       coopIntroFountainUsed,
+      coopIntroAllyChoiceMade,
+      coopAllyKind,
       coopVoidPortalOffered,
       coopDeepSanctumLevel,
       deepSanctumRewardKind,

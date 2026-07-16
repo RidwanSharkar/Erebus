@@ -35,6 +35,12 @@ const BLUE_COLORS = {
   trail: '#0077aa',
 };
 
+const YELLOW_COLORS = {
+  dagger: '#ffd700',
+  glow: '#ffe14d',
+  trail: '#b8860b',
+};
+
 export default function ShadeDaggerProjectile({
   startPosition,
   targetPosition,
@@ -45,8 +51,9 @@ export default function ShadeDaggerProjectile({
   onComplete,
 }: ShadeDaggerProjectileProps) {
   const isBlue = soulType === 'blue';
+  const isYellow = soulType === 'yellow';
   const speed = isBlue ? BLUE_SPEED : BASE_SPEED;
-  const colors = isBlue ? BLUE_COLORS : PURPLE_COLORS;
+  const colors = isYellow ? YELLOW_COLORS : isBlue ? BLUE_COLORS : PURPLE_COLORS;
 
   const mainLength = isBlue ? 0.85 : 0.55;
   const glowLength = isBlue ? 1.0 : 0.7;

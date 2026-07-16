@@ -106,7 +106,7 @@ const Environment: React.FC<EnvironmentProps> = ({
 
       {/* Instanced grass field — density per room (purple sparse), GPU-animated wind */}
       {enableGrass && (
-        <StylizedGrass fieldShape="disc" radius={26} roomTheme={visualRoomTheme} />
+        <StylizedGrass fieldShape="disc" radius={18} roomTheme={visualRoomTheme} />
       )}
 
       {/* Stone road + branch connectors + combat platforms — single draw call */}
@@ -152,7 +152,7 @@ const Environment: React.FC<EnvironmentProps> = ({
 
       {/* Glowing arcane runes on ground near pillars and camp centers */}
     
-      {/* Volumetric god-ray shafts descending from the blood moon */}
+
      
 
     </group>

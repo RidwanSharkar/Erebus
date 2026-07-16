@@ -74,6 +74,7 @@ export interface ViperArrowState {
   startPosition: Vector3;
   targetPosition: Vector3;
   damage: number;
+  maxRange?: number;
 }
 
 export interface WeaverLightningState {
@@ -132,6 +133,13 @@ export interface GreedFireballState {
   startPosition: Vector3;
   targetPosition: Vector3;
   greedId: string;
+}
+
+export interface EnchantressEarthShockState {
+  id: string;
+  startPosition: Vector3;
+  targetPosition: Vector3;
+  enchantressId: string;
 }
 
 export interface BossLeapTelegraphState {
@@ -251,7 +259,7 @@ export interface TeleportEffectState {
   timestamp: number;
   /** 'shade' → ShadeTeleportEffect; 'warlock' | 'templar' → WarlockTeleportEffect */
   variant?: 'templar' | 'shade' | 'warlock';
-  theme?: 'blue' | 'purple' | 'red';
+  theme?: 'blue' | 'purple' | 'red' | 'yellow';
 }
 
 export interface TemplarBlinkSmiteStrikeState {

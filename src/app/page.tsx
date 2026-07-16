@@ -8,6 +8,7 @@ import { ENABLE_REALTIME_SHADOWS } from '../utils/renderConfig';
 import { isDevPerformanceHudEnabled } from '../utils/isDevPerformanceHudEnabled';
 import type { DamageNumberData } from '../components/DamageNumbers';
 import CombatOverlay, { type CombatOverlayCallbacks } from '../components/ui/CombatOverlay';
+import MerchantShopTooltipOverlay from '../components/ui/MerchantShopTooltipOverlay';
 import GameUI from '../components/ui/GameUI';
 import PlayerDamageFeedbackOverlay from '../components/ui/PlayerDamageFeedbackOverlay';
 import { getGlobalRuneCounts, getCriticalChance, getCriticalDamageMultiplier } from '../core/DamageCalculator';
@@ -26,6 +27,7 @@ import ControlsTutorialOverlay from '../components/ui/ControlsTutorialOverlay';
 import AbilitySelectionModal from '../components/ui/AbilitySelectionModal';
 import TalentSelectionModal from '../components/ui/TalentSelectionModal';
 import CoopBoonPickerModal from '../components/ui/CoopBoonPickerModal';
+import AllyChoiceModal from '../components/ui/AllyChoiceModal';
 import DefeatRetryDialog from '../components/ui/DefeatRetryDialog';
 import {
   applyTalentIdToLoadout,
@@ -252,6 +254,7 @@ function HomeContent() {
     claimPreBossReward,
     claimDeepSanctumReward,
     registerDeepSanctumRewardClaimedHandler,
+    chooseCoopAlly,
   } = useMultiplayerActions();
 
   const {
@@ -277,6 +280,7 @@ function HomeContent() {
     coopIntroRoomIndex,
     coopIntroFountainPhase,
     coopIntroFountainUsed,
+    coopIntroAllyChoiceMade,
     coopVoidPortalOffered,
     coopDeepSanctumLevel,
     deepSanctumRewardKind,
@@ -457,6 +461,7 @@ function HomeContent() {
   const throneEnterPortalAnnouncedRef = useRef(false);
   const claimRewardAnnouncedSeqRef = useRef(-1);
   const chooseGatewayAnnouncedSeqRef = useRef(-1);
+  const introAllyDrinkAnnouncedSeqRef = useRef(-1);
   const prevPortalsUnlockedRef = useRef(false);
 
   const announceThroneEnterPortal = useCallback(() => {
@@ -692,13 +697,23 @@ function HomeContent() {
     }
 
     if (coopIntroFountainPhase) {
-      const { title, color } = GUIDE_ANNOUNCEMENTS.drinkFountain;
-      enqueueAnnouncementAfter(
-        ROOM_TITLE_ANNOUNCEMENT_MS,
-        title,
-        color,
-        `intro-fountain-${coopIntroIntermissionSeq}`,
-      );
+      if (!coopIntroAllyChoiceMade) {
+        const { title, color } = GUIDE_ANNOUNCEMENTS.chooseAlly;
+        enqueueAnnouncementAfter(
+          ROOM_TITLE_ANNOUNCEMENT_MS,
+          title,
+          color,
+          `intro-ally-${coopIntroIntermissionSeq}`,
+        );
+      } else if (!coopIntroFountainUsed) {
+        const { title, color } = GUIDE_ANNOUNCEMENTS.drinkFountain;
+        enqueueAnnouncementAfter(
+          ROOM_TITLE_ANNOUNCEMENT_MS,
+          title,
+          color,
+          `intro-fountain-${coopIntroIntermissionSeq}`,
+        );
+      }
     } else {
       const { title, color } = GUIDE_ANNOUNCEMENTS.descendPortal;
       enqueueAnnouncementAfter(
@@ -708,13 +723,21 @@ function HomeContent() {
         `intro-descend-${coopIntroIntermissionSeq}`,
       );
     }
-  }, [coopIntroIntermissionSeq, coopIntroFountainPhase, gameMode, enqueueAnnouncement, enqueueAnnouncementAfter]);
+  }, [coopIntroIntermissionSeq, coopIntroFountainPhase, coopIntroAllyChoiceMade, coopIntroFountainUsed, gameMode, enqueueAnnouncement, enqueueAnnouncementAfter]);
 
   useEffect(() => {
-    if (!coopIntroFountainUsed || gameMode !== 'coop') return;
+    if (gameMode !== 'coop' || !coopIntroFountainPhase || !coopIntroAllyChoiceMade || coopIntroFountainUsed) return;
+    if (introAllyDrinkAnnouncedSeqRef.current === coopIntroIntermissionSeq) return;
+    introAllyDrinkAnnouncedSeqRef.current = coopIntroIntermissionSeq;
+    const { title, color } = GUIDE_ANNOUNCEMENTS.drinkFountain;
+    enqueueAnnouncement(title, color, `intro-fountain-after-ally-${coopIntroIntermissionSeq}`);
+  }, [coopIntroAllyChoiceMade, coopIntroFountainPhase, coopIntroFountainUsed, coopIntroIntermissionSeq, gameMode, enqueueAnnouncement]);
+
+  useEffect(() => {
+    if (!coopIntroAllyChoiceMade || !coopIntroFountainUsed || gameMode !== 'coop') return;
     const { title, color } = GUIDE_ANNOUNCEMENTS.chooseGateway;
     enqueueAnnouncement(title, color, `intro-gateway-${coopIntroIntermissionSeq}`);
-  }, [coopIntroFountainUsed, coopIntroIntermissionSeq, gameMode, enqueueAnnouncement]);
+  }, [coopIntroAllyChoiceMade, coopIntroFountainUsed, coopIntroIntermissionSeq, gameMode, enqueueAnnouncement]);
 
   useEffect(() => {
     return () => {
@@ -1428,13 +1451,17 @@ function HomeContent() {
     },
   ];
 
+  const showAllyChoiceModal =
+    gameMode === 'coop' && coopIntroFountainPhase && !coopIntroAllyChoiceMade;
+
   const uiBlocksGameInput =
     (gameMode === 'pvp' && showMerchantUI) ||
     showRulesPanel ||
     defeatDialogOpen ||
     throneAbilityWeapon !== null ||
     throneTalentWeapon !== null ||
-    coopBoon !== null;
+    coopBoon !== null ||
+    showAllyChoiceModal;
 
   return (
       <main className="w-full h-screen bg-black relative">
@@ -1535,7 +1562,7 @@ function HomeContent() {
                   statPointData={statPointData}
                   abilityLoadout={abilityLoadout}
                   throneAbilityModalOpen={
-                    throneAbilityWeapon !== null || throneTalentWeapon !== null || coopBoon !== null
+                    throneAbilityWeapon !== null || throneTalentWeapon !== null || coopBoon !== null || showAllyChoiceModal
                   }
                   uiBlocksGameInput={uiBlocksGameInput}
                   onRequestThroneAbilityModal={handleRequestThroneAbilityModal}
@@ -1625,6 +1652,7 @@ function HomeContent() {
             </div>
             
             <CombatOverlay callbacksRef={combatOverlayCallbacksRef} />
+            <MerchantShopTooltipOverlay />
             <PlayerDamageFeedbackOverlay />
 
             <DefeatRetryDialog open={defeatDialogOpen} />
@@ -1713,6 +1741,10 @@ function HomeContent() {
                 }}
                 onBack={() => setThroneTalentWeapon(null)}
               />
+            )}
+
+            {showAllyChoiceModal && (
+              <AllyChoiceModal onPick={chooseCoopAlly} />
             )}
 
             {gameMode === 'coop' && coopBoon !== null && (

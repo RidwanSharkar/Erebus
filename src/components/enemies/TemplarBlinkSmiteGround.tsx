@@ -1,221 +1,159 @@
 'use client';
 
-import { useRef, useMemo, useEffect } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import {
-  Group,
   Vector3,
-  Euler,
-  CylinderGeometry,
-  TorusGeometry,
-  SphereGeometry,
-  RingGeometry,
-  CircleGeometry,
-  MeshStandardMaterial,
-  MeshBasicMaterial,
+  Mesh,
   AdditiveBlending,
   DoubleSide,
-  Color,
-  Mesh,
+  CylinderGeometry,
+  RingGeometry,
+  CircleGeometry,
+  MeshBasicMaterial,
 } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
-const DURATION = 0.95;
-const STRIKE_PROGRESS = 0.62;
+const DURATION_MS = 520;
+const SKY_Y = 22;
+const KNIGHT_BEAM_RADIUS = 0.11;
+const WIDTH_SCALE = 1.5;
+const BEAM_RADIUS = KNIGHT_BEAM_RADIUS * WIDTH_SCALE;
+const GLOW_RADIUS_SCALE = 1.5;
+const OUTER_RADIUS_SCALE = 2.35;
+const IMPACT_BURST_PHASE = 0.6;
+
+const PALETTE = {
+  core: '#ffb8b8',
+  glow: '#ef4444',
+  outer: '#7f0505',
+  light: '#ff4a2a',
+  burstRing: '#7f0505',
+  burstCore: '#ff2a1a',
+} as const;
 
 interface TemplarBlinkSmiteGroundProps {
   position: Vector3;
   onComplete: () => void;
 }
 
-/** Visual-only enemy Smite: Runeblade-style sky strike with a deep red Templar palette. */
-export default function TemplarBlinkSmiteGround({ position, onComplete }: TemplarBlinkSmiteGroundProps) {
-  const lightningRef = useRef<Group>(null);
-  const tRef = useRef(0);
+/** Knight-style sky strike for Templar Blink Smite — 1.5× thicker with outer halo + ground burst. */
+function TemplarBlinkSmiteGround({ position, onComplete }: TemplarBlinkSmiteGroundProps) {
+  const startRef = useRef<number | null>(null);
   const doneRef = useRef(false);
-  const burstTRef = useRef(0);
-  const burstStartedRef = useRef(false);
-  const burstRingRef = useRef<Mesh>(null);
-  const burstCoreRef = useRef<Mesh>(null);
+  const shockRingRef = useRef<Mesh>(null);
+  const flashDiscRef = useRef<Mesh>(null);
 
-  const primaryColor = useMemo(() => new Color('#7f0505'), []);
-  const secondaryColor = useMemo(() => new Color('#ff2a1a'), []);
-  const burstPointColor = useMemo(() => primaryColor.clone().lerp(secondaryColor, 0.45), [primaryColor, secondaryColor]);
+  const strikeLight = useDynamicLight({ color: PALETTE.light, distance: 20, decay: 2, priority: 1 });
+  const burstLight = useDynamicLight({ color: PALETTE.burstCore, distance: 14, decay: 2, priority: 1 });
 
-  // Pooled lights replace the mounted <pointLight>s: one follows the falling beam
-  // (collapses the 2 beam lights → 1), one for the ground burst flash.
-  const beamLight = useDynamicLight({ color: primaryColor, distance: 28, decay: 2, priority: 1 });
-  const burstLight = useDynamicLight({ color: burstPointColor, distance: 11, decay: 2, priority: 1 });
+  const matCore = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: PALETTE.core,
+        transparent: true,
+        opacity: 0.95,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      }),
+    [],
+  );
+  const matGlow = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: PALETTE.glow,
+        transparent: true,
+        opacity: 0.55,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      }),
+    [],
+  );
+  const matOuter = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: PALETTE.outer,
+        transparent: true,
+        opacity: 0.22,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      }),
+    [],
+  );
+  const matShockRing = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: PALETTE.burstRing,
+        transparent: true,
+        opacity: 0,
+        blending: AdditiveBlending,
+        depthWrite: false,
+        side: DoubleSide,
+      }),
+    [],
+  );
+  const matFlashDisc = useMemo(
+    () =>
+      new MeshBasicMaterial({
+        color: PALETTE.burstCore,
+        transparent: true,
+        opacity: 0,
+        blending: AdditiveBlending,
+        depthWrite: false,
+        side: DoubleSide,
+      }),
+    [],
+  );
 
-  const geometries = useMemo(() => ({
-    core: new CylinderGeometry(0.055, 0.055, 20, 20),
-    inner: new CylinderGeometry(0.14, 0.12, 20, 20),
-    outer: new CylinderGeometry(0.26, 0.24, 20, 18),
-    glow1: new CylinderGeometry(0.3, 0.32, 20, 16),
-    glow2: new CylinderGeometry(0.34, 0.36, 20, 16),
-    outerGlow: new CylinderGeometry(0.38, 0.48, 20, 16),
-    torus: new TorusGeometry(0.65, 0.055, 8, 32),
-    skyTorus: new TorusGeometry(0.5, 0.055, 32, 32),
-    sphere: new SphereGeometry(0.1, 8, 8),
-    burstRing: new RingGeometry(0.1, 0.38, 40),
-    burstCore: new CircleGeometry(0.58, 24),
-  }), []);
-
-  const materials = useMemo(() => ({
-    core: new MeshStandardMaterial({
-      color: secondaryColor,
-      emissive: secondaryColor,
-      emissiveIntensity: 64,
-      transparent: true,
-      opacity: 0.998,
-    }),
-    inner: new MeshStandardMaterial({
-      color: secondaryColor,
-      emissive: primaryColor,
-      emissiveIntensity: 42,
-      transparent: true,
-      opacity: 0.7,
-    }),
-    outer: new MeshStandardMaterial({
-      color: primaryColor,
-      emissive: secondaryColor,
-      emissiveIntensity: 24,
-      transparent: true,
-      opacity: 0.6,
-    }),
-    glow1: new MeshStandardMaterial({
-      color: primaryColor,
-      emissive: secondaryColor,
-      emissiveIntensity: 5.5,
-      transparent: true,
-      opacity: 0.5,
-    }),
-    glow2: new MeshStandardMaterial({
-      color: primaryColor,
-      emissive: secondaryColor,
-      emissiveIntensity: 4.2,
-      transparent: true,
-      opacity: 0.4,
-    }),
-    outerGlow: new MeshStandardMaterial({
-      color: primaryColor,
-      emissive: secondaryColor,
-      emissiveIntensity: 1.8,
-      transparent: true,
-      opacity: 0.18,
-    }),
-    spiral: new MeshStandardMaterial({
-      color: primaryColor,
-      emissive: secondaryColor,
-      emissiveIntensity: 12,
-      transparent: true,
-      opacity: 0.48,
-    }),
-    skySpiral: new MeshStandardMaterial({
-      color: primaryColor,
-      emissive: secondaryColor,
-      emissiveIntensity: 11,
-      transparent: true,
-      opacity: 0.36,
-    }),
-    particle: new MeshStandardMaterial({
-      color: primaryColor,
-      emissive: secondaryColor,
-      emissiveIntensity: 12,
-      transparent: true,
-      opacity: 0.62,
-    }),
-    burstRing: new MeshBasicMaterial({
-      color: primaryColor,
-      transparent: true,
-      opacity: 0,
-      blending: AdditiveBlending,
-      depthWrite: false,
-      side: DoubleSide,
-    }),
-    burstCore: new MeshBasicMaterial({
-      color: secondaryColor,
-      transparent: true,
-      opacity: 0,
-      blending: AdditiveBlending,
-      depthWrite: false,
-      side: DoubleSide,
-    }),
-  }), [primaryColor, secondaryColor]);
-
-  const spiralPositions = useMemo(() => (
-    Array(3).fill(0).map((_, i) => ({
-      rotation: new Euler(Math.PI / 4, (i * Math.PI) / 1.5, Math.PI),
-    }))
-  ), []);
-
-  const skySpiralPositions = useMemo(() => (
-    Array(10).fill(0).map((_, i) => ({
-      rotation: new Euler(0, (i * Math.PI) / 1.5, 0),
-      position: new Vector3(0, 5.5, 0),
-    }))
-  ), []);
-
-  const particlePositions = useMemo(() => (
-    Array(6).fill(0).map((_, i) => ({
-      position: new Vector3(
-        Math.cos((i * Math.PI) / 3) * 0.45,
-        (i - 3) * 1.35,
-        Math.sin((i * Math.PI) / 3) * 0.45,
-      ),
-    }))
-  ), []);
+  const cyl = useMemo(() => new CylinderGeometry(BEAM_RADIUS, BEAM_RADIUS, 1, 6), []);
+  const shockRingGeo = useMemo(() => new RingGeometry(0.12, 0.42, 32), []);
+  const flashDiscGeo = useMemo(() => new CircleGeometry(0.62, 16), []);
 
   useEffect(() => {
     return () => {
-      Object.values(geometries).forEach((g) => g.dispose());
-      Object.values(materials).forEach((m) => m.dispose());
+      matCore.dispose();
+      matGlow.dispose();
+      matOuter.dispose();
+      matShockRing.dispose();
+      matFlashDisc.dispose();
+      cyl.dispose();
+      shockRingGeo.dispose();
+      flashDiscGeo.dispose();
     };
-  }, [geometries, materials]);
+  }, [matCore, matGlow, matOuter, matShockRing, matFlashDisc, cyl, shockRingGeo, flashDiscGeo]);
 
-  useFrame((_, delta) => {
-    tRef.current += delta;
-    const p = Math.min(tRef.current / DURATION, 1);
+  useFrame(() => {
+    if (startRef.current === null) startRef.current = performance.now();
+    const elapsed = performance.now() - startRef.current;
+    const k = Math.min(1, elapsed / DURATION_MS);
+    const fade = 1 - k;
 
-    if (lightningRef.current) {
-      const startY = position.y + 40;
-      const targetY = position.y;
-      lightningRef.current.position.y = startY + (targetY - startY) * Math.min(p / STRIKE_PROGRESS, 1);
-      const scale = p < 0.9 ? 1 : 1 - (p - 0.9) / 0.1;
-      lightningRef.current.scale.set(scale, scale, scale);
+    matCore.opacity = 0.95 * fade;
+    matGlow.opacity = 0.55 * fade;
+    matOuter.opacity = 0.22 * fade;
 
-      // Beam light follows the descending lightning group (collapsed from 2 lights).
-      beamLight.current?.setPosition(position.x, lightningRef.current.position.y, position.z);
-      beamLight.current?.setIntensity(44);
+    strikeLight.current?.setPosition(position.x, position.y + 2, position.z);
+    strikeLight.current?.setIntensity(32 * fade);
+
+    const burstK = Math.min(1, k / IMPACT_BURST_PHASE);
+    const easeOut = 1 - Math.pow(1 - burstK, 2);
+
+    if (shockRingRef.current) {
+      const ringScale = 0.35 + easeOut * 2.6;
+      shockRingRef.current.scale.set(ringScale, ringScale, 1);
+      matShockRing.opacity = 0.88 * fade * Math.min(1, burstK * 2.2);
+    }
+    if (flashDiscRef.current) {
+      const discScale = 0.18 + easeOut * 2.4;
+      flashDiscRef.current.scale.set(discScale, discScale, 1);
+      matFlashDisc.opacity = 0.78 * fade * (burstK < 0.45 ? burstK / 0.45 : Math.max(0, 1 - (burstK - 0.45) / 0.55));
     }
 
-    if (p >= STRIKE_PROGRESS) {
-      burstStartedRef.current = true;
-    }
+    burstLight.current?.setPosition(position.x, position.y + 0.15, position.z);
+    burstLight.current?.setIntensity(36 * fade * Math.min(1, burstK * 1.8));
+    burstLight.current?.setDistance(6 + easeOut * 5);
 
-    if (burstStartedRef.current) {
-      burstTRef.current = Math.min(burstTRef.current + delta * 3.8, 1);
-      const bt = burstTRef.current;
-      const easeOut = 1 - Math.pow(1 - bt, 2);
-      if (burstRingRef.current) {
-        const s = 0.35 + easeOut * 2.4;
-        burstRingRef.current.scale.set(s, s, 1);
-        const m = burstRingRef.current.material as MeshBasicMaterial;
-        m.opacity = 0.85 * (1 - bt);
-      }
-      if (burstCoreRef.current) {
-        const cs = 0.2 + easeOut * 2.2;
-        burstCoreRef.current.scale.set(cs, cs, 1);
-        const m = burstCoreRef.current.material as MeshBasicMaterial;
-        m.opacity = 0.7 * (1 - Math.min(bt * 1.4, 1));
-      }
-      // Ground burst flash, at the burst group's world position (local 0.15 * scale 1.55).
-      burstLight.current?.setPosition(position.x, position.y + 1.25 + 0.15 * 1.55, position.z);
-      burstLight.current?.setIntensity(30 * (1 - bt));
-      burstLight.current?.setDistance(5 + easeOut * 4);
-    }
-
-    if (p >= 1 && !doneRef.current) {
+    if (k >= 1 && !doneRef.current) {
       doneRef.current = true;
       onComplete();
     }
@@ -223,51 +161,32 @@ export default function TemplarBlinkSmiteGround({ position, onComplete }: Templa
 
   return (
     <group>
-      <group ref={lightningRef} position={[position.x, position.y + 40, position.z]}>
-        <mesh geometry={geometries.core} material={materials.core} />
-        <mesh geometry={geometries.inner} material={materials.inner} />
-        <mesh geometry={geometries.outer} material={materials.outer} />
-        <mesh geometry={geometries.glow1} material={materials.glow1} />
-        <mesh geometry={geometries.glow2} material={materials.glow2} />
-        <mesh geometry={geometries.outerGlow} material={materials.outerGlow} />
-
-        {spiralPositions.map((props, i) => (
-          <mesh key={`templar-smite-spiral-${i}`} rotation={props.rotation} geometry={geometries.torus} material={materials.spiral} />
-        ))}
-
-        {skySpiralPositions.map((props, i) => (
-          <mesh
-            key={`templar-smite-sky-spiral-${i}`}
-            rotation={props.rotation}
-            position={props.position}
-            geometry={geometries.skyTorus}
-            material={materials.skySpiral}
-          />
-        ))}
-
-        {particlePositions.map((props, i) => (
-          <mesh key={`templar-smite-particle-${i}`} position={props.position} geometry={geometries.sphere} material={materials.particle} />
-        ))}
+      <group position={[position.x, position.y + SKY_Y / 2, position.z]}>
+        <mesh geometry={cyl} material={matOuter} scale={[OUTER_RADIUS_SCALE, SKY_Y, OUTER_RADIUS_SCALE]} />
+        <mesh geometry={cyl} material={matGlow} scale={[GLOW_RADIUS_SCALE, SKY_Y, GLOW_RADIUS_SCALE]} />
+        <mesh geometry={cyl} material={matCore} scale={[1, SKY_Y, 1]} />
       </group>
 
-      <group position={[position.x, position.y + 1.25, position.z]} scale={[1.55, 1.55, 1.55]}>
+      <group position={[position.x, position.y + 0.15, position.z]}>
         <mesh
-          ref={burstRingRef}
+          ref={shockRingRef}
           rotation={[-Math.PI / 2, 0, 0]}
           scale={[0.001, 0.001, 1]}
-          geometry={geometries.burstRing}
-          material={materials.burstRing}
+          geometry={shockRingGeo}
+          material={matShockRing}
           renderOrder={1}
         />
         <mesh
-          ref={burstCoreRef}
+          ref={flashDiscRef}
           rotation={[-Math.PI / 2, 0, 0]}
           scale={[0.001, 0.001, 1]}
-          geometry={geometries.burstCore}
-          material={materials.burstCore}
+          geometry={flashDiscGeo}
+          material={matFlashDisc}
           renderOrder={2}
         />
       </group>
     </group>
   );
 }
+
+export default React.memo(TemplarBlinkSmiteGround);

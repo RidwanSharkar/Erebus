@@ -279,7 +279,7 @@ io.on('connection', (socket) => {
       ok = room.beginIntroRoom(1);
     } else if (room.coopIntroPortalOpen && room.coopIntroActive) {
       ok = room.beginIntroRoom(room.coopIntroRoomIndex + 1);
-    } else if (room.coopIntroFountainPhase && room.coopIntroFountainUsed) {
+    } else if (room.coopIntroFountainPhase && room.coopIntroFountainUsed && room.coopIntroAllyChoiceMade) {
       ok = room.enterFirstNormalRoomAfterIntro(chosenCampType);
     } else if (room.coopMainArenaPortalPhase) {
       ok = room.resolveMainArenaPortal(chosenCampType);
@@ -302,6 +302,20 @@ io.on('connection', (socket) => {
     const ok = room.useCoopFountain(socket.id);
     if (ok) {
       socket.emit('coop-use-fountain-success', { roomId, timestamp: Date.now() });
+    }
+  });
+
+  socket.on('coop-choose-ally', (data) => {
+    const { roomId, allyKind } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    if (!room.getPlayer(socket.id)) return;
+    if (typeof room.chooseCoopAlly !== 'function') return;
+
+    const ok = room.chooseCoopAlly(socket.id, allyKind);
+    if (ok) {
+      socket.emit('coop-choose-ally-success', { roomId, allyKind: room.coopAllyKind, timestamp: Date.now() });
     }
   });
 

@@ -20,7 +20,7 @@ export const REWARD_ANNOUNCEMENT_COLORS = {
   unlocked: '#c084fc',
 } as const;
 
-export const INTRO_ROOM_GOLD_REWARDS = [50, 75, 100] as const;
+export const INTRO_ROOM_GOLD_REWARDS = [50, 75, 100, 0] as const;
 export const DEEP_SANCTUM_STAT_POINTS = 8;
 export const DEEP_SANCTUM_GOLD_MIN = 150;
 
@@ -29,6 +29,7 @@ export const GUIDE_ANNOUNCEMENTS = {
   enterPortal: { title: 'ENTER A PORTAL', color: '#eab308' },
   descendPortal: { title: 'DESCEND', color: '#c084fc' },
   drinkFountain: { title: 'DRINK FROM THE FOUNTAIN', color: '#22d3ee' },
+  chooseAlly: { title: 'CHOOSE YOUR ALLY', color: '#eab308' },
   claimReward: { title: 'CLAIM YOUR REWARD', color: '#94a3b8' },
   chooseGateway: { title: 'CHOOSE A GATEWAY', color: '#94a3b8' },
   descendVoid: { title: 'DESCEND', color: '#c084fc' },
@@ -163,7 +164,7 @@ export function buildRoomTitleAnnouncement(
   }
 
   if (kind === 'deep_sanctum') {
-    const index = visitIndex != null && visitIndex > 0 ? visitIndex : 4;
+    const index = visitIndex != null && visitIndex > 0 ? visitIndex : 5;
     return {
       title: `INNER SANCTUM ${toRomanNumeral(index)}`,
       color: ROOM_TITLE_COLORS.intro,

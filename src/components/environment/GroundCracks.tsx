@@ -14,7 +14,7 @@ import { createGroundCrackMaterial } from './groundCracksShader';
 // Transparent, renders on top of stone ground (renderOrder 2)
 // ---------------------------------------------------------------------------
 
-const CRACK_COUNT = 40;
+const CRACK_COUNT = 1;
 const CRACK_SEED = 0x4a7f;
 
 function seededRandom(seed: number): number {

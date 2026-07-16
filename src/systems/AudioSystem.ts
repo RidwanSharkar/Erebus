@@ -158,6 +158,7 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'merchant_greet_exit', file: 'ui/merchantGreetExit.mp3' },
   { id: 'ui_pedestal', file: 'ui/pedestal.mp3' },
   { id: 'ui_fountain', file: 'ui/fountain.mp3' },
+  { id: 'ui_void', file: 'ui/void.mp3' },
   { id: 'ui_warcrack', file: 'ui/WARCRACK.mp3' },
 ];
 
@@ -1310,6 +1311,11 @@ export class AudioSystem extends System {
   /** Merchant room: healing purchase. */
   public playFountainSound(): void {
     this.playWeaponSound('ui_fountain', AudioSystem.UI_ORIGIN, { volume: 0.85 });
+  }
+
+  /** Void portal: plays once when the maw first opens. */
+  public playVoidPortalOpenSound(): void {
+    this.playWeaponSound('ui_void', AudioSystem.UI_ORIGIN, { volume: 0.92 });
   }
 
   /** Co-op colored room: first combat engagement whisper (once per room visit). */

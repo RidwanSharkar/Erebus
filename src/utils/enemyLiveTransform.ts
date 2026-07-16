@@ -124,6 +124,10 @@ function isTotemValidEnemy(enemy: TotemTargetEnemy): boolean {
     enemy.health > 0 &&
     enemy.alliedUnit !== true &&
     enemy.type !== 'allied-knight' &&
+    enemy.type !== 'allied-huntress' &&
+    enemy.type !== 'allied-phantom' &&
+    enemy.type !== 'allied-demon' &&
+    enemy.type !== 'allied-enchantress' &&
     enemy.type !== 'allied-healer' &&
     enemy.type !== 'player-zombie'
   );

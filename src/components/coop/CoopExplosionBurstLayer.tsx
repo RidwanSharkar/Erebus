@@ -126,7 +126,7 @@ const CoopExplosionBurstLayer = memo(forwardRef<CoopExplosionBurstLayerHandle, o
                 key={effect.id}
                 position={effect.position}
                 type={effect.type}
-                theme={effect.theme === 'blue' ? 'blue' : 'purple'}
+                theme={effect.theme === 'yellow' ? 'yellow' : effect.theme === 'blue' ? 'blue' : 'purple'}
                 onComplete={onComplete}
               />
             );

@@ -28,6 +28,8 @@ interface ViperRendererProps {
   isDying?: boolean;
   campType?: string;
   staggerBuildup?: number;
+  /** Cube soul glow palette — defaults to green for enemy vipers. */
+  soulColor?: 'green' | 'red' | 'purple' | 'blue' | 'yellow';
 }
 
 // How long isAttacking stays true — used to suppress walk state during the bow cycle.
@@ -47,6 +49,7 @@ function ViperRenderer({
   isDying = false,
   campType,
   staggerBuildup = 0,
+  soulColor = 'green',
 }: ViperRendererProps) {
   const theme = campHpTheme(campType);
   const { socket, enemyTransformsRef, enemyVisualRotationsRef, enemiesRef } = useMultiplayerActions();
@@ -231,7 +234,7 @@ function ViperRenderer({
         impactPlayKey={impactPlayKey}
         onImpactFinished={handleImpactFinished}
       />
-      {!isDying && <CubeSoulEffect color="green" posY={2.5} enabledRef={soulEnabledRef} />}
+      {!isDying && <CubeSoulEffect color={soulColor} posY={2.5} enabledRef={soulEnabledRef} />}
 
       {/* Billboard health bar */}
       <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>

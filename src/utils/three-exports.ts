@@ -109,6 +109,7 @@ export {
   FrontSide,
   BackSide,
   AdditiveBlending,
+  NormalBlending,
   LinearFilter,
   DynamicDrawUsage,
   RepeatWrapping

@@ -46,6 +46,7 @@ type CoopEnvironmentSceneLayerProps = {
   coopIntroPortalOpen: boolean;
   coopIntroFountainPhase: boolean;
   coopIntroFountainUsed: boolean;
+  coopIntroAllyChoiceMade: boolean;
   coopVoidPortalOffered: boolean;
   deepSanctumRewardKind: string | null;
   world: World | null | undefined;
@@ -77,6 +78,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
   coopIntroPortalOpen,
   coopIntroFountainPhase,
   coopIntroFountainUsed,
+  coopIntroAllyChoiceMade,
   coopVoidPortalOffered,
   deepSanctumRewardKind,
   world,
@@ -139,13 +141,13 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
       {isCastleRoom && coopCurrentRoomKind === 'intro' && coopIntroFountainPhase && (
         <>
           <HealingFountain active used={coopIntroFountainUsed} />
-          {o.length >= 2 && (
+          {coopIntroAllyChoiceMade && coopIntroFountainUsed && o.length >= 2 && (
             <group name="intro-fountain-portals">
               {MAIN_COMBAT_CHOICE_PORTAL_POSITIONS.map((pos, i) => (
                 <group key={`intro-fountain-portal-${i}`} position={[pos.x, pos.y, pos.z]}>
                   <ThronePortalRing
                     campType={i === 0 ? leftCamp : rightCamp}
-                    locked={!coopIntroFountainUsed}
+                    locked={false}
                   />
                 </group>
               ))}

@@ -5,7 +5,7 @@ import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
-type ShadeTeleportTheme = 'purple' | 'blue';
+type ShadeTeleportTheme = 'purple' | 'blue' | 'yellow';
 
 const SHADE_TELEPORT_PALETTES: Record<ShadeTeleportTheme, {
   core: string;
@@ -27,6 +27,13 @@ const SHADE_TELEPORT_PALETTES: Record<ShadeTeleportTheme, {
     ring: '#66eeff',
     smoke: '#002244',
     light: '#33ccff',
+  },
+  yellow: {
+    core: '#ffd700',
+    wisp: '#665500',
+    ring: '#ffe14d',
+    smoke: '#332800',
+    light: '#ffd700',
   },
 };
 

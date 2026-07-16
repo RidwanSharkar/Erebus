@@ -12,6 +12,7 @@ import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStat
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { applyEnemyHealthBarFill, syncEnemyHealthBarFillFromRef, syncEnemyHealthBarNumericTextFromRef } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { campHpTheme } from '@/utils/campHpTheme';
 
 const GHOUL_HP_BAR_WIDTH = 1.8;
 const GHOUL_HP_BAR_HEIGHT = 0.22;
@@ -26,6 +27,8 @@ interface GhoulRendererProps {
   isDying?: boolean;
   staggerBuildup?: number;
   visualScale?: number;
+  campType?: string;
+  skipSummon?: boolean;
 }
 
 const ATTACK_DURATION  = 1200; // ms — matches ghoul attack clip; backend `meleeLockUntil` uses the same window
@@ -43,7 +46,10 @@ function GhoulRenderer({
   isDying = false,
   staggerBuildup = 0,
   visualScale = 1,
+  campType,
+  skipSummon = false,
 }: GhoulRendererProps) {
+  const hpTheme = campHpTheme(campType);
   const { socket, enemyTransformsRef, enemyVisualRotationsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
@@ -51,7 +57,7 @@ function GhoulRenderer({
 
   const [isAttacking,    setIsAttacking]    = useState(false);
   const [isWalking,      setIsWalking]      = useState(false);
-  const [isSummoning,    setIsSummoning]    = useState(true); // Start with summon anim
+  const [isSummoning,    setIsSummoning]    = useState(!skipSummon);
   const [attackVariant,  setAttackVariant]  = useState<1 | 2>(1);
   const [isImpacting,    setIsImpacting]    = useState(false);
   const [impactPlayKey,  setImpactPlayKey]  = useState(0);
@@ -60,7 +66,7 @@ function GhoulRenderer({
   const targetPosition  = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation  = useRef(rotation);
   const isAttackingRef  = useRef(false);
-  const isSummoningRef  = useRef(true);
+  const isSummoningRef  = useRef(!skipSummon);
   const isLeapingRef    = useRef(false);
   const isWalkingRef    = useRef(false);
   const prevHealthRef   = useRef(health);
@@ -87,12 +93,13 @@ function GhoulRenderer({
 
   // Play the spawn summon animation once on mount, then switch to Idle.
   useEffect(() => {
+    if (skipSummon) return undefined;
     const t = setTimeout(() => {
       setIsSummoning(false);
       isSummoningRef.current = false;
     }, SUMMON_DURATION);
     return () => clearTimeout(t);
-  }, []);
+  }, [skipSummon]);
 
   useEffect(() => {
     const dist = targetPosition.current.distanceTo(positionScratch.set(position.x, position.y, position.z));
@@ -253,7 +260,7 @@ function GhoulRenderer({
           <>
             <mesh position={[0, 0, 0]}>
               <planeGeometry args={[GHOUL_HP_BAR_WIDTH, GHOUL_HP_BAR_HEIGHT]} />
-              <meshBasicMaterial color="#1a0a0a" opacity={0.9} transparent />
+              <meshBasicMaterial color={campType ? hpTheme.background : '#1a0a0a'} opacity={0.9} transparent />
             </mesh>
 
             <mesh
@@ -262,7 +269,7 @@ function GhoulRenderer({
               scale={[1, 1, 1]}
             >
               <planeGeometry args={[GHOUL_HP_BAR_WIDTH, GHOUL_HP_BAR_FILL_HEIGHT]} />
-              <meshBasicMaterial color="#aa3300" opacity={0.95} transparent />
+              <meshBasicMaterial color={campType ? hpTheme.fill : '#aa3300'} opacity={0.95} transparent />
             </mesh>
 
             <EnemyHealthBarTextLabel
@@ -271,7 +278,7 @@ function GhoulRenderer({
               health={health}
               maxHealth={maxHealth}
               fontSize={0.16}
-              color="#ffccaa"
+              color={campType ? hpTheme.text : '#ffccaa'}
             />
             <EnemyStaggerBar enemyId={id} stagger={staggerBuildup} />
           </>

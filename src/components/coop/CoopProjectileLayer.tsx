@@ -8,6 +8,7 @@ import ViperArrowProjectile from '@/components/enemies/ViperArrowProjectile';
 import KnightFrostProjectile from '@/components/enemies/KnightFrostProjectile';
 import KnightDeathGraspProjectile from '@/components/enemies/KnightDeathGraspProjectile';
 import GreedFireProjectile from '@/components/enemies/GreedFireProjectile';
+import EnchantressEarthShockProjectile from '@/components/enemies/EnchantressEarthShockProjectile';
 import Meteor from '@/components/enemies/Meteor';
 import CrossentropyMeteor from '@/components/projectiles/CrossentropyMeteor';
 import CloudkillArrow from '@/components/projectiles/CloudkillArrow';
@@ -17,6 +18,7 @@ import type {
   CloudkillArrowState,
   CrossentropyMeteorState,
   GreedFireballState,
+  EnchantressEarthShockState,
   KnightDeathGraspProjectileState,
   KnightFrostProjectileState,
   MeteorState,
@@ -37,6 +39,8 @@ export type CoopProjectileLayerHandle = {
   addKnightDeathGraspProjectiles: (projectiles: KnightDeathGraspProjectileState[]) => void;
   addGreedFireball: (fireball: GreedFireballState) => void;
   removeGreedFireballByGreedId: (greedId: string) => void;
+  addEnchantressEarthShock: (projectile: EnchantressEarthShockState) => void;
+  removeEnchantressEarthShockByEnchantressId: (enchantressId: string) => void;
   addCrossentropyMeteor: (meteor: CrossentropyMeteorState) => void;
   addCloudkillArrow: (arrow: CloudkillArrowState) => void;
 };
@@ -65,6 +69,7 @@ const CoopProjectileLayer = memo(forwardRef<CoopProjectileLayerHandle, CoopProje
     const [viperArrows, setViperArrows] = useState<ViperArrowState[]>([]);
     const [knightDeathGraspProjectiles, setKnightDeathGraspProjectiles] = useState<KnightDeathGraspProjectileState[]>([]);
     const [greedFireballs, setGreedFireballs] = useState<GreedFireballState[]>([]);
+    const [enchantressEarthShocks, setEnchantressEarthShocks] = useState<EnchantressEarthShockState[]>([]);
     const [activeCrossentropyMeteors, setActiveCrossentropyMeteors] = useState<CrossentropyMeteorState[]>([]);
     const [activeCloudkillArrows, setActiveCloudkillArrows] = useState<CloudkillArrowState[]>([]);
 
@@ -77,6 +82,7 @@ const CoopProjectileLayer = memo(forwardRef<CoopProjectileLayerHandle, CoopProje
       setViperArrows([]);
       setKnightDeathGraspProjectiles([]);
       setGreedFireballs([]);
+      setEnchantressEarthShocks([]);
       setActiveCrossentropyMeteors([]);
       setActiveCloudkillArrows([]);
     }, []);
@@ -121,6 +127,14 @@ const CoopProjectileLayer = memo(forwardRef<CoopProjectileLayerHandle, CoopProje
       setGreedFireballs((prev) => prev.filter((f) => f.greedId !== greedId));
     }, []);
 
+    const addEnchantressEarthShock = useCallback((projectile: EnchantressEarthShockState) => {
+      setEnchantressEarthShocks((prev) => [...prev, projectile]);
+    }, []);
+
+    const removeEnchantressEarthShockByEnchantressId = useCallback((enchantressId: string) => {
+      setEnchantressEarthShocks((prev) => prev.filter((p) => p.enchantressId !== enchantressId));
+    }, []);
+
     const addCrossentropyMeteor = useCallback((meteor: CrossentropyMeteorState) => {
       setActiveCrossentropyMeteors((prev) => [...prev, meteor]);
     }, []);
@@ -141,6 +155,8 @@ const CoopProjectileLayer = memo(forwardRef<CoopProjectileLayerHandle, CoopProje
       addKnightDeathGraspProjectiles,
       addGreedFireball,
       removeGreedFireballByGreedId,
+      addEnchantressEarthShock,
+      removeEnchantressEarthShockByEnchantressId,
       addCrossentropyMeteor,
       addCloudkillArrow,
     }), [
@@ -155,6 +171,8 @@ const CoopProjectileLayer = memo(forwardRef<CoopProjectileLayerHandle, CoopProje
       addKnightDeathGraspProjectiles,
       addGreedFireball,
       removeGreedFireballByGreedId,
+      addEnchantressEarthShock,
+      removeEnchantressEarthShockByEnchantressId,
       addCrossentropyMeteor,
       addCloudkillArrow,
     ]);
@@ -189,6 +207,15 @@ const CoopProjectileLayer = memo(forwardRef<CoopProjectileLayerHandle, CoopProje
             startPosition={fireball.startPosition}
             targetPosition={fireball.targetPosition}
             onComplete={() => setGreedFireballs((prev) => prev.filter((f) => f.id !== fireball.id))}
+          />
+        ))}
+
+        {enchantressEarthShocks.map((projectile) => (
+          <EnchantressEarthShockProjectile
+            key={projectile.id}
+            startPosition={projectile.startPosition}
+            targetPosition={projectile.targetPosition}
+            onComplete={() => setEnchantressEarthShocks((prev) => prev.filter((p) => p.id !== projectile.id))}
           />
         ))}
 
@@ -258,6 +285,7 @@ const CoopProjectileLayer = memo(forwardRef<CoopProjectileLayerHandle, CoopProje
             startPosition={arrow.startPosition}
             targetPosition={arrow.targetPosition}
             damage={arrow.damage}
+            maxRange={arrow.maxRange}
             getPlayerPosition={getLocalPlayerPosition}
             onHitPlayer={() => {
               // Damage and hit/miss audio are server-authoritative via `player-damaged` and `viper-arrow-outcome`.

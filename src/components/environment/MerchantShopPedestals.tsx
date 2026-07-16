@@ -8,7 +8,6 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
-import { createPortal } from 'react-dom';
 import type { Group, Vector3 } from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import {
@@ -18,7 +17,6 @@ import {
   Vector3 as ThreeVector3,
 } from '@/utils/three-exports';
 import Pillar from '@/components/environment/Pillar';
-import MerchantShopTooltip from '@/components/ui/MerchantShopTooltip';
 import {
   MERCHANT_SHOP_INTERACT_DEFS,
   MERCHANT_SHOP_INTERACT_RADIUS,
@@ -35,6 +33,10 @@ import {
   MERCHANT_UTILITY_MAX,
   MERCHANT_WEAPON_TALENT_MAX,
 } from '@/utils/merchantShopUtils';
+import {
+  clearMerchantShopTooltip,
+  publishMerchantShopTooltip,
+} from '@/utils/merchantShopTooltipStore';
 
 const FADE_OUT_SPEED = 10;
 const FADE_IN_SPEED = 5;
@@ -478,8 +480,15 @@ export default function MerchantShopPedestals({
   const symbolRefs = useRef<Partial<Record<MerchantShopSlotKind, Group | null>>>({});
   const [hoveredSlot, setHoveredSlot] = useState<MerchantShopSlotKind | null>(null);
   const [proximitySlot, setProximitySlot] = useState<MerchantShopSlotKind | null>(null);
-  const [tooltipScreen, setTooltipScreen] = useState<{ x: number; y: number } | null>(null);
-  const [portalReady, setPortalReady] = useState(false);
+  const lastPublishedTooltipRef = useRef<{
+    slot: MerchantShopSlotKind;
+    x: number;
+    y: number;
+    name: string;
+    cost: number;
+    description: string;
+    limitLabel?: string;
+  } | null>(null);
 
   const bossDropStock = useMemo(
     () => inventory.find((s) => s.kind === 'boss_drop'),
@@ -495,14 +504,7 @@ export default function MerchantShopPedestals({
     [],
   );
 
-  useEffect(() => {
-    setPortalReady(true);
-  }, []);
-
-  const activeSlot = hoveredSlot ?? proximitySlot;
-  const tooltipData = activeSlot
-    ? getMerchantShopTooltipData(activeSlot, inventory, purchaseState)
-    : null;
+  useEffect(() => () => clearMerchantShopTooltip(), []);
 
   const handleHoverChange = useCallback((slot: MerchantShopSlotKind | null) => {
     setHoveredSlot(slot);
@@ -529,13 +531,28 @@ export default function MerchantShopPedestals({
 
     const slotForTooltip = hoveredSlot ?? nextProximity;
     if (!slotForTooltip) {
-      if (tooltipScreen !== null) setTooltipScreen(null);
+      if (lastPublishedTooltipRef.current !== null) {
+        lastPublishedTooltipRef.current = null;
+        publishMerchantShopTooltip(null);
+      }
       return;
     }
 
     const taken = isSlotTaken(slotForTooltip, inventory, purchaseState);
     if (taken) {
-      if (tooltipScreen !== null) setTooltipScreen(null);
+      if (lastPublishedTooltipRef.current !== null) {
+        lastPublishedTooltipRef.current = null;
+        publishMerchantShopTooltip(null);
+      }
+      return;
+    }
+
+    const tooltipData = getMerchantShopTooltipData(slotForTooltip, inventory, purchaseState);
+    if (!tooltipData) {
+      if (lastPublishedTooltipRef.current !== null) {
+        lastPublishedTooltipRef.current = null;
+        publishMerchantShopTooltip(null);
+      }
       return;
     }
 
@@ -549,18 +566,41 @@ export default function MerchantShopPedestals({
     const x = (_projectScratch.x * 0.5 + 0.5) * size.width;
     const y = (_projectScratch.y * -0.5 + 0.5) * size.height;
 
-    if (
-      !tooltipScreen ||
-      Math.abs(tooltipScreen.x - x) > 1.5 ||
-      Math.abs(tooltipScreen.y - y) > 1.5
-    ) {
-      setTooltipScreen({ x, y });
+    const last = lastPublishedTooltipRef.current;
+    const shouldPublish =
+      !last
+      || last.slot !== slotForTooltip
+      || last.name !== tooltipData.name
+      || last.cost !== tooltipData.cost
+      || last.description !== tooltipData.description
+      || last.limitLabel !== tooltipData.limitLabel
+      || Math.abs(last.x - x) > 1.5
+      || Math.abs(last.y - y) > 1.5;
+
+    if (shouldPublish) {
+      lastPublishedTooltipRef.current = {
+        slot: slotForTooltip,
+        x,
+        y,
+        name: tooltipData.name,
+        cost: tooltipData.cost,
+        description: tooltipData.description,
+        limitLabel: tooltipData.limitLabel,
+      };
+      publishMerchantShopTooltip({
+        visible: true,
+        x,
+        y,
+        name: tooltipData.name,
+        cost: tooltipData.cost,
+        description: tooltipData.description,
+        limitLabel: tooltipData.limitLabel,
+      });
     }
   });
 
   return (
-    <>
-      <group name="merchant-shop-pedestals">
+    <group name="merchant-shop-pedestals">
         {slots.map((slot) => {
           const taken = isSlotTaken(slot.slot, inventory, purchaseState);
           return (
@@ -599,21 +639,6 @@ export default function MerchantShopPedestals({
             </group>
           );
         })}
-      </group>
-      {portalReady && tooltipData && tooltipScreen
-        ? createPortal(
-            <MerchantShopTooltip
-              visible
-              x={tooltipScreen.x}
-              y={tooltipScreen.y}
-              name={tooltipData.name}
-              cost={tooltipData.cost}
-              description={tooltipData.description}
-              limitLabel={tooltipData.limitLabel}
-            />,
-            document.body,
-          )
-        : null}
-    </>
+    </group>
   );
 }

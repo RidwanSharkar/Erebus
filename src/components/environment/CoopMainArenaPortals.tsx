@@ -47,6 +47,7 @@ export function CoopMainArenaPortals({
     return (
       <group name="coop-main-arena-boss-portal" position={[MAIN_COMBAT_BOSS_PORTAL_POSITION.x, MAIN_COMBAT_BOSS_PORTAL_POSITION.y, MAIN_COMBAT_BOSS_PORTAL_POSITION.z]}>
         <VoidPortal
+          scheme="boss"
           position={[0, 0.05, 0]}
           open={portalsUnlocked ? 1 : 0}
           visible={portalsUnlocked}

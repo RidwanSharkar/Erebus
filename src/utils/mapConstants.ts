@@ -3,7 +3,7 @@
  * Colored enemy rooms use a circular footprint at this radius; stat/trial
  * HexCombatArena stays hex at `HEX_ARENA_RADIUS`.
  */
-export const MAIN_ARENA_HEX_RADIUS = 26;
+export const MAIN_ARENA_HEX_RADIUS = 24;
 /** Stat/trial hex combat arena — must match `HexCombatArena.tsx`. */
 export const HEX_ARENA_RADIUS = 22;
 /** Intro castle rooms — must match `backend/coopArenaLayout.js` CASTLE_ROOM_HALF_SIZE. */

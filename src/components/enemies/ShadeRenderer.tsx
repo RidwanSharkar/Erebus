@@ -59,6 +59,7 @@ function ShadeRenderer({
 }: ShadeRendererProps) {
   const theme = campHpTheme(campType);
   const isBlueShade = soulType === 'blue';
+  const isYellowShade = soulType === 'yellow';
   const { socket, enemyTransformsRef, enemyVisualRotationsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
@@ -296,7 +297,7 @@ function ShadeRenderer({
       <GhostTrail
         parentRef={groupRef as React.RefObject<Group>}
         weaponType={WeaponType.NONE}
-        fixedTrailColor={isBlueShade ? '#33ccff' : '#9b30ff'}
+        fixedTrailColor={isYellowShade ? '#ffd700' : isBlueShade ? '#33ccff' : '#9b30ff'}
         isTrailMotionRef={isBlinkingRef}
         yOffset={1.0}
       />
@@ -311,7 +312,12 @@ function ShadeRenderer({
         impactPlayKey={impactPlayKey}
         onImpactFinished={handleImpactFinished}
       />
-      {!isDying && <CubeSoulEffect color={isBlueShade ? 'blue' : 'purple'} posY={2.5} />}
+      {!isDying && (
+        <CubeSoulEffect
+          color={isYellowShade ? 'yellow' : isBlueShade ? 'blue' : 'purple'}
+          posY={2.5}
+        />
+      )}
 
       {/* Billboard health bar */}
       <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>

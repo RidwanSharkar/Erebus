@@ -73,7 +73,7 @@ function getOutgoingDamageNumberClass(damageType?: string, isCritical?: boolean)
   if (damageType === 'ignite') {
     return 'text-orange-500 text-lg font-bold drop-shadow-[0_0_6px_rgba(234,88,12,0.85)]';
   }
-  if (damageType === 'cobra_shot' || damageType === 'venom') {
+  if (damageType === 'cobra_shot' || damageType === 'venom' || damageType === 'entanglement') {
     return 'text-green-400 text-lg';
   }
   if (damageType === 'stagger_break') {

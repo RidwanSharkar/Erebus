@@ -187,7 +187,7 @@ const THRONE_PORTAL_COLOR_HEX: Record<CoopPortalKind, string> = {
   stat: '#eab308',
   trial: '#f97316',
   merchant: '#ec4899',
-  boss: '#d4af37',
+  boss: '#dc2626',
 };
 
 const PORTAL_RITUAL_COLORS: Record<CoopPortalKind, { base: string; glow: string }> = {
@@ -198,7 +198,7 @@ const PORTAL_RITUAL_COLORS: Record<CoopPortalKind, { base: string; glow: string 
   stat: { base: '#a16207', glow: '#fde047' },
   trial: { base: '#c2410c', glow: '#fdba74' },
   merchant: { base: '#be185d', glow: '#f9a8d4' },
-  boss: { base: '#92400e', glow: '#fde68a' },
+  boss: { base: '#991b1b', glow: '#fca5a5' },
 };
 
 export function normalizeThroneCamp(s: string | undefined): ThroneMainRoomCamp {

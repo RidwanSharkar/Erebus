@@ -16,6 +16,10 @@ import WraithRenderer from '@/components/enemies/WraithRenderer';
 import ZombieRenderer from '@/components/enemies/ZombieRenderer';
 import AlliedKnightRenderer from '@/components/enemies/AlliedKnightRenderer';
 import AlliedHealerRenderer from '@/components/enemies/AlliedHealerRenderer';
+import AlliedHuntressRenderer from '@/components/enemies/AlliedHuntressRenderer';
+import AlliedPhantomRenderer from '@/components/enemies/AlliedPhantomRenderer';
+import AlliedDemonRenderer from '@/components/enemies/AlliedDemonRenderer';
+import AlliedEnchantressRenderer from '@/components/enemies/AlliedEnchantressRenderer';
 import SummonedBossSkeleton from '@/components/enemies/SummonedBossSkeleton';
 
 type CoopEnemyRenderLayerProps = {
@@ -131,6 +135,78 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
             staggerBuildup={enemy.staggerBuildup ?? 0}
             alliedOrbSlots={enemy.alliedOrbSlots}
           />
+        );
+      })}
+
+      {(enemiesByType.get('allied-huntress') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <AlliedHuntressRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('allied-phantom') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <AlliedPhantomRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('allied-demon') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <AlliedDemonRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('allied-enchantress') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <AlliedEnchantressRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
         );
       })}
 

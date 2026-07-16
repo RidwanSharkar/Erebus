@@ -124,12 +124,44 @@ const DUALITY_BLIZZARD_HIT_RADIUS = 3;
 /** Keep in sync with `ACID_RAIN_VENOM_STACKS_PER_TICK` in src/utils/talents.ts */
 const ACID_RAIN_VENOM_STACKS_PER_TICK = 1;
 const ALLIED_KNIGHT_ID = 'allied-knight';
-const ALLIED_KNIGHT_MAX_HP = 500;
+const ALLIED_KNIGHT_MAX_HP = 600;
 const ALLIED_KNIGHT_DAMAGE = 50;
 const ALLIED_KNIGHT_MOVE_SPEED = 2.85;
 const ALLIED_KNIGHT_ATTACK_COOLDOWN_MS = 1375;
 const ALLIED_KNIGHT_ORB_COUNT = 3;
+const ALLIED_HUNTRESS_ID = 'allied-huntress';
+const ALLIED_HUNTRESS_MAX_HP = 450;
+const ALLIED_HUNTRESS_DAMAGE = 65;
+const ALLIED_HUNTRESS_MOVE_SPEED = 2.0;
+const ALLIED_HUNTRESS_ATTACK_COOLDOWN_MS = 1250;
+const ALLIED_PHANTOM_ID = 'allied-phantom';
+const ALLIED_PHANTOM_MAX_HP = 400;
+const ALLIED_PHANTOM_DAMAGE = 40;
+const ALLIED_PHANTOM_MOVE_SPEED = 2.0;
+const ALLIED_PHANTOM_ATTACK_COOLDOWN_MS = 4000;
+const ALLIED_DEMON_ID = 'allied-demon';
+const ALLIED_DEMON_MAX_HP = 500;
+const ALLIED_DEMON_DAMAGE = 48;
+const ALLIED_DEMON_MOVE_SPEED = 3.0;
+const ALLIED_DEMON_ATTACK_COOLDOWN_MS = 900;
+const ALLIED_ENCHANTRESS_ID = 'allied-enchantress';
+const ALLIED_ENCHANTRESS_MAX_HP = 400;
+const ALLIED_ENCHANTRESS_MOVE_SPEED = 2.25;
 const ALLIED_HEALER_ID = 'allied-healer';
+const COOP_ALLY_KINDS = ['knight', 'huntress', 'phantom', 'demon', 'enchantress'];
+const COOP_ALLY_KIND_TO_ID = {
+  knight: ALLIED_KNIGHT_ID,
+  huntress: ALLIED_HUNTRESS_ID,
+  phantom: ALLIED_PHANTOM_ID,
+  demon: ALLIED_DEMON_ID,
+  enchantress: ALLIED_ENCHANTRESS_ID,
+};
+const ALL_COOP_PRIMARY_ALLY_IDS = Object.values(COOP_ALLY_KIND_TO_ID);
+
+function normalizeCoopAllyKind(kind) {
+  const k = String(kind || '').toLowerCase();
+  return COOP_ALLY_KINDS.includes(k) ? k : 'knight';
+}
 const ALLIED_HEALER_MAX_HP = 350;
 const ALLIED_HEALER_MOVE_SPEED = 2.0;
 /** Temporarily disable allied healer (Ally 2); allied knight unchanged. */
@@ -200,9 +232,9 @@ const COOP_MID_ACT_SPECIAL_ROOM_TYPES = Object.freeze(['stat', 'trial']);
 const COOP_PRE_BOSS_SPECIAL_TYPES = Object.freeze(['stat', 'trial']);
 const COOP_PRE_BOSS_REWARD_TO_MERCHANT_MS = 5000;
 const COOP_ROOM_TYPES = Object.freeze([...COOP_COLORED_ROOM_TYPES, ...COOP_SPECIAL_ROOM_TYPES, 'boss', 'intro', 'deep_sanctum']);
-const COOP_INTRO_ROOM_GOLD = Object.freeze([50, 75, 100]);
+const COOP_INTRO_ROOM_GOLD = Object.freeze([50, 75, 100, 0]);
 const COOP_VOID_PORTAL_CHANCE = .20;
-const COOP_DEEP_SANCTUM_START_LEVEL = 4;
+const COOP_DEEP_SANCTUM_START_LEVEL = 5;
 const COOP_DEEP_SANCTUM_GOLD_MIN = 150;
 const COOP_DEEP_SANCTUM_GOLD_MAX = 300;
 const COOP_DEEP_SANCTUM_STAT_POINTS = 8;
@@ -274,7 +306,7 @@ const GOLD_REWARD_TABLE = Object.freeze({
   'boss3': { fixed: 150 },
 });
 /** Mirror client main arena constants (colored rooms use a circle at this radius). */
-const MAIN_ARENA_HEX_RADIUS = 26;
+const MAIN_ARENA_HEX_RADIUS = 24;
 const MAIN_MAP_HALF_X = MAIN_ARENA_HEX_RADIUS;
 const MAIN_MAP_HALF_Z = MAIN_ARENA_HEX_RADIUS;
 /** Keep foot XZ inside the playable disc with margin for collision radius. */
@@ -485,17 +517,21 @@ class GameRoom {
     /** Co-op: pending post-teleport initial wave spawn (`_schedulePostTeleportEnemyWave`). */
     this._coopDelayedEnemyWaveTimeoutId = null;
 
-    /** Co-op intro: one-time 3-room sequence before the normal loop (start of run only). */
+    /** Co-op intro: one-time 4-room sequence before the normal loop (start of run only). */
     this.coopIntroPending = false;
     this.coopIntroActive = false;
-    /** @type {0|1|2|3} 0 = not started; 1–3 = current intro room index. */
+    /** @type {0|1|2|3|4} 0 = not started; 1–4 = current intro room index. */
     this.coopIntroRoomIndex = 0;
     /** True after an intro room is cleared — void portal at center is interactable. */
     this.coopIntroPortalOpen = false;
-    /** True after intro room 3 cleared — fountain + dual portals before normal loop. */
+    /** True after intro room 4 cleared — fountain + ally choice + dual portals before normal loop. */
     this.coopIntroFountainPhase = false;
     /** True after any player uses the intro healing fountain. */
     this.coopIntroFountainUsed = false;
+    /** True after a player picks Knight or Huntress at the end of intro room 4. */
+    this.coopIntroAllyChoiceMade = false;
+    /** @type {'knight'|'huntress'} Chosen co-op ally for the rest of the run. */
+    this.coopAllyKind = 'knight';
     /** Living intro enemies remaining (fixed compositions, no bonus spawns). */
     this.coopIntroLivingCount = 0;
 
@@ -503,7 +539,7 @@ class GameRoom {
     this.coopVoidPortalOffered = false;
     /** True while inside a deep sanctum (Inner Sanctum IV+) castle encounter. */
     this.coopDeepSanctumActive = false;
-    /** @type {number} Roman level index for deep sanctum (starts at 4 on first entry). */
+    /** @type {number} Roman level index for deep sanctum (starts at 5 on first entry). */
     this.coopDeepSanctumLevel = 0;
     /** @type {'gold'|'stat'|'talent'|null} Pre-rolled reward after deep sanctum clear. */
     this.coopDeepSanctumRewardKind = null;
@@ -878,6 +914,8 @@ class GameRoom {
     this.coopIntroPortalOpen = false;
     this.coopIntroFountainPhase = false;
     this.coopIntroFountainUsed = false;
+    this.coopIntroAllyChoiceMade = false;
+    this.coopAllyKind = 'knight';
     this.coopIntroLivingCount = 0;
     this.coopVoidPortalOffered = false;
     this.coopDeepSanctumActive = false;
@@ -939,6 +977,8 @@ class GameRoom {
         coopIntroPortalOpen: this.gameMode === 'coop' ? this.coopIntroPortalOpen : false,
         coopIntroFountainPhase: this.gameMode === 'coop' ? this.coopIntroFountainPhase : false,
         coopIntroFountainUsed: this.gameMode === 'coop' ? this.coopIntroFountainUsed : false,
+        coopIntroAllyChoiceMade: this.gameMode === 'coop' ? this.coopIntroAllyChoiceMade : false,
+        coopAllyKind: this.gameMode === 'coop' ? this.coopAllyKind : 'knight',
         ...this.gameMode === 'coop' ? this._getDeepSanctumPayloadFields() : {},
       });
     }
@@ -971,6 +1011,8 @@ class GameRoom {
       coopIntroPortalOpen: this.coopIntroPortalOpen,
       coopIntroFountainPhase: this.coopIntroFountainPhase,
       coopIntroFountainUsed: this.coopIntroFountainUsed,
+      coopIntroAllyChoiceMade: this.coopIntroAllyChoiceMade,
+      coopAllyKind: this.coopAllyKind,
       ...this._getDeepSanctumPayloadFields(),
     };
   }
@@ -1108,27 +1150,115 @@ class GameRoom {
       }
     }
 
-    const knightPos = clampPositionToMainArenaXZ(COOP_MAIN_ENTRY_X + 2.1, COOP_MAIN_ENTRY_Z + 0.6);
+    const allyKind = normalizeCoopAllyKind(this.coopAllyKind);
+    const primaryAllyId = COOP_ALLY_KIND_TO_ID[allyKind];
+    for (const staleAllyId of ALL_COOP_PRIMARY_ALLY_IDS) {
+      if (staleAllyId === primaryAllyId || !this.enemies.has(staleAllyId)) continue;
+      this.enemies.delete(staleAllyId);
+      if (this.enemyAI) {
+        this.enemyAI.removeEnemyAggro(staleAllyId);
+      }
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-removed', {
+          enemyId: staleAllyId,
+          timestamp: Date.now(),
+        });
+      }
+    }
+
+    const allyPos = clampPositionToMainArenaXZ(COOP_MAIN_ENTRY_X + 2.1, COOP_MAIN_ENTRY_Z + 0.6);
     const healerPos = clampPositionToMainArenaXZ(COOP_MAIN_ENTRY_X - 2.1, COOP_MAIN_ENTRY_Z + 0.6);
-    const knight = {
-      id: ALLIED_KNIGHT_ID,
-      type: 'allied-knight',
-      position: { x: knightPos.x, y: 0, z: knightPos.z },
-      rotation: rotationYTowardArenaCenter(knightPos.x, knightPos.z),
-      health: ALLIED_KNIGHT_MAX_HP,
-      maxHealth: ALLIED_KNIGHT_MAX_HP,
-      isDying: false,
-      damage: ALLIED_KNIGHT_DAMAGE,
-      attackCooldown: ALLIED_KNIGHT_ATTACK_COOLDOWN_MS,
-      moveSpeed: ALLIED_KNIGHT_MOVE_SPEED,
-      alliedUnit: true,
-      combatInitiated: false,
-      alliedTargetEnemyId: null,
-      staggerBuildup: 0,
-      alliedOrbSlots: Array(ALLIED_KNIGHT_ORB_COUNT).fill(true),
-      alliedOrbRecoverAt: Array(ALLIED_KNIGHT_ORB_COUNT).fill(0),
-      alliedSmiteCooldownUntil: 0,
-    };
+    let primaryAlly = null;
+
+    if (allyKind === 'huntress') {
+      primaryAlly = {
+        id: ALLIED_HUNTRESS_ID,
+        type: 'allied-huntress',
+        position: { x: allyPos.x, y: 0, z: allyPos.z },
+        rotation: rotationYTowardArenaCenter(allyPos.x, allyPos.z),
+        health: ALLIED_HUNTRESS_MAX_HP,
+        maxHealth: ALLIED_HUNTRESS_MAX_HP,
+        isDying: false,
+        damage: ALLIED_HUNTRESS_DAMAGE,
+        attackCooldown: ALLIED_HUNTRESS_ATTACK_COOLDOWN_MS,
+        moveSpeed: ALLIED_HUNTRESS_MOVE_SPEED,
+        alliedUnit: true,
+        combatInitiated: false,
+        alliedTargetEnemyId: null,
+        staggerBuildup: 0,
+      };
+    } else if (allyKind === 'phantom') {
+      primaryAlly = {
+        id: ALLIED_PHANTOM_ID,
+        type: 'allied-phantom',
+        position: { x: allyPos.x, y: 0, z: allyPos.z },
+        rotation: rotationYTowardArenaCenter(allyPos.x, allyPos.z),
+        health: ALLIED_PHANTOM_MAX_HP,
+        maxHealth: ALLIED_PHANTOM_MAX_HP,
+        isDying: false,
+        damage: ALLIED_PHANTOM_DAMAGE,
+        attackCooldown: ALLIED_PHANTOM_ATTACK_COOLDOWN_MS,
+        moveSpeed: ALLIED_PHANTOM_MOVE_SPEED,
+        alliedUnit: true,
+        soulType: 'yellow',
+        combatInitiated: false,
+        alliedTargetEnemyId: null,
+        staggerBuildup: 0,
+      };
+    } else if (allyKind === 'demon') {
+      primaryAlly = {
+        id: ALLIED_DEMON_ID,
+        type: 'allied-demon',
+        position: { x: allyPos.x, y: 0, z: allyPos.z },
+        rotation: rotationYTowardArenaCenter(allyPos.x, allyPos.z),
+        health: ALLIED_DEMON_MAX_HP,
+        maxHealth: ALLIED_DEMON_MAX_HP,
+        isDying: false,
+        damage: ALLIED_DEMON_DAMAGE,
+        attackCooldown: ALLIED_DEMON_ATTACK_COOLDOWN_MS,
+        moveSpeed: ALLIED_DEMON_MOVE_SPEED,
+        alliedUnit: true,
+        combatInitiated: false,
+        alliedTargetEnemyId: null,
+        staggerBuildup: 0,
+      };
+    } else if (allyKind === 'enchantress') {
+      primaryAlly = {
+        id: ALLIED_ENCHANTRESS_ID,
+        type: 'allied-enchantress',
+        position: { x: allyPos.x, y: 0, z: allyPos.z },
+        rotation: rotationYTowardArenaCenter(allyPos.x, allyPos.z),
+        health: ALLIED_ENCHANTRESS_MAX_HP,
+        maxHealth: ALLIED_ENCHANTRESS_MAX_HP,
+        isDying: false,
+        moveSpeed: ALLIED_ENCHANTRESS_MOVE_SPEED,
+        alliedUnit: true,
+        soulType: 'green',
+        combatInitiated: false,
+        alliedTargetEnemyId: null,
+        staggerBuildup: 0,
+      };
+    } else {
+      primaryAlly = {
+        id: ALLIED_KNIGHT_ID,
+        type: 'allied-knight',
+        position: { x: allyPos.x, y: 0, z: allyPos.z },
+        rotation: rotationYTowardArenaCenter(allyPos.x, allyPos.z),
+        health: ALLIED_KNIGHT_MAX_HP,
+        maxHealth: ALLIED_KNIGHT_MAX_HP,
+        isDying: false,
+        damage: ALLIED_KNIGHT_DAMAGE,
+        attackCooldown: ALLIED_KNIGHT_ATTACK_COOLDOWN_MS,
+        moveSpeed: ALLIED_KNIGHT_MOVE_SPEED,
+        alliedUnit: true,
+        combatInitiated: false,
+        alliedTargetEnemyId: null,
+        staggerBuildup: 0,
+        alliedOrbSlots: Array(ALLIED_KNIGHT_ORB_COUNT).fill(true),
+        alliedOrbRecoverAt: Array(ALLIED_KNIGHT_ORB_COUNT).fill(0),
+        alliedSmiteCooldownUntil: 0,
+      };
+    }
     let healer = null;
     if (COOP_ALLIED_HEALER_ENABLED) {
       healer = {
@@ -1150,18 +1280,18 @@ class GameRoom {
       };
     }
 
-    this.addEnemy(knight);
+    this.addEnemy(primaryAlly);
     if (healer) {
       this.addEnemy(healer);
     }
     if (this.io) {
       const timestamp = Date.now();
-      this.io.to(this.roomId).emit('enemy-spawned', { enemy: knight, timestamp });
+      this.io.to(this.roomId).emit('enemy-spawned', { enemy: primaryAlly, timestamp });
       if (healer) {
         this.io.to(this.roomId).emit('enemy-spawned', { enemy: healer, timestamp });
       }
     }
-    return { knight, healer };
+    return { primaryAlly, healer };
   }
 
   _pickThronePortalOffer() {
@@ -1202,6 +1332,8 @@ class GameRoom {
       coopIntroPortalOpen: this.coopIntroPortalOpen,
       coopIntroFountainPhase: this.coopIntroFountainPhase,
       coopIntroFountainUsed: this.coopIntroFountainUsed,
+      coopIntroAllyChoiceMade: this.coopIntroAllyChoiceMade,
+      coopAllyKind: this.coopAllyKind,
     };
   }
 
@@ -1300,44 +1432,106 @@ class GameRoom {
       return recipes[Math.floor(Math.random() * recipes.length)]();
     }
 
-    const room3Recipes = [
-      () => [
-        { unitType: 'knight', campDef: camp(pickColor()), pos: positions[0] },
-        { unitType: 'viper', campDef: camp('green'), pos: positions[1] },
-        { unitType: 'viper', campDef: camp('blue'), pos: positions[2] },
-      ],
-      () => [
-        { unitType: 'knight', campDef: camp(pickColor()), pos: positions[0] },
-        { unitType: 'shade', campDef: camp(pickColor()), pos: positions[1] },
-        { unitType: 'shade', campDef: camp(pickColor()), pos: positions[2] },
-      ],
-      () => [
-        { unitType: 'knight', campDef: camp(pickColor()), pos: positions[0] },
-        { unitType: 'knight', campDef: camp(pickColor()), pos: positions[1] },
-        { unitType: 'weaver', campDef: camp('green'), pos: positions[2] },
-      ],
-      () => [
-        { unitType: 'knight', campDef: camp('red'), pos: positions[0] },
-        { unitType: 'templar', campDef: camp('red'), pos: positions[1] },
-        { unitType: 'templar', campDef: camp('purple'), pos: positions[2] },
-      ],
-      () => [
-        { unitType: 'weaver', campDef: camp('green'), pos: positions[0] },
-        { unitType: 'weaver', campDef: camp('blue'), pos: positions[1] },
-        { unitType: 'viper', campDef: camp('green'), pos: positions[2] },
-      ],
-      () => [
-        { unitType: 'viper', campDef: camp('green'), pos: positions[0] },
-        { unitType: 'viper', campDef: camp('blue'), pos: positions[1] },
-        { unitType: 'shade', campDef: camp(pickColor()), pos: positions[2] },
-      ],
-      () => [
-        { unitType: 'warlock', campDef: camp('purple'), pos: positions[0] },
-        { unitType: 'warlock', campDef: camp('purple'), pos: positions[1] },
-        { unitType: 'knight', campDef: camp('purple'), pos: positions[2] },
-      ],
-    ];
-    return room3Recipes[Math.floor(Math.random() * room3Recipes.length)]();
+    if (roomIndex === 3) {
+      const room3Recipes = [
+        () => [
+          { unitType: 'knight', campDef: camp(pickColor()), pos: positions[0] },
+          { unitType: 'viper', campDef: camp('green'), pos: positions[1] },
+          { unitType: 'viper', campDef: camp('blue'), pos: positions[2] },
+        ],
+        () => [
+          { unitType: 'knight', campDef: camp(pickColor()), pos: positions[0] },
+          { unitType: 'shade', campDef: camp(pickColor()), pos: positions[1] },
+          { unitType: 'shade', campDef: camp(pickColor()), pos: positions[2] },
+        ],
+        () => [
+          { unitType: 'knight', campDef: camp(pickColor()), pos: positions[0] },
+          { unitType: 'knight', campDef: camp(pickColor()), pos: positions[1] },
+          { unitType: 'weaver', campDef: camp('green'), pos: positions[2] },
+        ],
+        () => [
+          { unitType: 'knight', campDef: camp('red'), pos: positions[0] },
+          { unitType: 'templar', campDef: camp('red'), pos: positions[1] },
+          { unitType: 'templar', campDef: camp('purple'), pos: positions[2] },
+        ],
+        () => [
+          { unitType: 'weaver', campDef: camp('green'), pos: positions[0] },
+          { unitType: 'weaver', campDef: camp('blue'), pos: positions[1] },
+          { unitType: 'viper', campDef: camp('green'), pos: positions[2] },
+        ],
+        () => [
+          { unitType: 'viper', campDef: camp('green'), pos: positions[0] },
+          { unitType: 'viper', campDef: camp('blue'), pos: positions[1] },
+          { unitType: 'shade', campDef: camp(pickColor()), pos: positions[2] },
+        ],
+        () => [
+          { unitType: 'warlock', campDef: camp('purple'), pos: positions[0] },
+          { unitType: 'warlock', campDef: camp('purple'), pos: positions[1] },
+          { unitType: 'knight', campDef: camp('purple'), pos: positions[2] },
+        ],
+      ];
+      return room3Recipes[Math.floor(Math.random() * room3Recipes.length)]();
+    }
+
+    if (roomIndex === 4) {
+      const positions4 = this._generateIntroSpawnPositions(4);
+      const room4Recipes = [
+        () => [
+          { unitType: 'warlock', campDef: camp('red'), pos: positions4[0] },
+          { unitType: 'warlock', campDef: camp('red'), pos: positions4[1] },
+          { unitType: 'knight', campDef: camp(pickColor()), pos: positions4[2] },
+          { unitType: 'knight', campDef: camp(pickColor()), pos: positions4[3] },
+        ],
+        () => [
+          { unitType: 'warlock', campDef: camp('purple'), pos: positions4[0] },
+          { unitType: 'warlock', campDef: camp('purple'), pos: positions4[1] },
+          { unitType: 'warlock', campDef: camp('purple'), pos: positions4[2] },
+          { unitType: 'wraith', campDef: camp(pickColor()), pos: positions4[3] },
+        ],
+        () => {
+          const count = 10 + Math.floor(Math.random() * 6);
+          const martyrPositions = this._generateIntroSpawnPositions(count);
+          const martyrCamp = camp(pickColor());
+          return Array.from({ length: count }, (_, i) => ({
+            unitType: 'martyr',
+            campDef: martyrCamp,
+            pos: martyrPositions[i],
+          }));
+        },
+        () => [
+          { unitType: 'knight', campDef: camp('blue'), pos: positions4[0] },
+          { unitType: 'knight', campDef: camp('blue'), pos: positions4[1] },
+          { unitType: 'viper', campDef: camp('green'), pos: positions4[2] },
+          { unitType: 'viper', campDef: camp('blue'), pos: positions4[3] },
+        ],
+        () => Array.from({ length: 4 }, (_, i) => ({
+          unitType: 'shade',
+          campDef: camp('purple'),
+          pos: positions4[i],
+        })),
+        () => [
+          { unitType: 'weaver', campDef: camp('green'), pos: positions4[0] },
+          { unitType: 'weaver', campDef: camp('blue'), pos: positions4[1] },
+          { unitType: 'weaver', campDef: camp('green'), pos: positions4[2] },
+          { unitType: 'wraith', campDef: camp(pickColor()), pos: positions4[3] },
+        ],
+        () => [
+          { unitType: 'viper', campDef: camp('green'), pos: positions4[0] },
+          { unitType: 'viper', campDef: camp('blue'), pos: positions4[1] },
+          { unitType: 'viper', campDef: camp('green'), pos: positions4[2] },
+          { unitType: 'wraith', campDef: camp(pickColor()), pos: positions4[3] },
+        ],
+        () => [
+          { unitType: 'templar', campDef: camp('red'), pos: positions4[0] },
+          { unitType: 'templar', campDef: camp('purple'), pos: positions4[1] },
+          { unitType: 'wraith', campDef: camp(pickColor()), pos: positions4[2] },
+          { unitType: 'wraith', campDef: camp(pickColor()), pos: positions4[3] },
+        ],
+      ];
+      return room4Recipes[Math.floor(Math.random() * room4Recipes.length)]();
+    }
+
+    return [];
   }
 
   spawnIntroWave(roomIndex) {
@@ -1350,19 +1544,31 @@ class GameRoom {
     this.roomHasWraith = false;
 
     const specs = this._buildIntroEnemySpecs(roomIndex);
+    const isMartyrSwarm = specs.length > 0 && specs.every((spec) => spec.unitType === 'martyr');
     this.coopIntroLivingCount = specs.length;
     this.coopWaveQuota = specs.length;
     this.skeletonKillCount = 0;
     this.sessionCampTypes = ['intro'];
     this.currentCoopRoomKind = 'intro';
 
-    specs.forEach((spec, slotIndex) => {
-      const enemy = this._buildEnemy(spec.unitType, 0, slotIndex, spec.pos, spec.campDef);
-      this.enemies.set(enemy.id, enemy);
-      if (this.io) {
-        this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
-      }
-    });
+    if (isMartyrSwarm) {
+      this.coopRequiredQueue = specs.map((spec, slotIndex) => ({
+        kind: 'basic',
+        unitType: spec.unitType,
+        pos: spec.pos,
+        campDef: spec.campDef,
+        slotIndex,
+      }));
+      this._pumpCoopSpawns();
+    } else {
+      specs.forEach((spec, slotIndex) => {
+        const enemy = this._buildEnemy(spec.unitType, 0, slotIndex, spec.pos, spec.campDef);
+        this.enemies.set(enemy.id, enemy);
+        if (this.io) {
+          this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+        }
+      });
+    }
 
     if (this.io) {
       this.io.to(this.roomId).emit('skeleton-kill-count-updated', {
@@ -1383,7 +1589,7 @@ class GameRoom {
     const camp = (color) => GameRoom.CAMP_TYPES[color];
     const pickColor = () => this._pickRandomCampColor();
 
-    if (level <= 4) {
+    if (level <= 5) {
       const positions = this._generateIntroSpawnPositions(4);
       const recipes = [
         () => [
@@ -1691,14 +1897,14 @@ class GameRoom {
   }
 
   /**
-   * Enter an introductory castle room (1–3). Called from throne void portal or post-clear void portal.
-   * @param {1|2|3} roomIndex
+   * Enter an introductory castle room (1–4). Called from throne void portal or post-clear void portal.
+   * @param {1|2|3|4} roomIndex
    * @returns {boolean}
    */
   beginIntroRoom(roomIndex) {
     if (!this.gameStarted || this.gameMode !== 'coop') return false;
     const n = Number(roomIndex);
-    if (!Number.isFinite(n) || n < 1 || n > 3) return false;
+    if (!Number.isFinite(n) || n < 1 || n > 4) return false;
 
     if (n === 1) {
       if (this.combatArenaActive || !this.coopIntroPending) return false;
@@ -1769,6 +1975,10 @@ class GameRoom {
     }
     if (this.skeletonKillCount >= killTarget) {
       this._onIntroRoomCleared(this.coopIntroRoomIndex);
+      return;
+    }
+    if (this.coopRequiredQueue.length > 0) {
+      this._pumpCoopSpawns(COOP_WAVE_REINFORCE_STAGGER_MS);
     }
   }
 
@@ -1815,7 +2025,7 @@ class GameRoom {
     this.clearedCoopRoomKind = 'intro';
     this.sessionCampTypes = [];
 
-    if (roomIndex < 3) {
+    if (roomIndex < 4) {
       this.coopIntroPortalOpen = true;
       this._emitIntroIntermission({ introGoldReward: goldAmount, fountainPhase: false });
       console.log(`✨ Intro room ${roomIndex} cleared (+${goldAmount} gold) — void portal open.`);
@@ -1825,14 +2035,33 @@ class GameRoom {
     this.coopIntroPortalOpen = false;
     this.coopIntroFountainPhase = true;
     this.coopIntroFountainUsed = false;
+    this.coopIntroAllyChoiceMade = false;
     this._pickThronePortalOffer();
     this._emitIntroIntermission({ introGoldReward: goldAmount, fountainPhase: true });
-    console.log(`✨ Intro room 3 cleared (+${goldAmount} gold) — fountain + portal choice.`);
+    console.log(`✨ Intro room 4 cleared (+${goldAmount} gold) — ally choice + fountain + portal choice.`);
   }
 
-  /** Heal all players +50 HP and unlock the dual colored portals after intro room 3. */
+  /**
+   * Lock in Knight or Huntress as the co-op ally for the rest of the run.
+   * @param {string} playerId
+   * @param {string} allyKind
+   * @returns {boolean}
+   */
+  chooseCoopAlly(playerId, allyKind) {
+    if (!this.coopIntroFountainPhase || this.coopIntroAllyChoiceMade) return false;
+    if (!this.players.get(playerId)) return false;
+
+    const kind = normalizeCoopAllyKind(allyKind);
+    this.coopAllyKind = kind;
+    this.coopIntroAllyChoiceMade = true;
+    this._emitIntroIntermission({ allyChoiceMade: true, coopAllyKind: kind });
+    console.log(`🤝 Co-op ally chosen: ${kind}`);
+    return true;
+  }
+
+  /** Heal all players +60 HP and unlock the dual colored portals after intro room 4 ally choice. */
   useCoopFountain(playerId) {
-    if (!this.coopIntroFountainPhase || this.coopIntroFountainUsed) return false;
+    if (!this.coopIntroFountainPhase || this.coopIntroFountainUsed || !this.coopIntroAllyChoiceMade) return false;
     const trigger = this.players.get(playerId);
     if (!trigger) return false;
 
@@ -1872,7 +2101,7 @@ class GameRoom {
    * @returns {boolean}
    */
   enterFirstNormalRoomAfterIntro(chosenCampType) {
-    if (!this.coopIntroFountainPhase || !this.coopIntroFountainUsed) return false;
+    if (!this.coopIntroFountainPhase || !this.coopIntroFountainUsed || !this.coopIntroAllyChoiceMade) return false;
     const offer = this.thronePortalOffer;
     if (!offer || offer.length !== 2) return false;
 
@@ -1885,6 +2114,7 @@ class GameRoom {
     this.coopIntroFountainPhase = false;
     this.coopIntroPortalOpen = false;
     this.coopIntroFountainUsed = false;
+    this.coopIntroAllyChoiceMade = false;
     this.coopIntroRoomIndex = 0;
     this.coopIntroLivingCount = 0;
     this.coopSegmentCombatRoomsCleared = 0;
@@ -6174,6 +6404,10 @@ class GameRoom {
           this.spawnItemDrop(enemy.position, enemy);
         }
 
+        if (this.coopIntroActive) {
+          this._registerCoopWaveKill('💣 Martyr killed');
+        }
+
         if (this.enemyAI) {
           this.enemyAI.removeEnemyAggro(enemyId);
         }
@@ -6202,6 +6436,10 @@ class GameRoom {
 
         if (Math.random() < 0.12) {
           this.spawnItemDrop(enemy.position, enemy);
+        }
+
+        if (this.coopIntroActive) {
+          this._registerCoopWaveKill('👻 Wraith killed');
         }
 
         if (this.enemyAI) {
