@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <defs>
+    <linearGradient id="flow-gem" x1="16" y1="4" x2="16" y2="28" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e9d5ff"/>
+      <stop offset="0.45" stop-color="#a855f7"/>
+      <stop offset="1" stop-color="#581c87"/>
+    </linearGradient>
+    <linearGradient id="flow-shine" x1="12" y1="8" x2="20" y2="18" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffffff" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <path d="M16 3 26 10.5 22 29H10L6 10.5 16 3Z" fill="url(#flow-gem)" stroke="#c084fc" stroke-width="1"/>
+  <path d="M16 3 20 12 16 18 12 12 16 3Z" fill="url(#flow-shine)" opacity="0.55"/>
+  <path d="M10 29 16 18 22 29" fill="#7e22ce" opacity="0.35"/>
+</svg>

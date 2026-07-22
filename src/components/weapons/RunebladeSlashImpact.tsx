@@ -16,17 +16,33 @@ interface RunebladeSlashImpactProps {
   position: Vector3;
   /** Player facing direction at the moment of impact — used to orient the crescent. */
   direction: Vector3;
+  theme?: 'default' | 'titans-grip' | 'crusader';
   onComplete: () => void;
 }
 
 const DURATION = 0.35; // seconds
 const SPARK_COUNT = 1;
 
-// Runeblade primary cyan-blue palette
-const COLOR_CRESCENT = new Color('#1097B5');
-const COLOR_SPARK_A  = new Color('#ffffff');
-const COLOR_SPARK_B  = new Color('#60e8ff');
-const COLOR_FLASH    = new Color('#d0f8ff');
+const THEME_COLORS = {
+  default: {
+    crescent: '#1097B5',
+    sparkA: '#ffffff',
+    sparkB: '#60e8ff',
+    flash: '#d0f8ff',
+  },
+  'titans-grip': {
+    crescent: '#B51010',
+    sparkA: '#ffffff',
+    sparkB: '#ff6666',
+    flash: '#ffd0d0',
+  },
+  crusader: {
+    crescent: '#ffaa00',
+    sparkA: '#ffffff',
+    sparkB: '#ffcc66',
+    flash: '#fff0d0',
+  },
+} as const;
 
 function buildSparkParams(count: number) {
   return Array.from({ length: count }, (_, i) => {
@@ -43,8 +59,15 @@ function buildSparkParams(count: number) {
 export default function RunebladeSlashImpact({
   position,
   direction,
+  theme = 'default',
   onComplete,
 }: RunebladeSlashImpactProps) {
+  const colors = THEME_COLORS[theme];
+  const colorCrescent = useMemo(() => new Color(colors.crescent), [colors.crescent]);
+  const colorSparkA = useMemo(() => new Color(colors.sparkA), [colors.sparkA]);
+  const colorSparkB = useMemo(() => new Color(colors.sparkB), [colors.sparkB]);
+  const colorFlash = useMemo(() => new Color(colors.flash), [colors.flash]);
+
   const groupRef  = useRef<Group>(null);
   const timeRef   = useRef(0);
   const doneRef   = useRef(false);
@@ -55,7 +78,7 @@ export default function RunebladeSlashImpact({
 
   // Borrow a pooled point light for the impact flash instead of mounting a <pointLight>
   // (which would churn the scene light count and force lit-shader recompiles).
-  const impactLight = useDynamicLight({ color: COLOR_FLASH, distance: 10, decay: 6, priority: 1 });
+  const impactLight = useDynamicLight({ color: colorFlash, distance: 10, decay: 6, priority: 1 });
 
   const sparkParams = useMemo(() => buildSparkParams(SPARK_COUNT), []);
 
@@ -69,40 +92,40 @@ export default function RunebladeSlashImpact({
   const crescentMat = useMemo(
     () =>
       new MeshBasicMaterial({
-        color: COLOR_CRESCENT,
+        color: colorCrescent,
         transparent: true,
         opacity: 0,
         blending: AdditiveBlending,
         depthWrite: false,
         side: 2, // DoubleSide
       }),
-    [],
+    [colorCrescent],
   );
 
   const flashMat = useMemo(
     () =>
       new MeshBasicMaterial({
-        color: COLOR_FLASH,
+        color: colorFlash,
         transparent: true,
         opacity: 0,
         blending: AdditiveBlending,
         depthWrite: false,
       }),
-    [],
+    [colorFlash],
   );
 
   const sparkMats = useMemo(
     () =>
       Array.from({ length: SPARK_COUNT }, (_, i) =>
         new MeshBasicMaterial({
-          color: i % 2 === 0 ? COLOR_SPARK_A : COLOR_SPARK_B,
+          color: i % 2 === 0 ? colorSparkA : colorSparkB,
           transparent: true,
           opacity: 0,
           blending: AdditiveBlending,
           depthWrite: false,
         }),
       ),
-    [],
+    [colorSparkA, colorSparkB],
   );
 
   useEffect(() => {

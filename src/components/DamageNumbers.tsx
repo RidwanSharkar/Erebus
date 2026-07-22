@@ -82,6 +82,12 @@ function getOutgoingDamageNumberClass(damageType?: string, isCritical?: boolean)
   if (damageType === 'blizzard') {
     return 'text-sky-300 text-lg font-bold drop-shadow-[0_0_6px_rgba(125,211,252,0.75)]';
   }
+  if (damageType === 'prime_materia') {
+    return 'text-red-800 text-lg font-bold drop-shadow-[0_0_8px_rgba(153,27,27,0.9)]';
+  }
+  if (damageType === 'incineration') {
+    return 'text-orange-400 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(251,146,60,0.95)]';
+  }
   if (damageType && PRIMARY_DAMAGE_TYPES.has(damageType)) {
     return 'text-slate-300 text-lg font-bold drop-shadow-[0_0_6px_rgba(125,211,252,0.75)]';
   }

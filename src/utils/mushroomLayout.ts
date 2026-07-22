@@ -1,9 +1,9 @@
 import { MUSHROOM_MAX_HP } from './mushroomConstants';
 import { MAIN_MAP_HALF_X, MAIN_MAP_HALF_Z } from './mapConstants';
 
-export const MUSHROOM_COUNT = 20;
-export const MUSHROOM_INNER_RADIUS = 5;
-export const MUSHROOM_OUTER_RADIUS = MAIN_MAP_HALF_Z - 2;
+export const MUSHROOM_COUNT = 17;
+export const MUSHROOM_INNER_RADIUS = 3;
+export const MUSHROOM_OUTER_RADIUS = MAIN_MAP_HALF_Z - 10;
 export const MUSHROOM_LAYOUT_SEED = 0x1a2b3c4d;
 const MUSHROOM_HALF_X = MAIN_MAP_HALF_X - 1.0;
 const MUSHROOM_HALF_Z = MAIN_MAP_HALF_Z - 2.0;

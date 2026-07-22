@@ -29,9 +29,8 @@ import { StatSystem } from '@/utils/StatSystem';
 import {
   getMerchantShopTooltipData,
   getUtilityStock,
+  isMerchantSlotTaken,
   MERCHANT_HEAL_COST,
-  MERCHANT_UTILITY_MAX,
-  MERCHANT_WEAPON_TALENT_MAX,
 } from '@/utils/merchantShopUtils';
 import {
   clearMerchantShopTooltip,
@@ -396,35 +395,6 @@ function slotSymbol(
   }
 }
 
-function isSlotTaken(
-  slot: MerchantShopSlotKind,
-  inventory: MerchantStockItem[],
-  purchaseState: MerchantPurchaseState,
-): boolean {
-  switch (slot) {
-    case 'dash_charge':
-      return purchaseState.dashChargePurchased;
-    case 'weapon_talent':
-      return purchaseState.weaponTalentPurchases >= MERCHANT_WEAPON_TALENT_MAX;
-    case 'heal':
-      return false;
-    case 'utility': {
-      const entry = getUtilityStock(inventory);
-      if (!entry) return true;
-      if (entry.kind === 'oxygen') {
-        return purchaseState.oxygenPurchases >= MERCHANT_UTILITY_MAX;
-      }
-      return purchaseState.warpdrivePurchases >= MERCHANT_UTILITY_MAX;
-    }
-    case 'boss_drop': {
-      const entry = inventory.find((s) => s.kind === 'boss_drop');
-      return !!entry?.sold;
-    }
-    default:
-      return false;
-  }
-}
-
 export function getMerchantShopStockId(
   slot: MerchantShopSlotKind,
   inventory: MerchantStockItem[],
@@ -538,7 +508,7 @@ export default function MerchantShopPedestals({
       return;
     }
 
-    const taken = isSlotTaken(slotForTooltip, inventory, purchaseState);
+    const taken = isMerchantSlotTaken(slotForTooltip, inventory, purchaseState);
     if (taken) {
       if (lastPublishedTooltipRef.current !== null) {
         lastPublishedTooltipRef.current = null;
@@ -602,7 +572,7 @@ export default function MerchantShopPedestals({
   return (
     <group name="merchant-shop-pedestals">
         {slots.map((slot) => {
-          const taken = isSlotTaken(slot.slot, inventory, purchaseState);
+          const taken = isMerchantSlotTaken(slot.slot, inventory, purchaseState);
           return (
             <group key={`merchant-shop-${slot.slot}`}>
               <Pillar position={[slot.x, slot.y, slot.z]} showOrb={false} />

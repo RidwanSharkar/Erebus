@@ -11,6 +11,8 @@ const _boltLightPos = new Vector3();
 const _resolved = new Vector3();
 const _aim = new Vector3();
 const _toTarget = new Vector3();
+const _startToTarget = new Vector3();
+const _startToPos = new Vector3();
 
 const trailColor = new Color('#a855f7');
 const trailAccent = new Color('#d8b4fe');
@@ -30,6 +32,9 @@ export interface LocustProjectileProps {
 const START_SPEED = 5;
 const MAX_SPEED = 40;
 const TURN_RATE = 10;
+const TURN_RATE_RECOVERY = 22;
+const CROSS_TRACK_RECOVERY_START = 3.5;
+const CROSS_TRACK_RECOVERY_RANGE = 2;
 const HIT_RADIUS = 1.00;
 const SPREAD_ANGLES_RAD = [-0.32, 0, 0.32];
 
@@ -65,6 +70,8 @@ export default function LocustProjectile({
 
   const currentDirRef = useRef(launchDirRef.current.clone());
   const currentSpeedRef = useRef(START_SPEED);
+  const startPositionRef = useRef(new Vector3());
+  startPositionRef.current.copy(startPosition);
 
   const orbLight = useDynamicLight({ color: '#c084fc', distance: 6, priority: 1 });
 
@@ -134,9 +141,30 @@ export default function LocustProjectile({
       _aim.y *= 0.35;
       if (_aim.lengthSq() > 1e-6) {
         _aim.normalize();
-        const maxTurn = TURN_RATE * delta;
         _toTarget.copy(_aim);
         const dot = Math.max(-1, Math.min(1, currentDirRef.current.dot(_toTarget)));
+        const offAxis = 1 - Math.max(0, Math.min(1, (dot + 0.25) / 1.25));
+
+        _startToTarget.copy(liveTarget).sub(startPositionRef.current);
+        _startToTarget.y = 0;
+        const lineLen = _startToTarget.length();
+        let crossFactor = 0;
+        if (lineLen > 1e-4) {
+          _startToPos.copy(g.position).sub(startPositionRef.current);
+          _startToPos.y = 0;
+          const crossMag = Math.abs(
+            _startToPos.x * _startToTarget.z - _startToPos.z * _startToTarget.x,
+          );
+          const crossTrack = crossMag / lineLen;
+          crossFactor = smoothstep01(
+            (crossTrack - CROSS_TRACK_RECOVERY_START) / CROSS_TRACK_RECOVERY_RANGE,
+          );
+        }
+
+        const urgency = Math.max(offAxis, crossFactor);
+        const effectiveTurnRate =
+          TURN_RATE + (TURN_RATE_RECOVERY - TURN_RATE) * urgency;
+        const maxTurn = effectiveTurnRate * delta;
         const angle = Math.acos(dot);
         if (angle > 1e-5) {
           const turn = Math.min(maxTurn, angle);
@@ -190,7 +218,7 @@ export default function LocustProjectile({
       <EntropicBoltTrail
         color={trailColor}
         accentColor={trailAccent}
-        size={0.035}
+        size={0.0325}
         meshRef={groupRef}
         opacity={0.9}
         flightDirectionRef={currentDirRef}

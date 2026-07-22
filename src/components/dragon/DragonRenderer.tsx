@@ -265,16 +265,30 @@ interface DragonRendererProps {
   getRunebladeCrusaderLmbFlatBonus?: () => number;
   /** Local: Crusader corrupted blade palette. */
   crusaderBladeThemeActive?: boolean;
+  /** Local: Titan's Grip — permanent red blade palette. */
+  titansGripBladeThemeActive?: boolean;
+  /** Local: Psionic Blades — permanent purple blade palette. */
+  psionicBladesBladeThemeActive?: boolean;
   /** Local: Blizzard talent storm (omit when talent not taken). */
   getRunebladeBlizzardTalentActive?: () => boolean;
+  /** Local: Runeblade Blizzard — stat-scaled tick damage. */
+  getRunebladeBlizzardDamagePerTick?: () => number;
   /** Local: Awakened Eye — scaled Runeblade Blizzard storm hit radius. */
   getRunebladeBlizzardStormHitRadius?: () => number;
   /** Local: Awakened Eye — denser Runeblade Blizzard frost particles. */
   getRunebladeBlizzardParticleSpawnMultiplier?: () => number;
+  /** Local: Titan's Grip — flat STR-scaled LMB damage per combo strike. */
+  getRunebladeTitansGripLmbFlatBonus?: () => number;
+  /** Local: Titan's Grip — 25% per-hit stun proc on Runeblade LMB hits. */
+  onRunebladeTitansGripHit?: (targetId: string) => void;
   /** Room-boom dash boons override the weapon ghost trail while unlocked. */
   roomBoomGhostTrailColor?: string;
   /** Local player talent loadout — drives scythe handle trail colors. */
   talentLoadout?: TalentLoadout | null;
+  /** Alchemist Prime Materia — optional override when Movement sync is unavailable (remote peers). */
+  isPrimeMateriaActive?: boolean;
+  /** Sorceress Incineration — optional override when Movement sync is unavailable (remote peers). */
+  isIncinerationCharging?: boolean;
 }
 
 function DragonRenderer({
@@ -378,13 +392,20 @@ function DragonRenderer({
   runebladeComboStepResolver,
   getRunebladeExecutionerFlatBonus,
   getRunebladeCrusaderLmbFlatBonus,
+  getRunebladeTitansGripLmbFlatBonus,
   getRunebladeBlizzardTalentActive,
+  getRunebladeBlizzardDamagePerTick,
   getRunebladeBlizzardStormHitRadius,
   getRunebladeBlizzardParticleSpawnMultiplier,
+  onRunebladeTitansGripHit,
+  titansGripBladeThemeActive = false,
+  psionicBladesBladeThemeActive = false,
   roomBoomGhostTrailColor,
   talentLoadout = null,
   mushroomTargets,
   onMushroomHit,
+  isPrimeMateriaActive: isPrimeMateriaActiveProp = false,
+  isIncinerationCharging: isIncinerationChargingProp = false,
 }: DragonRendererProps) {
   const effectiveDeflectShieldActive = deflectShieldActiveProp ?? isDeflecting;
   const mountRef = useRef(false);
@@ -439,6 +460,16 @@ function DragonRenderer({
   const lastChargeState = useRef(false);
   const activeEffectsRef = useRef<DragonActiveEffect[]>([]);
   const [activeEffects, setActiveEffectsState] = useState<DragonActiveEffect[]>([]);
+  const [primeMateriaActive, setPrimeMateriaActive] = useState(false);
+  const lastPrimeMateriaActiveRef = useRef(false);
+  const [incinerationCharging, setIncinerationCharging] = useState(false);
+  const lastIncinerationChargingRef = useRef(false);
+  const [incinerationArmed, setIncinerationArmed] = useState(false);
+  const lastIncinerationArmedRef = useRef(false);
+  const [locustChanneling, setLocustChanneling] = useState(false);
+  const lastLocustChannelingRef = useRef(false);
+  const [sprinting, setSprinting] = useState(false);
+  const lastSprintingRef = useRef(false);
   const setActiveEffects = useCallback((updater: SetStateAction<DragonActiveEffect[]>) => {
     const next =
       typeof updater === 'function' ? updater(activeEffectsRef.current) : updater;
@@ -591,6 +622,36 @@ function DragonRenderer({
       if (isMovementComponent) {
         isDashing.current = movement.isDashing;
         isWeaponChargeMoving.current = movement.isCharging;
+
+        const nextPrimeMateria = Boolean(movement.isPrimeMateriaActive);
+        if (nextPrimeMateria !== lastPrimeMateriaActiveRef.current) {
+          lastPrimeMateriaActiveRef.current = nextPrimeMateria;
+          setPrimeMateriaActive(nextPrimeMateria);
+        }
+
+        const nextIncinerationCharging = Boolean(movement.isIncinerationCharging);
+        if (nextIncinerationCharging !== lastIncinerationChargingRef.current) {
+          lastIncinerationChargingRef.current = nextIncinerationCharging;
+          setIncinerationCharging(nextIncinerationCharging);
+        }
+
+        const nextIncinerationArmed = Boolean(movement.isIncinerationArmed);
+        if (nextIncinerationArmed !== lastIncinerationArmedRef.current) {
+          lastIncinerationArmedRef.current = nextIncinerationArmed;
+          setIncinerationArmed(nextIncinerationArmed);
+        }
+
+        const nextLocustChanneling = Boolean(movement.isLocustChanneling);
+        if (nextLocustChanneling !== lastLocustChannelingRef.current) {
+          lastLocustChannelingRef.current = nextLocustChanneling;
+          setLocustChanneling(nextLocustChanneling);
+        }
+
+        const nextSprinting = Boolean(movement.isSprinting);
+        if (nextSprinting !== lastSprintingRef.current) {
+          lastSprintingRef.current = nextSprinting;
+          setSprinting(nextSprinting);
+        }
 
         // Update dash charges ref; HUD state only when available count changes
         if (typeof movement.getDashChargeStatus === 'function') {
@@ -863,6 +924,15 @@ function DragonRenderer({
         ) {
           onRunebladeGuardComboProc();
         }
+
+        if (
+          isLocalPlayer &&
+          currentWeapon === WeaponType.RUNEBLADE &&
+          !isBlizzard &&
+          onRunebladeTitansGripHit
+        ) {
+          onRunebladeTitansGripHit(targetId);
+        }
       }
     }
   };
@@ -933,7 +1003,14 @@ function DragonRenderer({
           isDeathGrasping={isDeathGrasping}
           isWraithStriking={isWraithStriking}
           isCorruptedAuraActive={isCorruptedAuraActive}
+          isPrimeMateriaActive={primeMateriaActive || isPrimeMateriaActiveProp}
+          isIncinerationCharging={incinerationCharging || isIncinerationChargingProp}
+          isIncinerationArmed={incinerationArmed}
+          isLocustChanneling={locustChanneling}
+          isSprinting={sprinting}
           crusaderBladeThemeActive={crusaderBladeThemeActive}
+          titansGripBladeThemeActive={titansGripBladeThemeActive}
+          psionicBladesBladeThemeActive={psionicBladesBladeThemeActive}
           onSmiteComplete={onSmiteComplete}
           onColossusStrikeComplete={onColossusStrikeComplete}
           onDeathGraspComplete={onDeathGraspComplete}
@@ -983,9 +1060,12 @@ function DragonRenderer({
           runebladeComboStepResolver={runebladeComboStepResolver}
           getRunebladeExecutionerFlatBonus={getRunebladeExecutionerFlatBonus}
           getRunebladeCrusaderLmbFlatBonus={getRunebladeCrusaderLmbFlatBonus}
+          getRunebladeTitansGripLmbFlatBonus={getRunebladeTitansGripLmbFlatBonus}
           getRunebladeBlizzardTalentActive={getRunebladeBlizzardTalentActive}
+          getRunebladeBlizzardDamagePerTick={getRunebladeBlizzardDamagePerTick}
           getRunebladeBlizzardStormHitRadius={getRunebladeBlizzardStormHitRadius}
           getRunebladeBlizzardParticleSpawnMultiplier={getRunebladeBlizzardParticleSpawnMultiplier}
+          onRunebladeTitansGripHit={onRunebladeTitansGripHit}
           mushroomTargets={mushroomTargets}
           onMushroomHit={onMushroomHit}
           isLocalPlayer={isLocalPlayer}
@@ -1072,6 +1152,13 @@ function DragonRenderer({
             key={e.id}
             position={e.position}
             direction={e.direction}
+            theme={
+              crusaderBladeThemeActive
+                ? 'crusader'
+                : titansGripBladeThemeActive
+                  ? 'titans-grip'
+                  : 'default'
+            }
             onComplete={() =>
               setActiveEffects(prev => prev.filter(x => x.id !== e.id))
             }

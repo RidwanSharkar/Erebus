@@ -5,7 +5,7 @@ import { useAnimations, useGLTF } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { AnimationClip, Group, LoopRepeat, Vector3 } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 import KnightSoulEffect from '@/components/enemies/KnightSoulEffect';
 import {
   MERCHANT_NPC_DEFAULT_ROTATION_Y,
@@ -43,6 +43,7 @@ function MerchantNpcRenderer({ playerPositionRef }: MerchantNpcRendererProps) {
           : child.material.clone();
       }
     });
+    applySelfIllumination(clone, { intensity: UNIT_SELF_ILLUMINATION_INTENSITY });
     return clone;
   }, [scene]);
 

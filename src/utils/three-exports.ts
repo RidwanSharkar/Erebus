@@ -31,6 +31,7 @@ export {
   RingGeometry,
   OctahedronGeometry,
   TorusGeometry,
+  TubeGeometry,
   BufferAttribute,
   Float32BufferAttribute
 } from 'three';
@@ -45,6 +46,7 @@ export {
 export {
   Material,
   MeshBasicMaterial,
+  MeshLambertMaterial,
   MeshStandardMaterial,
   MeshPhongMaterial,
   ShaderMaterial,
@@ -112,7 +114,8 @@ export {
   NormalBlending,
   LinearFilter,
   DynamicDrawUsage,
-  RepeatWrapping
+  RepeatWrapping,
+  ClampToEdgeWrapping
 } from 'three';
 
 // Raycasting

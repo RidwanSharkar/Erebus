@@ -4,6 +4,7 @@ import React, { useRef, memo, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, Vector3, Mesh, MeshStandardMaterial, AdditiveBlending, Material, SphereGeometry } from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import { isJaguarEmeraldVenomThemed } from '@/utils/dreamLayerItems';
 
 interface VenomEffectProps {
   position: Vector3;
@@ -38,7 +39,12 @@ const VenomEffectComponent = memo(function VenomEffect({
   const startTimeRef = useRef(startTime);
 
   // Borrow a pooled light instead of mounting a <pointLight> (avoids lit-shader recompiles).
-  const venomLight = useDynamicLight({ color: '#00FF44', distance: 3, decay: 2, priority: 1 });
+  const venomThemedRed = isJaguarEmeraldVenomThemed();
+  const venomPrimary = venomThemedRed ? '#FF3344' : '#00FF44';
+  const venomSecondary = venomThemedRed ? '#FF6655' : '#33FF33';
+  const venomTertiary = venomThemedRed ? '#CC2222' : '#00BB33';
+
+  const venomLight = useDynamicLight({ color: venomPrimary, distance: 3, decay: 2, priority: 1 });
 
   const tendrilLayout = useMemo(
     () =>
@@ -68,7 +74,7 @@ const VenomEffectComponent = memo(function VenomEffect({
             number,
             number,
           ],
-          color: i % 2 === 0 ? '#00FF44' : '#55FF00',
+          color: i % 2 === 0 ? venomPrimary : venomSecondary,
         };
       }),
     [],
@@ -153,8 +159,8 @@ const VenomEffectComponent = memo(function VenomEffect({
       {/* Main venom cloud */}
       <mesh geometry={VENOM_CLOUD_GEO}>
         <meshStandardMaterial 
-          color="#00FF44"
-          emissive="#00FF44"
+          color={venomPrimary}
+          emissive={venomPrimary}
           emissiveIntensity={1.5}
           transparent
           opacity={0.8}
@@ -166,8 +172,8 @@ const VenomEffectComponent = memo(function VenomEffect({
       {/* Inner toxic core */}
       <mesh geometry={VENOM_CORE_GEO}>
         <meshStandardMaterial 
-          color="#33FF33"
-          emissive="#33FF33"
+          color={venomSecondary}
+          emissive={venomSecondary}
           emissiveIntensity={2}
           transparent
           opacity={0.9}
@@ -180,8 +186,8 @@ const VenomEffectComponent = memo(function VenomEffect({
       {tendrilLayout.map((t, i) => (
           <mesh key={i} position={t.position} geometry={VENOM_TENDRIL_GEO}>
             <meshStandardMaterial 
-              color="#00BB33"
-              emissive="#00BB33"
+              color={venomTertiary}
+              emissive={venomTertiary}
               emissiveIntensity={1.5}
               transparent
               opacity={0.7}

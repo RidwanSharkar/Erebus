@@ -36,6 +36,7 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'sabres_skyfall', file: 'sabres/skyfall.mp3' },
   { id: 'entropic_bolt', file: 'scythe/entropic_bolts.mp3' },
   { id: 'crossentropy', file: 'scythe/crossentropy.mp3' },
+  { id: 'blitz_cannon', file: 'scythe/blitzCannon.mp3' },
   { id: 'crossentropy_impact', file: 'scythe/crossentropy2.mp3' },
   { id: 'frost_nova', file: 'scythe/frost_nova.mp3' },
   { id: 'scythe_mantra', file: 'scythe/mantra.mp3' },
@@ -102,6 +103,7 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'warlock_zap', file: 'versus/warlockzap.mp3' },
   { id: 'enemy_titan_stomp', file: 'versus/titanstomp.mp3' },
   { id: 'enemy_titan_bladestorm', file: 'runeblade/whirwind2.mp3' },
+  { id: 'enemy_frost_ray', file: 'versus/frostRay.mp3' },
   { id: 'enemy_telegraph', file: 'versus/telegraph.mp3' },
   { id: 'versus_arming', file: 'versus/arming.mp3' },
   { id: 'whisper_infernal', file: 'versus/whisperInfernal.mp3' },
@@ -150,7 +152,14 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'ui_level', file: 'ui/1LEVEL.mp3' },
   { id: 'ui_aegis', file: 'ui/aegis.mp3' },
   { id: 'ui_deflect_bolt', file: 'ui/Deflect.mp3' },
+  { id: 'ui_deflect_cast', file: 'ui/Deflect_cast.mp3' },
   { id: 'ui_locusts', file: 'ui/locusts.mp3' },
+  { id: 'ui_devouring_circle', file: 'ui/devouringCircle.mp3' },
+  { id: 'ui_prime_materia', file: 'ui/primemateria.mp3' },
+  { id: 'ui_alchemy', file: 'ui/alchemy.mp3' },
+  { id: 'enemy_firebolt', file: 'ui/firebolt.mp3' },
+  { id: 'incinerate_charge', file: 'ui/IncinerateCharge.mp3' },
+  { id: 'incinerate_armed', file: 'ui/incinerateArmed.mp3' },
   { id: 'ui_shield_break', file: 'ui/1shieldBreak.mp3' },
   { id: 'ui_shield_regen', file: 'ui/1shieldRegen.mp3' },
   { id: 'merchant_greet_arrival', file: 'ui/merchantGreetArrival.mp3' },
@@ -201,6 +210,7 @@ const WEAPON_SPECIFIC_SOUND_IDS: Partial<Record<WeaponType, readonly string[]>> 
   [WeaponType.SCYTHE]: [
     'entropic_bolt',
     'crossentropy',
+    'blitz_cannon',
     'crossentropy_impact',
     'frost_nova',
     'scythe_mantra',
@@ -276,6 +286,8 @@ const COMMON_GAMEPLAY_PRELOAD_IDS = new Set([
   ...WEAPON_SOUND_ASSETS.map(asset => asset.id).filter(id => !ALL_WEAPON_SPECIFIC_SOUND_IDS.has(id)),
   'icebeam', // Boss3 green beam loop — required even when player is not on Scythe
   'ui_warcrack',
+  'incinerate_charge',
+  'incinerate_armed',
 ]);
 
 function getGameplayPreloadAssets(weapon?: WeaponType): SfxAsset[] {
@@ -314,6 +326,7 @@ export class AudioSystem extends System {
   private currentCoopRoomTrackId: string | null = null;
   private footstepsLoopInstance: number | null = null;
   private footstepsShouldPlay = false;
+  private footstepsRate = 1;
   private lastDamageBreathAtMs = 0;
   private shieldRegenLoopInstance: number | null = null;
   private shieldRegenShouldPlay = false;
@@ -562,6 +575,11 @@ export class AudioSystem extends System {
     return this.playWeaponSound('crossentropy', position, { volume: 0.9 });
   }
 
+  // Play Blitz Cannon Crossentropy cast sound
+  public playBlitzCannonSound(position: Vector3) {
+    return this.playWeaponSound('blitz_cannon', position, { volume: 0.9 });
+  }
+
   // Play crossentropy explosion impact sound (distinct from cast sound)
   public playCrossentropyImpactSound() {
     return this.playWeaponSound('crossentropy_impact', AudioSystem.UI_ORIGIN, { volume: 0.825 });
@@ -713,6 +731,14 @@ export class AudioSystem extends System {
 
   public playEnemyRunebladeVoidGraspSound(position: Vector3) {
     return this.playWeaponSound('runeblade_void_grasp', position, { volume: 0.45 }); // Assuming 0.9 base volume
+  }
+
+  public playEnemyFrostRaySound(position: Vector3) {
+    return this.playWeaponSound('enemy_frost_ray', position, { volume: 0.9 });
+  }
+
+  public playEnemyFireboltSound(position: Vector3) {
+    return this.playWeaponSound('enemy_firebolt', position, { volume: 1.0 });
   }
 
   // Play enemy throw spear release sound
@@ -994,7 +1020,12 @@ export class AudioSystem extends System {
         return 'enemy_death_boss2';
       case 'boss3':
       case 'titan':
+      case 'nemesis':
+      case 'valkyrie':
         return 'enemy_death';
+      case 'spectre':
+      case 'sentinel':
+        return 'enemy_death_shade';
       case 'tentacle-spine':
         return 'enemy_death_tentacle_spine';
       default:
@@ -1195,9 +1226,49 @@ export class AudioSystem extends System {
     return this.playWeaponSound('ui_deflect_bolt', AudioSystem.UI_ORIGIN, { volume: 1.2 });
   }
 
+  /** Gladiator Deflect — played when Shift initiates the block window. */
+  public playDeflectCastSound() {
+    return this.playWeaponSound('ui_deflect_cast', AudioSystem.UI_ORIGIN, { volume: 1.1 });
+  }
+
   /** Acolyte Locust — one shot per missile released from the shift channel. */
   public playLocustSound() {
     return this.playWeaponSound('ui_locusts', AudioSystem.UI_ORIGIN, { volume: 1.1 });
+  }
+
+  /** Alchemist Prime Materia — played when the aura is toggled on. */
+  public playDevouringCircleSound() {
+    return this.playWeaponSound('ui_devouring_circle', AudioSystem.UI_ORIGIN, { volume: 1.1 });
+  }
+
+  /** Alchemist Prime Materia — played when the aura is toggled off. */
+  public playPrimeMateriaSound() {
+    return this.playWeaponSound('ui_prime_materia', AudioSystem.UI_ORIGIN, { volume: 1.1 });
+  }
+
+  /** Alchemist Prime Materia — played each time an enemy takes aura damage. */
+  public playAlchemySound(position: Vector3) {
+    return this.playWeaponSound('ui_alchemy', position, { volume: 0.85 });
+  }
+
+  /** Sorceress Incineration — charge channel oneshot (stopped early if shift released). */
+  public playIncinerateChargeSound(position: Vector3) {
+    this.stopIncinerateChargeSound();
+    return this.playWeaponSound('incinerate_charge', position, { volume: 0.92 });
+  }
+
+  public stopIncinerateChargeSound(): void {
+    this.stopSound('incinerate_charge');
+  }
+
+  /** Sorceress Incineration — shift released with charge held. */
+  public playIncinerateArmedSound(position: Vector3) {
+    return this.playWeaponSound('incinerate_armed', position, { volume: 0.95 });
+  }
+
+  /** Sorceress Incineration — beam fire oneshot. */
+  public playIncinerateFireSound(position: Vector3) {
+    return this.playWeaponSound('wraith_buzzsaw', position, { volume: 0.95 });
   }
 
   public playFrozenStatusSound(position: Vector3) {
@@ -1310,7 +1381,7 @@ export class AudioSystem extends System {
 
   /** Merchant room: healing purchase. */
   public playFountainSound(): void {
-    this.playWeaponSound('ui_fountain', AudioSystem.UI_ORIGIN, { volume: 0.85 });
+    this.playWeaponSound('ui_fountain', AudioSystem.UI_ORIGIN, { volume: 1.25 });
   }
 
   /** Void portal: plays once when the maw first opens. */
@@ -1331,8 +1402,9 @@ export class AudioSystem extends System {
   }
 
   /** Looped locomotion footsteps (local player run); mirrors Run vs slow-walk in CharacterRenderer. */
-  public setFootstepsPlaying(active: boolean): void {
+  public setFootstepsPlaying(active: boolean, rate = 1): void {
     this.footstepsShouldPlay = active;
+    this.footstepsRate = rate;
     const sound = this.soundCache.get('ui_footsteps');
     if (!sound) {
       if (active) {
@@ -1340,7 +1412,7 @@ export class AudioSystem extends System {
         if (asset) {
           void this.loadSfx(asset).then(loadedSound => {
             if (loadedSound && this.footstepsShouldPlay) {
-              this.startFootstepsLoop(loadedSound);
+              this.startFootstepsLoop(loadedSound, this.footstepsRate);
             }
           });
         }
@@ -1356,16 +1428,20 @@ export class AudioSystem extends System {
       return;
     }
 
-    this.startFootstepsLoop(sound);
+    this.startFootstepsLoop(sound, rate);
   }
 
-  private startFootstepsLoop(sound: Howl): void {
-    if (this.footstepsLoopInstance !== null) return;
+  private startFootstepsLoop(sound: Howl, rate: number): void {
+    if (this.footstepsLoopInstance !== null) {
+      sound.rate(rate, this.footstepsLoopInstance);
+      return;
+    }
     const vol = 2.0 * this.sfxVolume * this.masterVolume;
     this.footstepsLoopInstance = sound.play();
     if (this.footstepsLoopInstance !== undefined) {
       sound.loop(true, this.footstepsLoopInstance);
       sound.volume(vol, this.footstepsLoopInstance);
+      sound.rate(rate, this.footstepsLoopInstance);
     }
   }
 

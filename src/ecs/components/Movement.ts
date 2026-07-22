@@ -35,6 +35,8 @@ export class Movement extends Component {
   // Debuff states for PVP
   public isFrozen: boolean;
   public frozenUntil: number;
+  public isEntangled: boolean;
+  public entangledUntil: number;
   public isSlowed: boolean;
   public slowedUntil: number;
   public movementSpeedMultiplier: number;
@@ -48,6 +50,18 @@ export class Movement extends Component {
 
   // Ice Beam debuff state (Scythe Ice Beam)
   public isIcebeaming: boolean;
+
+  /** Alchemist Prime Materia — toggle Shift aura (synced for remote VFX). */
+  public isPrimeMateriaActive: boolean;
+
+  /** Sorceress Incineration — hold Shift charge channel (synced for remote VFX). */
+  public isIncinerationCharging: boolean;
+
+  /** Sorceress Incineration — shift released, charge armed for LMB detonate (synced for remote VFX). */
+  public isIncinerationArmed: boolean;
+
+  /** Acolyte Locusts — hold Shift volley channel (synced for remote VFX). */
+  public isLocustChanneling: boolean;
 
   // Attack-cast movement slow (Sword ColossusStrike, Bow/Scythe/Runeblade/Spear primary, abilities, Spear charges)
   public isAttackSlowed: boolean;
@@ -121,6 +135,8 @@ export class Movement extends Component {
     // Initialize debuff states
     this.isFrozen = false;
     this.frozenUntil = 0;
+    this.isEntangled = false;
+    this.entangledUntil = 0;
     this.isSlowed = false;
     this.slowedUntil = 0;
     this.movementSpeedMultiplier = 1.0;
@@ -134,6 +150,16 @@ export class Movement extends Component {
 
     // Initialize Ice Beam debuff state
     this.isIcebeaming = false;
+
+    // Alchemist Prime Materia channel
+    this.isPrimeMateriaActive = false;
+
+    // Sorceress Incineration charge channel
+    this.isIncinerationCharging = false;
+    this.isIncinerationArmed = false;
+
+    // Acolyte Locust channel
+    this.isLocustChanneling = false;
 
     // Initialize attack-cast slow state
     this.isAttackSlowed = false;
@@ -208,6 +234,12 @@ export class Movement extends Component {
     // console.log(`🧊 Player frozen for ${duration}ms until ${this.frozenUntil} (current: ${currentTime})`);
   }
 
+  public entangle(duration: number): void {
+    const currentTime = Date.now();
+    this.isEntangled = true;
+    this.entangledUntil = currentTime + duration;
+  }
+
   public slow(duration: number, speedMultiplier: number = 0.5): void {
     const currentTime = Date.now();
     this.isSlowed = true;
@@ -232,6 +264,11 @@ export class Movement extends Component {
       this.isFrozen = false;
       this.frozenUntil = 0;
     }
+
+    if (this.isEntangled && currentTime >= this.entangledUntil) {
+      this.isEntangled = false;
+      this.entangledUntil = 0;
+    }
     
     // Check slowed state
     if (this.isSlowed && currentTime >= this.slowedUntil) {
@@ -254,8 +291,8 @@ export class Movement extends Component {
   }
 
   public getEffectiveMaxSpeed(): number {
-    if (this.isFrozen) {
-      return 0; // Completely frozen
+    if (this.isFrozen || this.isEntangled) {
+      return 0; // Completely frozen or rooted
     }
 
     let speed = this.maxSpeed * this.movementSpeedMultiplier;
@@ -708,10 +745,16 @@ export class Movement extends Component {
     // Reset debuff states
     this.isFrozen = false;
     this.frozenUntil = 0;
+    this.isEntangled = false;
+    this.entangledUntil = 0;
     this.isSlowed = false;
     this.slowedUntil = 0;
     this.movementSpeedMultiplier = 1.0;
     this.isIcebeaming = false;
+    this.isPrimeMateriaActive = false;
+    this.isIncinerationCharging = false;
+    this.isIncinerationArmed = false;
+    this.isLocustChanneling = false;
     this.isAttackSlowed = false;
     this.isSprinting = false;
 
@@ -768,10 +811,16 @@ export class Movement extends Component {
     // Clone debuff states
     clone.isFrozen = this.isFrozen;
     clone.frozenUntil = this.frozenUntil;
+    clone.isEntangled = this.isEntangled;
+    clone.entangledUntil = this.entangledUntil;
     clone.isSlowed = this.isSlowed;
     clone.slowedUntil = this.slowedUntil;
     clone.movementSpeedMultiplier = this.movementSpeedMultiplier;
     clone.isIcebeaming = this.isIcebeaming;
+    clone.isPrimeMateriaActive = this.isPrimeMateriaActive;
+    clone.isIncinerationCharging = this.isIncinerationCharging;
+    clone.isIncinerationArmed = this.isIncinerationArmed;
+    clone.isLocustChanneling = this.isLocustChanneling;
     clone.isAttackSlowed = this.isAttackSlowed;
     clone.isSprinting = this.isSprinting;
 

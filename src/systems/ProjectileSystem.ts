@@ -1043,13 +1043,14 @@ export class ProjectileSystem extends System {
                   : theme === 'plague'
                     ? new Color('#33DD66')
                     : new Color('#8B00FF');
+          const isBlitz = projectile.blitzCannon === true;
           this.world.emitEvent('explosion', {
             position: explosionPosition,
             color,
-            size: 2.0, // Increased size for better visibility on large bosses
-            duration: 1.0,
-            type: 'crossentropy' as const,
-            chargeTime: 1.0, // Default charge time
+            size: isBlitz ? 2.5 : 2.0,
+            duration: isBlitz ? 0.65 : 1.0,
+            type: isBlitz ? ('crossentropy_blitz' as const) : ('crossentropy' as const),
+            chargeTime: isBlitz ? 0.25 : 1.0,
             infernoCrossentropy: theme === 'inferno',
             crossentropyVisualTheme: theme,
           });
@@ -1300,6 +1301,7 @@ export class ProjectileSystem extends System {
         : 1.0;
 
     const reaper = projectile.reaperCrossentropy === true;
+    const blitzCannon = projectile.blitzCannon === true;
     const fragmentConfig = {
       speed: projectile.speed,
       damage: projectile.damage,
@@ -1313,7 +1315,8 @@ export class ProjectileSystem extends System {
             reaperCrossentropy: true as const,
             piercing: true as const,
           }
-        : { piercing: false as const }),
+        : { maxDistance: projectile.maxDistance, piercing: false as const }),
+      ...(blitzCannon ? { blitzCannon: true as const } : {}),
       crossentropyTempest: projectile.crossentropyTempest === true,
       crossentropyPlague: projectile.crossentropyPlague === true,
       crossentropyGlacial: projectile.crossentropyGlacial === true,
@@ -1440,6 +1443,7 @@ export class ProjectileSystem extends System {
       crossentropyMeteor?: boolean;
       crossentropyFragmentation?: boolean;
       crossentropySuppressFragmentation?: boolean;
+      blitzCannon?: boolean;
       maxDistance?: number;
     }
   ): Entity {
@@ -1488,6 +1492,9 @@ export class ProjectileSystem extends System {
     }
     if (config?.crossentropySuppressFragmentation) {
       projectile.crossentropySuppressFragmentation = true;
+    }
+    if (config?.blitzCannon) {
+      projectile.blitzCannon = true;
     }
     
     if (config?.piercing) projectile.setPiercing(true);
@@ -1543,6 +1550,10 @@ export class ProjectileSystem extends System {
     }
     if (config?.crossentropySuppressFragmentation === true) {
       placeholderMesh.userData.crossentropySuppressFragmentation = true;
+    }
+    if (config?.blitzCannon === true) {
+      placeholderMesh.userData.isCrossentropyBlitzRocket = true;
+      placeholderMesh.userData.blitzCannon = true;
     }
     
     renderer.mesh = placeholderMesh;

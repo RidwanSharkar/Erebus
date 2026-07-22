@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useMemo } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { applySelfIllumination, SHADE_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 import { getCachedEnemyAnimationClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
 
 interface ShadeModelProps {
@@ -64,6 +64,7 @@ export default React.memo(function ShadeModel({
           : child.material.clone();
       }
     });
+    applySelfIllumination(clone, { intensity: SHADE_SELF_ILLUMINATION_INTENSITY });
     return clone;
   }, [scene]);
 

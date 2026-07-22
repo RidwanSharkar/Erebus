@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { WeaponType } from '@/components/dragon/weapons';
 import type { TalentId } from '@/utils/talents';
-import { getTalentBoonDefinition, getTalentIconSrc, isDuoBoonTalent, isUltimateBoonTalent } from '@/utils/talents';
+import { getTalentBoonDefinitionForAlly, getTalentIconSrc, isDuoBoonTalent, isUltimateBoonTalent } from '@/utils/talents';
+import type { CoopAllyKind } from '@/utils/coopAllyTargeting';
 
 export type CoopBoonKind = 'class' | 'room';
 
@@ -206,10 +207,12 @@ interface CoopBoonPickerModalProps {
   options: readonly TalentId[];
   onPick: (id: TalentId) => void;
   onReroll?: () => void;
-  /** Gold cost per reroll; 0 = free (throne prep). */
+  /** Fate cost per reroll; 0 = free (throne prep). */
   rerollCost?: number;
-  /** Current gold balance — used to disable paid rerolls. */
-  goldBalance?: number;
+  /** Current fate balance — used to disable paid rerolls. */
+  fateBalance?: number;
+  /** Chosen coop ally — used for ally-aware Allied Initiate boon descriptions. */
+  coopAllyKind?: CoopAllyKind;
 }
 
 export default function CoopBoonPickerModal({
@@ -220,12 +223,13 @@ export default function CoopBoonPickerModal({
   onPick,
   onReroll,
   rerollCost = 0,
-  goldBalance = 0,
+  fateBalance = 0,
+  coopAllyKind = 'knight',
 }: CoopBoonPickerModalProps) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [openingFlash, setOpeningFlash] = useState(true);
 
-  const rerollDisabled = !!onReroll && rerollCost > 0 && goldBalance < rerollCost;
+  const rerollDisabled = !!onReroll && rerollCost > 0 && fateBalance < rerollCost;
 
   const displayOptions = useMemo(() => {
     const seen = new Set<TalentId>();
@@ -297,7 +301,7 @@ export default function CoopBoonPickerModal({
 
   const hoveredId =
     hoveredIdx !== null ? displayOptions[hoveredIdx] : undefined;
-  const hoveredDef = hoveredId !== undefined ? getTalentBoonDefinition(hoveredId) : null;
+  const hoveredDef = hoveredId !== undefined ? getTalentBoonDefinitionForAlly(hoveredId, coopAllyKind) : null;
 
   return (
     <div
@@ -371,7 +375,7 @@ export default function CoopBoonPickerModal({
                 aria-disabled={rerollDisabled}
                 aria-label={
                   rerollCost > 0
-                    ? `Reroll boon options for ${rerollCost} gold`
+                    ? `Reroll boon options for ${rerollCost} fate`
                     : 'Reroll boon options'
                 }
                 className={`
@@ -383,7 +387,7 @@ export default function CoopBoonPickerModal({
                 `}
               >
                 <span className="text-sm leading-none" aria-hidden="true">🎲</span>
-                {rerollCost > 0 ? `Reroll ${rerollCost} Gold` : 'Reroll'}
+                {rerollCost > 0 ? `Reroll ${rerollCost} Fate` : 'Reroll'}
               </button>
             )}
             <div className="flex-1 h-px bg-gray-700/60" />
@@ -406,7 +410,7 @@ export default function CoopBoonPickerModal({
           {/* Boon cards */}
           <div className={`border-x-2 border-b-2 ${accent.border} rounded-b-xl overflow-hidden`}>
             {displayOptions.map((id, idx) => {
-              const def = getTalentBoonDefinition(id);
+              const def = getTalentBoonDefinitionForAlly(id, coopAllyKind);
               const name = def?.name ?? id;
               const description = def?.description ?? '';
               const abilityId = def?.modifiesAbilityId ?? '';

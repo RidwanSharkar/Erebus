@@ -154,6 +154,8 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
       const currentGameTime = Date.now() / 1000;
       enemy.applyVenom(VENOM_DURATION, resolveCobraVenomDamagePerSecond(), currentGameTime);
 
+      combatSystem.applyDreamLayerNeedlerOnVenom(entity, sourcePlayerId);
+
       addGlobalVenomousEnemy(entity.id.toString(), transform.position);
       createVenomEffect(transform.position);
 

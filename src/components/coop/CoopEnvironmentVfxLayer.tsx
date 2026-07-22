@@ -4,20 +4,27 @@ import React, { forwardRef, memo, useCallback, useImperativeHandle, useState } f
 import { Vector3 } from '@/utils/three-exports';
 import type { Position3 } from '@/utils/position3';
 import GoldCollectMoteEffect from '@/components/enemies/GoldCollectMoteEffect';
+import DreamShardEffect from '@/components/enemies/DreamShardEffect';
+import RunePickupRiseEffect from '@/components/enemies/RunePickupRiseEffect';
 import MushroomEruptionVfx from '@/components/environment/MushroomEruptionVfx';
 import DeathEffect from '@/components/weapons/DeathEffect';
 import type {
   DeathEffectState,
+  DreamShardState,
   GoldCollectMoteState,
   MushroomEruptionFxState,
+  RunePickupRiseState,
 } from '@/components/coop/coopVfxLayerTypes';
 
 export type CoopEnvironmentVfxLayerHandle = {
   clearAll: () => void;
   addGoldCollectMote: (mote: GoldCollectMoteState) => void;
   addGoldCollectMotes: (motes: GoldCollectMoteState[]) => void;
+  addRunePickupRise: (fx: RunePickupRiseState) => void;
+  addRunePickupRises: (fxList: RunePickupRiseState[]) => void;
   addMushroomEruption: (fx: MushroomEruptionFxState) => void;
   addMushroomEruptions: (fxList: MushroomEruptionFxState[]) => void;
+  addDreamShard: (fx: DreamShardState) => void;
   setDeathEffect: (playerId: string, effect: DeathEffectState) => void;
   removeDeathEffect: (playerId: string) => void;
 };
@@ -34,6 +41,7 @@ type CoopEnvironmentVfxLayerProps = {
   localSocketId?: string;
   onDeathEffectComplete: (playerId: string) => void;
   onGoldCollectMoteComplete?: (moteId: string) => void;
+  onDreamShardComplete?: (shardId: string) => void;
 };
 
 const CoopEnvironmentVfxLayer = memo(forwardRef<CoopEnvironmentVfxLayerHandle, CoopEnvironmentVfxLayerProps>(
@@ -43,13 +51,18 @@ const CoopEnvironmentVfxLayer = memo(forwardRef<CoopEnvironmentVfxLayerHandle, C
     localSocketId,
     onDeathEffectComplete,
     onGoldCollectMoteComplete,
+    onDreamShardComplete,
   }, ref) {
     const [goldCollectMotes, setGoldCollectMotes] = useState<GoldCollectMoteState[]>([]);
+    const [dreamShards, setDreamShards] = useState<DreamShardState[]>([]);
+    const [runePickupRises, setRunePickupRises] = useState<RunePickupRiseState[]>([]);
     const [mushroomEruptionFx, setMushroomEruptionFx] = useState<MushroomEruptionFxState[]>([]);
     const [deathEffects, setDeathEffects] = useState<Map<string, DeathEffectState>>(() => new Map());
 
     const clearAll = useCallback(() => {
       setGoldCollectMotes([]);
+      setDreamShards([]);
+      setRunePickupRises([]);
       setMushroomEruptionFx([]);
       setDeathEffects(new Map());
     }, []);
@@ -63,6 +76,15 @@ const CoopEnvironmentVfxLayer = memo(forwardRef<CoopEnvironmentVfxLayerHandle, C
       setGoldCollectMotes((prev) => [...prev, ...motes]);
     }, []);
 
+    const addRunePickupRise = useCallback((fx: RunePickupRiseState) => {
+      setRunePickupRises((prev) => [...prev, fx]);
+    }, []);
+
+    const addRunePickupRises = useCallback((fxList: RunePickupRiseState[]) => {
+      if (fxList.length === 0) return;
+      setRunePickupRises((prev) => [...prev, ...fxList]);
+    }, []);
+
     const addMushroomEruption = useCallback((fx: MushroomEruptionFxState) => {
       setMushroomEruptionFx((prev) => [...prev, fx]);
     }, []);
@@ -70,6 +92,10 @@ const CoopEnvironmentVfxLayer = memo(forwardRef<CoopEnvironmentVfxLayerHandle, C
     const addMushroomEruptions = useCallback((fxList: MushroomEruptionFxState[]) => {
       if (fxList.length === 0) return;
       setMushroomEruptionFx((prev) => [...prev, ...fxList]);
+    }, []);
+
+    const addDreamShard = useCallback((fx: DreamShardState) => {
+      setDreamShards((prev) => [...prev, fx]);
     }, []);
 
     const setDeathEffect = useCallback((playerId: string, effect: DeathEffectState) => {
@@ -93,16 +119,22 @@ const CoopEnvironmentVfxLayer = memo(forwardRef<CoopEnvironmentVfxLayerHandle, C
       clearAll,
       addGoldCollectMote,
       addGoldCollectMotes,
+      addRunePickupRise,
+      addRunePickupRises,
       addMushroomEruption,
       addMushroomEruptions,
+      addDreamShard,
       setDeathEffect,
       removeDeathEffect,
     }), [
       clearAll,
       addGoldCollectMote,
       addGoldCollectMotes,
+      addRunePickupRise,
+      addRunePickupRises,
       addMushroomEruption,
       addMushroomEruptions,
+      addDreamShard,
       setDeathEffect,
       removeDeathEffect,
     ]);
@@ -122,6 +154,28 @@ const CoopEnvironmentVfxLayer = memo(forwardRef<CoopEnvironmentVfxLayerHandle, C
               onGoldCollectMoteComplete?.(mote.id);
               window.dispatchEvent(new CustomEvent('gold-pocket-collected'));
             }}
+          />
+        ))}
+
+        {dreamShards.map((shard) => (
+          <DreamShardEffect
+            key={shard.id}
+            startPosition={shard.startPosition}
+            initialDirection={shard.initialDirection}
+            getPlayerPosition={getCurrentPlayerPosition}
+            onComplete={() => {
+              setDreamShards((prev) => prev.filter((s) => s.id !== shard.id));
+              onDreamShardComplete?.(shard.id);
+            }}
+          />
+        ))}
+
+        {runePickupRises.map((fx) => (
+          <RunePickupRiseEffect
+            key={fx.id}
+            position={fx.position}
+            color={fx.color}
+            onComplete={() => setRunePickupRises((prev) => prev.filter((e) => e.id !== fx.id))}
           />
         ))}
 

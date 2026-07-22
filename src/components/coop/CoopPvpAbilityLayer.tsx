@@ -181,7 +181,6 @@ type CoopPvpAbilityLayerProps = {
     attackerId: string,
   ) => void;
   onLightningStormHitEnemy: (enemyId: string, damage: number) => void;
-  onDeflectSmiteHitEnemy: (enemyId: string, damage: number) => void;
   onLocustHitEnemy: (enemyId: string, damage: number) => void;
   onSmiteBeamEnemyHitColossusGuard?: () => void;
   getVengeanceSmiteDamageMultiplier?: () => number;
@@ -325,7 +324,6 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
     onSmiteHitEnemy,
     onDeathGraspHitEnemy,
     onLightningStormHitEnemy,
-    onDeflectSmiteHitEnemy,
     onLocustHitEnemy,
     onSmiteBeamEnemyHitColossusGuard,
     getVengeanceSmiteDamageMultiplier,
@@ -626,9 +624,6 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
               baseDamageOverride={isLocalPlayerDeflectSmite ? effect.damage : 0}
               damageTypeOverride="deflect_smite"
               onComplete={() => removeDeflectSmite(effect.id)}
-              onHit={isLocalPlayerDeflectSmite
-                ? (targetId, damage) => onDeflectSmiteHitEnemy(targetId, damage)
-                : undefined}
               enemyData={smiteEnemyData}
               setDamageNumbers={setDamageNumbers}
               nextDamageNumberId={nextDamageNumberId}

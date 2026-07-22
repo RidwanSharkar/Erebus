@@ -10,7 +10,7 @@ import {
 } from '@/utils/weaponAbilities';
 import type { TalentId, TalentLoadout } from '@/utils/talents';
 import { partitionTalentsForHud } from '@/utils/talents';
-import { getWeaponHudIconSrc } from '@/utils/weaponIcons';
+import { getWeaponHudIconSrc, getWeaponDisplayName } from '@/utils/weaponIcons';
 import {
   ARCHETYPE_DISPLAY,
   getArchetypeIconSrc,
@@ -25,6 +25,13 @@ import {
   getTalentTooltipContent,
   type TooltipContent,
 } from './hotkeyTalentSlot';
+import WeaponPortraitBadge from './WeaponPortraitBadge';
+import {
+  HUD_PANEL_BG,
+  HUD_PANEL_BORDER,
+  HUD_PANEL_CLIP,
+  HUD_PANEL_SHADOW,
+} from './hudChrome';
 
 const MAX_VISIBLE_TALENTS = 6;
 const TALENT_GAP_PX = 8; // gap-2
@@ -45,6 +52,8 @@ interface HotkeyPanelProps {
   talentLoadout?: TalentLoadout | null;
   selectedArchetype?: Archetype;
   gameMode?: 'menu' | 'singleplayer' | 'multiplayer' | 'pvp' | 'coop';
+  /** When true, skip outer fixed positioning (parent handles layout). */
+  embedded?: boolean;
 }
 
 interface WeaponData {
@@ -120,6 +129,7 @@ export default function HotkeyPanel({
   talentLoadout = null,
   selectedArchetype = 'NONE',
   gameMode,
+  embedded = false,
 }: HotkeyPanelProps) {
   const [tooltipContent, setTooltipContent] = useState<{
     name: string;
@@ -307,6 +317,19 @@ export default function HotkeyPanel({
     setTooltipContent(null);
   }, []);
 
+  const handlePortraitHover = useCallback((e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const name = getWeaponDisplayName(currentWeapon);
+    setTooltipContent({
+      name,
+      description: `Wielding the ${name}`,
+    });
+    setTooltipPosition({
+      x: rect.left + rect.width / 2,
+      y: rect.top,
+    });
+  }, [currentWeapon]);
+
   const handleTalentHover = useCallback((e: React.MouseEvent, talentId: TalentId) => {
     const rect = e.currentTarget.getBoundingClientRect();
     setTooltipContent(getTalentTooltipContent(talentId));
@@ -334,23 +357,43 @@ export default function HotkeyPanel({
 
   return (
     <>
-      <div className="fixed bottom-8 left-1/2 transform -translate-x-1/2 z-40" data-block-game-input>
+      <div
+        className={
+          embedded
+            ? undefined
+            : 'fixed bottom-8 left-1/2 transform -translate-x-1/2 z-40'
+        }
+        data-block-game-input
+      >
         <div
           className="backdrop-blur-md px-4 pt-5 pb-3"
           style={{
-            background:
-              'linear-gradient(180deg, rgba(8,8,20,0.78) 0%, rgba(4,4,14,0.90) 100%)',
-            borderTop: '1px solid rgba(255,255,255,0.09)',
-            borderLeft: '1px solid rgba(255,255,255,0.05)',
-            borderRight: '1px solid rgba(255,255,255,0.05)',
-            borderBottom: '1px solid rgba(255,255,255,0.04)',
-            clipPath:
-              'polygon(10px 0%, calc(100% - 10px) 0%, 100% 10px, 100% 100%, 0% 100%, 0% 10px)',
-            boxShadow:
-              '0 -1px 0 rgba(255,255,255,0.05), 0 8px 32px rgba(0,0,0,0.55)',
+            position: 'relative',
+            background: HUD_PANEL_BG,
+            border: HUD_PANEL_BORDER,
+            clipPath: HUD_PANEL_CLIP,
+            boxShadow: HUD_PANEL_SHADOW,
           }}
         >
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: '16px',
+              right: '16px',
+              height: '1px',
+              background:
+                'linear-gradient(90deg, transparent, rgba(100,160,255,0.5) 25%, rgba(180,220,255,0.85) 50%, rgba(100,160,255,0.5) 75%, transparent)',
+              pointerEvents: 'none',
+            }}
+          />
           <div className="flex flex-nowrap items-center justify-center gap-2">
+            <WeaponPortraitBadge
+              weapon={currentWeapon}
+              className="mr-1"
+              onMouseEnter={handlePortraitHover}
+              onMouseLeave={handleAbilityLeave}
+            />
             {/* Weapon Icons */}
             {weapons.map((weapon) => {
               const isCurrentWeapon = weapon.type === currentWeapon;
@@ -675,14 +718,28 @@ export default function HotkeyPanel({
               const meta = ARCHETYPE_DISPLAY[selectedArchetype];
               const iconSrc = getArchetypeIconSrc(selectedArchetype);
               const deflectCd = controlSystem?.getAbilityCooldowns?.()?.DEFLECT_SHIFT;
-              const isOnCooldown = selectedArchetype === 'GLADIATOR' && (deflectCd?.current ?? 0) > 0;
-              const isActive = selectedArchetype === 'GLADIATOR' && !!deflectCd?.isActive;
+              const incinerationCd = controlSystem?.getAbilityCooldowns?.()?.INCINERATION_SHIFT;
+              const shiftCd =
+                selectedArchetype === 'GLADIATOR'
+                  ? deflectCd
+                  : selectedArchetype === 'SORCERESS'
+                    ? incinerationCd
+                    : undefined;
+              const isOnCooldown = (shiftCd?.current ?? 0) > 0;
+              const isActive =
+                (selectedArchetype === 'GLADIATOR' && !!deflectCd?.isActive) ||
+                (selectedArchetype === 'ALCHEMIST' && !!controlSystem?.isPrimeMateriaChannelingActive?.()) ||
+                (selectedArchetype === 'SORCERESS' && !!incinerationCd?.isActive);
               const accentRgb =
                 selectedArchetype === 'ROGUE'
                   ? '34,211,238'
                   : selectedArchetype === 'GLADIATOR'
                     ? '251,191,36'
-                    : '168,85,247';
+                    : selectedArchetype === 'ALCHEMIST'
+                      ? '34,197,94'
+                      : selectedArchetype === 'SORCERESS'
+                        ? '249,115,22'
+                      : '168,85,247';
 
               return (
                 <>
@@ -739,7 +796,7 @@ export default function HotkeyPanel({
                         }}
                       />
                     )}
-                    {isOnCooldown && deflectCd && (
+                    {isOnCooldown && shiftCd && (
                       <>
                         <div className="absolute inset-0 rounded-lg" style={{ background: 'rgba(0,0,0,0.52)' }} />
                         <div className="absolute inset-0 flex items-center justify-center">
@@ -747,7 +804,7 @@ export default function HotkeyPanel({
                             className="text-white text-sm font-bold tabular-nums"
                             style={{ textShadow: '0 1px 4px rgba(0,0,0,1)' }}
                           >
-                            {Math.ceil(deflectCd.current)}
+                            {Math.ceil(shiftCd.current)}
                           </span>
                         </div>
                       </>

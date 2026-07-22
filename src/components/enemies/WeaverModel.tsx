@@ -4,7 +4,7 @@ import React, { useRef, useEffect, useMemo } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
 import { filterAnimationClipsForRoot, getCachedEnemyAnimationClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
 
 interface WeaverModelProps {
@@ -69,6 +69,7 @@ export default React.memo(function WeaverModel({
           : child.material.clone();
       }
     });
+    applySelfIllumination(clone, { intensity: UNIT_SELF_ILLUMINATION_INTENSITY });
     return clone;
   }, [scene]);
 

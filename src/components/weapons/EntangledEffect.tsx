@@ -7,6 +7,7 @@ interface EntangledEffectProps {
   duration?: number;
   startTime?: number;
   enemyId?: string;
+  followTargetId?: string;
   onComplete?: () => void;
   enemyData?: Array<{
     id: string;
@@ -15,6 +16,11 @@ interface EntangledEffectProps {
     isDying?: boolean;
     deathStartTime?: number;
   }>;
+  followTargetData?: Array<{
+    id: string;
+    position: Vector3;
+    health: number;
+  }>;
 }
 
 export default function EntangledEffect({
@@ -22,7 +28,9 @@ export default function EntangledEffect({
   duration = 5000,
   startTime = Date.now(),
   enemyId,
+  followTargetId,
   enemyData = [],
+  followTargetData = [],
   onComplete,
 }: EntangledEffectProps) {
   const rootRef = useRef<Group>(null);
@@ -85,6 +93,11 @@ export default function EntangledEffect({
     if (enemyId && enemyData.length > 0) {
       const target = enemyData.find(enemy => enemy.id === enemyId);
       if (target && target.health > 0 && !target.isDying && !target.deathStartTime) {
+        group.position.copy(target.position);
+      }
+    } else if (followTargetId && followTargetData.length > 0) {
+      const target = followTargetData.find(entry => entry.id === followTargetId);
+      if (target && target.health > 0) {
         group.position.copy(target.position);
       }
     }

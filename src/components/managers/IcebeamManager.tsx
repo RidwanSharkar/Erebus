@@ -86,7 +86,7 @@ export default function IcebeamManager({
     const rawTimeActive = icebeamStartTime.current ? (currentTime - icebeamStartTime.current) / 1000 : 0;
     const timeActive = Math.min(rawTimeActive, ICEBEAM_MAX_HOLD_SEC);
 
-    const baseDamage = 23;
+    const baseDamage = 31;
     const damageMultiplier = 1 + Math.floor(timeActive) * 0.5; // +50% damage per second held (capped at max channel)
     const finalDamage = Math.floor(baseDamage * damageMultiplier);
 

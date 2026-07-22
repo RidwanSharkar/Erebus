@@ -21,6 +21,8 @@ import { WindShearProjectile } from '@/components/projectiles/WindShearProjectil
 import TowerProjectile from '@/components/projectiles/TowerProjectile';
 import ExplosionEffect from '@/components/projectiles/ExplosionEffect';
 import CrossentropyExplosion from '@/components/projectiles/CrossentropyExplosion';
+import CrossentropyBlitzRocket from '@/components/projectiles/CrossentropyBlitzRocket';
+import CrossentropyBlitzExplosion from '@/components/projectiles/CrossentropyBlitzExplosion';
 import CrossentropyMeteor from '@/components/projectiles/CrossentropyMeteor';
 import CloudkillArrow from '@/components/projectiles/CloudkillArrow';
 import VenomEffect from '@/components/projectiles/VenomEffect';
@@ -107,10 +109,11 @@ interface ExplosionData {
   color: Color;
   size: number;
   duration: number;
-  type?: 'crossentropy' | 'generic'; // Add type to distinguish explosion types
+  type?: 'crossentropy' | 'crossentropy_blitz' | 'generic'; // Add type to distinguish explosion types
   chargeTime?: number; // For crossentropy explosions
   infernoCrossentropy?: boolean;
   crossentropyVisualTheme?: CrossentropyVisualTheme;
+  reaperCrossentropy?: boolean;
 }
 
 interface CrossentropyMeteorData {
@@ -138,6 +141,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
   // State for all projectile types
   const [projectileData, setProjectileData] = useState<{
     crossentropy: ProjectileData[];
+    blitzCrossentropy: ProjectileData[];
     entropic: ProjectileData[];
     charged: ProjectileData[];
     regular: ProjectileData[];
@@ -148,6 +152,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
     tower: ProjectileData[];
   }>({
     crossentropy: [],
+    blitzCrossentropy: [],
     entropic: [],
     charged: [],
     regular: [],
@@ -167,6 +172,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
 
   // Counters for unique IDs
   const crossentropyIdCounter = useRef(0);
+  const blitzCrossentropyIdCounter = useRef(0);
   const entropicIdCounter = useRef(0);
   const chargedIdCounter = useRef(0);
   const regularIdCounter = useRef(0);
@@ -241,6 +247,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
     
     // Separate projectiles by type in a single pass
     const newCrossentropy: ProjectileData[] = [];
+    const newBlitzCrossentropy: ProjectileData[] = [];
     const newEntropic: ProjectileData[] = [];
     const newCharged: ProjectileData[] = [];
     const newRegular: ProjectileData[] = [];
@@ -276,6 +283,28 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
             level: userData.level,
             opacity: userData.opacity || 1.0,
             ownerId: userData.towerOwnerId
+          });
+        }
+      } else if (userData.isCrossentropyBlitzRocket) {
+        const existing = projectileData.blitzCrossentropy.find(p => p.entityId === entity.id);
+        const theme = crossentropyThemeFromUserData(userData as Record<string, unknown>);
+        if (existing) {
+          existing.position.copy(transform.position);
+          if (userData.crossentropyInferno) existing.infernoCrossentropy = true;
+          if (userData.reaperCrossentropy) existing.reaperCrossentropy = true;
+          existing.crossentropyVisualTheme = theme;
+          existing.crossentropyPlague = userData.crossentropyPlague === true;
+          newBlitzCrossentropy.push(existing);
+        } else {
+          newBlitzCrossentropy.push({
+            id: blitzCrossentropyIdCounter.current++,
+            position: transform.position.clone(),
+            direction: direction.clone(),
+            entityId: entity.id,
+            infernoCrossentropy: userData.crossentropyInferno === true,
+            reaperCrossentropy: userData.reaperCrossentropy === true,
+            crossentropyVisualTheme: theme,
+            crossentropyPlague: userData.crossentropyPlague === true,
           });
         }
       } else if (userData.isCrossentropyBolt) {
@@ -479,6 +508,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
         crossentropyVisualTheme:
           (event.crossentropyVisualTheme as CrossentropyVisualTheme | undefined) ??
           (event.infernoCrossentropy === true ? 'inferno' : 'default'),
+        reaperCrossentropy: event.reaperCrossentropy === true,
       };
       newExplosions.push(newExplosion);
     }
@@ -643,6 +673,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
     // Update state only if there are changes
     const hasProjectileChanges = (
       newCrossentropy.length !== projectileData.crossentropy.length ||
+      newBlitzCrossentropy.length !== projectileData.blitzCrossentropy.length ||
       entropicDataChanged ||
       newCharged.length !== projectileData.charged.length ||
       newRegular.length !== projectileData.regular.length ||
@@ -652,6 +683,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
       newWindShear.length !== projectileData.windShear.length ||
       newTower.length !== projectileData.tower.length ||
       newCrossentropy.some(p => !projectileData.crossentropy.find(existing => existing.entityId === p.entityId)) ||
+      newBlitzCrossentropy.some(p => !projectileData.blitzCrossentropy.find(existing => existing.entityId === p.entityId)) ||
       newCharged.some(p => !projectileData.charged.find(existing => existing.entityId === p.entityId)) ||
       newRegular.some(p => !projectileData.regular.find(existing => existing.entityId === p.entityId)) ||
       newSword.some(p => !projectileData.sword.find(existing => existing.entityId === p.entityId)) ||
@@ -664,6 +696,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
     if (hasProjectileChanges) {
       setProjectileData({
         crossentropy: newCrossentropy,
+        blitzCrossentropy: newBlitzCrossentropy,
         entropic: mergedEntropic,
         charged: newCharged,
         regular: newRegular,
@@ -766,6 +799,18 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
               }
             }
           }}
+        />
+      ))}
+
+      {/* Blitz Cannon Crossentropy Rockets */}
+      {projectileData.blitzCrossentropy.map(bolt => (
+        <CrossentropyBlitzRocket
+          key={bolt.id}
+          id={bolt.id}
+          position={bolt.position}
+          direction={bolt.direction}
+          visualTheme={bolt.crossentropyVisualTheme ?? 'default'}
+          reaperEcsDriven={bolt.reaperCrossentropy === true}
         />
       ))}
 
@@ -900,6 +945,22 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
 
       {/* Explosions */}
       {explosions.map(explosion => {
+        if (explosion.type === 'crossentropy_blitz') {
+          return (
+            <CrossentropyBlitzExplosion
+              key={explosion.id}
+              position={explosion.position}
+              chargeTime={explosion.chargeTime || 0.25}
+              explosionStartTime={Date.now()}
+              visualTheme={
+                explosion.crossentropyVisualTheme ??
+                (explosion.infernoCrossentropy ? 'inferno' : 'default')
+              }
+              reaperPurple={explosion.reaperCrossentropy === true}
+              onComplete={() => handleExplosionComplete(explosion.id)}
+            />
+          );
+        }
         if (explosion.type === 'crossentropy') {
           return (
             <CrossentropyExplosion

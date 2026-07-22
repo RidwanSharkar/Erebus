@@ -17,6 +17,7 @@ export default function MerchantShopTooltipOverlay() {
       y={snapshot.y}
       name={snapshot.name}
       cost={snapshot.cost}
+      costSuffix={snapshot.costSuffix}
       description={snapshot.description}
       limitLabel={snapshot.limitLabel}
     />

@@ -21,6 +21,8 @@ interface SabresProps {
   onBackstabComplete?: () => void;
   onSunderComplete?: () => void;
   subclass?: string;
+  /** Psionic Blades talent — permanent purple blade palette. */
+  psionicBladesBladeThemeActive?: boolean;
   enemyData?: Array<{
     id: string;
     position: Vector3;
@@ -43,6 +45,7 @@ export default function Sabres({
   onBackstabComplete = () => {},
   onSunderComplete = () => {},
   subclass = 'FROST',
+  psionicBladesBladeThemeActive = false,
   enemyData = [],
   onHit
 }: SabresProps) {
@@ -618,8 +621,16 @@ export default function Sabres({
     bevelOffset: 0,
   };
 
-  // Get colors based on subclass
+  // Get colors based on subclass (Psionic Blades overrides to purple)
   const getBladeColors = () => {
+    if (psionicBladesBladeThemeActive) {
+      return {
+        primary: '#a855f7',
+        emissive: '#c084fc',
+        secondary: '#7c3aed',
+        secondaryEmissive: '#e879f9',
+      };
+    }
     switch (subclass) {
       case 'FROST':
         return {

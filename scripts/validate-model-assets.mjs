@@ -23,9 +23,13 @@ const BASE_SCENE_FILES = new Set([
   'ghoul_idle.glb',
   'knight_idle.glb',
   'martyr_idle.glb',
+  'nemesis_idle.glb',
+  'sentinel_idle.glb',
   'shade_idle.glb',
+  'spectre_idle.glb',
   'templar_idle.glb',
   'titan_walk.glb',
+  'valkyrie_idle.glb',
   'viper_idle.glb',
   'warlock_idle.glb',
   'weaver_idle.glb',
@@ -135,10 +139,104 @@ function assertKnightAnimationClip(filename, threeGltf) {
     throw new Error(`${filename} knight animation track count: expected 156, received ${trackCount}`);
   }
 
-  const hasAssimpTracks = clip.tracks.some((track) => track.name.includes('$AssimpFbx$_Rotation'));
-  if (!hasAssimpTracks) {
-    throw new Error(`${filename} knight animation should target Assimp rotation helper bones`);
+  assertAssimpMixamoAnimationClip(filename, clip);
+}
+
+/** FBXLoader duplicate-chain artifacts — idle/anim track on mixamorigLeftLeg_2 etc. */
+function hasFbxLoaderSuffixArtifacts(tracks) {
+  return tracks.some((track) => /^mixamorig\w+_[23]\.(quaternion|position|scale)$/.test(track.name));
+}
+
+function hasAssimpRotationHelpers(tracks) {
+  return tracks.some((track) => track.name.includes('$AssimpFbx$_Rotation'));
+}
+
+function hasAssimpLegTrack(tracks) {
+  return tracks.some((track) => track.name.startsWith('mixamorigLeftUpLeg_$AssimpFbx$_Rotation.'));
+}
+
+function assertAssimpMixamoAnimationClip(filename, clip) {
+  if (!clip?.tracks?.length) {
+    throw new Error(`${filename} should contain an animation clip`);
   }
+
+  const tracks = clip.tracks;
+  if (hasFbxLoaderSuffixArtifacts(tracks)) {
+    throw new Error(`${filename} has FBXLoader _2/_3 bone suffix tracks — reconvert via Assimp pipeline`);
+  }
+
+  if (!hasAssimpRotationHelpers(tracks)) {
+    // Wraith uses a flat Mixamo skeleton without Assimp helpers — validated separately.
+    if (filename.startsWith('wraith_')) return;
+    throw new Error(`${filename} animation should target Assimp rotation helper bones`);
+  }
+
+  if (!hasAssimpLegTrack(tracks)) {
+    throw new Error(`${filename} animation should drive mixamorigLeftUpLeg_$AssimpFbx$_Rotation`);
+  }
+}
+
+function idlePrefixFromFilename(filename) {
+  const match = filename.match(/^(.+?)_(?:idle|walk|run|sprint|attack|attack2|melee|melee2|death|cast|holdCast|throwUp|spin|smite|aggro|impact|launch|block|startblock|idleblock|castheal|castsummon|summon|fastwalk)\.glb$/);
+  return match?.[1] ?? null;
+}
+
+function collectTrackNames(threeGltf) {
+  const clip = threeGltf.animations[0];
+  if (!clip) return new Set();
+  return new Set(clip.tracks.map((track) => track.name));
+}
+
+async function loadThreeGltf(filePath) {
+  const buffer = await readFile(filePath);
+  return new Promise((resolve, reject) => {
+    threeLoader.parse(
+      buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
+      '',
+      resolve,
+      reject,
+    );
+  });
+}
+
+const idleTrackCache = new Map();
+
+async function getIdleTrackNames(prefix) {
+  if (idleTrackCache.has(prefix)) return idleTrackCache.get(prefix);
+  const idlePath = path.join(modelsDir, `${prefix}_idle.glb`);
+  try {
+    const idleGltf = await loadThreeGltf(idlePath);
+    const names = collectTrackNames(idleGltf);
+    idleTrackCache.set(prefix, names);
+    return names;
+  } catch {
+    return null;
+  }
+}
+
+async function assertAnimationCompatibleWithIdle(filename, threeGltf) {
+  const prefix = idlePrefixFromFilename(filename);
+  if (!prefix) return;
+
+  const idleTracks = await getIdleTrackNames(prefix);
+  if (!idleTracks?.size) return;
+
+  const animTracks = collectTrackNames(threeGltf);
+  const missing = [...idleTracks].filter((name) => !animTracks.has(name));
+  if (missing.length > 0) {
+    throw new Error(
+      `${filename} missing ${missing.length} idle track(s) — e.g. ${missing.slice(0, 3).join(', ')}`,
+    );
+  }
+}
+
+function assertIdleSceneAnimationClip(filename, threeGltf) {
+  const clip = threeGltf.animations[0];
+  if (!clip) return;
+
+  if (filename.startsWith('wraith_')) return;
+
+  assertAssimpMixamoAnimationClip(filename, clip);
 }
 
 const files = await listGlbs(modelsDir);
@@ -168,12 +266,18 @@ for (const filePath of files) {
 
   if (isBaseScene) {
     if (optimizedStats.meshes <= 0) throw new Error(`${filename} should retain renderable scene meshes`);
+    const threeGltf = await parseWithThree(filePath);
+    assertIdleSceneAnimationClip(filename, threeGltf);
   } else {
     const threeGltf = await parseWithThree(filePath);
     const threeMeshCount = countThreeMeshes(threeGltf.scene);
     assertEqual(threeGltf.animations.length, originalStats.animations, `${filename} Three.js animation count`);
     assertEqual(threeMeshCount, 0, `${filename} renderable mesh count`);
     assertKnightAnimationClip(filename, threeGltf);
+    if (!filename.startsWith('wraith_')) {
+      assertAssimpMixamoAnimationClip(filename, threeGltf.animations[0]);
+      await assertAnimationCompatibleWithIdle(filename, threeGltf);
+    }
   }
 
   console.log(

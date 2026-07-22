@@ -185,8 +185,20 @@ export default function TotemSuperconductorLightning({
   );
 
   // Two endpoint <pointLight>s (origin + impact) become two pooled lights at `from`/`to`.
-  const originLight = useDynamicLight({ color: conductorPalette.pointLight, distance: 4, decay: 2, priority: 1 });
-  const impactLight = useDynamicLight({ color: conductorPalette.pointLight, distance: 7, decay: 2, priority: 1 });
+  const originLight = useDynamicLight({
+    color: conductorPalette.pointLight,
+    distance: 4,
+    decay: 2,
+    priority: 1,
+    intensity: 0,
+  });
+  const impactLight = useDynamicLight({
+    color: conductorPalette.pointLight,
+    distance: 7,
+    decay: 2,
+    priority: 1,
+    intensity: 0,
+  });
 
   const mountLightning = (start: Vector3, end: Vector3) => {
     const holder = holderRef.current;

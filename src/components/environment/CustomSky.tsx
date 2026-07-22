@@ -35,6 +35,36 @@ export const SKY_SANCTUM_HOLY: SkyThemeUniforms = {
   cloudWarmth: 0.72,
 };
 
+/** Underwater sunken temple — deep teal murk with faint god-rays from above. */
+export const SKY_SUNKEN_TEMPLE: SkyThemeUniforms = {
+  zenith: '#0a2838',
+  upperMid: '#1a4868',
+  midHorizon: '#2a6888',
+  horizon: '#4a98a8',
+  ground: '#051820',
+  sunColor: '#a0e8ff',
+  sunDir: [0.3, 0.6, -0.2],
+  sunHalo0: '#c8f0ff',
+  sunHalo1: '#68c8e8',
+  sunHalo2: '#2a7898',
+  cloudWarmth: 0.0,
+};
+
+/** Warm dusty colosseum sky — Erebus Gate surprise arena. */
+export const SKY_COLOSSEUM: SkyThemeUniforms = {
+  zenith: '#6a5038',
+  upperMid: '#9a7858',
+  midHorizon: '#c8a878',
+  horizon: '#e8d4b0',
+  ground: '#2a2018',
+  sunColor: '#fff8e8',
+  sunDir: [0.45, 0.35, -0.55],
+  sunHalo0: '#fff0c0',
+  sunHalo1: '#e8c898',
+  sunHalo2: '#b88858',
+  cloudWarmth: 0.88,
+};
+
 /** Clear daytime blue — throne prep room only (decoupled from perimeter camp tint). */
 export const SKY_THRONE_BLUE: SkyThemeUniforms = {
   zenith: '#1e6fd4',
@@ -247,7 +277,7 @@ const SKY_FRAG = `
   }
 `;
 
-export type CustomSkyPreset = RoomBorderTheme | 'throneBlue' | 'sanctumHoly';
+export type CustomSkyPreset = RoomBorderTheme | 'throneBlue' | 'sanctumHoly' | 'sunkenTemple' | 'colosseum';
 
 // ---------------------------------------------------------------------------
 // Component
@@ -255,6 +285,8 @@ export type CustomSkyPreset = RoomBorderTheme | 'throneBlue' | 'sanctumHoly';
 function skyUniformsForPreset(preset: CustomSkyPreset): SkyThemeUniforms {
   if (preset === 'throneBlue') return SKY_THRONE_BLUE;
   if (preset === 'sanctumHoly') return SKY_SANCTUM_HOLY;
+  if (preset === 'sunkenTemple') return SKY_SUNKEN_TEMPLE;
+  if (preset === 'colosseum') return SKY_COLOSSEUM;
   return SKY_BY_ROOM[preset] ?? SKY_BY_ROOM.red;
 }
 

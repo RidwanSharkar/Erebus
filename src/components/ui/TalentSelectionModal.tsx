@@ -97,10 +97,15 @@ import {
   BLIZZARD_PROC_CHANCE,
   BLIZZARD_DURATION_SEC,
   BLIZZARD_DPS_PER_TICK,
+  BLIZZARD_DAMAGE_PER_STAT_POINT,
   CHILL_STACK_DURATION_SEC,
   CHILL_SLOW_PER_STACK,
   CHILL_STACKS_TO_FREEZE,
   BLIZZARD_FREEZE_DURATION_SEC,
+  titansGripTalentDefinition,
+  TITANS_GRIP_STUN_PROC_CHANCE,
+  TITANS_GRIP_STUN_DURATION_MS,
+  TITANS_GRIP_DAMAGE_PER_STRENGTH,
   WRATHFUL_COMBO_CRIT_CHANCE_ADD,
   WRATHFUL_COMBO_CRIT_DAMAGE_MULT_ADD,
   INFESTED_COMBO_LIFESTEAL,
@@ -512,6 +517,10 @@ export default function TalentSelectionModal({
 
   const toggleBlizzard = useCallback(() => {
     setLoadout((prev) => ({ ...prev, blizzard: !prev.blizzard }));
+  }, []);
+
+  const toggleTitansGrip = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, titansGrip: !prev.titansGrip }));
   }, []);
 
   const toggleStaggeringSwipes = useCallback(() => {
@@ -1213,7 +1222,7 @@ export default function TalentSelectionModal({
                       <p className="text-gray-400 text-sm mt-1">{blizzardTalentDefinition.description}</p>
                       <p className="text-sky-200/90 text-xs mt-2 font-mono">
                         {BLIZZARD_PROC_CHANCE * 100}% per Runeblade combo hit (enemy damaged) · {BLIZZARD_DURATION_SEC}s
-                        storm · {BLIZZARD_DPS_PER_TICK} DPS in radius · Chill {CHILL_SLOW_PER_STACK * 100}% slow per stack (
+                        storm · {BLIZZARD_DPS_PER_TICK} + {BLIZZARD_DAMAGE_PER_STAT_POINT} per STR/STA/INT/AGI per tick in radius · Chill {CHILL_SLOW_PER_STACK * 100}% slow per stack (
                         {CHILL_STACK_DURATION_SEC}s refresh) · {CHILL_STACKS_TO_FREEZE} stacks →{' '}
                         {BLIZZARD_FREEZE_DURATION_SEC}s freeze
                       </p>
@@ -1339,6 +1348,36 @@ export default function TalentSelectionModal({
                         {CRUSADER_PROC_CHANCE * 100}% per Runeblade combo hit (enemy damaged) · {CRUSADER_DURATION_SEC}s · +
                         {CRUSADER_LMB_FLAT_BONUS} base per swing · corrupted blade colors (F unchanged) · refresh on
                         proc
+                      </p>
+                    </>
+                  )}
+                </label>
+              </div>
+              </TalentHoverSurface>
+            </div>
+            <div
+              className={`
+            rounded-xl border-2 p-4 mb-6 transition-all
+            ${wc.border} ${wc.bg}
+          `}
+            >
+              <TalentHoverSurface talent={titansGripTalentDefinition}>
+              <div className="flex items-start gap-3">
+                <TalentRowIcon talent={titansGripTalentDefinition} />
+                <input
+                  type="checkbox"
+                  id="talent-titans-grip"
+                  checked={loadout.titansGrip}
+                  onChange={toggleTitansGrip}
+                  className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+                  aria-label={titansGripTalentDefinition.name}
+                />
+                <label htmlFor="talent-titans-grip" className="flex-1 cursor-pointer">
+                  {loadout.titansGrip && (
+                    <>
+                      <p className="text-gray-400 text-sm mt-1">{titansGripTalentDefinition.description}</p>
+                      <p className="text-sky-200/90 text-xs mt-2 font-mono">
+                        +{TITANS_GRIP_DAMAGE_PER_STRENGTH} base per combo strike per Strength · {TITANS_GRIP_STUN_PROC_CHANCE * 100}% per enemy hit → {TITANS_GRIP_STUN_DURATION_MS / 1000}s stun · red blade + slash VFX (Crusader overrides)
                       </p>
                     </>
                   )}

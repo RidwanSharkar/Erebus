@@ -8,7 +8,7 @@ import { GLTFLoader } from 'three-stdlib';
 import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, AnimationMixer, VectorKeyframeTrack } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadAllGltfAnimationClips, loadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
-import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { applySelfIllumination, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
 export type AnimState =
   | 'Idle' | 'Run' | 'Sprint' | 'Walk' | 'WalkBack' | 'WalkLeft' | 'WalkRight' | 'Backwards'
@@ -259,6 +259,7 @@ function CharacterModelRig({
           : child.material.clone();
       }
     });
+    applySelfIllumination(clone);
     return clone;
   }, [scene]);
 

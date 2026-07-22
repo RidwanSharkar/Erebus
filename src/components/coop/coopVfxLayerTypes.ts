@@ -135,6 +135,13 @@ export interface GreedFireballState {
   greedId: string;
 }
 
+export interface SentinelVoidOrbState {
+  id: string;
+  startPosition: Vector3;
+  targetPosition: Vector3;
+  sentinelId: string;
+}
+
 export interface EnchantressEarthShockState {
   id: string;
   startPosition: Vector3;
@@ -268,6 +275,15 @@ export interface TemplarBlinkSmiteStrikeState {
   timestamp: number;
 }
 
+export interface ValkyrieJudgmentStrikeState {
+  id: string;
+  position: Vector3;
+  strikeAt: number;
+  hoverMs?: number;
+  fallMs?: number;
+  skyHeight?: number;
+}
+
 export interface Boss2ArchonLightningState {
   id: string;
   beams: { startPosition: Vector3; targetPosition: Vector3 }[];
@@ -321,12 +337,14 @@ export interface MistEffectState {
 export interface KnightDeathVortexState {
   id: string;
   position: { x: number; y: number; z: number };
-  soulType?: 'red' | 'purple' | 'green' | 'blue' | null;
+  soulType?: 'red' | 'purple' | 'green' | 'blue' | 'orange' | 'yellow' | null;
 }
 
 export interface GhoulSummonRitualState {
   id: string;
   position: Vector3;
+  /** Ritual fade duration in seconds; Delirium telegraphs use a shorter lifetime. */
+  duration?: number;
 }
 
 export interface InfestedZombieSummonVfxState {
@@ -380,6 +398,19 @@ export interface GoldCollectMoteState {
   startPosition: Vector3;
   startTime: number;
   duration: number;
+}
+
+export interface DreamShardState {
+  id: string;
+  startPosition: Vector3;
+  initialDirection: Vector3;
+}
+
+export interface RunePickupRiseState {
+  id: string;
+  position: Vector3;
+  color: string;
+  startTime: number;
 }
 
 export interface MushroomEruptionFxState {

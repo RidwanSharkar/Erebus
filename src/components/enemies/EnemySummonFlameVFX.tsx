@@ -138,7 +138,7 @@ export default function EnemySummonFlameVFX({ position, onComplete }: EnemySummo
   });
 
   return (
-    <group ref={groupRef} position={[position.x, position.y, position.z]}>
+    <group ref={groupRef} position={[position.x, position.y + 0.3, position.z]}>
       {/* Ground flame disc */}
       <mesh ref={ringRef} geometry={geos.ring} material={mats.ring} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.04, 0]} />
 

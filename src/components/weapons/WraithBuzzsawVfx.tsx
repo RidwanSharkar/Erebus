@@ -26,8 +26,8 @@ interface WraithBuzzsawVfxProps {
   durationMs?: number;
 }
 
-const BEAM_LENGTH = 5.5;
-const BEAM_RADIUS = 1;
+const BEAM_LENGTH = 4.5;
+const BEAM_RADIUS = 0.85;
 const BEAM_ORIGIN_FORWARD_OFFSET = 0.5;
 const BEAM_ORIGIN_Y_LOCAL = 0.9;
 

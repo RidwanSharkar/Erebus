@@ -12,13 +12,13 @@ export type WraithStrikeColorPalette = {
 
 const PALETTES: Record<WraithStrikeTheme, WraithStrikeColorPalette> = {
   default: {
-    main: '#ba68c8',
-    emissive: '#9c27b0',
+    main: '#7F67C7',
+    emissive: '#4027B0',
     inner: '#e1bee7',
-    outer: '#ce93d8',
+    outer: '#9693D9',
     particle: '#e1bee7',
-    light: '#d500f9',
-    flash: '#f3e5f5',
+    light: '#4300FA',
+    flash: '#E7E4F5',
   },
   wrathful: {
     main: '#ff5252',

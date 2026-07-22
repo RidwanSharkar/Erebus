@@ -12,19 +12,32 @@ import {
   BufferAttribute,
 } from 'three';
 
+export interface CrescentSlashPalette {
+  core: string;
+  edge: string;
+  flash: string;
+  ring: string;
+}
+
 interface CrescentSlashEffectProps {
   position: Vector3;
   /** Normalized facing direction of the player at cast time. */
   direction: Vector3;
   onComplete: () => void;
+  /** Uniform size multiplier — defaults to 1. */
+  scale?: number;
+  /** Optional color overrides for themed variants. */
+  palette?: Partial<CrescentSlashPalette>;
 }
 
 const DURATION = 0.35;
 
-const COLOR_CORE  = new Color('#ffe4a0'); // warm gold
-const COLOR_EDGE  = new Color('#ff6a5c'); // red accent (matches sabre palette)
-const COLOR_FLASH = new Color('#ffffff'); // white center burst
-const COLOR_RING  = new Color('#ffe8c0'); // outer ring glow
+const DEFAULT_PALETTE: CrescentSlashPalette = {
+  core: '#ffe4a0',
+  edge: '#ff6a5c',
+  flash: '#ffffff',
+  ring: '#ffe8c0',
+};
 
 /** Build a flat arc-sector geometry in XZ plane centered on +Z, spanning `span` radians. */
 function buildArcSectorGeometry(
@@ -42,9 +55,7 @@ function buildArcSectorGeometry(
     const angle = -half + (i / segments) * spanRadians;
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
-    // inner vertex
     positions.push(sin * innerRadius, 0, cos * innerRadius);
-    // outer vertex
     positions.push(sin * outerRadius, 0, cos * outerRadius);
   }
 
@@ -62,12 +73,11 @@ function buildArcSectorGeometry(
 /** Two swept blade planes radiating left/right from center for afterglow. */
 function buildWingSweepGeometry(width: number, length: number): BufferGeometry {
   const geo = new BufferGeometry();
-  // A tapered quad: narrow at root, wider at tip
   const positions = new Float32Array([
-    -width * 0.15,  0,  0,         // root left
-     width * 0.15,  0,  0,         // root right
-    -width * 0.5,   0,  length,    // tip left
-     width * 0.5,   0,  length,    // tip right
+    -width * 0.15,  0,  0,
+     width * 0.15,  0,  0,
+    -width * 0.5,   0,  length,
+     width * 0.5,   0,  length,
   ]);
   geo.setAttribute('position', new BufferAttribute(positions, 3));
   geo.setIndex([0, 1, 2, 1, 3, 2]);
@@ -78,6 +88,8 @@ export default function CrescentSlashEffect({
   position,
   direction,
   onComplete,
+  scale = 1,
+  palette: paletteOverride,
 }: CrescentSlashEffectProps) {
   const timeRef = useRef(0);
   const doneRef = useRef(false);
@@ -89,79 +101,88 @@ export default function CrescentSlashEffect({
   const flashRef     = useRef<Mesh | null>(null);
   const ringRef      = useRef<Mesh | null>(null);
 
-  // Yaw angle from direction so the arc faces where the player was looking
+  const colors = useMemo(
+    () => ({
+      core: new Color(paletteOverride?.core ?? DEFAULT_PALETTE.core),
+      edge: new Color(paletteOverride?.edge ?? DEFAULT_PALETTE.edge),
+      flash: new Color(paletteOverride?.flash ?? DEFAULT_PALETTE.flash),
+      ring: new Color(paletteOverride?.ring ?? DEFAULT_PALETTE.ring),
+    }),
+    [paletteOverride?.core, paletteOverride?.edge, paletteOverride?.flash, paletteOverride?.ring],
+  );
+
   const yaw = useMemo(
     () => Math.atan2(direction.x, direction.z),
     [direction.x, direction.z],
   );
 
-  const arcGeo      = useMemo(() => buildArcSectorGeometry(0.6, 4.0, Math.PI * 0.7, 24), []);
-  const arcInnerGeo = useMemo(() => buildArcSectorGeometry(0.0, 0.8, Math.PI * 0.5, 16), []);
-  const wingGeo     = useMemo(() => buildWingSweepGeometry(1.4, 3.8), []);
+  const arcGeo      = useMemo(() => buildArcSectorGeometry(0.6 * scale, 4.0 * scale, Math.PI * 0.7, 24), [scale]);
+  const arcInnerGeo = useMemo(() => buildArcSectorGeometry(0.0, 0.8 * scale, Math.PI * 0.5, 16), [scale]);
+  const wingGeo     = useMemo(() => buildWingSweepGeometry(1.4 * scale, 3.8 * scale), [scale]);
 
   const arcMat = useMemo(
     () =>
       new MeshBasicMaterial({
-        color: COLOR_EDGE,
+        color: colors.edge,
         transparent: true,
         opacity: 0,
         blending: AdditiveBlending,
         depthWrite: false,
         side: 2,
       }),
-    [],
+    [colors.edge],
   );
 
   const arcInnerMat = useMemo(
     () =>
       new MeshBasicMaterial({
-        color: COLOR_CORE,
+        color: colors.core,
         transparent: true,
         opacity: 0,
         blending: AdditiveBlending,
         depthWrite: false,
         side: 2,
       }),
-    [],
+    [colors.core],
   );
 
   const wingMat = useMemo(
     () =>
       new MeshBasicMaterial({
-        color: COLOR_CORE,
+        color: colors.core,
         transparent: true,
         opacity: 0,
         blending: AdditiveBlending,
         depthWrite: false,
         side: 2,
       }),
-    [],
+    [colors.core],
   );
 
   const flashMat = useMemo(
     () =>
       new MeshBasicMaterial({
-        color: COLOR_FLASH,
+        color: colors.flash,
         transparent: true,
         opacity: 0,
         blending: AdditiveBlending,
         depthWrite: false,
         side: 2,
       }),
-    [],
+    [colors.flash],
   );
 
   const ringMat = useMemo(
     () =>
       new MeshBasicMaterial({
-        color: COLOR_RING,
+        color: colors.ring,
         transparent: true,
         opacity: 0,
         blending: AdditiveBlending,
         depthWrite: false,
         side: 2,
       }),
-    [],
+    [colors.ring],
   );
 
   useEffect(() => {
@@ -191,7 +212,6 @@ export default function CrescentSlashEffect({
 
     const progress = t / DURATION;
 
-    // --- Arc sweep: rushes outward then fades ---
     const arcScale = 0.3 + progress * 0.85;
     const arcFade  = t < 0.08 ? t / 0.08 : Math.max(0, 1 - (t - 0.12) / (DURATION - 0.12));
     if (arcRef.current) {
@@ -203,7 +223,6 @@ export default function CrescentSlashEffect({
       arcInnerMat.opacity = Math.max(0, arcFade * 0.55);
     }
 
-    // --- Wings: spread outward from center during first half, then linger ---
     const wingAngle = progress * Math.PI * 0.42;
     const wingFade  = t < 0.1 ? t / 0.1 : Math.max(0, 1 - (t - 0.18) / (DURATION - 0.18));
     if (leftWingRef.current) {
@@ -214,7 +233,6 @@ export default function CrescentSlashEffect({
       rightWingRef.current.rotation.y = wingAngle;
     }
 
-    // --- Center flash: brief bright burst at cast origin ---
     const flashFade =
       t < 0.05 ? t / 0.05 : Math.max(0, 1 - (t - 0.05) / 0.14);
     if (flashRef.current) {
@@ -223,7 +241,6 @@ export default function CrescentSlashEffect({
       flashMat.opacity = Math.max(0, flashFade * 0.65);
     }
 
-    // --- Outer expanding ring ---
     const ringScale = 0.25 + progress * 1.25;
     const ringFade  =
       t < 0.06 ? t / 0.06 : Math.max(0, 1 - (t - DURATION * 0.38) / (DURATION * 0.62));
@@ -233,37 +250,35 @@ export default function CrescentSlashEffect({
     }
   });
 
+  const flashRadius = 0.55 * scale;
+  const ringOuter = 1 * scale;
+  const ringTube = 0.07 * scale;
+
   return (
-    <group position={[position.x, position.y + 0.1, position.z]} rotation={[0, yaw, 0]}>
-      {/* Outer arc sector — gold/red sweep */}
+    <group position={[position.x, position.y + 0.1 * scale, position.z]} rotation={[0, yaw, 0]}>
       <mesh ref={arcRef} geometry={arcGeo}>
         <primitive object={arcMat} attach="material" />
       </mesh>
 
-      {/* Inner arc fill — warm gold core */}
       <mesh ref={arcInnerRef} geometry={arcInnerGeo}>
         <primitive object={arcInnerMat} attach="material" />
       </mesh>
 
-      {/* Left wing sweep */}
       <mesh ref={leftWingRef} geometry={wingGeo}>
         <primitive object={wingMat} attach="material" />
       </mesh>
 
-      {/* Right wing sweep (shared geometry, mirrored rotation) */}
       <mesh ref={rightWingRef} geometry={wingGeo}>
         <primitive object={wingMat} attach="material" />
       </mesh>
 
-      {/* Center flash disc */}
       <mesh ref={flashRef} rotation={[-Math.PI / 2, 0, 0]} scale={[0.01, 0.01, 0.01]}>
-        <circleGeometry args={[0.55, 16]} />
+        <circleGeometry args={[flashRadius, 16]} />
         <primitive object={flashMat} attach="material" />
       </mesh>
 
-      {/* Outer ring */}
       <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} scale={[0.01, 0.01, 0.01]}>
-        <torusGeometry args={[1, 0.07, 6, 48]} />
+        <torusGeometry args={[ringOuter, ringTube, 6, 48]} />
         <primitive object={ringMat} attach="material" />
       </mesh>
     </group>

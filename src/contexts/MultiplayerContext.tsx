@@ -11,6 +11,8 @@ import { ExperienceSystem } from '@/utils/ExperienceSystem';
 import { StatSystem, StatPointData, StatKey, PlayerStats } from '@/utils/StatSystem';
 import { getRuneCountForWeapon } from '@/utils/runeCount';
 import type { ItemRarity } from '@/utils/itemRarity';
+import { ITEM_RARITY_RANK, isItemRarity } from '@/utils/itemRarity';
+import { isUniqueDreamLayerItem, PERSEPHONE } from '@/utils/dreamLayerItems';
 import { Vector3 } from '@/utils/three-exports';
 import { applyEnemyMoveBatch, type EnemyLiveTransform } from '@/utils/enemyLiveTransform';
 import { applyPlayerMove, type PlayerLiveTransform } from '@/utils/playerLiveTransform';
@@ -22,7 +24,13 @@ import { clearKnightBlock } from '@/utils/knightBlockState';
 import { installWebGlDiagnostics, recordMultiplayerDisconnect } from '@/utils/webglDiagnostics';
 import { type Archetype, ARCHETYPE_NONE, ARCHETYPE_ROGUE, normalizeArchetype } from '@/utils/archetypes';
 
-export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'merchant' | 'boss' | 'intro' | 'deep_sanctum';
+export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'merchant' | 'boss' | 'intro' | 'deep_sanctum' | 'sunken_temple' | 'eden' | 'false_eden' | 'delirium_gate' | 'erebus_gate' | 'dream_layer';
+export type DeliriumStructureState = {
+  hp: number;
+  maxHp: number;
+  position: { x: number; z: number };
+  destroyed: boolean;
+};
 export type DeepSanctumRewardKind = 'gold' | 'stat' | 'talent';
 export type CoopTerrainTheme = 'purple' | 'blue' | 'green';
 
@@ -50,6 +58,10 @@ export interface PlayerMovementDirection {
   dashDirection?: { x: number; y: number; z: number };
   isAttackSlowed?: boolean;
   isIcebeaming?: boolean;
+  isPrimeMateriaActive?: boolean;
+  isIncinerationCharging?: boolean;
+  isIncinerationArmed?: boolean;
+  isLocustChanneling?: boolean;
   isSprinting?: boolean;
 }
 
@@ -75,6 +87,8 @@ export interface Player {
   // Essence currency system
   essence?: number;
   gold?: number;
+  flow?: number;
+  fate?: number;
   // Purchased items
   purchasedItems?: string[];
   // Venom status effects
@@ -187,6 +201,8 @@ export interface Enemy {
   staggerBuildup?: number;
   /** Client-side stun window expiry (ms since epoch) from `enemy-status-effect`. */
   stunnedUntilMs?: number;
+  /** Client-side slow window expiry (ms since epoch) from `enemy-status-effect`. */
+  slowedUntilMs?: number;
   /** Boss3 Weaver Nexus summoned ghoul — larger client model. */
   visualScale?: number;
   /** Per-ghoul leap landing damage override (Boss3 summons deal 2×). */
@@ -218,12 +234,14 @@ export interface DroppedItem {
   type: string;
   stat?: StatKey;
   label: string;
-  category?: 'amulet' | 'boss_drop';
+  category?: 'amulet' | 'boss_drop' | 'ward';
   position: { x: number; y: number; z: number };
   droppedAt: number;
   /** Boss drops: flat stat points granted on pickup */
   statBonus?: number;
   rarity?: ItemRarity;
+  /** Warding pendant: enemy type banned for the rest of the run */
+  bannedEnemyType?: string;
 }
 
 export interface InventoryItem {
@@ -231,10 +249,28 @@ export interface InventoryItem {
   type: string;
   stat?: StatKey;
   label: string;
-  category?: 'amulet' | 'boss_drop';
+  category?: 'amulet' | 'boss_drop' | 'ward';
   pickedUpAt: number;
   statBonus?: number;
   rarity?: ItemRarity;
+  bannedEnemyType?: string;
+}
+
+export interface DreamLayerStockItem {
+  id: string;
+  kind: 'warding_pendant' | 'exodia' | 'ring';
+  cost: number;
+  sold?: boolean;
+  label?: string;
+  description?: string;
+  item?: Omit<DroppedItem, 'position' | 'droppedAt'>;
+}
+
+export interface DreamLayerPurchaseState {
+  healPurchasedThisVisit: boolean;
+  wardingPurchasedThisVisit: boolean;
+  exodiaPurchasedThisVisit: boolean;
+  ringPurchasedThisVisit: boolean;
 }
 
 export interface MerchantStockItem {
@@ -252,6 +288,9 @@ export interface MerchantPurchaseState {
   weaponTalentPurchases: number;
   oxygenPurchases: number;
   warpdrivePurchases: number;
+  healPurchasedThisVisit: boolean;
+  weaponTalentPurchasedThisVisit: boolean;
+  utilityPurchasedThisVisit: boolean;
 }
 
 export type MerchantPurchaseSuccessKind =
@@ -259,7 +298,8 @@ export type MerchantPurchaseSuccessKind =
   | 'dash_charge'
   | 'weapon_talent'
   | 'oxygen'
-  | 'warpdrive';
+  | 'warpdrive'
+  | 'heal';
 
 export interface MerchantPurchaseSuccessPayload {
   stockId: string;
@@ -405,6 +445,8 @@ interface MultiplayerContextType {
     | 'pre_boss_merchant'
     | 'pick_boss'
     | 'pick_post_boss'
+    | 'pick_sunken_entry'
+    | 'eden_exit'
     | null;
   /** Co-op: act terrain theme, independent from the selected room color/reward kind. */
   coopTerrainTheme: CoopTerrainTheme;
@@ -439,6 +481,8 @@ interface MultiplayerContextType {
   coopMainArenaIntermissionSeq: number;
   /** Increments on each `coop-intro-intermission` (intro room clear; void portal / fountain phase). */
   coopIntroIntermissionSeq: number;
+  /** Increments on each `coop-sunken-intermission` (sunken temple room clear). */
+  coopSunkenIntermissionSeq: number;
   /** Co-op intro: one-time 4-room sequence before the normal loop. */
   coopIntroPending: boolean;
   coopIntroActive: boolean;
@@ -447,6 +491,17 @@ interface MultiplayerContextType {
   coopIntroFountainPhase: boolean;
   coopIntroFountainUsed: boolean;
   coopIntroAllyChoiceMade: boolean;
+  /** Co-op sunken temple: one-time 4-room sequence after Boss 1. */
+  coopSunkenActive: boolean;
+  coopSunkenRoomIndex: number;
+  coopSunkenPortalOpen: boolean;
+  coopSunkenFountainPhase: boolean;
+  coopSunkenFountainUsed: boolean;
+  coopSunkenAllyChoiceMade: boolean;
+  coopSunkenLootOffer: DreamLayerStockItem[];
+  coopSunkenLootClaimedPlayerIds: string[];
+  coopSunkenLootPhaseComplete: boolean;
+  coopSunkenCompleted: boolean;
   /** Chosen co-op ally for the rest of the run after intro room IV. */
   coopAllyKind: CoopAllyKind;
   /** Three random ally kinds offered at intro room IV (server-authoritative). */
@@ -458,6 +513,21 @@ interface MultiplayerContextType {
   deepSanctumRewardKind: DeepSanctumRewardKind | null;
   /** Increments on each `coop-deep-sanctum-intermission`. */
   coopDeepSanctumIntermissionSeq: number;
+  /** True after drinking from the Eden fountain. */
+  coopEdenFountainUsed: boolean;
+  /** Intended destination shown on Eden exit portal. */
+  coopEdenResumeKind: CoopRoomKind | null;
+  /** Increments on each `coop-eden-intermission` (fountain used / exit portal revealed). */
+  coopEdenIntermissionSeq: number;
+  /** False Eden: all tentacle spines destroyed — fountain unlocked. */
+  coopFalseEdenCleared: boolean;
+  /** Delirium Gate structure HP snapshot. */
+  deliriumStructure: DeliriumStructureState | null;
+  coopDeliriumActive: boolean;
+  coopDeliriumEventEnded: boolean;
+  coopDeliriumSuccess: boolean;
+  /** Erebus Gate surprise arena active. */
+  coopErebusGateActive: boolean;
   /** Increments on each `boss-defeated` (co-op final boss; no `coop-main-arena-intermission` from the server). Used for BGM. */
   coopBossClearedBgmSeq: number;
   /**
@@ -527,6 +597,7 @@ interface MultiplayerContextType {
   enterCombatArena: (chosenCampType?: string) => void;
   useCoopFountain: () => void;
   chooseCoopAlly: (allyKind: CoopAllyKind) => void;
+  chooseSunkenTempleLoot: (stockId: string) => void;
   claimPreBossReward: () => void;
   claimDeepSanctumReward: () => void;
   finishPreBossMerchant: () => void;
@@ -561,7 +632,12 @@ interface MultiplayerContextType {
   detonateWyvernConcentratedVenom: (enemyId: string, cobraRemainingDamage?: number) => void;
   /** Co-op: Tyrant's Cloak counter-strike — server triggers stagger lightning bolt on attacker. */
   triggerTyrantsCloakStrike: (enemyId: string) => void;
-  applyStatusEffect: (enemyId: string, effectType: string, duration: number) => void;
+  applyStatusEffect: (
+    enemyId: string,
+    effectType: string,
+    duration: number,
+    options?: { source?: 'titans_grip' },
+  ) => void;
 
   /** Co-op: ring mushroom HP (server sync). */
   mushroomState: { health: number[]; maxHealth: number } | null;
@@ -574,6 +650,8 @@ interface MultiplayerContextType {
   // Essence currency system actions
   updatePlayerEssence: (playerId: string, essence: number) => void;
   updatePlayerGold: (playerId: string, gold: number) => void;
+  updatePlayerFlow: (playerId: string, flow: number) => void;
+  updatePlayerFate: (playerId: string, fate: number) => void;
 
   // Shield actions
   updatePlayerShield: (playerId: string, shield: number, maxShield?: number) => void;
@@ -608,6 +686,8 @@ interface MultiplayerContextType {
   inventory: InventoryItem[];
   merchantInventory: MerchantStockItem[];
   merchantPurchaseState: MerchantPurchaseState;
+  dreamLayerInventory: DreamLayerStockItem[];
+  dreamLayerPurchaseState: DreamLayerPurchaseState;
   registerMerchantPurchaseSuccessHandler: (
     handler: (payload: MerchantPurchaseSuccessPayload) => void,
   ) => () => void;
@@ -619,6 +699,12 @@ interface MultiplayerContextType {
   ) => () => void;
   registerPlayerGoldChangedHandler: (
     handler: (payload: { playerId: string; gold: number }) => void,
+  ) => () => void;
+  registerPlayerFlowChangedHandler: (
+    handler: (payload: { playerId: string; flow: number }) => void,
+  ) => () => void;
+  registerPlayerFateChangedHandler: (
+    handler: (payload: { playerId: string; fate: number }) => void,
   ) => () => void;
   registerBossDefeatedHandler: (
     handler: (payload: BossDefeatedPayload) => void,
@@ -636,6 +722,8 @@ interface MultiplayerContextType {
   purchaseItem: (itemId: string, cost: number, currency: 'essence' | 'gold') => boolean;
   purchaseMerchantItem: (stockId: string) => void;
   purchaseMerchantHeal: () => void;
+  purchaseDreamLayerItem: (stockId: string) => void;
+  purchaseDreamLayerHeal: () => void;
 
   // Chat actions
   sendChatMessage: (message: string) => void;
@@ -663,6 +751,7 @@ export type MultiplayerActionsContextType = Pick<
   | 'enterCombatArena'
   | 'useCoopFountain'
   | 'chooseCoopAlly'
+  | 'chooseSunkenTempleLoot'
   | 'claimPreBossReward'
   | 'claimDeepSanctumReward'
   | 'finishPreBossMerchant'
@@ -692,6 +781,8 @@ export type MultiplayerActionsContextType = Pick<
   | 'updatePlayerLevel'
   | 'updatePlayerEssence'
   | 'updatePlayerGold'
+  | 'updatePlayerFlow'
+  | 'updatePlayerFate'
   | 'updatePlayerShield'
   | 'updatePlayerEnergy'
   | 'setSelectedWeapons'
@@ -707,10 +798,14 @@ export type MultiplayerActionsContextType = Pick<
   | 'purchaseItem'
   | 'purchaseMerchantItem'
   | 'purchaseMerchantHeal'
+  | 'purchaseDreamLayerItem'
+  | 'purchaseDreamLayerHeal'
   | 'registerMerchantPurchaseSuccessHandler'
   | 'registerDeepSanctumRewardClaimedHandler'
   | 'registerMerchantNpcGreetHandler'
   | 'registerPlayerGoldChangedHandler'
+  | 'registerPlayerFlowChangedHandler'
+  | 'registerPlayerFateChangedHandler'
   | 'registerBossDefeatedHandler'
   | 'registerBossItemPickupHandler'
   | 'registerRunePickupHandler'
@@ -771,7 +866,7 @@ interface MultiplayerProviderProps {
 }
 
 const VALID_CAMP_KEYS = new Set(['red', 'blue', 'green', 'purple']);
-const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'trial', 'merchant', 'boss', 'intro', 'deep_sanctum']);
+const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'trial', 'merchant', 'boss', 'intro', 'deep_sanctum', 'sunken_temple', 'eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer']);
 const VALID_COOP_TERRAIN_THEMES = new Set(['purple', 'blue', 'green']);
 
 function normalizeThronePortalLayout(v: unknown): 'rim' | 'center' {
@@ -785,6 +880,8 @@ function normalizeCoopMainArenaPhase(v: unknown):
   | 'pre_boss_merchant'
   | 'pick_boss'
   | 'pick_post_boss'
+  | 'pick_sunken_entry'
+  | 'eden_exit'
   | null {
   if (
     v === 'pick_wave2'
@@ -793,6 +890,8 @@ function normalizeCoopMainArenaPhase(v: unknown):
     || v === 'pre_boss_merchant'
     || v === 'pick_boss'
     || v === 'pick_post_boss'
+    || v === 'pick_sunken_entry'
+    || v === 'eden_exit'
   ) {
     return v;
   }
@@ -833,6 +932,45 @@ function normalizeMerchantInventory(v: unknown): MerchantStockItem[] {
   }));
 }
 
+function normalizeDreamLayerInventory(v: unknown): DreamLayerStockItem[] {
+  if (!Array.isArray(v)) return [];
+  return v.filter((entry): entry is DreamLayerStockItem => {
+    if (entry == null || typeof entry !== 'object') return false;
+    const e = entry as DreamLayerStockItem;
+    if (typeof e.id !== 'string' || typeof e.cost !== 'number') return false;
+    return e.kind === 'warding_pendant' || e.kind === 'exodia' || e.kind === 'ring';
+  });
+}
+
+function normalizeDreamLayerPurchaseState(v: unknown): DreamLayerPurchaseState {
+  if (v == null || typeof v !== 'object') {
+    return {
+      healPurchasedThisVisit: false,
+      wardingPurchasedThisVisit: false,
+      exodiaPurchasedThisVisit: false,
+      ringPurchasedThisVisit: false,
+    };
+  }
+  const s = v as DreamLayerPurchaseState;
+  return {
+    healPurchasedThisVisit: !!s.healPurchasedThisVisit,
+    wardingPurchasedThisVisit: !!s.wardingPurchasedThisVisit,
+    exodiaPurchasedThisVisit: !!s.exodiaPurchasedThisVisit,
+    ringPurchasedThisVisit: !!s.ringPurchasedThisVisit,
+  };
+}
+
+function applyLocalDreamLayerPurchaseStatesFromPayload(
+  data: { dreamLayerPurchaseStates?: Record<string, unknown> } | null | undefined,
+  localPlayerId: string | undefined,
+  setDreamLayerPurchaseState: React.Dispatch<React.SetStateAction<DreamLayerPurchaseState>>,
+): void {
+  if (!localPlayerId || !data?.dreamLayerPurchaseStates) return;
+  const localState = data.dreamLayerPurchaseStates[localPlayerId];
+  if (localState == null) return;
+  setDreamLayerPurchaseState(normalizeDreamLayerPurchaseState(localState));
+}
+
 function normalizeMerchantPurchaseState(v: unknown): MerchantPurchaseState {
   if (v == null || typeof v !== 'object') {
     return {
@@ -840,6 +978,9 @@ function normalizeMerchantPurchaseState(v: unknown): MerchantPurchaseState {
       weaponTalentPurchases: 0,
       oxygenPurchases: 0,
       warpdrivePurchases: 0,
+      healPurchasedThisVisit: false,
+      weaponTalentPurchasedThisVisit: false,
+      utilityPurchasedThisVisit: false,
     };
   }
   const s = v as MerchantPurchaseState;
@@ -848,7 +989,21 @@ function normalizeMerchantPurchaseState(v: unknown): MerchantPurchaseState {
     weaponTalentPurchases: Math.max(0, Number(s.weaponTalentPurchases) || 0),
     oxygenPurchases: Math.max(0, Number(s.oxygenPurchases) || 0),
     warpdrivePurchases: Math.max(0, Number(s.warpdrivePurchases) || 0),
+    healPurchasedThisVisit: !!s.healPurchasedThisVisit,
+    weaponTalentPurchasedThisVisit: !!s.weaponTalentPurchasedThisVisit,
+    utilityPurchasedThisVisit: !!s.utilityPurchasedThisVisit,
   };
+}
+
+function applyLocalMerchantPurchaseStatesFromPayload(
+  data: { merchantPurchaseStates?: Record<string, unknown> } | null | undefined,
+  localPlayerId: string | undefined,
+  setMerchantPurchaseState: React.Dispatch<React.SetStateAction<MerchantPurchaseState>>,
+): void {
+  if (!localPlayerId || !data?.merchantPurchaseStates) return;
+  const localState = data.merchantPurchaseStates[localPlayerId];
+  if (localState == null) return;
+  setMerchantPurchaseState(normalizeMerchantPurchaseState(localState));
 }
 
 function normalizeCoopTerrainTheme(v: unknown): CoopTerrainTheme {
@@ -921,12 +1076,30 @@ type CoopSessionSnapshotPayload = {
   coopIntroFountainPhase?: boolean;
   coopIntroFountainUsed?: boolean;
   coopIntroAllyChoiceMade?: boolean;
+  coopSunkenActive?: boolean;
+  coopSunkenRoomIndex?: number;
+  coopSunkenPortalOpen?: boolean;
+  coopSunkenFountainPhase?: boolean;
+  coopSunkenFountainUsed?: boolean;
+  coopSunkenAllyChoiceMade?: boolean;
+  coopSunkenLootOffer?: DreamLayerStockItem[];
+  coopSunkenLootClaimedPlayerIds?: string[];
+  coopSunkenLootPhaseComplete?: boolean;
+  coopSunkenCompleted?: boolean;
   coopAllyKind?: string;
   coopAllyOffer?: string[];
   coopVoidPortalOffered?: boolean;
   coopDeepSanctumActive?: boolean;
   coopDeepSanctumLevel?: number;
   deepSanctumRewardKind?: string;
+  coopEdenFountainUsed?: boolean;
+  coopEdenResumeKind?: string;
+  coopFalseEdenCleared?: boolean;
+  coopDeliriumActive?: boolean;
+  coopDeliriumEventEnded?: boolean;
+  coopDeliriumSuccess?: boolean;
+  coopErebusGateActive?: boolean;
+  deliriumStructure?: DeliriumStructureState | null;
   introGoldReward?: number;
 };
 
@@ -946,6 +1119,8 @@ type CoopSnapshotSetters = {
       | 'pre_boss_merchant'
       | 'pick_boss'
       | 'pick_post_boss'
+      | 'pick_sunken_entry'
+      | 'eden_exit'
       | null
     >
   >;
@@ -970,11 +1145,29 @@ type CoopSnapshotSetters = {
   setCoopIntroFountainPhase: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopIntroFountainUsed: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopIntroAllyChoiceMade: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopSunkenActive: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopSunkenRoomIndex: React.Dispatch<React.SetStateAction<number>>;
+  setCoopSunkenPortalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopSunkenFountainPhase: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopSunkenFountainUsed: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopSunkenAllyChoiceMade: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopSunkenLootOffer: React.Dispatch<React.SetStateAction<DreamLayerStockItem[]>>;
+  setCoopSunkenLootClaimedPlayerIds: React.Dispatch<React.SetStateAction<string[]>>;
+  setCoopSunkenLootPhaseComplete: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopSunkenCompleted: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopAllyKind: React.Dispatch<React.SetStateAction<CoopAllyKind>>;
   setCoopAllyOffer: React.Dispatch<React.SetStateAction<CoopAllyKind[]>>;
   setCoopVoidPortalOffered: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopDeepSanctumLevel: React.Dispatch<React.SetStateAction<number>>;
   setDeepSanctumRewardKind: React.Dispatch<React.SetStateAction<DeepSanctumRewardKind | null>>;
+  setCoopEdenFountainUsed: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopEdenResumeKind: React.Dispatch<React.SetStateAction<CoopRoomKind | null>>;
+  setCoopFalseEdenCleared: React.Dispatch<React.SetStateAction<boolean>>;
+  setDeliriumStructure: React.Dispatch<React.SetStateAction<DeliriumStructureState | null>>;
+  setCoopDeliriumActive: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopDeliriumEventEnded: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopDeliriumSuccess: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopErebusGateActive: React.Dispatch<React.SetStateAction<boolean>>;
 };
 
 function applyCoopCombatArenaActiveFromServer(
@@ -1022,6 +1215,62 @@ function applyIntroSnapshot(
   }
 }
 
+function parseCoopSunkenLootOffer(raw: unknown): DreamLayerStockItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((entry): entry is DreamLayerStockItem => {
+    return entry != null && typeof entry === 'object' && typeof (entry as DreamLayerStockItem).id === 'string';
+  });
+}
+
+function applySunkenSnapshot(
+  data: CoopSessionSnapshotPayload | null | undefined,
+  setters: Pick<
+    CoopSnapshotSetters,
+    | 'setCoopSunkenActive'
+    | 'setCoopSunkenRoomIndex'
+    | 'setCoopSunkenPortalOpen'
+    | 'setCoopSunkenFountainPhase'
+    | 'setCoopSunkenFountainUsed'
+    | 'setCoopSunkenAllyChoiceMade'
+    | 'setCoopSunkenLootOffer'
+    | 'setCoopSunkenLootClaimedPlayerIds'
+    | 'setCoopSunkenLootPhaseComplete'
+    | 'setCoopSunkenCompleted'
+    | 'setCoopAllyKind'
+    | 'setCoopAllyOffer'
+  >,
+) {
+  if (!data) return;
+  if ('coopSunkenActive' in data) setters.setCoopSunkenActive(!!data.coopSunkenActive);
+  if ('coopSunkenRoomIndex' in data) {
+    setters.setCoopSunkenRoomIndex(Math.max(0, Number(data.coopSunkenRoomIndex) || 0));
+  }
+  if ('coopSunkenPortalOpen' in data) setters.setCoopSunkenPortalOpen(!!data.coopSunkenPortalOpen);
+  if ('coopSunkenFountainPhase' in data) setters.setCoopSunkenFountainPhase(!!data.coopSunkenFountainPhase);
+  if ('coopSunkenFountainUsed' in data) setters.setCoopSunkenFountainUsed(!!data.coopSunkenFountainUsed);
+  if ('coopSunkenAllyChoiceMade' in data) setters.setCoopSunkenAllyChoiceMade(!!data.coopSunkenAllyChoiceMade);
+  if ('coopSunkenLootOffer' in data) {
+    setters.setCoopSunkenLootOffer(parseCoopSunkenLootOffer(data.coopSunkenLootOffer));
+  }
+  if ('coopSunkenLootClaimedPlayerIds' in data) {
+    setters.setCoopSunkenLootClaimedPlayerIds(
+      Array.isArray(data.coopSunkenLootClaimedPlayerIds)
+        ? [...data.coopSunkenLootClaimedPlayerIds]
+        : [],
+    );
+  }
+  if ('coopSunkenLootPhaseComplete' in data) {
+    setters.setCoopSunkenLootPhaseComplete(!!data.coopSunkenLootPhaseComplete);
+  }
+  if ('coopSunkenCompleted' in data) setters.setCoopSunkenCompleted(!!data.coopSunkenCompleted);
+  if ('coopAllyKind' in data) {
+    setters.setCoopAllyKind(parseCoopAllyKind(data.coopAllyKind));
+  }
+  if ('coopAllyOffer' in data) {
+    setters.setCoopAllyOffer(parseCoopAllyOffer(data.coopAllyOffer));
+  }
+}
+
 function applyDeepSanctumSnapshot(
   data: CoopSessionSnapshotPayload | null | undefined,
   setters: Pick<
@@ -1041,6 +1290,65 @@ function applyDeepSanctumSnapshot(
     );
   } else if ('coopDeepSanctumActive' in data && !data.coopDeepSanctumActive) {
     setters.setDeepSanctumRewardKind(null);
+  }
+}
+
+function normalizeDeliriumStructure(value: unknown): DeliriumStructureState | null {
+  if (!value || typeof value !== 'object') return null;
+  const s = value as DeliriumStructureState;
+  if (typeof s.hp !== 'number' || typeof s.maxHp !== 'number') return null;
+  if (!s.position || typeof s.position.x !== 'number' || typeof s.position.z !== 'number') return null;
+  return {
+    hp: s.hp,
+    maxHp: s.maxHp,
+    position: { x: s.position.x, z: s.position.z },
+    destroyed: !!s.destroyed,
+  };
+}
+
+function applyEdenSnapshot(
+  data: CoopSessionSnapshotPayload | null | undefined,
+  setters: Pick<
+    CoopSnapshotSetters,
+    | 'setCoopEdenFountainUsed'
+    | 'setCoopEdenResumeKind'
+    | 'setCoopFalseEdenCleared'
+    | 'setDeliriumStructure'
+    | 'setCoopDeliriumActive'
+    | 'setCoopDeliriumEventEnded'
+    | 'setCoopDeliriumSuccess'
+    | 'setCoopErebusGateActive'
+  >,
+) {
+  if (!data) return;
+  if ('coopEdenFountainUsed' in data) setters.setCoopEdenFountainUsed(!!data.coopEdenFountainUsed);
+  if ('coopEdenResumeKind' in data) {
+    setters.setCoopEdenResumeKind(normalizeCoopRoomKind(data.coopEdenResumeKind));
+  } else if ('coopCurrentRoomKind' in data) {
+    const kind = normalizeCoopRoomKind(data.coopCurrentRoomKind);
+    if (kind !== 'eden' && kind !== 'false_eden' && kind !== 'delirium_gate' && kind !== 'erebus_gate' && kind !== 'dream_layer') {
+      setters.setCoopEdenFountainUsed(false);
+      setters.setCoopEdenResumeKind(null);
+    }
+  }
+  if ('coopFalseEdenCleared' in data) setters.setCoopFalseEdenCleared(!!data.coopFalseEdenCleared);
+  if ('coopDeliriumActive' in data) setters.setCoopDeliriumActive(!!data.coopDeliriumActive);
+  if ('coopDeliriumEventEnded' in data) setters.setCoopDeliriumEventEnded(!!data.coopDeliriumEventEnded);
+  if ('coopDeliriumSuccess' in data) setters.setCoopDeliriumSuccess(!!data.coopDeliriumSuccess);
+  if ('coopErebusGateActive' in data) setters.setCoopErebusGateActive(!!data.coopErebusGateActive);
+  if ('deliriumStructure' in data) {
+    setters.setDeliriumStructure(normalizeDeliriumStructure(data.deliriumStructure));
+  } else if ('coopCurrentRoomKind' in data) {
+    const kind = normalizeCoopRoomKind(data.coopCurrentRoomKind);
+    if (kind !== 'delirium_gate') {
+      setters.setDeliriumStructure(null);
+      setters.setCoopDeliriumActive(false);
+      setters.setCoopDeliriumEventEnded(false);
+      setters.setCoopDeliriumSuccess(false);
+    }
+    if (kind !== 'erebus_gate') {
+      setters.setCoopErebusGateActive(false);
+    }
   }
 }
 
@@ -1126,6 +1434,9 @@ function applyCoopSessionSnapshot(
       weaponTalentPurchases: 0,
       oxygenPurchases: 0,
       warpdrivePurchases: 0,
+      healPurchasedThisVisit: false,
+      weaponTalentPurchasedThisVisit: false,
+      utilityPurchasedThisVisit: false,
     });
   }
   if (data?.mushroomState?.health && Array.isArray(data.mushroomState.health)) {
@@ -1135,7 +1446,9 @@ function applyCoopSessionSnapshot(
     });
   }
   applyIntroSnapshot(data, setters);
+  applySunkenSnapshot(data, setters);
   applyDeepSanctumSnapshot(data, setters);
+  applyEdenSnapshot(data, setters);
 }
 
 export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
@@ -1221,6 +1534,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     | 'pre_boss_merchant'
     | 'pick_boss'
     | 'pick_post_boss'
+    | 'pick_sunken_entry'
+    | 'eden_exit'
     | null
   >(null);
   const [coopCurrentRoomKind, setCoopCurrentRoomKind] = useState<CoopRoomKind | null>(null);
@@ -1246,6 +1561,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopCombatArenaEnterSeq, setCoopCombatArenaEnterSeq] = useState(0);
   const [coopMainArenaIntermissionSeq, setCoopMainArenaIntermissionSeq] = useState(0);
   const [coopIntroIntermissionSeq, setCoopIntroIntermissionSeq] = useState(0);
+  const [coopSunkenIntermissionSeq, setCoopSunkenIntermissionSeq] = useState(0);
   const [coopIntroPending, setCoopIntroPending] = useState(false);
   const [coopIntroActive, setCoopIntroActive] = useState(false);
   const [coopIntroRoomIndex, setCoopIntroRoomIndex] = useState(0);
@@ -1253,11 +1569,30 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopIntroFountainPhase, setCoopIntroFountainPhase] = useState(false);
   const [coopIntroFountainUsed, setCoopIntroFountainUsed] = useState(false);
   const [coopIntroAllyChoiceMade, setCoopIntroAllyChoiceMade] = useState(false);
+  const [coopSunkenActive, setCoopSunkenActive] = useState(false);
+  const [coopSunkenRoomIndex, setCoopSunkenRoomIndex] = useState(0);
+  const [coopSunkenPortalOpen, setCoopSunkenPortalOpen] = useState(false);
+  const [coopSunkenFountainPhase, setCoopSunkenFountainPhase] = useState(false);
+  const [coopSunkenFountainUsed, setCoopSunkenFountainUsed] = useState(false);
+  const [coopSunkenAllyChoiceMade, setCoopSunkenAllyChoiceMade] = useState(false);
+  const [coopSunkenLootOffer, setCoopSunkenLootOffer] = useState<DreamLayerStockItem[]>([]);
+  const [coopSunkenLootClaimedPlayerIds, setCoopSunkenLootClaimedPlayerIds] = useState<string[]>([]);
+  const [coopSunkenLootPhaseComplete, setCoopSunkenLootPhaseComplete] = useState(false);
+  const [coopSunkenCompleted, setCoopSunkenCompleted] = useState(false);
   const [coopAllyKind, setCoopAllyKind] = useState<CoopAllyKind>('knight');
   const [coopAllyOffer, setCoopAllyOffer] = useState<CoopAllyKind[]>([]);
   const [coopVoidPortalOffered, setCoopVoidPortalOffered] = useState(false);
   const [coopDeepSanctumLevel, setCoopDeepSanctumLevel] = useState(0);
   const [deepSanctumRewardKind, setDeepSanctumRewardKind] = useState<DeepSanctumRewardKind | null>(null);
+  const [coopEdenFountainUsed, setCoopEdenFountainUsed] = useState(false);
+  const [coopEdenResumeKind, setCoopEdenResumeKind] = useState<CoopRoomKind | null>(null);
+  const [coopEdenIntermissionSeq, setCoopEdenIntermissionSeq] = useState(0);
+  const [coopFalseEdenCleared, setCoopFalseEdenCleared] = useState(false);
+  const [deliriumStructure, setDeliriumStructure] = useState<DeliriumStructureState | null>(null);
+  const [coopDeliriumActive, setCoopDeliriumActive] = useState(false);
+  const [coopDeliriumEventEnded, setCoopDeliriumEventEnded] = useState(false);
+  const [coopDeliriumSuccess, setCoopDeliriumSuccess] = useState(false);
+  const [coopErebusGateActive, setCoopErebusGateActive] = useState(false);
   const [coopDeepSanctumIntermissionSeq, setCoopDeepSanctumIntermissionSeq] = useState(0);
   const [coopBossClearedBgmSeq, setCoopBossClearedBgmSeq] = useState(0);
   const [coopClearedRoomColor, setCoopClearedRoomColor] = useState<string | null>(null);
@@ -1296,6 +1631,16 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     weaponTalentPurchases: 0,
     oxygenPurchases: 0,
     warpdrivePurchases: 0,
+    healPurchasedThisVisit: false,
+    weaponTalentPurchasedThisVisit: false,
+    utilityPurchasedThisVisit: false,
+  });
+  const [dreamLayerInventory, setDreamLayerInventory] = useState<DreamLayerStockItem[]>([]);
+  const [dreamLayerPurchaseState, setDreamLayerPurchaseState] = useState<DreamLayerPurchaseState>({
+    healPurchasedThisVisit: false,
+    wardingPurchasedThisVisit: false,
+    exodiaPurchasedThisVisit: false,
+    ringPurchasedThisVisit: false,
   });
   const merchantPurchaseSuccessHandlersRef = useRef<
     Set<(payload: MerchantPurchaseSuccessPayload) => void>
@@ -1308,6 +1653,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   >(new Set());
   const playerGoldChangedHandlersRef = useRef<
     Set<(payload: { playerId: string; gold: number }) => void>
+  >(new Set());
+  const playerFlowChangedHandlersRef = useRef<
+    Set<(payload: { playerId: string; flow: number }) => void>
+  >(new Set());
+  const playerFateChangedHandlersRef = useRef<
+    Set<(payload: { playerId: string; fate: number }) => void>
   >(new Set());
   const bossDefeatedHandlersRef = useRef<
     Set<(payload: BossDefeatedPayload) => void>
@@ -1434,6 +1785,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setGoldDrops(new Map());
       setInventory([]);
       setMerchantInventory([]);
+      setDreamLayerInventory([]);
+      setDreamLayerPurchaseState({
+        healPurchasedThisVisit: false,
+        wardingPurchasedThisVisit: false,
+        exodiaPurchasedThisVisit: false,
+        ringPurchasedThisVisit: false,
+      });
 
       // Clear heartbeat
       if (heartbeatInterval.current) {
@@ -1552,6 +1910,22 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopDeepSanctumLevel,
         setDeepSanctumRewardKind,
       });
+      applyEdenSnapshot(data, {
+        setCoopEdenFountainUsed,
+        setCoopEdenResumeKind,
+        setCoopFalseEdenCleared,
+        setDeliriumStructure,
+        setCoopDeliriumActive,
+        setCoopDeliriumEventEnded,
+        setCoopDeliriumSuccess,
+        setCoopErebusGateActive,
+      });
+    });
+
+    addEventHandler('delirium-structure-updated', (data: any) => {
+      if ('deliriumStructure' in data) {
+        setDeliriumStructure(normalizeDeliriumStructure(data.deliriumStructure));
+      }
     });
 
     addEventHandler('camps-initialized', (data: { campTypes?: string[]; coopTerrainTheme?: unknown; coopCurrentRoomKind?: string }) => {
@@ -1750,6 +2124,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           data.damageType === 'allied_demon' ||
           data.damageType === 'allied_enchantress' ||
           data.damageType === 'mushroom_eruption' ||
+          data.damageType === 'prime_materia' ||
+          data.damageType === 'incineration' ||
           (data.damageType === 'crossentropy' && data.crossentropyMeteorDamage === true) ||
           (data.damageType === 'cloudkill' && data.cloudkillDamage === true)) &&
         typeof data.damage === 'number' &&
@@ -1782,6 +2158,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
                   ? 'allied_enchantress'
                   : data.damageType === 'mushroom_eruption'
                   ? 'mushroom_eruption'
+                  : data.damageType === 'prime_materia'
+                  ? 'prime_materia'
+                  : data.damageType === 'incineration'
+                  ? 'incineration'
                   : 'ignite';
           mgr.addDamageNumber(data.damage, !!data.isCritical, pos, dt);
         }
@@ -1861,11 +2241,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       duration: number;
       timestamp: number;
     }) => {
-      if (data.effectType !== 'stun' || !data.enemyId) return;
+      if (!data.enemyId) return;
       const ts = typeof data.timestamp === 'number' ? data.timestamp : Date.now();
       const duration = typeof data.duration === 'number' ? data.duration : 0;
       if (duration <= 0) return;
-      patchEnemyRef(enemiesRef, data.enemyId, { stunnedUntilMs: ts + duration });
+      if (data.effectType === 'stun') {
+        patchEnemyRef(enemiesRef, data.enemyId, { stunnedUntilMs: ts + duration });
+      } else if (data.effectType === 'slow') {
+        patchEnemyRef(enemiesRef, data.enemyId, { slowedUntilMs: ts + duration });
+      }
     });
 
     addEventHandler('allied-knight-orbs-updated', (data: {
@@ -1972,19 +2356,36 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
             setStatPointData(prev => StatSystem.grantItemStat(prev, data.item.stat!));
           }
         }
-        setInventory(prev => [
-          ...prev,
-          {
-            id: data.itemId,
-            type: data.item.type,
-            stat: data.item.stat,
-            label: data.item.label,
-            category: data.item.category,
-            statBonus: data.item.statBonus,
-            rarity: data.item.rarity,
-            pickedUpAt: Date.now()
+        setInventory((prev) => {
+          if (isUniqueDreamLayerItem(data.item.type) && prev.some((i) => i.type === data.item.type)) {
+            return prev;
           }
-        ]);
+          const next = [
+            ...prev,
+            {
+              id: data.itemId,
+              type: data.item.type,
+              stat: data.item.stat,
+              label: data.item.label,
+              category: data.item.category,
+              statBonus: data.item.statBonus,
+              rarity: data.item.rarity,
+              bannedEnemyType: data.item.bannedEnemyType,
+              pickedUpAt: Date.now(),
+            },
+          ];
+          const bossDrops = next.filter((item) => item.category === 'boss_drop');
+          if (bossDrops.length <= 8) return next;
+
+          const sorted = [...bossDrops].sort((a, b) => {
+            const rankA = a.rarity && isItemRarity(a.rarity) ? ITEM_RARITY_RANK[a.rarity] : -1;
+            const rankB = b.rarity && isItemRarity(b.rarity) ? ITEM_RARITY_RANK[b.rarity] : -1;
+            if (rankA !== rankB) return rankA - rankB;
+            return (a.pickedUpAt ?? 0) - (b.pickedUpAt ?? 0);
+          });
+          const discardIds = new Set(sorted.slice(0, bossDrops.length - 8).map((item) => item.id));
+          return next.filter((item) => item.category !== 'boss_drop' || !discardIds.has(item.id));
+        });
         if (data.item.category === 'boss_drop') {
           bossItemPickupHandlersRef.current.forEach((handler) => handler({
             label: data.item.label ?? 'Artifact',
@@ -2035,8 +2436,45 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       playerGoldChangedHandlersRef.current.forEach((handler) => handler(data));
     });
 
+    addEventHandler('player-flow-changed', (data: { playerId: string; flow: number }) => {
+      if (!data?.playerId || typeof data.flow !== 'number') return;
+      patchPlayerRef(playersRef, data.playerId, { flow: data.flow });
+      playerFlowChangedHandlersRef.current.forEach((handler) => handler(data));
+    });
+
+    addEventHandler('player-fate-changed', (data: { playerId: string; fate: number }) => {
+      if (!data?.playerId || typeof data.fate !== 'number') return;
+      patchPlayerRef(playersRef, data.playerId, { fate: data.fate });
+      playerFateChangedHandlersRef.current.forEach((handler) => handler(data));
+    });
+
     addEventHandler('merchant-inventory-updated', (data: { inventory?: unknown }) => {
       setMerchantInventory(normalizeMerchantInventory(data?.inventory));
+    });
+
+    addEventHandler('dream-layer-inventory-updated', (data: { inventory?: unknown }) => {
+      setDreamLayerInventory(normalizeDreamLayerInventory(data?.inventory));
+    });
+
+    addEventHandler('dream-layer-purchase-succeeded', (data: { dreamLayerPurchaseState?: unknown }) => {
+      if (data?.dreamLayerPurchaseState) {
+        setDreamLayerPurchaseState(normalizeDreamLayerPurchaseState(data.dreamLayerPurchaseState));
+      }
+    });
+
+    addEventHandler('dream-layer-purchase-failed', (data: { reason?: string }) => {
+      console.warn('Dream Layer purchase failed:', data?.reason || 'unknown');
+    });
+
+    addEventHandler('persephone-triggered', (data: { playerId?: string; newHealth?: number; maxHealth?: number }) => {
+      if (!newSocket.id || data?.playerId !== newSocket.id) return;
+      setInventory((prev) => prev.filter((item) => item.type !== PERSEPHONE));
+      if (typeof data.newHealth === 'number') {
+        patchPlayerRef(playersRef, newSocket.id, {
+          health: data.newHealth,
+          maxHealth: data.maxHealth,
+        });
+      }
     });
 
     addEventHandler('merchant-purchase-failed', (data: { reason?: string }) => {
@@ -2085,11 +2523,29 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           setCoopIntroFountainPhase,
           setCoopIntroFountainUsed,
           setCoopIntroAllyChoiceMade,
+          setCoopSunkenActive,
+          setCoopSunkenRoomIndex,
+          setCoopSunkenPortalOpen,
+          setCoopSunkenFountainPhase,
+          setCoopSunkenFountainUsed,
+          setCoopSunkenAllyChoiceMade,
+          setCoopSunkenLootOffer,
+          setCoopSunkenLootClaimedPlayerIds,
+          setCoopSunkenLootPhaseComplete,
+          setCoopSunkenCompleted,
           setCoopAllyKind,
           setCoopAllyOffer,
           setCoopVoidPortalOffered,
           setCoopDeepSanctumLevel,
           setDeepSanctumRewardKind,
+          setCoopEdenFountainUsed,
+          setCoopEdenResumeKind,
+          setCoopFalseEdenCleared,
+          setDeliriumStructure,
+          setCoopDeliriumActive,
+          setCoopDeliriumEventEnded,
+          setCoopDeliriumSuccess,
+          setCoopErebusGateActive,
         },
         { resetVisitIndices: true, resetMerchantPurchaseState: true },
       );
@@ -2125,11 +2581,29 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           setCoopIntroFountainPhase,
           setCoopIntroFountainUsed,
           setCoopIntroAllyChoiceMade,
+          setCoopSunkenActive,
+          setCoopSunkenRoomIndex,
+          setCoopSunkenPortalOpen,
+          setCoopSunkenFountainPhase,
+          setCoopSunkenFountainUsed,
+          setCoopSunkenAllyChoiceMade,
+          setCoopSunkenLootOffer,
+          setCoopSunkenLootClaimedPlayerIds,
+          setCoopSunkenLootPhaseComplete,
+          setCoopSunkenCompleted,
           setCoopAllyKind,
           setCoopAllyOffer,
           setCoopVoidPortalOffered,
           setCoopDeepSanctumLevel,
           setDeepSanctumRewardKind,
+          setCoopEdenFountainUsed,
+          setCoopEdenResumeKind,
+          setCoopFalseEdenCleared,
+          setDeliriumStructure,
+          setCoopDeliriumActive,
+          setCoopDeliriumEventEnded,
+          setCoopDeliriumSuccess,
+          setCoopErebusGateActive,
         },
         { resetVisitIndices: false, resetMerchantPurchaseState: false },
       );
@@ -2196,6 +2670,73 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       }
     });
 
+    addEventHandler('coop-sunken-intermission', (data: any) => {
+      cancelPendingEnemyRemovals();
+      setCoopSunkenIntermissionSeq((s) => s + 1);
+      if (data && 'combatArenaActive' in data) {
+        setCombatArenaActive(!!data.combatArenaActive);
+      }
+      if (Array.isArray(data?.thronePortalOffer)) {
+        setThronePortalOffer([...data.thronePortalOffer]);
+      }
+      setCoopMainArenaPortalPhase(null);
+      if (data && 'coopCurrentRoomKind' in data) {
+        setCoopCurrentRoomKind(normalizeCoopRoomKind(data.coopCurrentRoomKind));
+      }
+      if (data && 'coopClearedRoomKind' in data) {
+        setCoopClearedRoomKind(normalizeCoopRoomKind(data.coopClearedRoomKind));
+      }
+      applySunkenSnapshot(data, {
+        setCoopSunkenActive,
+        setCoopSunkenRoomIndex,
+        setCoopSunkenPortalOpen,
+        setCoopSunkenFountainPhase,
+        setCoopSunkenFountainUsed,
+        setCoopSunkenAllyChoiceMade,
+        setCoopSunkenLootOffer,
+        setCoopSunkenLootClaimedPlayerIds,
+        setCoopSunkenLootPhaseComplete,
+        setCoopSunkenCompleted,
+        setCoopAllyKind,
+        setCoopAllyOffer,
+      });
+      if (data?.players && Array.isArray(data.players)) {
+        setPlayers((prev) => {
+          const next = new Map(prev);
+          for (const p of data.players as Player[]) {
+            const old = next.get(p.id);
+            next.set(p.id, old ? { ...old, ...p } : p);
+          }
+          return next;
+        });
+      }
+      if (data?.enemies && Array.isArray(data.enemies)) {
+        setEnemies(() => {
+          const m = new Map<string, Enemy>();
+          for (const e of data.enemies as Enemy[]) {
+            m.set(e.id, { ...e, staggerBuildup: e.staggerBuildup ?? 0 });
+          }
+          return m;
+        });
+      }
+    });
+
+    addEventHandler('coop-sunken-loot-chosen', (data: {
+      coopSunkenLootClaimedPlayerIds?: string[];
+      coopSunkenLootPhaseComplete?: boolean;
+    }) => {
+      if (Array.isArray(data?.coopSunkenLootClaimedPlayerIds)) {
+        setCoopSunkenLootClaimedPlayerIds([...data.coopSunkenLootClaimedPlayerIds]);
+      }
+      if ('coopSunkenLootPhaseComplete' in (data ?? {})) {
+        setCoopSunkenLootPhaseComplete(!!data.coopSunkenLootPhaseComplete);
+      }
+    });
+
+    addEventHandler('coop-sunken-loot-failed', () => {
+      (window as any).audioSystem?.playUIInterface4Sound?.();
+    });
+
     addEventHandler('coop-deep-sanctum-intermission', (data: any) => {
       cancelPendingEnemyRemovals();
       setCoopDeepSanctumIntermissionSeq((s) => s + 1);
@@ -2237,6 +2778,31 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       }
     });
 
+    addEventHandler('coop-eden-intermission', (data: any) => {
+      cancelPendingEnemyRemovals();
+      setCoopEdenIntermissionSeq((s) => s + 1);
+      if (data && 'combatArenaActive' in data) {
+        setCombatArenaActive(!!data.combatArenaActive);
+      }
+      if (Array.isArray(data?.thronePortalOffer)) {
+        setThronePortalOffer([...data.thronePortalOffer]);
+      }
+      setCoopMainArenaPortalPhase(normalizeCoopMainArenaPhase(data?.coopMainArenaPortalPhase));
+      if (data && 'coopCurrentRoomKind' in data) {
+        setCoopCurrentRoomKind(normalizeCoopRoomKind(data.coopCurrentRoomKind));
+      }
+      applyEdenSnapshot(data, {
+        setCoopEdenFountainUsed,
+        setCoopEdenResumeKind,
+        setCoopFalseEdenCleared,
+        setDeliriumStructure,
+        setCoopDeliriumActive,
+        setCoopDeliriumEventEnded,
+        setCoopDeliriumSuccess,
+        setCoopErebusGateActive,
+      });
+    });
+
     addEventHandler('coop-deep-sanctum-reward-claimed', (data: DeepSanctumRewardClaimedPayload) => {
       setDeepSanctumRewardKind(null);
       deepSanctumRewardClaimedHandlersRef.current.forEach((handler) => handler(data));
@@ -2274,6 +2840,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopClearedRoomKind(normalizeCoopRoomKind(data?.coopClearedRoomColor));
       }
       setMerchantInventory(normalizeMerchantInventory(data?.merchantInventory));
+      applyLocalMerchantPurchaseStatesFromPayload(data, socket?.id, setMerchantPurchaseState);
+      setDreamLayerInventory(normalizeDreamLayerInventory(data?.dreamLayerInventory));
+      applyLocalDreamLayerPurchaseStatesFromPayload(data, socket?.id, setDreamLayerPurchaseState);
       if (data?.players && Array.isArray(data.players)) {
         setPlayers((prev) => {
           const next = new Map(prev);
@@ -2306,9 +2875,21 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       if (!normalizeCoopBossThroneArena(data?.coopBossThroneArena)) {
         setCoopClearedRoomColor(null);
       }
-      setThronePortalOffer([]);
-      setThronePortalLayout('rim');
-      setCoopMainArenaPortalPhase(null);
+      if (Array.isArray(data?.thronePortalOffer)) {
+        setThronePortalOffer([...data.thronePortalOffer]);
+      } else {
+        setThronePortalOffer([]);
+      }
+      if (data && 'thronePortalLayout' in data) {
+        setThronePortalLayout(normalizeThronePortalLayout(data.thronePortalLayout));
+      } else {
+        setThronePortalLayout('rim');
+      }
+      if (data && 'coopMainArenaPortalPhase' in data) {
+        setCoopMainArenaPortalPhase(normalizeCoopMainArenaPhase(data.coopMainArenaPortalPhase));
+      } else {
+        setCoopMainArenaPortalPhase(null);
+      }
       if (data && 'coopBossThroneArena' in data) {
         setCoopBossThroneArena(normalizeCoopBossThroneArena(data.coopBossThroneArena));
       } else {
@@ -2333,10 +2914,34 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopAllyKind,
         setCoopAllyOffer,
       });
+      applySunkenSnapshot(data, {
+        setCoopSunkenActive,
+        setCoopSunkenRoomIndex,
+        setCoopSunkenPortalOpen,
+        setCoopSunkenFountainPhase,
+        setCoopSunkenFountainUsed,
+        setCoopSunkenAllyChoiceMade,
+        setCoopSunkenLootOffer,
+        setCoopSunkenLootClaimedPlayerIds,
+        setCoopSunkenLootPhaseComplete,
+        setCoopSunkenCompleted,
+        setCoopAllyKind,
+        setCoopAllyOffer,
+      });
       applyDeepSanctumSnapshot(data, {
         setCoopVoidPortalOffered,
         setCoopDeepSanctumLevel,
         setDeepSanctumRewardKind,
+      });
+      applyEdenSnapshot(data, {
+        setCoopEdenFountainUsed,
+        setCoopEdenResumeKind,
+        setCoopFalseEdenCleared,
+        setDeliriumStructure,
+        setCoopDeliriumActive,
+        setCoopDeliriumEventEnded,
+        setCoopDeliriumSuccess,
+        setCoopErebusGateActive,
       });
       if (normalizeCoopRoomKind(data?.coopCurrentRoomKind) === 'deep_sanctum') {
         setCoopVoidPortalOffered(false);
@@ -2345,6 +2950,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopColoredRoomVisitIndex(normalizeCoopColoredRoomVisitIndex(data?.coopColoredRoomVisitIndex));
       setCoopBossRoomVisitIndex(normalizeCoopBossRoomVisitIndex(data?.coopBossRoomVisitIndex));
       setMerchantInventory(normalizeMerchantInventory(data?.merchantInventory));
+      applyLocalMerchantPurchaseStatesFromPayload(data, socket?.id, setMerchantPurchaseState);
+      setDreamLayerInventory(normalizeDreamLayerInventory(data?.dreamLayerInventory));
+      applyLocalDreamLayerPurchaseStatesFromPayload(data, socket?.id, setDreamLayerPurchaseState);
       if (data?.mushroomState?.health && Array.isArray(data.mushroomState.health)) {
         setMushroomState({
           health: [...data.mushroomState.health],
@@ -2565,6 +3173,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setGoldDrops(new Map());
       setInventory([]);
       setMerchantInventory([]);
+      setDreamLayerInventory([]);
+      setDreamLayerPurchaseState({
+        healPurchasedThisVisit: false,
+        wardingPurchasedThisVisit: false,
+        exodiaPurchasedThisVisit: false,
+        ringPurchasedThisVisit: false,
+      });
 
       // Clear heartbeat
       if (heartbeatInterval.current) {
@@ -2663,6 +3278,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setGoldDrops(new Map());
     setInventory([]);
     setMerchantInventory([]);
+    setDreamLayerInventory([]);
+    setDreamLayerPurchaseState({
+      healPurchasedThisVisit: false,
+      wardingPurchasedThisVisit: false,
+      exodiaPurchasedThisVisit: false,
+      ringPurchasedThisVisit: false,
+    });
     setSelectedWeaponsState({ primary: WeaponType.NONE, secondary: WeaponType.NONE });
     setSelectedArchetypeState(ARCHETYPE_ROGUE);
     setAbilityLoadoutState(getDefaultLoadout());
@@ -2709,6 +3331,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const chooseCoopAlly = useCallback((allyKind: CoopAllyKind) => {
     if (socket && currentRoomId) {
       socket.emit('coop-choose-ally', { roomId: currentRoomId, allyKind });
+    }
+  }, [socket, currentRoomId]);
+
+  const chooseSunkenTempleLoot = useCallback((stockId: string) => {
+    if (socket && currentRoomId) {
+      socket.emit('coop-choose-sunken-loot', { roomId: currentRoomId, stockId });
     }
   }, [socket, currentRoomId]);
 
@@ -2970,13 +3598,19 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     [socket, currentRoomId],
   );
 
-  const applyStatusEffect = useCallback((enemyId: string, effectType: string, duration: number) => {
+  const applyStatusEffect = useCallback((
+    enemyId: string,
+    effectType: string,
+    duration: number,
+    options?: { source?: 'titans_grip' },
+  ) => {
     if (socket && currentRoomId) {
       socket.emit('apply-status-effect', {
         roomId: currentRoomId,
         enemyId,
         effectType,
-        duration
+        duration,
+        ...(options?.source ? { source: options.source } : {}),
       });
     }
   }, [socket, currentRoomId]);
@@ -3149,6 +3783,26 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
+  const updatePlayerFlow = useCallback((playerId: string, flow: number) => {
+    if (socket && currentRoomId) {
+      socket.emit('player-flow-changed', {
+        roomId: currentRoomId,
+        playerId,
+        flow,
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const updatePlayerFate = useCallback((playerId: string, fate: number) => {
+    if (socket && currentRoomId) {
+      socket.emit('player-fate-changed', {
+        roomId: currentRoomId,
+        playerId,
+        fate,
+      });
+    }
+  }, [socket, currentRoomId]);
+
   const updatePlayerShield = useCallback((playerId: string, shield: number, maxShield?: number) => {
     if (socket && currentRoomId) {
       socket.emit('player-shield-changed', {
@@ -3234,6 +3888,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         agility: effectiveStats.agility,
         strength: effectiveStats.strength,
         stamina: effectiveStats.stamina,
+        intellect: effectiveIntellect,
       }),
     });
 
@@ -3359,6 +4014,21 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
   }, [socket, currentRoomId]);
 
+  const purchaseDreamLayerItem = useCallback((stockId: string) => {
+    if (!socket || !currentRoomId) return;
+    socket.emit('coop-dream-layer-buy-item', {
+      roomId: currentRoomId,
+      stockId,
+    });
+  }, [socket, currentRoomId]);
+
+  const purchaseDreamLayerHeal = useCallback(() => {
+    if (!socket || !currentRoomId) return;
+    socket.emit('coop-dream-layer-buy-heal', {
+      roomId: currentRoomId,
+    });
+  }, [socket, currentRoomId]);
+
   const registerMerchantPurchaseSuccessHandler = useCallback(
     (handler: (payload: MerchantPurchaseSuccessPayload) => void) => {
       merchantPurchaseSuccessHandlersRef.current.add(handler);
@@ -3394,6 +4064,26 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       playerGoldChangedHandlersRef.current.add(handler);
       return () => {
         playerGoldChangedHandlersRef.current.delete(handler);
+      };
+    },
+    [],
+  );
+
+  const registerPlayerFlowChangedHandler = useCallback(
+    (handler: (payload: { playerId: string; flow: number }) => void) => {
+      playerFlowChangedHandlersRef.current.add(handler);
+      return () => {
+        playerFlowChangedHandlersRef.current.delete(handler);
+      };
+    },
+    [],
+  );
+
+  const registerPlayerFateChangedHandler = useCallback(
+    (handler: (payload: { playerId: string; fate: number }) => void) => {
+      playerFateChangedHandlersRef.current.add(handler);
+      return () => {
+        playerFateChangedHandlersRef.current.delete(handler);
       };
     },
     [],
@@ -3507,6 +4197,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     coopCombatArenaEnterSeq,
     coopMainArenaIntermissionSeq,
     coopIntroIntermissionSeq,
+    coopSunkenIntermissionSeq,
     coopIntroPending,
     coopIntroActive,
     coopIntroRoomIndex,
@@ -3514,12 +4205,31 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     coopIntroFountainPhase,
     coopIntroFountainUsed,
     coopIntroAllyChoiceMade,
+    coopSunkenActive,
+    coopSunkenRoomIndex,
+    coopSunkenPortalOpen,
+    coopSunkenFountainPhase,
+    coopSunkenFountainUsed,
+    coopSunkenAllyChoiceMade,
+    coopSunkenLootOffer,
+    coopSunkenLootClaimedPlayerIds,
+    coopSunkenLootPhaseComplete,
+    coopSunkenCompleted,
     coopAllyKind,
     coopAllyOffer,
     coopVoidPortalOffered,
     coopDeepSanctumLevel,
     deepSanctumRewardKind,
     coopDeepSanctumIntermissionSeq,
+    coopEdenFountainUsed,
+    coopEdenResumeKind,
+    coopEdenIntermissionSeq,
+    coopFalseEdenCleared,
+    deliriumStructure,
+    coopDeliriumActive,
+    coopDeliriumEventEnded,
+    coopDeliriumSuccess,
+    coopErebusGateActive,
     coopBossClearedBgmSeq,
     coopClearedRoomColor,
     clearCoopClearedRoomColor,
@@ -3542,6 +4252,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     enterCombatArena,
     useCoopFountain,
     chooseCoopAlly,
+    chooseSunkenTempleLoot,
     claimPreBossReward,
     claimDeepSanctumReward,
     finishPreBossMerchant,
@@ -3572,6 +4283,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     updatePlayerLevel,
     updatePlayerEssence,
     updatePlayerGold,
+    updatePlayerFlow,
+    updatePlayerFate,
     updatePlayerShield,
     updatePlayerEnergy,
     selectedWeapons,
@@ -3593,11 +4306,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     purchaseItem,
     purchaseMerchantItem,
     purchaseMerchantHeal,
+    purchaseDreamLayerItem,
+    purchaseDreamLayerHeal,
     merchantPurchaseState,
+    dreamLayerInventory,
+    dreamLayerPurchaseState,
     registerMerchantPurchaseSuccessHandler,
     registerDeepSanctumRewardClaimedHandler,
     registerMerchantNpcGreetHandler,
     registerPlayerGoldChangedHandler,
+    registerPlayerFlowChangedHandler,
+    registerPlayerFateChangedHandler,
     registerBossDefeatedHandler,
     registerBossItemPickupHandler,
     registerRunePickupHandler,
@@ -3632,6 +4351,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       enterCombatArena,
       useCoopFountain,
       chooseCoopAlly,
+      chooseSunkenTempleLoot,
       claimPreBossReward,
       claimDeepSanctumReward,
       finishPreBossMerchant,
@@ -3661,6 +4381,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       updatePlayerLevel,
       updatePlayerEssence,
       updatePlayerGold,
+      updatePlayerFlow,
+      updatePlayerFate,
       updatePlayerShield,
       updatePlayerEnergy,
       setSelectedWeapons,
@@ -3676,10 +4398,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       purchaseItem,
       purchaseMerchantItem,
       purchaseMerchantHeal,
+      purchaseDreamLayerItem,
+      purchaseDreamLayerHeal,
       registerMerchantPurchaseSuccessHandler,
       registerDeepSanctumRewardClaimedHandler,
       registerMerchantNpcGreetHandler,
       registerPlayerGoldChangedHandler,
+      registerPlayerFlowChangedHandler,
+      registerPlayerFateChangedHandler,
       registerBossDefeatedHandler,
       registerBossItemPickupHandler,
       registerRunePickupHandler,
@@ -3710,6 +4436,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       enterCombatArena,
       useCoopFountain,
       chooseCoopAlly,
+      chooseSunkenTempleLoot,
       claimPreBossReward,
       claimDeepSanctumReward,
       finishPreBossMerchant,
@@ -3739,6 +4466,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       updatePlayerLevel,
       updatePlayerEssence,
       updatePlayerGold,
+      updatePlayerFlow,
+      updatePlayerFate,
       updatePlayerShield,
       updatePlayerEnergy,
       setSelectedWeapons,
@@ -3754,10 +4483,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       purchaseItem,
       purchaseMerchantItem,
       purchaseMerchantHeal,
+      purchaseDreamLayerItem,
+      purchaseDreamLayerHeal,
       registerMerchantPurchaseSuccessHandler,
       registerDeepSanctumRewardClaimedHandler,
       registerMerchantNpcGreetHandler,
       registerPlayerGoldChangedHandler,
+      registerPlayerFlowChangedHandler,
+      registerPlayerFateChangedHandler,
       registerBossDefeatedHandler,
       registerBossItemPickupHandler,
       registerRunePickupHandler,
@@ -3811,6 +4544,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopCombatArenaEnterSeq,
       coopMainArenaIntermissionSeq,
       coopIntroIntermissionSeq,
+      coopSunkenIntermissionSeq,
       coopIntroPending,
       coopIntroActive,
       coopIntroRoomIndex,
@@ -3818,12 +4552,31 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopIntroFountainPhase,
       coopIntroFountainUsed,
       coopIntroAllyChoiceMade,
+      coopSunkenActive,
+      coopSunkenRoomIndex,
+      coopSunkenPortalOpen,
+      coopSunkenFountainPhase,
+      coopSunkenFountainUsed,
+      coopSunkenAllyChoiceMade,
+      coopSunkenLootOffer,
+      coopSunkenLootClaimedPlayerIds,
+      coopSunkenLootPhaseComplete,
+      coopSunkenCompleted,
       coopAllyKind,
       coopAllyOffer,
       coopVoidPortalOffered,
       coopDeepSanctumLevel,
       deepSanctumRewardKind,
       coopDeepSanctumIntermissionSeq,
+      coopEdenFountainUsed,
+      coopEdenResumeKind,
+      coopEdenIntermissionSeq,
+      coopFalseEdenCleared,
+      deliriumStructure,
+      coopDeliriumActive,
+      coopDeliriumEventEnded,
+      coopDeliriumSuccess,
+      coopErebusGateActive,
       coopBossClearedBgmSeq,
       coopClearedRoomColor,
       lateJoinCombatLoadout,
@@ -3841,6 +4594,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       inventory,
       merchantInventory,
       merchantPurchaseState,
+      dreamLayerInventory,
+      dreamLayerPurchaseState,
       mushroomState,
     }),
     [
@@ -3879,6 +4634,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopIntroPortalOpen,
       coopIntroFountainPhase,
       coopIntroFountainUsed,
+      coopEdenFountainUsed,
+      coopEdenResumeKind,
+      coopEdenIntermissionSeq,
+      coopFalseEdenCleared,
+      deliriumStructure,
+      coopDeliriumActive,
+      coopDeliriumEventEnded,
+      coopDeliriumSuccess,
+      coopErebusGateActive,
       coopBossClearedBgmSeq,
       coopClearedRoomColor,
       lateJoinCombatLoadout,
@@ -3896,6 +4660,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       inventory,
       merchantInventory,
       merchantPurchaseState,
+      dreamLayerInventory,
+      dreamLayerPurchaseState,
       mushroomState,
     ],
   );

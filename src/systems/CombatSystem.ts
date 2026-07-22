@@ -50,6 +50,21 @@ import { DestructibleMushroom } from '@/ecs/components/DestructibleMushroom';
 import { WeaponType } from '@/components/dragon/weapons';
 import { addGlobalEntangledEnemy } from '@/components/weapons/EntangleManager';
 import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
+import {
+  COLD_GRACE_SHATTER_DAMAGE,
+  EXODIA_GAUNTLETS,
+  EXODIA_HELM,
+  JAGUAR_CRIT_VS_VENOMED,
+  JAGUAR_EMERALD,
+  LIQUID_SAPPHIRE,
+  NEEDLER_MAX_STACKS,
+  VICEGRIP_HP_THRESHOLD,
+  WYVERN_AMETHYST,
+  getVicegripDamageMultiplier,
+  getWyvernNeedlerBurstDamage,
+  isEnemyVenomed,
+  isPrimaryAttackDamageType,
+} from '@/utils/dreamLayerItems';
 
 interface DamageEvent {
   target: Entity;
@@ -306,34 +321,114 @@ export class CombatSystem extends System {
     damageType: string | undefined,
     damageEvent: DamageEvent,
     source?: Entity,
+    target?: Entity,
   ): DamageCalcOptions | undefined {
-    if (damageType === 'barrage') return this.getBarrageCritCalcOpts(damageType);
-    if (damageType === 'fan_of_knives') return undefined;
-    if (damageType === 'crossentropy' && damageEvent.crossentropyInferno === true) {
-      return { critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD };
-    }
-    if (damageType === 'projectile') {
-      return (
+    let opts: DamageCalcOptions | undefined;
+    if (damageType === 'barrage') opts = this.getBarrageCritCalcOpts(damageType);
+    else if (damageType === 'fan_of_knives') opts = undefined;
+    else if (damageType === 'crossentropy' && damageEvent.crossentropyInferno === true) {
+      opts = { critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD };
+    } else if (damageType === 'projectile') {
+      opts =
         this.getWrathfulShotsPerfectCritOptsFromSource(source) ??
-        this.getWrathfulShotsTempestCritOptsFromSource(source)
-      );
-    }
-    if (damageType === 'entropic' && damageEvent.entropicWrathful === true) {
-      return { critChanceAdd: WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD };
-    }
-    if (damageType === 'icebeam' && damageEvent.icebeamWrathful === true) {
-      return { critChanceAdd: WRATHFUL_ENTROPIC_BEAM_CRIT_CHANCE_ADD };
-    }
-    if (
+        this.getWrathfulShotsTempestCritOptsFromSource(source);
+    } else if (damageType === 'entropic' && damageEvent.entropicWrathful === true) {
+      opts = { critChanceAdd: WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD };
+    } else if (damageType === 'icebeam' && damageEvent.icebeamWrathful === true) {
+      opts = { critChanceAdd: WRATHFUL_ENTROPIC_BEAM_CRIT_CHANCE_ADD };
+    } else if (
       (damageType === 'sabre_left' || damageType === 'sabre_right') &&
       damageEvent.sabreWrathfulSwipes === true
     ) {
-      return {
+      opts = {
         critChanceAdd: WRATHFUL_SABRES_SWIPES_CRIT_CHANCE_ADD,
         critDamageMultAdd: WRATHFUL_SABRES_SWIPES_CRIT_DAMAGE_MULT_ADD,
       };
     }
-    return undefined;
+
+    const cs = this.getControlSystem();
+    if (
+      cs?.hasOwnedItem?.(JAGUAR_EMERALD) &&
+      isPrimaryAttackDamageType(damageType) &&
+      target
+    ) {
+      const enemy = target.getComponent(Enemy);
+      if (isEnemyVenomed(enemy)) {
+        opts = { ...opts, critChanceAdd: (opts?.critChanceAdd ?? 0) + JAGUAR_CRIT_VS_VENOMED };
+      }
+    }
+    return opts;
+  }
+
+  private applyDreamLayerOutgoingDamage(
+    baseDamage: number,
+    damageType: string | undefined,
+    target: Entity,
+  ): number {
+    const cs = this.getControlSystem();
+    if (!cs || baseDamage <= 0) return baseDamage;
+
+    let damage = baseDamage;
+    const enemy = target.getComponent(Enemy);
+    const health = target.getComponent(Health);
+    if (!enemy || !health || health.isDead) return damage;
+
+    if (cs.hasOwnedItem(EXODIA_GAUNTLETS) && isPrimaryAttackDamageType(damageType)) {
+      const hpFrac = health.maxHealth > 0 ? health.currentHealth / health.maxHealth : 1;
+      if (hpFrac < VICEGRIP_HP_THRESHOLD) {
+        const str = cs.getDreamLayerEffectiveStats?.()?.strength ?? 0;
+        damage = Math.max(0, Math.floor(damage * getVicegripDamageMultiplier(str)));
+      }
+    }
+
+    if (cs.hasOwnedItem(LIQUID_SAPPHIRE) && isPrimaryAttackDamageType(damageType) && enemy.isFrozen) {
+      const now = Date.now() / 1000;
+      enemy.updateFreezeStatus(now);
+      if (enemy.isFrozen) {
+        damage += COLD_GRACE_SHATTER_DAMAGE;
+        enemy.unfreeze();
+        const serverEnemyId = target.userData?.serverEnemyId as string | undefined;
+        if (serverEnemyId) {
+          (window as any).dreamLayerColdGraceShatter?.(serverEnemyId, target);
+        }
+      }
+    }
+
+    return damage;
+  }
+
+  public applyDreamLayerNeedlerOnVenom(target: Entity, sourcePlayerId?: string): void {
+    this.maybeApplyNeedlerOnVenomApply(target, sourcePlayerId);
+  }
+
+  private maybeApplyNeedlerOnVenomApply(target: Entity, sourcePlayerId?: string): void {
+    const cs = this.getControlSystem();
+    if (!cs?.hasOwnedItem?.(WYVERN_AMETHYST)) return;
+    const enemy = target.getComponent(Enemy);
+    if (!enemy) return;
+    const stacks = enemy.applyNeedlerStack(NEEDLER_MAX_STACKS);
+    if (stacks < NEEDLER_MAX_STACKS) return;
+    const intStat = cs.getDreamLayerEffectiveStats?.()?.intellect ?? 0;
+    const burst = getWyvernNeedlerBurstDamage(intStat);
+    enemy.clearNeedlerStacks();
+    this.queueDamage(
+      target,
+      burst,
+      undefined,
+      'needler_burst',
+      sourcePlayerId,
+    );
+  }
+
+  private maybeTriggerKaiserOnCriticalHit(
+    damageResult: DamageResult,
+    target: Entity,
+    sourcePlayerId?: string,
+  ): void {
+    if (!damageResult.isCritical) return;
+    const cs = this.getControlSystem();
+    if (!cs?.hasOwnedItem?.(EXODIA_HELM)) return;
+    (window as any).dreamLayerKaiserOnCrit?.(target, sourcePlayerId);
   }
 
   /** Co-op: `enemy-damaged` echo in MultiplayerContext already spawns these DoT floats. */
@@ -346,7 +441,8 @@ export class CombatSystem extends System {
       damageType === 'ignite' ||
       damageType === 'venom' ||
       damageType === 'wyvern_talons_detonate' ||
-      damageType === 'player_zombie'
+      damageType === 'player_zombie' ||
+      damageType === 'prime_materia'
     ) {
       return true;
     }
@@ -845,15 +941,16 @@ export class CombatSystem extends System {
       // Calculate actual damage with critical hit mechanics
       // For abilities that already determined critical hits (like backstab), preserve the original critical flag
       let damageResult: DamageResult;
+      const dreamLayerBase = this.applyDreamLayerOutgoingDamage(baseDamage, damageType, target);
 
       if (damageEvent.isCritical !== undefined) {
         // Preserve pre-calculated critical hit and damage (e.g., from backstab)
         // The damage is already calculated correctly, just preserve the critical flag
-        damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
+        damageResult = { damage: dreamLayerBase, isCritical: damageEvent.isCritical };
       } else {
         // Calculate critical hit normally for projectiles/abilities that don't pre-calculate
-        const critOpts = this.getCritCalcOptsForQueuedDamage(damageType, damageEvent, source);
-        damageResult = calculateDamage(baseDamage, currentWeapon, critOpts);
+        const critOpts = this.getCritCalcOptsForQueuedDamage(damageType, damageEvent, source, target);
+        damageResult = calculateDamage(dreamLayerBase, currentWeapon, critOpts);
       }
 
       const actualDamage = damageResult.damage;
@@ -1071,6 +1168,10 @@ export class CombatSystem extends System {
                                     ? { icebeamInfested: true as const }
                                     : {}),
                                 }
+                              : damageType === 'incineration'
+                                ? {
+                                    damageType: 'incineration' as const,
+                                  }
                               : damageType === 'backstab'
                                 ? {
                                     damageType: 'backstab' as const,
@@ -1122,6 +1223,10 @@ export class CombatSystem extends System {
                                           ? {
                                               damageType: 'fire_affinity_storm' as const,
                                             }
+                                          : damageType === 'deflect_smite'
+                                            ? {
+                                                damageType: 'deflect_smite' as const,
+                                              }
                                           : undefined;
       const routeMeta = baseRouteMeta;
       let hitWorldPosition: { x: number; y: number; z: number } | undefined;
@@ -1130,6 +1235,7 @@ export class CombatSystem extends System {
         const p = hitTransform.getWorldPosition();
         hitWorldPosition = { x: p.x, y: p.y + 1.5, z: p.z };
       }
+      this.maybeTriggerKaiserOnCriticalHit(damageResult, target, finalSourcePlayerId);
       this.onEnemyDamageCallback(serverEnemyId, actualDamage, finalSourcePlayerId, routeMeta, hitWorldPosition);
 
       // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)
@@ -1453,11 +1559,12 @@ export class CombatSystem extends System {
     }
 
     // For non-enemies (like players in non-PVP mode), apply damage locally as before
-    const localFallbackCritOpts = this.getCritCalcOptsForQueuedDamage(damageType, damageEvent, source);
+    const dreamLayerBase = this.applyDreamLayerOutgoingDamage(baseDamage, damageType, target);
+    const localFallbackCritOpts = this.getCritCalcOptsForQueuedDamage(damageType, damageEvent, source, target);
     const damageResult: DamageResult =
       damageType === 'fan_of_knives'
-        ? { damage: baseDamage, isCritical: false }
-        : calculateDamage(baseDamage, currentWeapon, localFallbackCritOpts);
+        ? { damage: dreamLayerBase, isCritical: false }
+        : calculateDamage(dreamLayerBase, currentWeapon, localFallbackCritOpts);
     const enemyForGlacialTalons = target.getComponent(Enemy);
     const actualDamage = this.applyGlacialTalonsFrozenBonus(
       damageResult.damage,
@@ -1666,6 +1773,27 @@ export class CombatSystem extends System {
           currentTime,
           venomMaxStacks,
         );
+      }
+
+      if (enemyForVenom) {
+        const venomApplied =
+          (damageType === 'barrage' && damageEvent.wyvernBiteConcentratedVenom === true) ||
+          (damageType === 'crossentropy' &&
+            damageEvent.crossentropyPlague === true &&
+            !damageEvent.crossentropyMeteorDamage &&
+            damageDealt) ||
+          (damageType === 'wraith_strike' && damageEvent.infestedStrike === true && damageDealt) ||
+          (damageType === 'backstab' && damageEvent.infestedBackstab === true && damageDealt) ||
+          ((damageType === 'sunder' || damageType === 'fan_of_knives') &&
+            damageEvent.infestedFlourish === true &&
+            damageDealt) ||
+          (damageType === 'sword' && damageEvent.infestedCombo === true && damageDealt) ||
+          ((damageType === 'sabre_left' || damageType === 'sabre_right') &&
+            damageEvent.sabreInfestingSwipes === true &&
+            damageDealt);
+        if (venomApplied) {
+          this.maybeApplyNeedlerOnVenomApply(target, damageEvent.sourcePlayerId);
+        }
       }
 
       if (
@@ -1987,6 +2115,13 @@ export class CombatSystem extends System {
         { x: pos.x, y: pos.y, z: pos.z },
         serverEnemyType,
       );
+      if (serverEnemyType !== 'training-dummy') {
+        (window as any).spawnDreamShardEffect?.(
+          { x: pos.x, y: pos.y, z: pos.z },
+          entity.id.toString(),
+          serverEnemyType,
+        );
+      }
     }
   }
 

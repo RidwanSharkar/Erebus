@@ -14,7 +14,7 @@ import {
   Vector3,
 } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
 import { filterAnimationClipsForRoot } from '@/utils/enemyAnimationClipCache';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
@@ -157,6 +157,7 @@ export default function BossGlbModel({
         }
       }
     });
+    applySelfIllumination(clone, { intensity: UNIT_SELF_ILLUMINATION_INTENSITY });
     return clone;
   }, [scene]);
 

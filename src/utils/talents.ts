@@ -4,6 +4,7 @@ import { WeaponType } from '@/components/dragon/weapons';
 import type { Entity } from '@/ecs/Entity';
 import { Shield } from '@/ecs/components/Shield';
 import type { PlayerStats } from '@/utils/StatSystem';
+import type { CoopAllyKind } from '@/utils/coopAllyTargeting';
 
 export const TALENT_WRATH_STRIKE = 'WRATH_STRIKE' as const;
 export const TALENT_INFESTED_STRIKE = 'INFESTED_STRIKE' as const;
@@ -30,6 +31,8 @@ export const TALENT_REAPER = 'REAPER' as const;
 export const TALENT_METEOR = 'METEOR' as const;
 /** Crossentropy (`SCYTHE_R`) talent: 50% on-hit ricochet to another enemy within range. */
 export const TALENT_FRAGMENTATION = 'FRAGMENTATION' as const;
+/** Scythe class talent — Crossentropy fires a fast explosive rocket with 2 charges. */
+export const TALENT_BLITZ_CANNON = 'BLITZ_CANNON' as const;
 export const TALENT_DUAL_COIL = 'DUAL_COIL' as const;
 /** Bow — slower full LMB charge but stronger powershot / perfect shot and thicker perfect beam VFX. */
 export const TALENT_HIGH_CALIBER = 'HIGH_CALIBER' as const;
@@ -57,6 +60,7 @@ export const TALENT_EXECUTIONER = 'EXECUTIONER' as const;
 export const TALENT_DOUBLE_STRIKE = 'DOUBLE_STRIKE' as const;
 export const TALENT_CRUSADER = 'CRUSADER' as const;
 export const TALENT_BLIZZARD = 'BLIZZARD' as const;
+export const TALENT_TITANS_GRIP = 'TITANS_GRIP' as const;
 export const TALENT_SPELLBLADE = 'SPELLBLADE' as const;
 export const TALENT_TEMPEST_ROUNDS = 'TEMPEST_ROUNDS' as const;
 export const TALENT_ICEBEAM = 'ICEBEAM' as const;
@@ -203,6 +207,8 @@ export const TALENT_FISSION = 'FISSION' as const;
 export const TALENT_BLOOD_ORBS = 'BLOOD_ORBS' as const;
 /** Red room universal passive — consume a dash charge to bypass E-ability cooldown. */
 export const TALENT_BLOODMAGE = 'BLOODMAGE' as const;
+/** Red room universal passive — heal while all dash charges are on cooldown. */
+export const TALENT_DEATHWISH = 'DEATHWISH' as const;
 /** Blue room universal passive — faster dash charge recovery. */
 export const TALENT_OVERCLOCK = 'OVERCLOCK' as const;
 /** Blue room universal passive — drain all shield to bypass Q-ability cooldown. */
@@ -342,10 +348,39 @@ export function computeDeflectSmiteDamage(stats: { stamina?: number }): number {
   return DEFLECT_SMITE_BASE_DAMAGE + DEFLECT_SMITE_STAMINA_DAMAGE_PER_POINT * stamina;
 }
 
+/** Timed SpellCastingHalos pulses for Shift-energy release moments (ms). */
+export const SHIFT_ENERGY_HALO_PULSE_MS = {
+  DEFLECT_SMITE: 1200,
+  INCINERATION_BEAM: 625,
+} as const;
+
+export interface ShiftEnergyHaloFlags {
+  isSprinting?: boolean;
+  isPrimeMateriaActive?: boolean;
+  isIncinerationCharging?: boolean;
+  isIncinerationArmed?: boolean;
+  isLocustChanneling?: boolean;
+  isBlockingDeflect?: boolean;
+  pulseActive?: boolean;
+}
+
+/** Whether rising cast halos should show for Shift-key energy spending. */
+export function isShiftEnergyHaloActive(flags: ShiftEnergyHaloFlags): boolean {
+  return Boolean(
+    flags.isSprinting ||
+      flags.isPrimeMateriaActive ||
+      flags.isIncinerationCharging ||
+      flags.isIncinerationArmed ||
+      flags.isLocustChanneling ||
+      flags.isBlockingDeflect ||
+      flags.pulseActive,
+  );
+}
+
 /** Acolyte Locusts — nearest hostile acquisition radius (units). */
 export const LOCUST_TARGET_RADIUS = 16;
 /** Acolyte Locusts — energy spent per volley of three missiles. */
-export const LOCUST_ENERGY_PER_VOLLEY = 15;
+export const LOCUST_ENERGY_PER_VOLLEY = 10;
 /** Acolyte Locusts — seconds between missiles within a volley. */
 export const LOCUST_MISSILE_INTERVAL_SEC = 0.275;
 /** Acolyte Locusts — missiles per volley. */
@@ -377,6 +412,63 @@ export function computeLocustMissileDamage(stats: {
   );
 }
 
+/** Alchemist Prime Materia — aura radius (units). */
+export const PRIME_MATERIA_RADIUS = 4.5;
+/** Alchemist Prime Materia — server tick interval (ms). */
+export const PRIME_MATERIA_TICK_MS = 500;
+/** Alchemist Prime Materia — damage per tick at ramp start. */
+export const PRIME_MATERIA_MIN_DAMAGE = 25;
+/** Alchemist Prime Materia — damage per tick at full ramp. */
+export const PRIME_MATERIA_MAX_DAMAGE = 90;
+/** Alchemist Prime Materia — seconds to reach max damage per enemy. */
+export const PRIME_MATERIA_RAMP_TIME_SEC = 6;
+/** Alchemist Prime Materia — energy drained per second while active. */
+export const PRIME_MATERIA_ENERGY_PER_SEC = 10;
+/** Alchemist Prime Materia — minimum seconds aura must stay on before Shift can toggle off. */
+export const PRIME_MATERIA_MIN_ON_TIME_SEC = 1;
+/** Alchemist Prime Materia — fraction of damage dealt returned as self-heal. */
+export const PRIME_MATERIA_HEAL_FRACTION = 0.1;
+
+/** Sorceress Incineration — cooldown after firing (seconds). */
+export const INCINERATION_COOLDOWN_SEC = 2.0;
+/** Sorceress Incineration — energy drained per second while charging (10 per 0.5s). */
+export const INCINERATION_ENERGY_PER_SEC = 20;
+/** Sorceress Incineration — direct damage per charge point consumed. */
+export const INCINERATION_DAMAGE_PER_CHARGE = 5;
+/** Sorceress Incineration — beam range (units). */
+export const INCINERATION_BEAM_RANGE = 10;
+/** Sorceress Incineration — beam half-width at minimum charge. */
+export const INCINERATION_BEAM_MIN_HALF_WIDTH = 0.3;
+/** Sorceress Incineration — beam half-width at full charge (100 energy). */
+export const INCINERATION_BEAM_MAX_HALF_WIDTH = 1.1;
+/** Sorceress Incineration — ignite DoT fraction of hit damage. */
+export const INCINERATION_IGNITE_DOT_FRACTION = 0.8;
+/** Sorceress Incineration — ignite duration (ms). */
+export const INCINERATION_IGNITE_DURATION_MS = 4000;
+/** Sorceress Incineration — ignite tick count. */
+export const INCINERATION_IGNITE_TICKS = 4;
+/** Sorceress Incineration — charge above this threshold becomes Plasma. */
+export const INCINERATION_PLASMA_CHARGE_THRESHOLD = 90;
+/** Sorceress Plasma Incineration — bonus direct damage per shield point drained. */
+export const INCINERATION_PLASMA_DAMAGE_PER_SHIELD = 4;
+/** Sorceress Plasma Incineration — forward bolt lane half-width. */
+export const INCINERATION_PLASMA_SIDE_BOLT_HALF_WIDTH = 0.5;
+/** Sorceress Plasma Incineration — forward bolt range (units). */
+export const INCINERATION_PLASMA_SIDE_BOLT_RANGE = 10;
+/** Sorceress Plasma Incineration — lateral offset from beam center for each forward bolt. */
+export const INCINERATION_PLASMA_BOLT_LATERAL_OFFSET = 0.35;
+/** Sorceress Incineration — max scale for origin muzzle flash VFX. */
+export const INCINERATION_BURST_MAX_SCALE = 0.5;
+
+export function isPlasmaIncineration(charge: number): boolean {
+  return charge > INCINERATION_PLASMA_CHARGE_THRESHOLD;
+}
+
+export function computeIncinerationDamage(charge: number, shieldDrained = 0): number {
+  return Math.floor(charge * INCINERATION_DAMAGE_PER_CHARGE)
+    + shieldDrained * INCINERATION_PLASMA_DAMAGE_PER_SHIELD;
+}
+
 /** TEMPEST INITIATE — allied knight smite cooldown when boon is active. */
 export const TEMPEST_INITIATE_SMITE_COOLDOWN_MS = 2500;
 /** TEMPEST INITIATE — flat bonus damage added to allied knight smite. */
@@ -391,6 +483,36 @@ export const NECROS_INITIATE_KNIGHT_HP_PER_STAMINA = 25;
 export const INFERNAL_INITIATE_KNIGHT_BASE_DAMAGE = 80;
 /** INFERNAL INITIATE — additional melee damage per point of Strength. */
 export const INFERNAL_INITIATE_KNIGHT_DAMAGE_PER_STRENGTH = 3;
+/** ABYSSAL INITIATE — Huntress shot cooldown reduction (1.25s → 1.0s). */
+export const ABYSSAL_INITIATE_HUNTRESS_COOLDOWN_REDUCTION_MS = 250;
+/** ABYSSAL INITIATE — Demon melee attack cooldown reduction (0.9s → 0.6s). */
+export const ABYSSAL_INITIATE_DEMON_COOLDOWN_REDUCTION_MS = 300;
+/** ABYSSAL INITIATE — Enchantress Earth Shock cooldown reduction. */
+export const ABYSSAL_INITIATE_ENCHANTRESS_EARTH_SHOCK_COOLDOWN_REDUCTION_MS = 2000;
+/** ABYSSAL INITIATE — Phantom blink/dagger combo cooldown reduction. */
+export const ABYSSAL_INITIATE_PHANTOM_COMBO_COOLDOWN_REDUCTION_MS = 1500;
+/** INFERNAL INITIATE — Huntress arrow base damage (replaces default 65). */
+export const INFERNAL_INITIATE_HUNTRESS_BASE_DAMAGE = 85;
+/** INFERNAL INITIATE — additional Huntress arrow damage per point of Agility. */
+export const INFERNAL_INITIATE_HUNTRESS_DAMAGE_PER_AGILITY = 3;
+/** INFERNAL INITIATE — Demon melee base damage (replaces default 48). */
+export const INFERNAL_INITIATE_DEMON_BASE_DAMAGE = 64;
+/** INFERNAL INITIATE — additional Demon melee damage per point of Stamina or Strength combined. */
+export const INFERNAL_INITIATE_DEMON_DAMAGE_PER_STAMINA_OR_STRENGTH = 2;
+/** INFERNAL INITIATE — Enchantress Earth Shock base damage (replaces default 105). */
+export const INFERNAL_INITIATE_ENCHANTRESS_EARTH_SHOCK_BASE_DAMAGE = 125;
+/** INFERNAL INITIATE — additional Enchantress Earth Shock damage per point of Intellect. */
+export const INFERNAL_INITIATE_ENCHANTRESS_EARTH_SHOCK_DAMAGE_PER_INTELLECT = 3;
+/** INFERNAL INITIATE — Phantom dagger base damage (replaces default 40). */
+export const INFERNAL_INITIATE_PHANTOM_BASE_DAMAGE = 50;
+/** INFERNAL INITIATE — additional Phantom dagger damage per point of Agility. */
+export const INFERNAL_INITIATE_PHANTOM_DAMAGE_PER_AGILITY = 2;
+/** TEMPEST INITIATE — Demon leap cooldown when boon is active (replaces default 10s). */
+export const TEMPEST_INITIATE_DEMON_LEAP_COOLDOWN_MS = 5000;
+/** TEMPEST INITIATE — Demon leap base damage (replaces default 56). */
+export const TEMPEST_INITIATE_DEMON_LEAP_BASE_DAMAGE = 76;
+/** TEMPEST INITIATE — additional Demon leap damage per point of Agility. */
+export const TEMPEST_INITIATE_DEMON_LEAP_DAMAGE_PER_AGILITY = 4;
 
 export const INFERNAL_DASH_DAMAGE = 195;
 export const INFERNAL_DASH_RADIUS = 3.25;
@@ -431,11 +553,11 @@ export const GLACIAL_DASH_FREEZE_DURATION_MS = 3000;
 export const GLACIAL_DASH_COOLDOWN_MS = 2000;
 export const MENDING_DASH_COOLDOWN_MS = 7000;
 export const STAGGERING_DASH_RANGE = 10;
-export const STAGGERING_DASH_MIN_DAMAGE = 100;
-export const STAGGERING_DASH_MAX_DAMAGE = 240;
-export const STAGGERING_DASH_MIN_STAGGER = 80;
-export const STAGGERING_DASH_MAX_STAGGER = 135;
-export const STAGGERING_DASH_COOLDOWN_MS = 200;
+export const STAGGERING_DASH_MIN_DAMAGE = 70;
+export const STAGGERING_DASH_MAX_DAMAGE = 210;
+export const STAGGERING_DASH_MIN_STAGGER = 70;
+export const STAGGERING_DASH_MAX_STAGGER = 115;
+export const STAGGERING_DASH_COOLDOWN_MS = 50;
 /** Blue room Lightning Bolt (`SPEAR_R`) — base hit damage and stagger. */
 export const LIGHTNING_BOLT_ROOM_DAMAGE = 117;
 export const LIGHTNING_BOLT_ROOM_DAMAGE_PER_AGILITY = 20;
@@ -666,6 +788,8 @@ export const HAILSTORM_INTELLECT_DAMAGE_PER_POINT = 2;
 export const ARCTIC_BLIZZARD_HIT_RADIUS = 3;
 /** BLOODMAGE room boon — min seconds between dash-charge E-ability cooldown bypasses. */
 export const BLOODMAGE_BYPASS_ICD_SEC = 5;
+/** DEATHWISH room boon — HP healed per second while no dash charges are available. */
+export const DEATHWISH_HP_PER_SEC = 8;
 /** OVERRIDE room boon — min seconds between shield-drain Q-ability cooldown bypasses. */
 export const OVERRIDE_BYPASS_ICD_SEC = 5;
 /** AWAKENED EYE room boon — Blizzard hit radius multiplier. */
@@ -692,13 +816,13 @@ export const INFESTED_SMITE_HEAL_PER_TARGET = 20;
 export const RUNEBLADE_SMITE_BASE_HEAL = 10;
 
 /** Reaping Talons — HP healed when each soul fragment returns to the player. */
-export const REAPING_TALONS_RETURN_HEAL_PER_ORB = 4;
+export const REAPING_TALONS_RETURN_HEAL_PER_ORB = 3;
 
 /** Runeblade — HP healed per successful LMB swing while Storm Shroud (Flurry) is active (Windfury / ability). */
-export const RUNEBLADE_FLURRY_HEAL_PER_SLASH = 8;
+export const RUNEBLADE_FLURRY_HEAL_PER_SLASH = 6;
 
 /** Runeblade only: `effectiveFireRate /=` this while Flurry is active (Spear/Sword use 1.5). */
-export const RUNEBLADE_FLURRY_ATTACK_SPEED_FACTOR = 1.35;
+export const RUNEBLADE_FLURRY_ATTACK_SPEED_FACTOR = 1.375;
 
 /** Min ms between Flurry heal floating VFX (ControlSystem). */
 export const FLURRY_HEAL_VFX_MIN_INTERVAL_MS = 300;
@@ -739,6 +863,7 @@ export type TalentId =
   | typeof TALENT_REAPER
   | typeof TALENT_METEOR
   | typeof TALENT_FRAGMENTATION
+  | typeof TALENT_BLITZ_CANNON
   | typeof TALENT_DUAL_COIL
   | typeof TALENT_HIGH_CALIBER
   | typeof TALENT_WYVERN_STING
@@ -760,6 +885,7 @@ export type TalentId =
   | typeof TALENT_DOUBLE_STRIKE
   | typeof TALENT_CRUSADER
   | typeof TALENT_BLIZZARD
+  | typeof TALENT_TITANS_GRIP
   | typeof TALENT_SPELLBLADE
   | typeof TALENT_TEMPEST_ROUNDS
   | typeof TALENT_ICEBEAM
@@ -826,6 +952,7 @@ export type TalentId =
   | typeof TALENT_FISSION
   | typeof TALENT_BLOOD_ORBS
   | typeof TALENT_BLOODMAGE
+  | typeof TALENT_DEATHWISH
   | typeof TALENT_OVERCLOCK
   | typeof TALENT_OVERRIDE
   | typeof TALENT_COLDSNAP_ROOM
@@ -1060,12 +1187,24 @@ export const CRUSADER_LMB_FLAT_BONUS = 55;
 export const BLIZZARD_PROC_CHANCE = 0.175;
 export const BLIZZARD_DURATION_SEC = 7;
 export const BLIZZARD_DPS_PER_TICK = 42;
+/** Runeblade Blizzard — +1 damage per tick per point of effective Strength, Stamina, Intellect, or Agility. */
+export const BLIZZARD_DAMAGE_PER_STAT_POINT = 1;
 /** World units: enemies within this radius (XZ, see Blizzard.tsx) of the storm center take tick damage; ≥ melee arc range so LMB hits align with storm. */
 export const BLIZZARD_STORM_HIT_RADIUS = 4.5;
 export const CHILL_STACK_DURATION_SEC = 4;
 export const CHILL_SLOW_PER_STACK = 0.15;
 export const CHILL_STACKS_TO_FREEZE = 6;
 export const BLIZZARD_FREEZE_DURATION_SEC = 6;
+
+/** Titan's Grip — Runeblade LMB per-hit stun proc chance. */
+export const TITANS_GRIP_STUN_PROC_CHANCE = 0.25;
+export const TITANS_GRIP_STUN_DURATION_MS = 1500;
+/** Titan's Grip — +2 base damage per combo strike per point of effective Strength. */
+export const TITANS_GRIP_DAMAGE_PER_STRENGTH = 2;
+
+export function getTitansGripLmbFlatBonus(effectiveStrength: number): number {
+  return TITANS_GRIP_DAMAGE_PER_STRENGTH * Math.max(0, effectiveStrength);
+}
 
 /** Mortal Strike — Runeblade class talent: every Nth LMB swing fires a forward arc slash. */
 export const MORTAL_STRIKE_BASE_DAMAGE = 120;
@@ -1163,6 +1302,16 @@ export const INFESTING_ENTROPIC_BOLT_DAMAGE = 53;
 export const INFESTED_ENTROPIC_BEAM_KILL_HEAL = 5;
 /** Scythe LMB — wind-up before first bolt/beam in a hold stream (seconds). */
 export const SCYTHE_LMB_WINDUP_SEC = 0.25;
+/** Blitz Cannon — Crossentropy charge duration (matches Entropic Bolt wind-up). */
+export const BLITZ_CANNON_CHARGE_MS = Math.round(SCYTHE_LMB_WINDUP_SEC * 1000);
+/** Blitz Cannon — constant rocket travel speed. */
+export const BLITZ_CANNON_ROCKET_SPEED = 18;
+/** Blitz Cannon — reduced max travel distance (Reaper keeps full range). */
+export const BLITZ_CANNON_MAX_TRAVEL_DISTANCE = 10;
+/** Blitz Cannon — max stored Crossentropy uses. */
+export const BLITZ_CANNON_MAX_CHARGES = 2;
+/** Blitz Cannon — minimum gap between spending charges. */
+export const BLITZ_CANNON_INTERNAL_COOLDOWN_SEC = 1.25;
 /** Entropic Bolt — default LMB fire interval (seconds between bolts). */
 export const ENTROPIC_BOLT_FIRE_RATE_SEC = 0.725;
 /** Arcane Synergy — faster Entropic Bolt fire interval. */
@@ -1673,6 +1822,14 @@ export const bloodmageRoomTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'Infernal Boons',
 };
 
+export const deathwishRoomTalentDefinition: TalentDefinition = {
+  id: TALENT_DEATHWISH,
+  name: 'Deathwish',
+  description:
+    `While you have no dash charges available, heal for ${DEATHWISH_HP_PER_SEC} HP per second.`,
+  modifiesAbilityId: 'Infernal Boons',
+};
+
 export const overclockTalentDefinition: TalentDefinition = {
   id: TALENT_OVERCLOCK,
   name: 'Overclock',
@@ -1792,6 +1949,77 @@ export const abyssalInitiateTalentDefinition: TalentDefinition = {
     'ALLIED KNIGHT gains +50% movement speed and attack speed.',
   modifiesAbilityId: 'Allied Boons',
 };
+
+export type AlliedInitiateTalentId =
+  | typeof TALENT_TEMPEST_INITIATE
+  | typeof TALENT_NECROS_INITIATE
+  | typeof TALENT_INFERNAL_INITIATE
+  | typeof TALENT_ABYSSAL_INITIATE;
+
+const ALLIED_INITIATE_TALENT_IDS: ReadonlySet<AlliedInitiateTalentId> = new Set([
+  TALENT_TEMPEST_INITIATE,
+  TALENT_NECROS_INITIATE,
+  TALENT_INFERNAL_INITIATE,
+  TALENT_ABYSSAL_INITIATE,
+]);
+
+function isAlliedInitiateTalentId(id: TalentId): id is AlliedInitiateTalentId {
+  return ALLIED_INITIATE_TALENT_IDS.has(id as AlliedInitiateTalentId);
+}
+
+/** Ally-aware UI copy for the four Allied Initiate room boons. */
+export function getAlliedInitiateBoonDescription(
+  talentId: AlliedInitiateTalentId,
+  allyKind: CoopAllyKind,
+): string {
+  switch (talentId) {
+    case TALENT_ABYSSAL_INITIATE:
+      switch (allyKind) {
+        case 'knight':
+          return 'ALLIED KNIGHT gains +50% movement speed and attack speed.';
+        case 'huntress':
+          return `ALLIED HUNTRESS shot cooldown reduced by ${ABYSSAL_INITIATE_HUNTRESS_COOLDOWN_REDUCTION_MS / 1000}s (1.25s → 1.0s). Stacks with Tempest Initiate.`;
+        case 'demon':
+          return `ALLIED DEMON melee attack cooldown reduced by ${ABYSSAL_INITIATE_DEMON_COOLDOWN_REDUCTION_MS / 1000}s (0.9s → 0.6s).`;
+        case 'enchantress':
+          return `ALLIED ENCHANTRESS Earth Shock cooldown reduced by ${ABYSSAL_INITIATE_ENCHANTRESS_EARTH_SHOCK_COOLDOWN_REDUCTION_MS / 1000}s. Stacks with Tempest Initiate.`;
+        case 'phantom':
+          return `ALLIED PHANTOM blink/dagger combo cooldown reduced by ${ABYSSAL_INITIATE_PHANTOM_COMBO_COOLDOWN_REDUCTION_MS / 1000}s. Stacks with Tempest Initiate.`;
+      }
+      break;
+    case TALENT_INFERNAL_INITIATE:
+      switch (allyKind) {
+        case 'knight':
+          return `ALLIED KNIGHT basic attack gains increased base damage — from 50 to ${INFERNAL_INITIATE_KNIGHT_BASE_DAMAGE} +${INFERNAL_INITIATE_KNIGHT_DAMAGE_PER_STRENGTH} per point of STRENGTH.`;
+        case 'huntress':
+          return `ALLIED HUNTRESS arrow damage increased from 65 to ${INFERNAL_INITIATE_HUNTRESS_BASE_DAMAGE} +${INFERNAL_INITIATE_HUNTRESS_DAMAGE_PER_AGILITY} per point of AGILITY.`;
+        case 'demon':
+          return `ALLIED DEMON melee damage increased from 48 to ${INFERNAL_INITIATE_DEMON_BASE_DAMAGE} +${INFERNAL_INITIATE_DEMON_DAMAGE_PER_STAMINA_OR_STRENGTH} per point of STAMINA and STRENGTH combined.`;
+        case 'enchantress':
+          return `ALLIED ENCHANTRESS Earth Shock damage increased from 105 to ${INFERNAL_INITIATE_ENCHANTRESS_EARTH_SHOCK_BASE_DAMAGE} +${INFERNAL_INITIATE_ENCHANTRESS_EARTH_SHOCK_DAMAGE_PER_INTELLECT} per point of INTELLECT.`;
+        case 'phantom':
+          return `ALLIED PHANTOM dagger damage increased from 40 to ${INFERNAL_INITIATE_PHANTOM_BASE_DAMAGE} +${INFERNAL_INITIATE_PHANTOM_DAMAGE_PER_AGILITY} per point of AGILITY.`;
+      }
+      break;
+    case TALENT_TEMPEST_INITIATE:
+      switch (allyKind) {
+        case 'knight':
+          return `ALLIED KNIGHT's SMITE attack has a reduced cooldown and deals +${TEMPEST_INITIATE_SMITE_BASE_DAMAGE_BONUS} base damage +${TEMPEST_INITIATE_SMITE_DAMAGE_PER_AGILITY} damage per point of AGILITY.`;
+        case 'huntress':
+          return `ALLIED HUNTRESS shot cooldown reduced by ${ABYSSAL_INITIATE_HUNTRESS_COOLDOWN_REDUCTION_MS / 1000}s (1.25s → 1.0s). Stacks with Abyssal Initiate for a 0.75s minimum.`;
+        case 'demon':
+          return `ALLIED DEMON can leap every ${TEMPEST_INITIATE_DEMON_LEAP_COOLDOWN_MS / 1000}s with leap damage ${TEMPEST_INITIATE_DEMON_LEAP_BASE_DAMAGE} +${TEMPEST_INITIATE_DEMON_LEAP_DAMAGE_PER_AGILITY} per point of AGILITY.`;
+        case 'enchantress':
+          return `ALLIED ENCHANTRESS Earth Shock cooldown reduced by ${ABYSSAL_INITIATE_ENCHANTRESS_EARTH_SHOCK_COOLDOWN_REDUCTION_MS / 1000}s. Stacks with Abyssal Initiate.`;
+        case 'phantom':
+          return `ALLIED PHANTOM blink/dagger combo cooldown reduced by ${ABYSSAL_INITIATE_PHANTOM_COMBO_COOLDOWN_REDUCTION_MS / 1000}s. Stacks with Abyssal Initiate.`;
+      }
+      break;
+    case TALENT_NECROS_INITIATE:
+      return `ALLIED ${allyKind === 'knight' ? 'KNIGHT' : allyKind.toUpperCase()} starts with ${NECROS_INITIATE_KNIGHT_BASE_HP} HP (+${NECROS_INITIATE_KNIGHT_HP_PER_STAMINA} max HP per point of STAMINA)${allyKind === 'knight' ? ' instead of 500' : ''}.`;
+  }
+  return '';
+}
 
 export const magmaCurrentTalentDefinition: TalentDefinition = {
   id: TALENT_MAGMA_CURRENT,
@@ -2193,6 +2421,14 @@ export const fragmentationTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'Entropic Bolts (Left-click) and Crossentropy (E)',
 };
 
+export const blitzCannonTalentDefinition: TalentDefinition = {
+  id: TALENT_BLITZ_CANNON,
+  name: 'Blitz Cannon',
+  description:
+    `Crossentropy now charges in ${BLITZ_CANNON_CHARGE_MS / 1000}s and fires a fast explosive rocket (${BLITZ_CANNON_MAX_TRAVEL_DISTANCE} range) that detonates on the first enemy hit. Holds ${BLITZ_CANNON_MAX_CHARGES} charges.`,
+  modifiesAbilityId: 'Crossentropy (E)',
+};
+
 export const crossentropyTempestTalentDefinition: TalentDefinition = {
   id: TALENT_CROSSENTROPY_TEMPEST,
   name: 'Tempest',
@@ -2325,7 +2561,15 @@ export const blizzardTalentDefinition: TalentDefinition = {
   id: TALENT_BLIZZARD,
   name: 'Blizzard',
   description:
-    'Each Runeblade basic attack that damages an enemy has a 20% chance to spawn a BLIZZARD around you for 7 seconds, dealing 42 damage every 0.5 seconds to enemies within. Each tick applies CHILL; at 5 stacks the target is FROZEN for 6 seconds.',
+    'Each Runeblade basic attack that damages an enemy has a 20% chance to spawn a BLIZZARD around you for 7 seconds, dealing 42 + 1 damage per Strength, Stamina, Intellect, or Agility every 0.5 seconds to enemies within. Each tick applies CHILL; at 5 stacks the target is FROZEN for 6 seconds.',
+  modifiesAbilityId: 'Primary Attack (Left-click)',
+};
+
+export const titansGripTalentDefinition: TalentDefinition = {
+  id: TALENT_TITANS_GRIP,
+  name: "Titan's Grip",
+  description:
+    "Modifies Runeblade left-click: +2 base damage per Strength on each combo strike. Each strike that damages an enemy has a 25% chance to STUN that enemy for 1.5 seconds. Permanently shifts blade and slash VFX from blue to red (Crusader proc still overrides temporarily).",
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 
@@ -2355,6 +2599,8 @@ export interface TalentLoadout {
   reaper: boolean;
   meteor: boolean;
   fragmentation: boolean;
+  /** Blitz Cannon — fast-charge explosive rocket Crossentropy with 2 charges. */
+  blitzCannon: boolean;
   frostPath: boolean;
   solarRecharge: boolean;
   /** Arcane Synergy — Entropic Bolt Intellect scaling + faster fire rate. */
@@ -2380,6 +2626,7 @@ export interface TalentLoadout {
   doubleStrike: boolean;
   crusader: boolean;
   blizzard: boolean;
+  titansGrip: boolean;
   spellblade: boolean;
   tempestRounds: boolean;
   icebeam: boolean;
@@ -2471,6 +2718,8 @@ export interface TalentLoadout {
   bloodOrbsRoom: boolean;
   /** Co-op red room passive — consume a dash charge to bypass E-ability cooldown. */
   bloodmageRoom: boolean;
+  /** Co-op red room passive — heal while all dash charges are on cooldown. */
+  deathwishRoom: boolean;
   /** Co-op blue room passive — faster dash charge recovery. */
   overclockRoom: boolean;
   /** Co-op blue room passive — drain all shield to bypass Q-ability cooldown. */
@@ -2560,6 +2809,7 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     reaper: false,
     meteor: false,
     fragmentation: false,
+    blitzCannon: false,
     frostPath: false,
     solarRecharge: false,
     arcaneSynergy: false,
@@ -2581,6 +2831,7 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     doubleStrike: false,
     crusader: false,
     blizzard: false,
+    titansGrip: false,
     spellblade: false,
     tempestRounds: false,
     icebeam: false,
@@ -2645,6 +2896,7 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     fissionRoom: false,
     bloodOrbsRoom: false,
     bloodmageRoom: false,
+    deathwishRoom: false,
     overclockRoom: false,
     overrideRoom: false,
     coldsnapRoom: false,
@@ -3083,6 +3335,10 @@ export function shouldApplyBloodmageTalent(talentLoadout: TalentLoadout | null |
   return !!talentLoadout?.bloodmageRoom;
 }
 
+export function shouldApplyDeathwishTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.deathwishRoom;
+}
+
 export function shouldApplyOverrideTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
   return !!talentLoadout?.overrideRoom;
 }
@@ -3131,6 +3387,20 @@ export function getArcticBlizzardDamagePerTickFromStats(
 ): number {
   const intellect = getEffectiveIntellectWithTalentBonuses(stats, talentLoadout, abilityLoadout);
   return getArcticBlizzardDamagePerTick(talentLoadout, intellect);
+}
+
+/** Runeblade Blizzard storm — 42 base + 1 per point of STR, STA, INT, or AGI (effective stats). */
+export function getRunebladeBlizzardDamagePerTickFromStats(
+  stats: PlayerStats,
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): number {
+  const total =
+    Math.max(0, getEffectiveStrengthWithTalentBonuses(stats, talentLoadout, abilityLoadout)) +
+    Math.max(0, getEffectiveAgilityWithTalentBonuses(stats, talentLoadout, abilityLoadout)) +
+    Math.max(0, getEffectiveStaminaWithTalentBonuses(stats, talentLoadout, abilityLoadout)) +
+    Math.max(0, getEffectiveIntellectWithTalentBonuses(stats, talentLoadout, abilityLoadout));
+  return BLIZZARD_DPS_PER_TICK + BLIZZARD_DAMAGE_PER_STAT_POINT * total;
 }
 
 export function getEffectiveIntellectWithTalentBonuses(
@@ -3595,6 +3865,34 @@ export function resolveCrossentropyVisualTheme(
   return 'default';
 }
 
+export function shouldApplyBlitzCannonTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.blitzCannon && isCrossentropyInLoadout(abilityLoadout);
+}
+
+export function getCrossentropyChargeDurationMs(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+): number {
+  return shouldApplyBlitzCannonTalent(talentLoadout, abilityLoadout)
+    ? BLITZ_CANNON_CHARGE_MS
+    : 1000;
+}
+
+export function getCrossentropyMaxTravelDistance(
+  talentLoadout: TalentLoadout | null | undefined,
+  abilityLoadout: AbilityLoadout | null | undefined,
+  reaperActive: boolean,
+): number {
+  if (reaperActive) return CROSSENTROPY_MAX_TRAVEL_DISTANCE;
+  if (shouldApplyBlitzCannonTalent(talentLoadout, abilityLoadout)) {
+    return BLITZ_CANNON_MAX_TRAVEL_DISTANCE;
+  }
+  return CROSSENTROPY_MAX_TRAVEL_DISTANCE;
+}
+
 /** Toggle only — use with scythe Entropic Bolts; no ability slot requirement. */
 export function shouldApplyFrostpathTalent(
   talentLoadout: TalentLoadout | null | undefined,
@@ -4039,6 +4337,13 @@ export function shouldApplyBlizzardTalent(
   return !!talentLoadout?.blizzard;
 }
 
+/** Toggle only — Runeblade LMB Titan's Grip (stun proc, STR scaling, red blade theme). */
+export function shouldApplyTitansGripTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.titansGrip;
+}
+
 export type CoopRoomColor = 'blue' | 'green' | 'purple' | 'red';
 
 export function isCoopRoomColor(s: string | null | undefined): s is CoopRoomColor {
@@ -4211,12 +4516,13 @@ export interface CoopAlliedKnightBoonsPayload {
   agility?: number;
   strength?: number;
   stamina?: number;
+  intellect?: number;
 }
 
-/** Payload for `coop-allied-knight-boons` Socket.IO sync (server applies to allied knight stats). */
+/** Payload for `coop-allied-knight-boons` Socket.IO sync (server applies to allied unit stats). */
 export function getCoopAlliedKnightBoonsPayload(
   loadout: TalentLoadout,
-  stats?: { agility: number; strength: number; stamina: number },
+  stats?: { agility: number; strength: number; stamina: number; intellect?: number },
 ): CoopAlliedKnightBoonsPayload {
   const payload: CoopAlliedKnightBoonsPayload = {
     tempestInitiate: !!loadout.tempestInitiateRoom,
@@ -4228,6 +4534,9 @@ export function getCoopAlliedKnightBoonsPayload(
     payload.agility = Math.max(0, stats.agility);
     payload.strength = Math.max(0, stats.strength);
     payload.stamina = Math.max(0, stats.stamina);
+    if (typeof stats.intellect === 'number') {
+      payload.intellect = Math.max(0, stats.intellect);
+    }
   }
   return payload;
 }
@@ -4251,6 +4560,7 @@ export function buildRunebladeClassBoonPool(
     TALENT_CRUSADER,
     TALENT_WINDFURY,
     TALENT_BLIZZARD,
+    TALENT_TITANS_GRIP,
     TALENT_CYCLONE_RUSH,
     TALENT_DOUBLE_STRIKE,
     TALENT_SPELLBLADE,
@@ -4292,6 +4602,7 @@ export function buildScytheClassBoonPool(): TalentId[] {
     TALENT_HEALING_STREAM,
     TALENT_METEOR,
     TALENT_FRAGMENTATION,
+    TALENT_BLITZ_CANNON,
   ];
 }
 
@@ -4427,8 +4738,11 @@ export function buildRoomBoonPoolForColor(
 
   switch (k) {
     case 'red':
-      return excludeUniversalRActiveBoonsForWeapon(
-        [...pool, TALENT_INFERNAL_DASH, TALENT_BLOODLEECH, TALENT_REBUKE, TALENT_METEOR_STRIKE, TALENT_INFERNAL_INITIATE, TALENT_FISSION, TALENT_BLOOD_ORBS, TALENT_BLOODMAGE],
+      return excludeBloodmageBoonsForWeapon(
+        excludeUniversalRActiveBoonsForWeapon(
+          [...pool, TALENT_INFERNAL_DASH, TALENT_BLOODLEECH, TALENT_REBUKE, TALENT_METEOR_STRIKE, TALENT_INFERNAL_INITIATE, TALENT_FISSION, TALENT_BLOOD_ORBS, TALENT_BLOODMAGE, TALENT_DEATHWISH],
+          weapon,
+        ),
         weapon,
       );
     case 'purple':
@@ -4554,6 +4868,15 @@ export function excludeUniversalRActiveBoonsForWeapon(
 ): TalentId[] {
   if (weapon !== WeaponType.SABRES) return pool.slice();
   return filterTalentIdsByExclusionSet(pool, new Set(COOP_UNIVERSAL_R_ACTIVE_ROOM_BOONS));
+}
+
+/** Bloodmage does not affect Sabres Flourish — exclude from Sabres red room pools only. */
+export function excludeBloodmageBoonsForWeapon(
+  pool: readonly TalentId[],
+  weapon: WeaponType,
+): TalentId[] {
+  if (weapon !== WeaponType.SABRES) return pool.slice();
+  return pool.filter((id) => id !== TALENT_BLOODMAGE);
 }
 
 function appendAvailableTalentIds(
@@ -4771,6 +5094,9 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_FRAGMENTATION:
       next.fragmentation = true;
       return next;
+    case TALENT_BLITZ_CANNON:
+      next.blitzCannon = true;
+      return next;
     case TALENT_DUAL_COIL:
       next.dualCoil = true;
       return next;
@@ -4839,6 +5165,9 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
       return next;
     case TALENT_BLIZZARD:
       next.blizzard = true;
+      return next;
+    case TALENT_TITANS_GRIP:
+      next.titansGrip = true;
       return next;
     case TALENT_SPELLBLADE:
       next.spellblade = true;
@@ -5032,6 +5361,9 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_BLOODMAGE:
       next.bloodmageRoom = true;
       return next;
+    case TALENT_DEATHWISH:
+      next.deathwishRoom = true;
+      return next;
     case TALENT_OVERCLOCK:
       next.overclockRoom = true;
       return next;
@@ -5153,6 +5485,7 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_DOUBLE_STRIKE]: doubleStrikeTalentDefinition,
   [TALENT_CRUSADER]: crusaderTalentDefinition,
   [TALENT_BLIZZARD]: blizzardTalentDefinition,
+  [TALENT_TITANS_GRIP]: titansGripTalentDefinition,
   [TALENT_WRATHFUL_TALONS]: wrathfulTalonsTalentDefinition,
   [TALENT_EXECUTE]: executeTalentDefinition,
   [TALENT_EXPLOSIVE_TALONS]: explosiveTalonsTalentDefinition,
@@ -5165,6 +5498,7 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_REAPER]: reaperTalentDefinition,
   [TALENT_METEOR]: meteorTalentDefinition,
   [TALENT_FRAGMENTATION]: fragmentationTalentDefinition,
+  [TALENT_BLITZ_CANNON]: blitzCannonTalentDefinition,
   [TALENT_DUAL_COIL]: dualCoilTalentDefinition,
   [TALENT_HIGH_CALIBER]: highCaliberTalentDefinition,
   [TALENT_TRIGGER_FINGER]: triggerFingerTalentDefinition,
@@ -5238,6 +5572,7 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_FISSION]: fissionTalentDefinition,
   [TALENT_BLOOD_ORBS]: bloodOrbsTalentDefinition,
   [TALENT_BLOODMAGE]: bloodmageRoomTalentDefinition,
+  [TALENT_DEATHWISH]: deathwishRoomTalentDefinition,
   [TALENT_OVERCLOCK]: overclockTalentDefinition,
   [TALENT_OVERRIDE]: overrideRoomTalentDefinition,
   [TALENT_COLDSNAP_ROOM]: coldsnapRoomTalentDefinition,
@@ -5306,6 +5641,7 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_REAPER]: '/icons/reaper.svg',
   [TALENT_METEOR]: '/icons/meteor.svg',
   [TALENT_FRAGMENTATION]: '/icons/fragmentation.svg',
+  [TALENT_BLITZ_CANNON]: '/icons/crossentropy.svg',
   [TALENT_DUAL_COIL]: '/icons/dualCoil.svg',
   [TALENT_HIGH_CALIBER]: '/icons/highcaliber.svg',
   [TALENT_TRIGGER_FINGER]: '/icons/triggerfinger.svg',
@@ -5329,6 +5665,7 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_DOUBLE_STRIKE]: '/icons/doubleStrike.svg',
   [TALENT_CRUSADER]: '/icons/crusader.svg',
   [TALENT_BLIZZARD]: '/icons/blizzard.svg',
+  [TALENT_TITANS_GRIP]: '/icons/giantkiller.svg',
   [TALENT_SPELLBLADE]: '/icons/spellblade.svg',
   [TALENT_TEMPEST_ROUNDS]: '/icons/tempestRounds.svg',
   [TALENT_ICEBEAM]: '/icons/icebeam.svg',
@@ -5393,6 +5730,7 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_FISSION]: '/icons/fission.svg',
   [TALENT_BLOOD_ORBS]: '/icons/bloodOrbs.svg',
   [TALENT_BLOODMAGE]: '/icons/bloodMage.svg',
+  [TALENT_DEATHWISH]: '/icons/flourish.svg',
   [TALENT_OVERCLOCK]: '/icons/overclock.svg',
   [TALENT_OVERRIDE]: '/icons/override.svg',
   [TALENT_COLDSNAP_ROOM]: '/icons/coldsnap.svg',
@@ -5531,6 +5869,7 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.reaper) out.push(TALENT_REAPER);
   if (loadout.meteor) out.push(TALENT_METEOR);
   if (loadout.fragmentation) out.push(TALENT_FRAGMENTATION);
+  if (loadout.blitzCannon) out.push(TALENT_BLITZ_CANNON);
   if (loadout.frostPath) out.push(TALENT_FROSTPATH);
   if (loadout.solarRecharge) out.push(TALENT_SOLAR_RECHARGE);
   if (loadout.arcaneSynergy) out.push(TALENT_ARCANE_SYNERGY);
@@ -5552,6 +5891,7 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.doubleStrike) out.push(TALENT_DOUBLE_STRIKE);
   if (loadout.crusader) out.push(TALENT_CRUSADER);
   if (loadout.blizzard) out.push(TALENT_BLIZZARD);
+  if (loadout.titansGrip) out.push(TALENT_TITANS_GRIP);
   if (loadout.spellblade) out.push(TALENT_SPELLBLADE);
   if (loadout.tempestRounds) out.push(TALENT_TEMPEST_ROUNDS);
   if (loadout.icebeam) out.push(TALENT_ICEBEAM);
@@ -5616,6 +5956,7 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.fissionRoom) out.push(TALENT_FISSION);
   if (loadout.bloodOrbsRoom) out.push(TALENT_BLOOD_ORBS);
   if (loadout.bloodmageRoom) out.push(TALENT_BLOODMAGE);
+  if (loadout.deathwishRoom) out.push(TALENT_DEATHWISH);
   if (loadout.overclockRoom) out.push(TALENT_OVERCLOCK);
   if (loadout.overrideRoom) out.push(TALENT_OVERRIDE);
   if (loadout.coldsnapRoom) out.push(TALENT_COLDSNAP_ROOM);
@@ -5917,4 +6258,18 @@ export function excludeOwnedTalentsFromBoonPool(
 /** UI copy for co-op 3-boon picks (falls back to id if missing). */
 export function getTalentBoonDefinition(id: TalentId): TalentDefinition | null {
   return BOON_TALENT_DEFINITIONS[id] ?? null;
+}
+
+/** UI copy for co-op 3-boon picks with ally-aware Allied Initiate descriptions. */
+export function getTalentBoonDefinitionForAlly(
+  id: TalentId,
+  allyKind: CoopAllyKind = 'knight',
+): TalentDefinition | null {
+  const base = BOON_TALENT_DEFINITIONS[id];
+  if (!base) return null;
+  if (!isAlliedInitiateTalentId(id)) return base;
+  return {
+    ...base,
+    description: getAlliedInitiateBoonDescription(id, allyKind),
+  };
 }

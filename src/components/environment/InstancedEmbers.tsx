@@ -81,7 +81,7 @@ const EMBER_FRAG = `
 // Perimeter fire ring — evenly-spaced clusters around the arena boundary.
 // All clusters share aCampIdx=0 so they inherit the single room theme color.
 // ---------------------------------------------------------------------------
-const PERIMETER_COUNT  = 18;
+const PERIMETER_COUNT  = 12;
 const PERIMETER_RADIUS = MAIN_ARENA_HEX_RADIUS - 1.5;
 
 const CAMP_ORIGINS: [number, number, number][] = Array.from(

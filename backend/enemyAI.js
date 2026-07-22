@@ -5,11 +5,14 @@ const { rotationYTowardEntry } = require('./coopArenaLayout');
 const MAIN_ARENA_HEX_RADIUS = 20;
 const MAIN_CIRCLE_INNER_RADIUS = MAIN_ARENA_HEX_RADIUS - 0.5;
 /** Stat/trial hex combat arena — must match `HexCombatArena.tsx`. */
-const HEX_ARENA_RADIUS = 20;
+const HEX_ARENA_RADIUS = 24;
 const HEX_FLOOR_MARGIN = 1.4;
 const HEX_INNER_APOTHEM = HEX_ARENA_RADIUS * Math.cos(Math.PI / 6) - HEX_FLOOR_MARGIN;
+/** Erebus Gate colosseum — must match `CASTLE_ROOM_HALF_SIZE` in mapConstants / coopArenaLayout. */
+const EREBUS_GATE_RADIUS = 14;
+const EREBUS_GATE_INNER_RADIUS = EREBUS_GATE_RADIUS - 0.5;
 /** Match `backend/gameRoom.js` COOP_THRONE_ROOM_RADIUS — prep disc; wall resolve when combat not active. */
-const COOP_THRONE_ROOM_RADIUS = 20;
+const COOP_THRONE_ROOM_RADIUS = 24;
 /** Match `ThroneRoom.tsx` THRONE_RIM_INSET — inset from grass rim for portals / foot clearance. */
 const THRONE_RIM_INSET = 1.25;
 const ENEMY_WALL_COLLISION_RADIUS = 0.5;
@@ -75,7 +78,7 @@ const KNIGHT_SPIN_DAMAGE = 18;
 const KNIGHT_SPIN_STRIP_HALF_WIDTH = 0.75;
 
 // Knight / templar / ghoul / martyr / titan: ring goals + peer separation (radii match client CoopGameScene hit spheres).
-const MELEE_SURROUND_TYPES = new Set(['knight', 'templar', 'ghoul', 'martyr', 'titan', 'allied-knight', 'allied-huntress', 'allied-demon']);
+const MELEE_SURROUND_TYPES = new Set(['knight', 'templar', 'ghoul', 'martyr', 'titan', 'nemesis', 'allied-knight', 'allied-huntress', 'allied-demon']);
 const MELEE_PEER_SEP_PADDING = 0.05;
 // Tight ring: closer to player than ~0.82×attackRange so units path/hug obstacles less awkwardly.
 const MELEE_SURROUND_STANDOFF_FRAC = 0.18;
@@ -104,7 +107,7 @@ const TITAN_STOMP_COOLDOWN_MS = 11_000;
 const TITAN_STOMP_WINDUP_MS = 1000;
 const TITAN_STOMP_MIN_DISTANCE = 3;
 const TITAN_STOMP_MAX_RANGE = 10;
-const TITAN_STOMP_STUN_MS = 2000;
+const TITAN_STOMP_STUN_MS = 2100;
 const TITAN_STOMP_HALF_WIDTH_MIN = 0.5;
 const TITAN_STOMP_HALF_WIDTH_MAX = 2.0;
 const TITAN_STOMP_DAMAGE = 15;
@@ -128,6 +131,75 @@ const TITAN_CANNON_RED_CAST_GAP_MS = 1250;
 const TITAN_CANNON_PURPLE_COOLDOWN_MS = 15000;
 const TITAN_CANNON_GREEN_COOLDOWN_MS = TITAN_CANNON_COOLDOWN_MS;
 
+// Spectre — spin-only melee (Sunken Temple I)
+const SPECTRE_SPIN_COOLDOWN_MS = 3000;
+const SPECTRE_SPIN_CAST_RANGE = 6.5;
+const SPECTRE_SPIN_CHARGE_MS = 500;
+const SPECTRE_SPIN_DISTANCE = 6.0;
+const SPECTRE_SPIN_TRAVEL_MS = 2267;
+const SPECTRE_SPIN_DAMAGE = 23;
+const SPECTRE_SPIN_LAND_DAMAGE = 23;
+const SPECTRE_SPIN_LAND_RANGE = 2.5;
+const SPECTRE_SPIN_LAND_HALF_ANGLE = Math.PI * 0.35;
+const SPECTRE_SPIN_STRIP_HALF_WIDTH = 0.75;
+const SPECTRE_AGGRO_RADIUS = 15;
+
+// Nemesis — titan-style melee (Sunken Temple III)
+const NEMESIS_AGGRO_RADIUS = 6;
+const NEMESIS_ATTACK_RANGE = 3.0;
+const NEMESIS_SWING_LOCK_MS = 750;
+const NEMESIS_HIT_DELAY_MS = 437;
+const NEMESIS_KNOCKBACK_DISTANCE = 5;
+const NEMESIS_KNOCKBACK_DURATION = 0.4;
+
+// Valkyrie — slow levitating lunge chaser (Sunken Temple IV)
+const VALKYRIE_AGGRO_RADIUS = 15;
+const VALKYRIE_WALK_SPEED = 0.9;
+const VALKYRIE_LUNGE_CAST_RANGE = 10;
+const VALKYRIE_LUNGE_CHARGE_MS = 500;
+const VALKYRIE_LUNGE_TRAVEL_MS = 725;
+const VALKYRIE_LUNGE_STRIP_HALF_WIDTH = 0.75;
+const VALKYRIE_LUNGE1_COOLDOWN_MS = 5000;
+const VALKYRIE_LUNGE1_DAMAGE = 38;
+const VALKYRIE_LUNGE1_DISTANCE = 8;
+const VALKYRIE_LUNGE2_COOLDOWN_MS = 5000;
+const VALKYRIE_LUNGE2_DAMAGE = 42;
+const VALKYRIE_LUNGE2_DISTANCE = 6;
+const VALKYRIE_JUDGMENT_COOLDOWN_MS = 7250;
+const VALKYRIE_JUDGMENT_CAST_RANGE = 12;
+const VALKYRIE_JUDGMENT_CAST_MS = 1000;
+const VALKYRIE_JUDGMENT_HOVER_MS = 125;
+const VALKYRIE_JUDGMENT_FALL_MS = 400;
+const VALKYRIE_JUDGMENT_DAMAGE = 38;
+const VALKYRIE_JUDGMENT_AOE_RADIUS = 1.75;
+const VALKYRIE_JUDGMENT_CORRUPTED_MS = 8000;
+const VALKYRIE_JUDGMENT_SKY_HEIGHT = 22;
+
+// Sentinel — evasive caster (Sunken Temple II)
+const SENTINEL_WALK_SPEED = 2.0;
+const SENTINEL_SPRINT_SPEED = 3.25;
+const SENTINEL_SPRINT_DURATION_MS = 2000;
+const SENTINEL_SPRINT_COOLDOWN_MS = 10000;
+const SENTINEL_REPOSITION_SPRINT_MS = 1500;
+const SENTINEL_KITE_MIN_RANGE = 5;
+const SENTINEL_KITE_MAX_RANGE = 12;
+const SENTINEL_THREAT_RADIUS = 6;
+const SENTINEL_AIM_DOT_THRESHOLD = 0.65;
+const SENTINEL_APPROACH_DOT_THRESHOLD = 0.45;
+const SENTINEL_PLAYER_ATTACK_THREAT_MS = 800;
+const SENTINEL_ENTANGLE_COOLDOWN_MS = 20000;
+const SENTINEL_ENTANGLE_RANGE = 8;
+const SENTINEL_ENTANGLE_DURATION_MS = 4000;
+const SENTINEL_ENTANGLE_CAST_MS = 1000;
+const SENTINEL_ENTANGLE_DELAY_MS = 500;
+const SENTINEL_ORB_COOLDOWN_MS = 20000;
+const SENTINEL_ORB_CAST_MS = 2000;
+const SENTINEL_ORB_DAMAGE = 43;
+const SENTINEL_ORB_SPEED = 10;
+const SENTINEL_ORB_HIT_RADIUS = 1.1;
+const SENTINEL_ORB_RANGE = 25;
+const SENTINEL_AGGRO_RADIUS = 15;
+
 // Infested player-zombie summon lock — keep in sync with client ZombieRenderer SUMMON_DURATION
 const INFESTED_ZOMBIE_SUMMON_LOCK_MS = 2800;
 
@@ -150,6 +222,7 @@ const ALLIED_KNIGHT_MOVE_SPEED = 3.0;
 const ALLIED_KNIGHT_ATTACK_RANGE = 2.6;
 const ALLIED_KNIGHT_FOLLOW_DISTANCE = 3.0;
 const ALLIED_KNIGHT_PROTECTIVE_THREAT_TTL_MS = 15000;
+const ALLIED_TRAP_THREAT_TTL_MS = 15000;
 const ALLIED_KNIGHT_PROTECTIVE_THREAT_DECAY_PER_SEC = 0.85;
 const ALLIED_KNIGHT_PROTECTIVE_OVERRIDE_DAMAGE = 50;
 const ALLIED_KNIGHT_ORB_COUNT = 3;
@@ -163,29 +236,29 @@ const ALLIED_KNIGHT_SMITE_DAMAGE = 70;
 const ALLIED_KNIGHT_SMITE_RADIUS = 1.85;
 /** Max mobs that may simultaneously focus the allied knight via threat redirect. */
 const ALLIED_KNIGHT_FOCUS_SOFT_CAP = 3;
-const ALLIED_HUNTRESS_ATTACK_RANGE = 20;
+const ALLIED_HUNTRESS_ATTACK_RANGE = 18;
 const ALLIED_HUNTRESS_ARROW_PIERCE_HALF_WIDTH = 1.4;
 const ALLIED_HUNTRESS_ARROW_PIERCE_RADIUS_SQ =
   ALLIED_HUNTRESS_ARROW_PIERCE_HALF_WIDTH * ALLIED_HUNTRESS_ARROW_PIERCE_HALF_WIDTH;
 const ALLIED_HUNTRESS_DAMAGE_FALLBACK = 65;
-const ALLIED_PHANTOM_ATTACK_RANGE = 10;
+const ALLIED_PHANTOM_ATTACK_RANGE = 12;
 const ALLIED_PHANTOM_DAMAGE_FALLBACK = 40;
 const ALLIED_PHANTOM_COMBO_COOLDOWN_MS = 4000;
 const ALLIED_PHANTOM_DAGGER_HALF_WIDTH = 1.05;
 const ALLIED_PHANTOM_DAGGER_HALF_WIDTH_SQ =
   ALLIED_PHANTOM_DAGGER_HALF_WIDTH * ALLIED_PHANTOM_DAGGER_HALF_WIDTH;
-const ALLIED_DEMON_ATTACK_RANGE = 2.5;
+const ALLIED_DEMON_ATTACK_RANGE = 2.65;
 const ALLIED_DEMON_DAMAGE_FALLBACK = 48;
 const ALLIED_DEMON_LEAP_DAMAGE = 56;
 const ALLIED_DEMON_LEAP_STUN_MS = 2000;
 const ALLIED_DEMON_LEAP_COOLDOWN_MS = 10_000;
-const ALLIED_ENCHANTRESS_ATTACK_RANGE = 12;
+const ALLIED_ENCHANTRESS_ATTACK_RANGE = 14;
 const ALLIED_ENCHANTRESS_EARTH_SHOCK_DAMAGE = 105;
-const ALLIED_ENCHANTRESS_EARTH_SHOCK_CHARGE_MS = 750;
-const ALLIED_ENCHANTRESS_EARTH_SHOCK_COOLDOWN_MS = 5000;
+const ALLIED_ENCHANTRESS_EARTH_SHOCK_CHARGE_MS = 875;
+const ALLIED_ENCHANTRESS_EARTH_SHOCK_COOLDOWN_MS = 6000;
 const ALLIED_ENCHANTRESS_GRASPING_VINES_RANGE = 10;
 const ALLIED_ENCHANTRESS_GRASPING_VINES_CHARGE_MS = 500;
-const ALLIED_ENCHANTRESS_GRASPING_VINES_COOLDOWN_MS = 6500;
+const ALLIED_ENCHANTRESS_GRASPING_VINES_COOLDOWN_MS = 7500;
 const ALLIED_ENCHANTRESS_GRASPING_VINES_MAX_TARGETS = 2;
 /** Living players within this range take priority over allied-knight redirects (solo always). */
 const PLAYER_PROXIMITY_AGGRO_OVERRIDE_RADIUS = 15;
@@ -200,6 +273,26 @@ const NECROS_INITIATE_KNIGHT_HP_PER_STAMINA = 25;
 // INFERNAL INITIATE boon constants (keep in sync with src/utils/talents.ts)
 const INFERNAL_INITIATE_KNIGHT_BASE_DAMAGE = 80;
 const INFERNAL_INITIATE_KNIGHT_DAMAGE_PER_STRENGTH = 3;
+// ABYSSAL INITIATE boon constants (keep in sync with src/utils/talents.ts)
+const ABYSSAL_INITIATE_HUNTRESS_COOLDOWN_REDUCTION_MS = 250;
+const ABYSSAL_INITIATE_DEMON_COOLDOWN_REDUCTION_MS = 300;
+const ABYSSAL_INITIATE_ENCHANTRESS_EARTH_SHOCK_COOLDOWN_REDUCTION_MS = 2000;
+const ABYSSAL_INITIATE_PHANTOM_COMBO_COOLDOWN_REDUCTION_MS = 1500;
+// INFERNAL INITIATE — non-Knight allies (keep in sync with src/utils/talents.ts)
+const INFERNAL_INITIATE_HUNTRESS_BASE_DAMAGE = 85;
+const INFERNAL_INITIATE_HUNTRESS_DAMAGE_PER_AGILITY = 3;
+const INFERNAL_INITIATE_DEMON_BASE_DAMAGE = 64;
+const INFERNAL_INITIATE_DEMON_DAMAGE_PER_STAMINA_OR_STRENGTH = 2;
+const INFERNAL_INITIATE_ENCHANTRESS_EARTH_SHOCK_BASE_DAMAGE = 125;
+const INFERNAL_INITIATE_ENCHANTRESS_EARTH_SHOCK_DAMAGE_PER_INTELLECT = 3;
+const INFERNAL_INITIATE_PHANTOM_BASE_DAMAGE = 50;
+const INFERNAL_INITIATE_PHANTOM_DAMAGE_PER_AGILITY = 2;
+// TEMPEST INITIATE — non-Knight allies (keep in sync with src/utils/talents.ts)
+const TEMPEST_INITIATE_DEMON_LEAP_COOLDOWN_MS = 5000;
+const TEMPEST_INITIATE_DEMON_LEAP_BASE_DAMAGE = 76;
+const TEMPEST_INITIATE_DEMON_LEAP_DAMAGE_PER_AGILITY = 4;
+const ALLIED_HUNTRESS_ATTACK_COOLDOWN_MS = 1450;
+const ALLIED_DEMON_ATTACK_COOLDOWN_MS = 900;
 const ALLIED_HEALER_ID = 'allied-healer';
 const ALLIED_HEALER_MAX_HP = 350;
 const ALLIED_HEALER_MOVE_SPEED = 2.0;
@@ -265,13 +358,13 @@ const TELEPORT_BEHIND_DISTANCE = 2.2; // same as boss blink (templar blink smite
 // Wraith — stealth flank + buzzsaw cone
 const WRAITH_STEALTH_DURATION_MS = 5000;
 const WRAITH_STEALTH_COOLDOWN_MS = 5000;
-const WRAITH_BUZZSAW_COOLDOWN_MS = 5000;
+const WRAITH_BUZZSAW_COOLDOWN_MS = 7000;
 const WRAITH_BUZZSAW_DURATION_MS = 1024;
 const WRAITH_BUZZSAW_DAMAGE = 14;
 const WRAITH_BUZZSAW_TICK_MS = 333;
-const WRAITH_BUZZSAW_RANGE = 4.5;
+const WRAITH_BUZZSAW_RANGE = 4.0;
 const WRAITH_BUZZSAW_HALF_ANGLE_RAD = Math.PI / 6;
-const WRAITH_ENGAGE_RANGE = 3.75;
+const WRAITH_ENGAGE_RANGE = 3.5;
 const WRAITH_AGGRO_RADIUS = 18;
 
 // Co-op main boss (GLB): melee + leap + tectonic
@@ -324,11 +417,14 @@ const BOSS_THROW_LEAP_ICD_MS = 2_000;
 const GHOUL_LEAP_LAND_STANDOFF_M = 0.25;
 const GHOUL_LEAP_COOLDOWN_MS = 10_000;
 const GHOUL_LEAP_POST_SPAWN_DELAY_MS = 5_000;
+const VIPER_ATTACK_POST_SPAWN_DELAY_MS = 1_500;
 const GHOUL_LEAP_MAX_TRAVEL = 14;
 const GHOUL_LEAP_DURATION_MS = BOSS_LEAP_DURATION_MS;
 const GHOUL_LEAP_LANDING_RADIUS = 3.5;
 const GHOUL_LEAP_DAMAGE = 25;
 const GHOUL_LEAP_STUN_MS = 2250;
+/** Minimum gap between enemy ghoul leap starts in the same room (prevents synchronized Delirium spikes). */
+const GHOUL_LEAP_ROOM_SLOT_MS = 750;
 const GHOUL_BASE_DAMAGE = 28;
 const GHOUL_BASE_MOVE_SPEED = 2.5;
 const GHOUL_SUMMON_HP = 450;
@@ -343,14 +439,14 @@ const TEMPLAR_LEAP_LAND_STANDOFF_M = 0.2;
 const TEMPLAR_LEAP_COOLDOWN_MS = 6_000;
 const TEMPLAR_LEAP_MAX_TRAVEL = 8;
 const TEMPLAR_LEAP_DURATION_MS = BOSS_LEAP_DURATION_MS;
-const TEMPLAR_LEAP_LANDING_RADIUS = 2.0;
+const TEMPLAR_LEAP_LANDING_RADIUS = 2.25;
 const TEMPLAR_LEAP_DAMAGE = 60;
 
 /** Co-op player locomotion (matches client Movement.maxSpeed / dash tuning). */
 const PLAYER_COOP_MAX_SPEED = 3.575;
 const PLAYER_COOP_SPRINT_MULTIPLIER = 1.5;
 const PLAYER_DASH_DISTANCE = 4.125;
-const WARPDRIVE_DASH_DISTANCES = [4.125, 4.5, 4.875, 5.125];
+const WARPDRIVE_DASH_DISTANCES = [4.125, 4.625, 5.125, 5.625];
 
 function getPlayerDashDistance(player) {
   const purchases = Math.max(0, Math.min(3, Number(player?.merchantWarpdrivePurchases) || 0));
@@ -418,7 +514,7 @@ const BOSS3_OUTER_SCALE = 1.75;
 const BOSS3_GREEN_BEAM_WORLD_START_OFFSET = BOSS3_GREEN_BEAM_START_OFFSET * BOSS3_OUTER_SCALE;
 const BOSS3_GREEN_BEAM_HALF_WIDTH = 0.52;
 /** Radians/sec — slower than default boss snap so players can sidestep the beam. */
-const BOSS3_GREEN_BEAM_ROT_SPEED = 1.0;
+const BOSS3_GREEN_BEAM_ROT_SPEED = 1.15;
 
 // Martyr: self-detonation (matches client AOE)
 const MARTYR_MELEE_RANGE = 1.4;
@@ -432,7 +528,7 @@ const MARTYR_DETONATION_DELAY_MS = 2160;
 const MARTYR_DETONATION_SPLASH_EXCLUDED_TYPES = new Set(['boss', 'boss2', 'boss3']);
 
 // Tentacle-spine environmental trap (co-op wave)
-const TENTACLE_SPINE_TRIGGER_R = 6;
+const TENTACLE_SPINE_TRIGGER_R = 7.25;
 const TENTACLE_SPINE_LINE_LEN = 10;
 const TENTACLE_SPINE_LINE_HALF_W = 0.85;
 const TENTACLE_SPINE_WINDUP_MS = 1150;
@@ -440,6 +536,16 @@ const TENTACLE_SPINE_COOLDOWN_MS = 3250;
 const TENTACLE_SPINE_DMG_PLAYER = 40;
 const TENTACLE_SPINE_DMG_MOB = 150;
 const TENTACLE_SPINE_DMG_ALLIED_KNIGHT = 35;
+
+/** Nemesis cross-faction combat — camp mobs and Nemesis may trade aggro/damage. */
+const NEMESIS_CROSS_FACTION_EXCLUDED_PREY = new Set([
+  'tentacle-spine', 'training-dummy', 'boss', 'boss2', 'boss3', 'boss-skeleton',
+  'greed', 'player-zombie', 'nemesis', 'martyr', 'wraith',
+]);
+const NEMESIS_CROSS_FACTION_EXCLUDED_ATTACKERS = new Set([
+  'tentacle-spine', 'training-dummy', 'boss', 'boss2', 'boss3', 'boss-skeleton',
+  'greed', 'player-zombie', 'nemesis', 'martyr', 'wraith',
+]);
 
 function distPointSegmentSqXZ(px, pz, ax, az, bx, bz) {
   const abx = bx - ax;
@@ -693,6 +799,8 @@ class EnemyAI {
 
     // Allied knight protection chart: allyId -> enemyId -> { score, lastUpdate }.
     this.alliedProtectionThreat = new Map();
+    // Personal tentacle-spine threat: allyId -> trapId -> { lastUpdate }.
+    this.alliedTrapThreat = new Map();
 
     // Ghoul attack cooldown tracking
     this.ghoulAttackCooldown = new Map(); // enemyId -> lastAttackTime
@@ -710,6 +818,8 @@ class EnemyAI {
     this.ghoulLeapLand = new Map();
     this.ghoulLeapFrom = new Map();
     this.ghoulLeapTimeout = new Map();
+    /** Room-wide gate: next timestamp an enemy ghoul may begin a leap. */
+    this.ghoulLeapRoomSlotUntil = 0;
 
     this.enchantressEarthShockCooldown = new Map();
     this.enchantressGraspingVinesCooldown = new Map();
@@ -724,6 +834,19 @@ class EnemyAI {
     this.knightSmiteCooldown = new Map(); // enemyId -> lastSmiteTime (post-boss-2 blue/green/purple)
     this.knightDashCooldown = new Map(); // enemyId -> lastDashTime
     this.knightSpinCooldown = new Map(); // enemyId -> lastSpinTime
+
+    // Sunken Temple enemy cooldown tracking
+    this.spectreSpinCooldown = new Map();
+    this.nemesisAttackCooldown = new Map();
+    this.valkyrieLunge1Cooldown = new Map();
+    this.valkyrieLunge2Cooldown = new Map();
+    this.valkyrieJudgmentCooldown = new Map();
+    this.sentinelSprintUntil = new Map();
+    this.sentinelSprintCooldownUntil = new Map();
+    this.sentinelSprintReason = new Map();
+    this.sentinelEntangleCooldown = new Map();
+    this.sentinelOrbCooldown = new Map();
+    this.sentinelIncomingShotThreat = new Map(); // sentinelId -> threatExpireMs
 
     // Red / Green: Death Grasp (independent 15s CD from knightAbilityCooldown)
     this.knightDeathGraspCooldown = new Map(); // enemyId -> lastCastMs
@@ -783,11 +906,25 @@ class EnemyAI {
 
   _isHexCombatArena() {
     const kind = this.room?.currentCoopRoomKind;
-    return kind === 'stat' || kind === 'trial' || kind === 'merchant';
+    return kind === 'stat' || kind === 'trial' || kind === 'merchant' || kind === 'eden' || kind === 'false_eden';
+  }
+
+  /** Castle / sunken / erebus gate — must match CASTLE_ROOM_HALF_SIZE in mapConstants. */
+  _isSmallCircleArena() {
+    const kind = this.room?.currentCoopRoomKind;
+    return (
+      kind === 'erebus_gate' ||
+      kind === 'intro' ||
+      kind === 'deep_sanctum' ||
+      kind === 'sunken_temple'
+    );
   }
 
   /** Clamp enemy XZ to the active arena footprint (circle for colored rooms, hex for stat/trial/merchant). */
   clampToArenaXZ(x, z) {
+    if (this._isSmallCircleArena()) {
+      return clampToCircleXZ(x, z, EREBUS_GATE_INNER_RADIUS);
+    }
     if (this._isHexCombatArena()) {
       return clampToMainHexXZ(x, z, HEX_INNER_APOTHEM);
     }
@@ -795,6 +932,9 @@ class EnemyAI {
   }
 
   _arenaPatrolRadius() {
+    if (this._isSmallCircleArena()) {
+      return EREBUS_GATE_INNER_RADIUS * TITAN_PATROL_RADIUS_FRAC;
+    }
     if (this._isHexCombatArena()) {
       return HEX_INNER_APOTHEM * TITAN_PATROL_RADIUS_FRAC;
     }
@@ -980,6 +1120,7 @@ class EnemyAI {
     this.ghoulLeapFrom.clear();
     this.ghoulLeapTimeout.forEach((t) => clearTimeout(t));
     this.ghoulLeapTimeout.clear();
+    this.ghoulLeapRoomSlotUntil = 0;
     this.enchantressEarthShockCooldown.clear();
     this.enchantressGraspingVinesCooldown.clear();
     this.meleeLockUntil.clear();
@@ -1156,6 +1297,26 @@ class EnemyAI {
       return;
     }
 
+    if (enemy.type === 'spectre') {
+      this.updateSpectreAI(enemy, players);
+      return;
+    }
+
+    if (enemy.type === 'sentinel') {
+      this.updateSentinelAI(enemy, players);
+      return;
+    }
+
+    if (enemy.type === 'nemesis') {
+      this.updateNemesisAI(enemy, players);
+      return;
+    }
+
+    if (enemy.type === 'valkyrie') {
+      this.updateValkyrieAI(enemy, players);
+      return;
+    }
+
     if (enemy.type === 'allied-knight') {
       this.updateAlliedKnightAI(enemy, players);
       return;
@@ -1303,6 +1464,26 @@ class EnemyAI {
             if (currentDistance <= attackRange) {
               const damage = skeleton.damage || 17;
               this.damagePlayerZombieFromMob(skeleton, z, damage, 'boss_skeleton_melee');
+            }
+          }, telegraphDelay);
+        } else if (resolved.kind === 'hostile') {
+          const hostile = resolved.enemy;
+          this.telegraphSkeletonAttack(skeleton, {
+            id: hostile.id,
+            position: hostile.position,
+          });
+          const telegraphDelay = 250;
+          const hid = hostile.id;
+          const sid = skeleton.id;
+          this._scheduleEnemyTimeout(sid, () => {
+            if (skeleton.isDying || !this.room?.getGameStarted()) return;
+            if (this.room?.isEnemyAffectedBy(sid, 'stun')) return;
+            const liveTarget = this.room?.getEnemy(hid);
+            if (!liveTarget || liveTarget.isDying || liveTarget.health <= 0) return;
+            const currentDistance = this.calculateDistance(skeleton.position, liveTarget.position);
+            if (currentDistance <= attackRange) {
+              const damage = skeleton.damage || 17;
+              this.damageHostileMobFromMob(skeleton, liveTarget, damage, 'boss_skeleton_melee');
             }
           }, telegraphDelay);
         } else {
@@ -1483,7 +1664,8 @@ class EnemyAI {
       }
     } else if (resolved.kind === 'zombie') {
       const z = resolved.zombie;
-      const fakeTarget = { id: z.ownerPlayerId || z.id, position: z.position };
+      const fakeTarget = { id: z.ownerPlayerId || z.id, position: z.position, health: z.health };
+      if (this.tryKnightSpinAttack(knight, fakeTarget, now, distance)) return;
       if (this.tryKnightDash(knight, fakeTarget, now, distance)) return;
 
       if (z.type !== 'allied-knight') {
@@ -1536,7 +1718,55 @@ class EnemyAI {
       } else {
         this.moveEnemyTowardsTarget(knight, moveTarget, { meleeSurroundAttackRange: attackRange });
       }
-    } else {
+    } else if (resolved.kind === 'hostile') {
+      const hostile = resolved.enemy;
+      const fakeTarget = this.fakeTargetFromEnemy(hostile);
+      if (this.tryKnightDash(knight, fakeTarget, now, distance)) return;
+
+      const deathGraspFired = this.tryKnightDeathGrasp(knight, fakeTarget, now, distance);
+      if (deathGraspFired) return;
+
+      if (this.tryKnightSmiteUnlocked(knight, fakeTarget, now, distance, attackRange)) return;
+
+      const abilityFired = this.tryKnightAbility(knight, fakeTarget, now, distance, attackRange);
+      if (abilityFired) return;
+
+      if (distance <= attackRange) {
+        if (!this.bossAttackCooldown.has(knight.id)) {
+          this.bossAttackCooldown.set(knight.id, 0);
+        }
+
+        const lastAttackTime = this.bossAttackCooldown.get(knight.id);
+
+        if (distance > meleePressDistance) {
+          this.moveEnemyTowardsTarget(knight, moveTarget, { meleeSurroundAttackRange: attackRange });
+        } else if (now - lastAttackTime >= attackCooldown) {
+          this.bossAttackCooldown.set(knight.id, now);
+
+          const SWING_LOCK_MS = 900;
+          this.meleeLockUntil.set(knight.id, now + SWING_LOCK_MS);
+
+          const attackFocus = { ...hostile.position };
+          this.scheduleKnightMeleeWindupStep(knight, attackFocus);
+          this.telegraphKnightAttack(knight, fakeTarget);
+          const hid = hostile.id;
+
+          setTimeout(() => {
+            if (knight.isDying || !this.room?.getGameStarted()) return;
+            if (this.room?.isEnemyAffectedBy(knight.id, 'stun')) return;
+            const liveTarget = this.room?.getEnemy(hid);
+            if (!liveTarget || liveTarget.isDying || liveTarget.health <= 0) return;
+            const currentDistance = this.calculateDistance(knight.position, liveTarget.position);
+            if (currentDistance <= attackRange) {
+              const damage = knight.damage || 25;
+              this.damageHostileMobFromMob(knight, liveTarget, damage, 'knight_melee');
+            }
+          }, 1000);
+        }
+      } else {
+        this.moveEnemyTowardsTarget(knight, moveTarget, { meleeSurroundAttackRange: attackRange });
+      }
+    } else if (resolved.kind === 'trap') {
       const tr = resolved.trap;
       const fakeTarget = { id: tr.id, position: tr.position };
       if (this.tryKnightDash(knight, fakeTarget, now, distance)) return;
@@ -1643,7 +1873,12 @@ class EnemyAI {
   tryKnightSpinAttack(knight, targetPlayer, now, distance) {
     if (this.room?.isEnemyAffectedBy(knight.id, 'freeze')) return false;
     if (this.room?.isEnemyAffectedBy(knight.id, 'stun')) return false;
-    if (!targetPlayer?.position || targetPlayer.health <= 0) return false;
+    if (!targetPlayer?.position) return false;
+    const liveAlly = this.room?.getEnemy?.(targetPlayer.id);
+    const isCombatAllyTarget = this._isPlayerCombatAlly(liveAlly);
+    const targetAlive = (targetPlayer.health ?? 0) > 0
+      || (isCombatAllyTarget && !liveAlly.isDying && liveAlly.health > 0);
+    if (!targetAlive) return false;
     if (distance > KNIGHT_SPIN_CAST_RANGE) return false;
 
     const lastSpin = this.knightSpinCooldown.get(knight.id) || 0;
@@ -1685,7 +1920,11 @@ class EnemyAI {
 
       const currentPlayers = this.room?.getPlayers?.() || [];
       const liveTarget = currentPlayers.find(p => p.id === originalTargetId && p.health > 0);
-      const aimPosition = liveTarget?.position || originalAim;
+      const liveAllyTarget = !liveTarget ? this.room?.getEnemy?.(originalTargetId) : null;
+      const aimPosition = liveTarget?.position
+        || (this._isPlayerCombatAlly(liveAllyTarget) && !liveAllyTarget.isDying && liveAllyTarget.health > 0
+          ? liveAllyTarget.position
+          : originalAim);
       const aimDx = aimPosition.x - knight.position.x;
       const aimDz = aimPosition.z - knight.position.z;
       const aimMag = Math.sqrt(aimDx * aimDx + aimDz * aimDz);
@@ -1733,6 +1972,7 @@ class EnemyAI {
     if (this.coopTransitionBlocksOutgoingPlayerHits()) return;
 
     const hitPlayerIds = new Set();
+    const hitAllyIds = new Set();
     const startedAt = Date.now();
     const sampleEveryMs = 50;
     const sx = startPosition.x;
@@ -1778,6 +2018,17 @@ class EnemyAI {
           });
         }
       }
+
+      this.damageAlliedUnitsAlongSpinStrip(
+        sx,
+        sz,
+        segX,
+        segZ,
+        KNIGHT_SPIN_STRIP_HALF_WIDTH,
+        KNIGHT_SPIN_DAMAGE,
+        { sourceEnemyId: knight.id, damageType: 'knight_spin' },
+        hitAllyIds,
+      );
 
       return true;
     };
@@ -2497,16 +2748,20 @@ class EnemyAI {
 
         const players = this.room?.getPlayers();
         const liveTarget = players?.find(p => p.id === targetId);
-        if (!liveTarget || liveTarget.health <= 0) return;
+        const liveAlly = !liveTarget ? this.room?.getEnemy?.(targetId) : null;
+        const aimEntity = liveTarget && liveTarget.health > 0
+          ? liveTarget
+          : (this._isPlayerCombatAlly(liveAlly) ? liveAlly : null);
+        if (!aimEntity) return;
 
-        this._smoothRotateEnemyTowardPoint(liveKnight, liveTarget.position, { instant: true });
+        this._smoothRotateEnemyTowardPoint(liveKnight, aimEntity.position, { instant: true });
         this._queueMove(liveKnight.id, liveKnight.position, liveKnight.rotation);
         this._flushMoves();
 
         const ax = liveKnight.position.x;
         const az = liveKnight.position.z;
-        const dx = liveTarget.position.x - ax;
-        const dz = liveTarget.position.z - az;
+        const dx = aimEntity.position.x - ax;
+        const dz = aimEntity.position.z - az;
         const dist = Math.hypot(dx, dz) || 1;
         const ux = dx / dist;
         const uz = dz / dist;
@@ -2541,6 +2796,17 @@ class EnemyAI {
           KNIGHT_STORM_LASH_HALF_WIDTH,
           KNIGHT_STORM_LASH_ZAP_DAMAGE,
           'knight_storm_lash',
+          { sourceEnemyId: knightId },
+        );
+        const stormLashHalfWidthSq = KNIGHT_STORM_LASH_HALF_WIDTH * KNIGHT_STORM_LASH_HALF_WIDTH;
+        this.damageAlliedUnitsAlongSegmentXZ(
+          ax,
+          az,
+          bx,
+          bz,
+          stormLashHalfWidthSq,
+          KNIGHT_STORM_LASH_ZAP_DAMAGE,
+          { sourceEnemyId: knightId, damageType: 'knight_storm_lash' },
         );
       }, delayMs);
       handles.push(handle);
@@ -2633,7 +2899,28 @@ class EnemyAI {
               this.damagePlayerZombieFromMob({ id: shadeId }, zz, shade.damage || 25, 'shade_dagger');
             }, delay);
           });
-        } else {
+        } else if (resolved.kind === 'hostile') {
+          const hostile = resolved.enemy;
+          this.telegraphShadeAttack(shade, { id: hostile.id, position: hostile.position });
+          this.scheduleAllyShadeDaggerChecks(
+            shade.id,
+            hostile.position.x,
+            hostile.position.z,
+            this.getShadeDaggerDelays(shade),
+          );
+          const hid = hostile.id;
+          const shadeId = shade.id;
+          this.getShadeDaggerDelays(shade).forEach((delay) => {
+            setTimeout(() => {
+              if (shade.isDying || !this.room?.getGameStarted()) return;
+              if (this.room?.isEnemyAffectedBy(shadeId, 'stun')) return;
+              const liveTarget = this.room?.getEnemy(hid);
+              if (!liveTarget || liveTarget.isDying || liveTarget.health <= 0) return;
+              if (this.calculateDistance(shade.position, liveTarget.position) > attackRange + 1.5) return;
+              this.damageHostileMobFromMob(shade, liveTarget, shade.damage || 25, 'shade_dagger');
+            }, delay);
+          });
+        } else if (resolved.kind === 'trap') {
           const tr = resolved.trap;
           this.telegraphShadeAttack(shade, { id: tr.id, position: tr.position });
           this.scheduleAllyShadeDaggerChecks(
@@ -2753,6 +3040,8 @@ class EnemyAI {
     const rotDx = targetPlayer.position.x - endPosition.x;
     const rotDz = targetPlayer.position.z - endPosition.z;
     shade.rotation = Math.atan2(rotDx, rotDz);
+
+    this._queueMoveIfChanged(shade.id, shade.position, shade.rotation);
 
     if (this.io) {
       this.io.to(this.roomId).emit('shade-blink-telegraph', {
@@ -2916,6 +3205,15 @@ class EnemyAI {
           'wraith_buzzsaw',
           { sourceEnemyId: wraithId },
         );
+        this.room?.tryDamageAlliedUnitsInCone?.(
+          ox,
+          oz,
+          facing,
+          WRAITH_BUZZSAW_RANGE,
+          WRAITH_BUZZSAW_HALF_ANGLE_RAD,
+          WRAITH_BUZZSAW_DAMAGE,
+          { sourceEnemyId: wraithId, damageType: 'wraith_buzzsaw' },
+        );
       }, tick * WRAITH_BUZZSAW_TICK_MS);
     }
   }
@@ -3071,6 +3369,26 @@ class EnemyAI {
       return;
     }
 
+    if (resolved.kind === 'hostile') {
+      const hostile = resolved.enemy;
+      const launchRange = 12.0;
+      const launchCooldown = 7000;
+      const lastLaunchTime = this.warlockLaunchCooldown.get(warlock.id) || 0;
+      if (distance <= launchRange && now - lastLaunchTime >= launchCooldown) {
+        this.warlockLaunchCooldown.set(warlock.id, now);
+        this.damageHostileMobFromMob(warlock, hostile, 50, 'warlock_chaos_chip');
+      }
+      if (isPurpleWarlock) {
+        const lockUntil = this.warlockLaunchMoveLockUntil.get(warlock.id) || 0;
+        if (distance > WARLOCK_PREFERRED_STAND_RANGE && now >= lockUntil) {
+          this.moveEnemyTowardsTarget(warlock, moveTarget);
+        }
+      } else if (distance > launchRange) {
+        this.moveEnemyTowardsTarget(warlock, moveTarget);
+      }
+      return;
+    }
+
     const targetPlayer = resolved.player;
 
     if ((this.room?.coopBossesDefeatedCount ?? 0) >= WARLOCK_ARCHON_SHOCK_UNLOCK_BOSS_COUNT) {
@@ -3205,6 +3523,17 @@ class EnemyAI {
         WARLOCK_ARCHON_SHOCK_HALF_WIDTH,
         WARLOCK_ARCHON_SHOCK_DAMAGE,
         'warlock_archon_shock',
+        { sourceEnemyId: warlock.id },
+      );
+      const archonShockHalfWidthSq = WARLOCK_ARCHON_SHOCK_HALF_WIDTH * WARLOCK_ARCHON_SHOCK_HALF_WIDTH;
+      this.damageAlliedUnitsAlongSegmentXZ(
+        seg.ax,
+        seg.az,
+        seg.bx,
+        seg.bz,
+        archonShockHalfWidthSq,
+        WARLOCK_ARCHON_SHOCK_DAMAGE,
+        { sourceEnemyId: warlock.id, damageType: 'warlock_archon_shock' },
       );
     }, WARLOCK_ARCHON_SHOCK_WINDUP_MS);
 
@@ -3784,7 +4113,42 @@ class EnemyAI {
       } else {
         this.moveEnemyTowardsTarget(templar, moveTarget, { meleeSurroundAttackRange: attackRange });
       }
-    } else {
+    } else if (resolved.kind === 'hostile') {
+      const hostile = resolved.enemy;
+      if (distance <= attackRange) {
+        if (!this.bossAttackCooldown.has(templar.id)) {
+          this.bossAttackCooldown.set(templar.id, 0);
+        }
+
+        const lastAttackTime = this.bossAttackCooldown.get(templar.id);
+
+        if (now - lastAttackTime >= attackCooldown) {
+          this.bossAttackCooldown.set(templar.id, now);
+          const SWING_LOCK_MS = 1200;
+          this.meleeLockUntil.set(templar.id, now + SWING_LOCK_MS);
+          this.telegraphTemplarAttack(templar, {
+            id: hostile.id,
+            position: hostile.position,
+          });
+          const hid = hostile.id;
+
+          setTimeout(() => {
+            if (templar.isDying || !this.room?.getGameStarted()) return;
+            const liveTarget = this.room?.getEnemy(hid);
+            if (!liveTarget || liveTarget.isDying || liveTarget.health <= 0) return;
+            const currentDistance = this.calculateDistance(templar.position, liveTarget.position);
+            if (currentDistance <= attackRange) {
+              const damage = templar.damage || 46;
+              this.damageHostileMobFromMob(templar, liveTarget, damage, 'templar_melee');
+            }
+          }, 1000);
+        } else if (distance > meleePressDistance) {
+          this.moveEnemyTowardsTarget(templar, moveTarget, { meleeSurroundAttackRange: attackRange });
+        }
+      } else {
+        this.moveEnemyTowardsTarget(templar, moveTarget, { meleeSurroundAttackRange: attackRange });
+      }
+    } else if (resolved.kind === 'trap') {
       const tr = resolved.trap;
       if (distance <= attackRange) {
         if (!this.bossAttackCooldown.has(templar.id)) {
@@ -4101,8 +4465,11 @@ class EnemyAI {
     const attackCooldown = viper.attackCooldown ?? 5000;
     const lastAttackTime = this.viperAttackCooldown.get(viper.id) || 0;
     const now = Date.now();
+    const postSpawnGraceActive =
+      viper.spawnedAt != null &&
+      now - viper.spawnedAt < VIPER_ATTACK_POST_SPAWN_DELAY_MS;
 
-    if (distance <= attackRange) {
+    if (distance <= attackRange && !postSpawnGraceActive) {
       if (now - lastAttackTime >= attackCooldown) {
         this.viperAttackCooldown.set(viper.id, now);
         const shotId = `viper-shot-${viper.id}-${now}`;
@@ -4165,7 +4532,40 @@ class EnemyAI {
             const zombieHit = this.damagePlayerZombieFromMob(liveViper, zz, 70, 'viper_arrow');
             this.emitViperArrowOutcome(viper.id, shotId, !!zombieHit, zz.position);
           }, impactDelayMs);
-        } else {
+        } else if (resolved.kind === 'hostile') {
+          const hostile = resolved.enemy;
+          const targetPoint = {
+            x: hostile.position.x,
+            y: (hostile.position.y ?? 0) + 1.0,
+            z: hostile.position.z,
+          };
+          const impactDelayMs = VIPER_DRAWBOW_DURATION_MS + viperArrowFlightMs(
+            { x: viper.position.x, y: viper.position.y + 1.5, z: viper.position.z },
+            targetPoint,
+          );
+          this.telegraphViperAttack(viper, {
+            id: hostile.id,
+            position: hostile.position,
+          }, shotId);
+          const hid = hostile.id;
+          const vid = viper.id;
+          setTimeout(() => {
+            if (viper.isDying || !this.room?.getGameStarted()) return;
+            const liveViper = this.room?.getEnemy(vid);
+            if (!liveViper || liveViper.isDying) return;
+            const liveTarget = this.room?.getEnemy(hid);
+            if (!liveTarget || liveTarget.isDying || liveTarget.health <= 0) {
+              this.emitViperArrowOutcome(vid, shotId, false, liveViper.position);
+              return;
+            }
+            if (this.calculateDistance(liveViper.position, liveTarget.position) > attackRange + 1) {
+              this.emitViperArrowOutcome(vid, shotId, false, liveTarget.position);
+              return;
+            }
+            const hostileHit = this.damageHostileMobFromMob(liveViper, liveTarget, 70, 'viper_arrow');
+            this.emitViperArrowOutcome(vid, shotId, !!hostileHit, liveTarget.position);
+          }, impactDelayMs);
+        } else if (resolved.kind === 'trap') {
           const tr = resolved.trap;
           const targetPoint = {
             x: tr.position.x,
@@ -4338,7 +4738,9 @@ class EnemyAI {
           this.weaverCastLightning(weaver, resolved.player, now);
         } else if (resolved.kind === 'zombie') {
           this.weaverCastLightningOnZombie(weaver, resolved.zombie, now);
-        } else {
+        } else if (resolved.kind === 'hostile') {
+          this.weaverCastLightningOnHostile(weaver, resolved.enemy, now);
+        } else if (resolved.kind === 'trap') {
           this.weaverCastLightningOnTrap(weaver, resolved.trap, now);
         }
         return;
@@ -4455,6 +4857,12 @@ class EnemyAI {
             'weaver_impale_spike',
             { sourceEnemyId: wid },
           );
+          this.room.tryDamageAlliedKnightInXZDisk(
+            { x: landX, z: landZ },
+            BOSS_TECTONIC_SHARD_RADIUS,
+            WEAVER_IMPALE_SPIKE_DAMAGE,
+            { sourceEnemyId: wid, damageType: 'weaver_impale_spike' },
+          );
         }
         if (this.io) {
           this.io.to(this.roomId).emit('weaver-impale-spike-appear', {
@@ -4516,6 +4924,43 @@ class EnemyAI {
     _enemyAiLog(`🧵 Weaver ${weaver.id} lightning (zombie) at (${tx.toFixed(1)}, ${tz.toFixed(1)})`);
   }
 
+  weaverCastLightningOnHostile(weaver, targetEnemy, now) {
+    const CHARGE_MS = 1500;
+    this.weaverCastLockUntil.set(weaver.id, now + CHARGE_MS);
+    this._queueMoveIfChanged(weaver.id, weaver.position, weaver.rotation);
+    const tx = targetEnemy.position.x;
+    const tz = targetEnemy.position.z;
+    if (this.io) {
+      this.io.to(this.roomId).emit('weaver-lightning-telegraph', {
+        weaverId: weaver.id,
+        targetPosition: { x: tx, y: 0, z: tz },
+        strikeAt: now + CHARGE_MS,
+        damage: 45,
+        radius: 2.99,
+        theme: 'blue',
+        timestamp: now,
+      });
+    }
+    const tid = targetEnemy.id;
+    const wid = weaver.id;
+    setTimeout(() => {
+      if (!this.room?.getGameStarted()) return;
+      const liveWeaver = this.room?.getEnemy(wid);
+      const liveTarget = this.room?.getEnemy(tid);
+      if (!liveWeaver || liveWeaver.isDying || !liveTarget || liveTarget.isDying || liveTarget.health <= 0) return;
+      const rdx = liveTarget.position.x - tx;
+      const rdz = liveTarget.position.z - tz;
+      if (Math.sqrt(rdx * rdx + rdz * rdz) <= 2.99) {
+        this.damageHostileMobFromMob(liveWeaver, liveTarget, 35, 'weaver_lightning');
+      }
+      this.room.tryDamageAlliedKnightInXZDisk({ x: tx, z: tz }, 2.99, 35, {
+        sourceEnemyId: wid,
+        damageType: 'weaver_lightning',
+      });
+    }, CHARGE_MS);
+    _enemyAiLog(`🧵 Weaver ${weaver.id} lightning (hostile) at (${tx.toFixed(1)}, ${tz.toFixed(1)})`);
+  }
+
   weaverCastLightningOnTrap(weaver, trap, now) {
     const CHARGE_MS = 1150;
     this.weaverCastLockUntil.set(weaver.id, now + CHARGE_MS);
@@ -4567,6 +5012,7 @@ class EnemyAI {
       if (this.isFriendlyCombatUnit(enemy)) return;
       if (enemy.isDying || enemy.health <= 0) return;
       if (enemy.type === 'tentacle-spine') return;
+      if (enemy.type === 'nemesis') return;
       if (enemy.health >= enemy.maxHealth) return; // Already full — no point healing
 
       const dist = this.calculateDistance(weaver.position, enemy.position);
@@ -4757,11 +5203,15 @@ class EnemyAI {
     let aggroData = this.enemyAggro.get(ghoul.id);
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(ghoul, players);
-      if (!closestPlayer) return;
+      const structure = this.room?.deliriumStructure;
+      const wantsStructure = ghoul.deliriumGhoul && ghoul.targetStructure
+        && structure && !structure.destroyed && structure.hp > 0;
+      if (!closestPlayer && !wantsStructure) return;
       aggroData = {
-        targetPlayerId: closestPlayer.id,
+        targetPlayerId: closestPlayer?.id ?? null,
         targetZombieId: null,
         targetTrapId: null,
+        targetStructure: wantsStructure,
         lastUpdate: Date.now(),
         aggro: 100,
         isAggroed: true,
@@ -4790,6 +5240,7 @@ class EnemyAI {
       distance > attackRange
     ) {
       const canLeap =
+        now >= this.ghoulLeapRoomSlotUntil &&
         (ghoul.spawnedAt == null || now - ghoul.spawnedAt >= GHOUL_LEAP_POST_SPAWN_DELAY_MS) &&
         (this.ghoulLeapCooldown.get(ghoul.id) == null ||
           now - (this.ghoulLeapCooldown.get(ghoul.id) || 0) >= GHOUL_LEAP_COOLDOWN_MS) &&
@@ -4850,7 +5301,44 @@ class EnemyAI {
               _enemyAiLog(`💀 Ghoul ${ghoul.id} swing missed — zombie dodged!`);
             }
           }, 900);
-        } else {
+        } else if (resolved.kind === 'hostile') {
+          const hostile = resolved.enemy;
+          this.telegraphGhoulAttack(ghoul, {
+            id: hostile.id,
+            position: hostile.position,
+          });
+          const hid = hostile.id;
+          setTimeout(() => {
+            if (ghoul.isDying || !this.room?.getGameStarted()) return;
+            const liveTarget = this.room?.getEnemy(hid);
+            if (!liveTarget || liveTarget.isDying || liveTarget.health <= 0) return;
+            const currentDistance = this.calculateDistance(ghoul.position, liveTarget.position);
+            if (currentDistance <= attackRange) {
+              const damage = ghoul.damage || GHOUL_BASE_DAMAGE;
+              this.damageHostileMobFromMob(ghoul, liveTarget, damage, 'ghoul_melee');
+            }
+          }, 900);
+        } else if (resolved.kind === 'structure') {
+          const structurePos = {
+            x: resolved.structure.position.x,
+            y: 0,
+            z: resolved.structure.position.z,
+          };
+          this.telegraphGhoulAttack(ghoul, {
+            id: 'delirium-structure',
+            position: structurePos,
+          });
+          setTimeout(() => {
+            if (ghoul.isDying || !this.room?.getGameStarted()) return;
+            const liveStructure = this.room?.deliriumStructure;
+            if (!liveStructure || liveStructure.destroyed || liveStructure.hp <= 0) return;
+            const currentDistance = this.calculateDistance(ghoul.position, structurePos);
+            if (currentDistance <= attackRange) {
+              const damage = ghoul.damage || GHOUL_BASE_DAMAGE;
+              this.room.damageDeliriumStructure(damage, ghoul.id);
+            }
+          }, 900);
+        } else if (resolved.kind === 'trap') {
           const tr = resolved.trap;
           this.telegraphGhoulAttack(ghoul, {
             id: tr.id,
@@ -5130,7 +5618,25 @@ class EnemyAI {
               this.damagePlayerZombieFromMob(titan, z, damage, 'titan_melee');
             }
           }, TITAN_HIT_DELAY_MS);
-        } else {
+        } else if (resolved.kind === 'hostile') {
+          const hostile = resolved.enemy;
+          this.telegraphTitanAttack(titan, {
+            id: hostile.id,
+            position: hostile.position,
+          });
+          const hid = hostile.id;
+          setTimeout(() => {
+            if (titan.isDying || !this.room?.getGameStarted()) return;
+            if (this.room?.isEnemyAffectedBy(titan.id, 'stun')) return;
+            const liveTarget = this.room?.getEnemy(hid);
+            if (!liveTarget || liveTarget.isDying || liveTarget.health <= 0) return;
+            const currentDistance = this.calculateDistance(titan.position, liveTarget.position);
+            if (currentDistance <= attackRange) {
+              const damage = titan.damage || 100;
+              this.damageHostileMobFromMob(titan, liveTarget, damage, 'titan_melee');
+            }
+          }, TITAN_HIT_DELAY_MS);
+        } else if (resolved.kind === 'trap') {
           const tr = resolved.trap;
           this.telegraphTitanAttack(titan, {
             id: tr.id,
@@ -5155,7 +5661,8 @@ class EnemyAI {
       }
     }
 
-    const cannonUnlocked = (this.room?.coopBossesDefeatedCount ?? 0) >= TITAN_CANNON_UNLOCK_BOSS_COUNT;
+    const cannonUnlocked = titan.erebusForceCannon === true
+      || (this.room?.coopBossesDefeatedCount ?? 0) >= TITAN_CANNON_UNLOCK_BOSS_COUNT;
     if (
       cannonUnlocked &&
       !titan.bladestormPowerupActive &&
@@ -5836,12 +6343,17 @@ class EnemyAI {
 
   ghoulStartLeap(ghoul, targetPlayer) {
     const now = Date.now();
+    if (now < this.ghoulLeapRoomSlotUntil) {
+      return;
+    }
     if (
       ghoul.spawnedAt != null &&
       now - ghoul.spawnedAt < GHOUL_LEAP_POST_SPAWN_DELAY_MS
     ) {
       return;
     }
+
+    this.ghoulLeapRoomSlotUntil = now + GHOUL_LEAP_ROOM_SLOT_MS;
 
     const fromX = ghoul.position.x;
     const fromZ = ghoul.position.z;
@@ -5894,6 +6406,12 @@ class EnemyAI {
         leapDamage,
         'ghoul_leap',
         { stunMs: GHOUL_LEAP_STUN_MS, sourceEnemyId: ghoulId },
+      );
+      this.room.tryDamageAlliedKnightInXZDisk(
+        land,
+        GHOUL_LEAP_LANDING_RADIUS,
+        leapDamage,
+        { sourceEnemyId: ghoulId, damageType: 'ghoul_leap' },
       );
     }
     if (this.io) {
@@ -5957,6 +6475,12 @@ class EnemyAI {
         TEMPLAR_LEAP_DAMAGE,
         'templar_leap',
         { sourceEnemyId: templarId },
+      );
+      this.room.tryDamageAlliedKnightInXZDisk(
+        land,
+        TEMPLAR_LEAP_LANDING_RADIUS,
+        TEMPLAR_LEAP_DAMAGE,
+        { sourceEnemyId: templarId, damageType: 'templar_leap' },
       );
     }
     if (this.io) {
@@ -6198,6 +6722,10 @@ class EnemyAI {
       const resolved = this.resolveEnemyWallCollisions(p.x, p.z);
       pos = { x: resolved.x, y: 0, z: resolved.z };
       break;
+    }
+
+    if (this.room?.bannedEnemyTypes?.has('warlock')) {
+      return;
     }
 
     const warlockId = `warlock-boss2-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -7575,10 +8103,15 @@ class EnemyAI {
       case 'knight':
       case 'allied-knight':
         return 0.85;
+      case 'allied-demon':
+        return 0.85;
+      case 'allied-huntress':
+        return 0.75;
       case 'templar':
       case 'ghoul':
         return 0.95;
       case 'titan':
+      case 'nemesis':
         return 1.2;
       case 'martyr': return 0.8;
       default:
@@ -7799,6 +8332,10 @@ class EnemyAI {
     if (this.room.isEnemyAffectedBy(enemyId, 'entangle')) {
       return 0;
     }
+
+    if (this.room.isEnemyAffectedBy(enemyId, 'hostileRoot')) {
+      return 0;
+    }
     
     // Check for slow effect - reduces speed by 50%
     if (this.room.isEnemyAffectedBy(enemyId, 'slow')) {
@@ -7860,6 +8397,10 @@ class EnemyAI {
       case 'titan':   return 2.5;
       case 'martyr':  return 3.0;
       case 'wraith':  return 2.5;
+      case 'spectre': return 2.75;
+      case 'sentinel': return 2.0;
+      case 'nemesis': return 2.5;
+      case 'valkyrie': return VALKYRIE_WALK_SPEED;
       case 'player-zombie': return 2.0;
       default: return 2.0;
     }
@@ -7906,7 +8447,7 @@ class EnemyAI {
    * Aggregate allied knight boons across all players in the room.
    * Boolean flags are OR'd (any player with the boon activates it).
    * Numeric stats use the max value found across all players with the boon active.
-   * @returns {{ tempestInitiate: boolean; necrosInitiate: boolean; infernalInitiate: boolean; abyssalInitiate: boolean; agility: number; strength: number; stamina: number }}
+   * @returns {{ tempestInitiate: boolean; necrosInitiate: boolean; infernalInitiate: boolean; abyssalInitiate: boolean; agility: number; strength: number; stamina: number; intellect: number }}
    */
   getCoopAlliedKnightBoons() {
     const now = Date.now();
@@ -7921,6 +8462,7 @@ class EnemyAI {
       agility: 0,
       strength: 0,
       stamina: 0,
+      intellect: 0,
     };
     if (!this.room?.players) return result;
     for (const player of this.room.players.values()) {
@@ -7937,6 +8479,9 @@ class EnemyAI {
       if (b.infernalInitiate) {
         result.infernalInitiate = true;
         result.strength = Math.max(result.strength, typeof b.strength === 'number' ? b.strength : 0);
+        result.stamina = Math.max(result.stamina, typeof b.stamina === 'number' ? b.stamina : 0);
+        result.intellect = Math.max(result.intellect, typeof b.intellect === 'number' ? b.intellect : 0);
+        result.agility = Math.max(result.agility, typeof b.agility === 'number' ? b.agility : 0);
       }
       if (b.abyssalInitiate) {
         result.abyssalInitiate = true;
@@ -7945,6 +8490,84 @@ class EnemyAI {
     this._cachedAlliedKnightBoons = result;
     this._alliedKnightBoonsCachedAt = now;
     return result;
+  }
+
+  applyNecrosInitiateIfNeeded(ally, boons) {
+    if (!boons.necrosInitiate || ally.necrosBoonApplied) return;
+    ally.necrosBoonApplied = true;
+    const priorMax = ally.maxHealth || 0;
+    const newMax = NECROS_INITIATE_KNIGHT_BASE_HP + boons.stamina * NECROS_INITIATE_KNIGHT_HP_PER_STAMINA;
+    const hpIncrease = Math.max(0, newMax - priorMax);
+    ally.maxHealth = newMax;
+    ally.health = Math.min(newMax, (ally.health || 0) + hpIncrease);
+  }
+
+  getHuntressShotCooldownMs(boons) {
+    let cooldown = ALLIED_HUNTRESS_ATTACK_COOLDOWN_MS;
+    if (boons.abyssalInitiate) cooldown -= ABYSSAL_INITIATE_HUNTRESS_COOLDOWN_REDUCTION_MS;
+    if (boons.tempestInitiate) cooldown -= ABYSSAL_INITIATE_HUNTRESS_COOLDOWN_REDUCTION_MS;
+    return Math.max(0, cooldown);
+  }
+
+  getHuntressArrowDamage(ally, boons) {
+    if (boons.infernalInitiate) {
+      return INFERNAL_INITIATE_HUNTRESS_BASE_DAMAGE + boons.agility * INFERNAL_INITIATE_HUNTRESS_DAMAGE_PER_AGILITY;
+    }
+    return ally.damage || ALLIED_HUNTRESS_DAMAGE_FALLBACK;
+  }
+
+  getDemonMeleeCooldownMs(boons) {
+    let cooldown = ALLIED_DEMON_ATTACK_COOLDOWN_MS;
+    if (boons.abyssalInitiate) cooldown -= ABYSSAL_INITIATE_DEMON_COOLDOWN_REDUCTION_MS;
+    return Math.max(0, cooldown);
+  }
+
+  getDemonMeleeDamage(ally, boons) {
+    if (boons.infernalInitiate) {
+      return INFERNAL_INITIATE_DEMON_BASE_DAMAGE
+        + (boons.stamina + boons.strength) * INFERNAL_INITIATE_DEMON_DAMAGE_PER_STAMINA_OR_STRENGTH;
+    }
+    return ally.damage || ALLIED_DEMON_DAMAGE_FALLBACK;
+  }
+
+  getDemonLeapCooldownMs(boons) {
+    return boons.tempestInitiate ? TEMPEST_INITIATE_DEMON_LEAP_COOLDOWN_MS : ALLIED_DEMON_LEAP_COOLDOWN_MS;
+  }
+
+  getDemonLeapDamage(boons) {
+    if (boons.tempestInitiate) {
+      return TEMPEST_INITIATE_DEMON_LEAP_BASE_DAMAGE + boons.agility * TEMPEST_INITIATE_DEMON_LEAP_DAMAGE_PER_AGILITY;
+    }
+    return ALLIED_DEMON_LEAP_DAMAGE;
+  }
+
+  getEnchantressEarthShockCooldownMs(boons) {
+    let cooldown = ALLIED_ENCHANTRESS_EARTH_SHOCK_COOLDOWN_MS;
+    if (boons.abyssalInitiate) cooldown -= ABYSSAL_INITIATE_ENCHANTRESS_EARTH_SHOCK_COOLDOWN_REDUCTION_MS;
+    if (boons.tempestInitiate) cooldown -= ABYSSAL_INITIATE_ENCHANTRESS_EARTH_SHOCK_COOLDOWN_REDUCTION_MS;
+    return Math.max(0, cooldown);
+  }
+
+  getEnchantressEarthShockDamage(boons) {
+    if (boons.infernalInitiate) {
+      return INFERNAL_INITIATE_ENCHANTRESS_EARTH_SHOCK_BASE_DAMAGE
+        + boons.intellect * INFERNAL_INITIATE_ENCHANTRESS_EARTH_SHOCK_DAMAGE_PER_INTELLECT;
+    }
+    return ALLIED_ENCHANTRESS_EARTH_SHOCK_DAMAGE;
+  }
+
+  getPhantomComboCooldownMs(boons) {
+    let cooldown = ALLIED_PHANTOM_COMBO_COOLDOWN_MS;
+    if (boons.abyssalInitiate) cooldown -= ABYSSAL_INITIATE_PHANTOM_COMBO_COOLDOWN_REDUCTION_MS;
+    if (boons.tempestInitiate) cooldown -= ABYSSAL_INITIATE_PHANTOM_COMBO_COOLDOWN_REDUCTION_MS;
+    return Math.max(0, cooldown);
+  }
+
+  getPhantomDaggerDamage(ally, boons) {
+    if (boons.infernalInitiate) {
+      return INFERNAL_INITIATE_PHANTOM_BASE_DAMAGE + boons.agility * INFERNAL_INITIATE_PHANTOM_DAMAGE_PER_AGILITY;
+    }
+    return ally.damage || ALLIED_PHANTOM_DAMAGE_FALLBACK;
   }
 
   /** Flat Pack Hunter bonus: +15 damage per living owned zombie (including self). */
@@ -7957,6 +8580,136 @@ class EnemyAI {
 
   isFriendlyCombatUnit(enemy) {
     return !!enemy && (enemy.type === 'player-zombie' || enemy.alliedUnit === true);
+  }
+
+  /** Camp mobs Nemesis may attack. */
+  isValidNemesisPrey(target) {
+    if (!target || target.isDying || target.health <= 0) return false;
+    if (this.isFriendlyCombatUnit(target)) return false;
+    return !NEMESIS_CROSS_FACTION_EXCLUDED_PREY.has(target.type);
+  }
+
+  /** Camp mobs that may attack Nemesis when focused via hostile-enemy aggro. */
+  isValidAttackerOnNemesis(attacker) {
+    if (!attacker || attacker.isDying || attacker.health <= 0) return false;
+    if (attacker.type === 'nemesis') return false;
+    if (this.isFriendlyCombatUnit(attacker)) return false;
+    return !NEMESIS_CROSS_FACTION_EXCLUDED_ATTACKERS.has(attacker.type);
+  }
+
+  isValidHostileEnemyAggroTarget(moverEnemy, target) {
+    if (!target || target.isDying || target.health <= 0) return false;
+    if (moverEnemy?.type === 'nemesis') return this.isValidNemesisPrey(target);
+    if (target.type === 'nemesis') return this.isValidAttackerOnNemesis(moverEnemy);
+    return false;
+  }
+
+  findClosestNemesisPrey(nemesis, maxRadius = NEMESIS_AGGRO_RADIUS) {
+    if (!this.room?.getEnemies || !nemesis?.position) return null;
+    let best = null;
+    let bestDist = maxRadius;
+    for (const enemy of this.room.getEnemies()) {
+      if (enemy.id === nemesis.id) continue;
+      if (!this.isValidNemesisPrey(enemy)) continue;
+      const dist = this.calculateDistance(nemesis.position, enemy.position);
+      if (dist <= maxRadius && dist < bestDist && this.hasLineOfSight(nemesis.position, enemy.position)) {
+        bestDist = dist;
+        best = enemy;
+      }
+    }
+    return best;
+  }
+
+  findClosestCombatantForNemesis(nemesis, players, maxRadius = NEMESIS_AGGRO_RADIUS) {
+    let best = null;
+    let bestDist = maxRadius;
+    let bestKind = null;
+
+    for (const p of players) {
+      if (!p || p.health <= 0) continue;
+      const dist = this.calculateDistance(nemesis.position, p.position);
+      if (dist <= maxRadius && dist < bestDist && this.hasLineOfSight(nemesis.position, p.position)) {
+        bestDist = dist;
+        best = p;
+        bestKind = 'player';
+      }
+    }
+
+    const prey = this.findClosestNemesisPrey(nemesis, maxRadius);
+    if (prey) {
+      const dist = this.calculateDistance(nemesis.position, prey.position);
+      if (dist < bestDist) {
+        best = prey;
+        bestKind = 'hostile';
+      }
+    }
+
+    if (!best) return null;
+    return bestKind === 'player'
+      ? { kind: 'player', player: best }
+      : { kind: 'hostile', enemy: best };
+  }
+
+  findClosestCombatantForSpectre(spectre, players, maxRadius = SPECTRE_AGGRO_RADIUS) {
+    let best = null;
+    let bestDist = maxRadius;
+    let bestKind = null;
+
+    for (const p of players) {
+      if (!p || p.health <= 0) continue;
+      const dist = this.calculateDistance(spectre.position, p.position);
+      if (dist <= maxRadius && dist < bestDist && this.hasLineOfSight(spectre.position, p.position)) {
+        bestDist = dist;
+        best = p;
+        bestKind = 'player';
+      }
+    }
+
+    if (this.room?.getEnemies) {
+      for (const enemy of this.room.getEnemies()) {
+        if (enemy.id === spectre.id) continue;
+        if (!this.isValidHostileEnemyAggroTarget(spectre, enemy)) continue;
+        const dist = this.calculateDistance(spectre.position, enemy.position);
+        if (dist <= maxRadius && dist < bestDist && this.hasLineOfSight(spectre.position, enemy.position)) {
+          bestDist = dist;
+          best = enemy;
+          bestKind = 'hostile';
+        }
+      }
+    }
+
+    if (!best) return null;
+    return bestKind === 'player'
+      ? { kind: 'player', player: best }
+      : { kind: 'hostile', enemy: best };
+  }
+
+  damageHostileMobFromMob(attacker, target, damage, damageType) {
+    if (!this.isValidHostileEnemyAggroTarget(attacker, target)) return null;
+    return this.room.damageEnemy(target.id, damage, null, null, {
+      sourceEnemyId: attacker.id,
+      damageType,
+    });
+  }
+
+  fakeTargetFromEnemy(enemy) {
+    return { id: enemy.id, position: enemy.position };
+  }
+
+  scheduleDelayedMeleeVsHostile(attacker, targetEnemy, attackRange, damage, damageType, delayMs) {
+    const aid = attacker.id;
+    const tid = targetEnemy.id;
+    this._scheduleEnemyTimeout(aid, () => {
+      if (attacker.isDying || !this.room?.getGameStarted()) return;
+      if (this.room?.isEnemyAffectedBy(aid, 'stun')) return;
+      const liveTarget = this.room?.getEnemy(tid);
+      if (!liveTarget || liveTarget.isDying || liveTarget.health <= 0) return;
+      if (!this.isValidHostileEnemyAggroTarget(attacker, liveTarget)) return;
+      const currentDistance = this.calculateDistance(attacker.position, liveTarget.position);
+      if (currentDistance <= attackRange) {
+        this.damageHostileMobFromMob(attacker, liveTarget, damage, damageType);
+      }
+    }, delayMs);
   }
 
   damageAlliedUnitsAlongSegmentXZ(startX, startZ, endX, endZ, radiusSq, damage, hitMeta) {
@@ -7973,11 +8726,36 @@ class EnemyAI {
     return hitCount;
   }
 
-  countHostileEnemiesAlongSegmentXZ(startX, startZ, endX, endZ, radiusSq) {
+  damageAlliedUnitsAlongSpinStrip(sx, sz, segX, segZ, stripHalfWidth, damage, hitMeta, hitAllyIds) {
+    if (!this.room?.getEnemies) return 0;
+    const segLenSq = segX * segX + segZ * segZ;
+    if (segLenSq < 1e-4) return 0;
+
+    let hitCount = 0;
+    for (const ally of this.room.getEnemies()) {
+      if (!ally?.alliedUnit || ally.isDying || ally.health <= 0) continue;
+      if (hitAllyIds.has(ally.id)) continue;
+
+      const px = (ally.position?.x ?? 0) - sx;
+      const pz = (ally.position?.z ?? 0) - sz;
+      const t = Math.max(0, Math.min(1, (px * segX + pz * segZ) / segLenSq));
+      const closestX = sx + segX * t;
+      const closestZ = sz + segZ * t;
+      const perpendicular = Math.hypot((ally.position?.x ?? 0) - closestX, (ally.position?.z ?? 0) - closestZ);
+      if (perpendicular > stripHalfWidth) continue;
+
+      hitAllyIds.add(ally.id);
+      const hit = this.room.damageEnemy(ally.id, damage, null, null, hitMeta);
+      if (hit) hitCount += 1;
+    }
+    return hitCount;
+  }
+
+  countHostileEnemiesAlongSegmentXZ(startX, startZ, endX, endZ, radiusSq, ally = null) {
     if (!this.room?.getEnemies) return 0;
     let count = 0;
     for (const enemy of this.room.getEnemies()) {
-      if (!this.isValidAlliedKnightTarget(enemy)) continue;
+      if (!this.isValidAlliedKnightTarget(enemy, ally)) continue;
       const ex = enemy.position?.x ?? 0;
       const ez = enemy.position?.z ?? 0;
       if (distPointSegmentSqXZ(ex, ez, startX, startZ, endX, endZ) > radiusSq) continue;
@@ -7986,11 +8764,11 @@ class EnemyAI {
     return count;
   }
 
-  damageHostileEnemiesAlongSegmentXZ(startX, startZ, endX, endZ, radiusSq, damage, hitMeta) {
+  damageHostileEnemiesAlongSegmentXZ(startX, startZ, endX, endZ, radiusSq, damage, hitMeta, ally = null) {
     if (!this.room?.getEnemies) return 0;
     let hitCount = 0;
     for (const enemy of this.room.getEnemies()) {
-      if (!this.isValidAlliedKnightTarget(enemy)) continue;
+      if (!this.isValidAlliedKnightTarget(enemy, ally)) continue;
       const ex = enemy.position?.x ?? 0;
       const ez = enemy.position?.z ?? 0;
       if (distPointSegmentSqXZ(ex, ez, startX, startZ, endX, endZ) > radiusSq) continue;
@@ -8124,8 +8902,46 @@ class EnemyAI {
     this.enemyHazardIntervals.delete(enemyId);
   }
 
-  isValidAlliedKnightTarget(enemy) {
-    return !!enemy && !enemy.isDying && enemy.health > 0 && !this.isFriendlyCombatUnit(enemy);
+  isValidAlliedKnightTarget(enemy, ally = null) {
+    if (!enemy || enemy.isDying || enemy.health <= 0) return false;
+    if (this.isFriendlyCombatUnit(enemy)) return false;
+    if (enemy.type === 'tentacle-spine' || enemy.isTrap) {
+      return !!ally && this._allyHasPersonalTrapThreat(ally.id, enemy.id);
+    }
+    return true;
+  }
+
+  _allyHasPersonalTrapThreat(allyId, trapId) {
+    const chart = this.alliedTrapThreat.get(allyId);
+    if (!chart) return false;
+    const entry = chart.get(trapId);
+    if (!entry) return false;
+    if (Date.now() - entry.lastUpdate > ALLIED_TRAP_THREAT_TTL_MS) {
+      chart.delete(trapId);
+      return false;
+    }
+    return true;
+  }
+
+  _recordAlliedTrapThreat(allyId, trapId) {
+    const now = Date.now();
+    let chart = this.alliedTrapThreat.get(allyId);
+    if (!chart) {
+      chart = new Map();
+      this.alliedTrapThreat.set(allyId, chart);
+    }
+    chart.set(trapId, { lastUpdate: now });
+  }
+
+  pruneAlliedTrapThreat(allyId) {
+    const chart = this.alliedTrapThreat.get(allyId);
+    if (!chart) return;
+    const now = Date.now();
+    chart.forEach((entry, trapId) => {
+      if (now - entry.lastUpdate > ALLIED_TRAP_THREAT_TTL_MS) {
+        chart.delete(trapId);
+      }
+    });
   }
 
   _isPlayerCombatAlly(ally) {
@@ -8142,8 +8958,9 @@ class EnemyAI {
 
   getAlliedKnightLockedTarget(ally) {
     if (!ally?.alliedTargetEnemyId || !this.room) return null;
+    this.pruneAlliedTrapThreat(ally.id);
     const target = this.room.getEnemy?.(ally.alliedTargetEnemyId);
-    if (this.isValidAlliedKnightTarget(target)) return target;
+    if (this.isValidAlliedKnightTarget(target, ally)) return target;
     ally.alliedTargetEnemyId = null;
     return null;
   }
@@ -8198,7 +9015,7 @@ class EnemyAI {
     if (chart) {
       chart.forEach((entry, enemyId) => {
         const enemy = this.room.getEnemy?.(enemyId);
-        if (!enemy || enemy.isDying || enemy.health <= 0 || this.isFriendlyCombatUnit(enemy)) {
+        if (!this.isValidAlliedKnightTarget(enemy, ally)) {
           chart.delete(enemyId);
           return;
         }
@@ -8231,7 +9048,7 @@ class EnemyAI {
     let bestDist = Infinity;
 
     for (const enemy of this.room.getEnemies()) {
-      if (!this.isValidAlliedKnightTarget(enemy)) continue;
+      if (!this.isValidAlliedKnightTarget(enemy, huntress)) continue;
       const dist = this.calculateDistance(huntress.position, enemy.position);
       if (dist > attackRange) continue;
       if (!this.hasLineOfSight(huntress.position, enemy.position)) continue;
@@ -8251,6 +9068,7 @@ class EnemyAI {
         endX,
         endZ,
         ALLIED_HUNTRESS_ARROW_PIERCE_RADIUS_SQ,
+        huntress,
       );
 
       if (pierceCount > bestPierceCount || (pierceCount === bestPierceCount && dist < bestDist)) {
@@ -8325,7 +9143,7 @@ class EnemyAI {
   }
 
   tryAlliedKnightSmite(ally, targetEnemy, distance, now = Date.now()) {
-    if (!this.room || !this.isValidAlliedKnightTarget(targetEnemy)) return false;
+    if (!this.room || !this.isValidAlliedKnightTarget(targetEnemy, ally)) return false;
     this.updateAlliedKnightOrbRecharge(ally, now);
     if (now < (ally.alliedSmiteCooldownUntil || 0)) return false;
     if (distance > ALLIED_KNIGHT_SMITE_CAST_RANGE) return false;
@@ -8364,7 +9182,7 @@ class EnemyAI {
       if (this.room?.isEnemyAffectedBy(liveAlly.id, 'stun')) return;
 
       const liveTarget = this.room?.getEnemy(targetId);
-      if (!this.isValidAlliedKnightTarget(liveTarget)) return;
+      if (!this.isValidAlliedKnightTarget(liveTarget, liveAlly)) return;
 
       const strikePosition = {
         x: liveTarget.position.x,
@@ -8373,7 +9191,7 @@ class EnemyAI {
       };
 
       for (const enemy of this.room.getEnemies()) {
-        if (!this.isValidAlliedKnightTarget(enemy)) continue;
+        if (!this.isValidAlliedKnightTarget(enemy, liveAlly)) continue;
         const ex = enemy.position.x - strikePosition.x;
         const ez = enemy.position.z - strikePosition.z;
         if (ex * ex + ez * ez > ALLIED_KNIGHT_SMITE_RADIUS * ALLIED_KNIGHT_SMITE_RADIUS) continue;
@@ -8408,13 +9226,7 @@ class EnemyAI {
 
     // Apply one-time allied knight boon stat upgrades when boons become active.
     const knightBoons = this.getCoopAlliedKnightBoons();
-    if (knightBoons.necrosInitiate && !ally.necrosBoonApplied) {
-      ally.necrosBoonApplied = true;
-      const newMax = NECROS_INITIATE_KNIGHT_BASE_HP + knightBoons.stamina * NECROS_INITIATE_KNIGHT_HP_PER_STAMINA;
-      const hpIncrease = Math.max(0, newMax - (ally.maxHealth || ALLIED_KNIGHT_MAX_HP));
-      ally.maxHealth = newMax;
-      ally.health = Math.min(newMax, (ally.health || 0) + hpIncrease);
-    }
+    this.applyNecrosInitiateIfNeeded(ally, knightBoons);
     if (knightBoons.abyssalInitiate && !ally.abyssalBoonApplied) {
       ally.abyssalBoonApplied = true;
       ally.moveSpeed = (ally.moveSpeed ?? ALLIED_KNIGHT_MOVE_SPEED) * 1.5;
@@ -8499,7 +9311,8 @@ class EnemyAI {
 
   scheduleAllyHuntressShot(huntress, targetEnemy, shotId, { drawDurationMs = VIPER_DRAWBOW_DURATION_MS } = {}) {
     const maxRange = ALLIED_HUNTRESS_ATTACK_RANGE;
-    const damage = huntress.damage || ALLIED_HUNTRESS_DAMAGE_FALLBACK;
+    const boons = this.getCoopAlliedKnightBoons();
+    const damage = this.getHuntressArrowDamage(huntress, boons);
     this.telegraphViperAttack(huntress, {
       id: targetEnemy.id,
       position: targetEnemy.position,
@@ -8525,7 +9338,8 @@ class EnemyAI {
       if (huntress.isDying || !this.room?.getGameStarted()) return;
       const liveHuntress = this.room?.getEnemy(hid);
       if (!liveHuntress || liveHuntress.isDying) return;
-      const liveDamage = liveHuntress.damage || ALLIED_HUNTRESS_DAMAGE_FALLBACK;
+      const liveBoons = this.getCoopAlliedKnightBoons();
+      const liveDamage = this.getHuntressArrowDamage(liveHuntress, liveBoons);
       const hitCount = this.damageHostileEnemiesAlongSegmentXZ(
         startX,
         startZ,
@@ -8537,6 +9351,7 @@ class EnemyAI {
           sourceAlliedUnitId: liveHuntress.id,
           damageType: 'allied_huntress_arrow',
         },
+        liveHuntress,
       );
       const outcomePosition = hitCount > 0
         ? { x: endX, y: liveHuntress.position.y, z: endZ }
@@ -8548,6 +9363,8 @@ class EnemyAI {
   updateAlliedHuntressAI(ally, players) {
     if (!this.room || ally.isDying || ally.health <= 0) return;
     const now = Date.now();
+    const boons = this.getCoopAlliedKnightBoons();
+    this.applyNecrosInitiateIfNeeded(ally, boons);
 
     const target = this.findAlliedHuntressTarget(ally);
     const closestPlayer = this.findClosestPlayer(ally, players);
@@ -8568,7 +9385,7 @@ class EnemyAI {
     ally.rotation = Math.atan2(dx, dz);
     this._queueMoveIfChanged(ally.id, ally.position, ally.rotation);
 
-    const attackCooldown = ally.attackCooldown ?? 1000;
+    const attackCooldown = this.getHuntressShotCooldownMs(boons);
     const lastAttackTime = this.viperAttackCooldown.get(ally.id) || 0;
 
     if (distance <= attackRange) {
@@ -8587,7 +9404,7 @@ class EnemyAI {
     let best = null;
     let bestDist = Infinity;
     for (const enemy of this.room.getEnemies()) {
-      if (!this.isValidAlliedKnightTarget(enemy)) continue;
+      if (!this.isValidAlliedKnightTarget(enemy, phantom)) continue;
       const dist = this.calculateDistance(phantom.position, enemy.position);
       if (dist > ALLIED_PHANTOM_ATTACK_RANGE) continue;
       if (dist < bestDist) {
@@ -8612,7 +9429,8 @@ class EnemyAI {
         const len = Math.hypot(dx, dz) || 1e-6;
         const endX = sx + (dx / len) * SHADE_DAGGER_MAX_RANGE;
         const endZ = sz + (dz / len) * SHADE_DAGGER_MAX_RANGE;
-        const damage = phantom.damage || ALLIED_PHANTOM_DAMAGE_FALLBACK;
+        const boons = this.getCoopAlliedKnightBoons();
+        const damage = this.getPhantomDaggerDamage(phantom, boons);
         this.damageHostileEnemiesAlongSegmentXZ(
           sx,
           sz,
@@ -8624,6 +9442,7 @@ class EnemyAI {
             sourceAlliedUnitId: phantomId,
             damageType: 'allied_phantom_dagger',
           },
+          phantom,
         );
       }, delayMs);
     });
@@ -8641,7 +9460,7 @@ class EnemyAI {
       if (!livePhantom || livePhantom.isDying) return;
       if (this.room?.isEnemyAffectedBy(phantomId, 'stun')) return;
       const liveTarget = this.room?.getEnemy(targetId);
-      if (!this.isValidAlliedKnightTarget(liveTarget)) return;
+      if (!this.isValidAlliedKnightTarget(liveTarget, livePhantom)) return;
       const fake = { id: liveTarget.id, position: liveTarget.position };
       this.telegraphShadeAttack(livePhantom, fake);
       this.scheduleAlliedPhantomDaggerChecks(
@@ -8658,6 +9477,8 @@ class EnemyAI {
     const now = Date.now();
     const lockUntil = this.meleeLockUntil.get(ally.id) || 0;
     if (now < lockUntil) return;
+    const boons = this.getCoopAlliedKnightBoons();
+    this.applyNecrosInitiateIfNeeded(ally, boons);
 
     const target = this.findAlliedPhantomTarget(ally);
     const closestPlayer = this.findClosestPlayer(ally, players);
@@ -8678,7 +9499,7 @@ class EnemyAI {
     ally.rotation = Math.atan2(dx, dz);
     this._queueMoveIfChanged(ally.id, ally.position, ally.rotation);
 
-    const comboCooldown = ally.attackCooldown ?? ALLIED_PHANTOM_COMBO_COOLDOWN_MS;
+    const comboCooldown = this.getPhantomComboCooldownMs(boons);
     const lastComboTime = this.shadeBlinkCooldown.get(ally.id) || 0;
 
     if (distance <= attackRange) {
@@ -8746,14 +9567,15 @@ class EnemyAI {
       const cx = land.x;
       const cz = land.z;
       const r2 = GHOUL_LEAP_LANDING_RADIUS * GHOUL_LEAP_LANDING_RADIUS;
+      const leapDamage = this.getDemonLeapDamage(this.getCoopAlliedKnightBoons());
       for (const enemy of this.room.getEnemies()) {
-        if (!this.isValidAlliedKnightTarget(enemy)) continue;
+        if (!this.isValidAlliedKnightTarget(enemy, demon)) continue;
         const ex = enemy.position?.x ?? 0;
         const ez = enemy.position?.z ?? 0;
         const dx = ex - cx;
         const dz = ez - cz;
         if (dx * dx + dz * dz > r2) continue;
-        this.room.damageEnemy(enemy.id, ALLIED_DEMON_LEAP_DAMAGE, null, null, {
+        this.room.damageEnemy(enemy.id, leapDamage, null, null, {
           sourceAlliedUnitId: demonId,
           damageType: 'allied_demon_leap',
         });
@@ -8787,6 +9609,8 @@ class EnemyAI {
     const now = Date.now();
     const lockUntil = this.meleeLockUntil.get(ally.id) || 0;
     if (now < lockUntil) return;
+    const boons = this.getCoopAlliedKnightBoons();
+    this.applyNecrosInitiateIfNeeded(ally, boons);
 
     const target = this.findAlliedDemonTarget(ally);
     const closestPlayer = this.findClosestPlayer(ally, players);
@@ -8809,9 +9633,10 @@ class EnemyAI {
     this._queueMoveIfChanged(ally.id, ally.position, ally.rotation);
 
     const lastLeapTime = this.ghoulLeapCooldown.get(ally.id) || 0;
+    const leapCooldown = this.getDemonLeapCooldownMs(boons);
     if (
       distance > attackRange
-      && now - lastLeapTime >= ALLIED_DEMON_LEAP_COOLDOWN_MS
+      && now - lastLeapTime >= leapCooldown
       && !this.ghoulLeapEndAt.has(ally.id)
     ) {
       this.alliedDemonStartLeap(ally, target);
@@ -8825,7 +9650,7 @@ class EnemyAI {
       const lastAttackTime = this.ghoulAttackCooldown.get(ally.id);
       if (distance > meleePressDistance) {
         this.moveEnemyTowardsTarget(ally, { id: target.id, position: target.position }, { meleeSurroundAttackRange: attackRange });
-      } else if (now - lastAttackTime >= (ally.attackCooldown ?? 900)) {
+      } else if (now - lastAttackTime >= this.getDemonMeleeCooldownMs(boons)) {
         this.ghoulAttackCooldown.set(ally.id, now);
         const SWING_LOCK_MS = 1200;
         this.meleeLockUntil.set(ally.id, now + SWING_LOCK_MS);
@@ -8838,10 +9663,11 @@ class EnemyAI {
           if (!liveAlly || liveAlly.isDying || liveAlly.health <= 0) return;
           if (this.room?.isEnemyAffectedBy(allyId, 'stun')) return;
           const liveTarget = this.room?.getEnemy(targetId);
-          if (!this.isValidAlliedKnightTarget(liveTarget)) return;
+          if (!this.isValidAlliedKnightTarget(liveTarget, liveAlly)) return;
           const currentDist = this.calculateDistance(liveAlly.position, liveTarget.position);
           if (currentDist <= attackRange + 0.5) {
-            const damage = liveAlly.damage || ALLIED_DEMON_DAMAGE_FALLBACK;
+            const meleeBoons = this.getCoopAlliedKnightBoons();
+            const damage = this.getDemonMeleeDamage(liveAlly, meleeBoons);
             this.room.damageEnemy(liveTarget.id, damage, null, null, {
               sourceAlliedUnitId: liveAlly.id,
               damageType: 'allied_demon_melee',
@@ -8858,7 +9684,7 @@ class EnemyAI {
     if (!this.room) return [];
     const candidates = [];
     for (const enemy of this.room.getEnemies()) {
-      if (!this.isValidAlliedKnightTarget(enemy)) continue;
+      if (!this.isValidAlliedKnightTarget(enemy, enchantress)) continue;
       const dist = this.calculateDistance(enchantress.position, enemy.position);
       if (dist > range) continue;
       candidates.push({ enemy, dist });
@@ -8869,6 +9695,7 @@ class EnemyAI {
 
   alliedEnchantressCastEarthShock(enchantress, targetEnemy, ownerPlayerId, ownerPlayer) {
     const now = Date.now();
+    const earthShockDamage = this.getEnchantressEarthShockDamage(this.getCoopAlliedKnightBoons());
     const dx = targetEnemy.position.x - enchantress.position.x;
     const dz = targetEnemy.position.z - enchantress.position.z;
     if (dx || dz) enchantress.rotation = Math.atan2(dx, dz);
@@ -8892,7 +9719,7 @@ class EnemyAI {
       const liveEnchantress = this.room?.getEnemy(enchantressId);
       if (!liveEnchantress || liveEnchantress.isDying || liveEnchantress.health <= 0) return;
       const liveTarget = this.room?.getEnemy(targetId);
-      if (!this.isValidAlliedKnightTarget(liveTarget)) return;
+      if (!this.isValidAlliedKnightTarget(liveTarget, liveEnchantress)) return;
 
       const start = {
         x: liveEnchantress.position.x,
@@ -8909,7 +9736,7 @@ class EnemyAI {
           enchantressId,
           startPosition: start,
           targetPosition: target,
-          damage: ALLIED_ENCHANTRESS_EARTH_SHOCK_DAMAGE,
+          damage: earthShockDamage,
           timestamp: Date.now(),
         });
       }
@@ -8930,13 +9757,13 @@ class EnemyAI {
         pos.x += dir.x * GREED_FIREBALL_SPEED * (STEP_MS / 1000);
         pos.z += dir.z * GREED_FIREBALL_SPEED * (STEP_MS / 1000);
         for (const enemy of this.room.getEnemies()) {
-          if (!this.isValidAlliedKnightTarget(enemy)) continue;
+          if (!this.isValidAlliedKnightTarget(enemy, liveEnchantress)) continue;
           const hdx = enemy.position.x - pos.x;
           const hdz = enemy.position.z - pos.z;
           if (hdx * hdx + hdz * hdz <= GREED_FIREBALL_HIT_RADIUS * GREED_FIREBALL_HIT_RADIUS) {
             clearInterval(intervalId);
             this._removeEnemyHazardInterval(enchantressId, intervalId);
-            this.room.damageEnemy(enemy.id, ALLIED_ENCHANTRESS_EARTH_SHOCK_DAMAGE, ownerPlayerId, ownerPlayer, {
+            this.room.damageEnemy(enemy.id, earthShockDamage, ownerPlayerId, ownerPlayer, {
               sourceAlliedUnitId: enchantressId,
               damageType: 'enchantress_earth_shock',
             });
@@ -9011,6 +9838,8 @@ class EnemyAI {
     const now = Date.now();
     const lockUntil = this.meleeLockUntil.get(ally.id) || 0;
     if (now < lockUntil) return;
+    const boons = this.getCoopAlliedKnightBoons();
+    this.applyNecrosInitiateIfNeeded(ally, boons);
 
     const closestPlayer = this.findClosestPlayer(ally, players);
     const ownerPlayerId = closestPlayer?.id || null;
@@ -9018,7 +9847,8 @@ class EnemyAI {
 
     const lastEarthShock = this.enchantressEarthShockCooldown.get(ally.id) || 0;
     const lastVines = this.enchantressGraspingVinesCooldown.get(ally.id) || 0;
-    const earthShockReady = now - lastEarthShock >= ALLIED_ENCHANTRESS_EARTH_SHOCK_COOLDOWN_MS;
+    const earthShockCooldown = this.getEnchantressEarthShockCooldownMs(boons);
+    const earthShockReady = now - lastEarthShock >= earthShockCooldown;
     const vinesReady = now - lastVines >= ALLIED_ENCHANTRESS_GRASPING_VINES_COOLDOWN_MS;
 
     const vineTargets = vinesReady
@@ -9446,6 +10276,7 @@ class EnemyAI {
 
   findNearestHostileForZombie(zombie) {
     if (!this.room) return null;
+    const isPlayerCombatAlly = this._isPlayerCombatAlly(zombie);
     let best = null;
     let bestD = Infinity;
     for (const e of this.room.getEnemies()) {
@@ -9453,6 +10284,7 @@ class EnemyAI {
       if (this.isFriendlyCombatUnit(e)) continue;
       if (e.type === 'training-dummy') continue;
       if (e.health <= 0) continue;
+      if (isPlayerCombatAlly && !this.isValidAlliedKnightTarget(e, zombie)) continue;
       const d = this.calculateDistance(zombie.position, e.position);
       if (d < bestD) {
         bestD = d;
@@ -9823,6 +10655,25 @@ class EnemyAI {
     const maxSteps = Math.ceil((dirLen / GREED_FIREBALL_SPEED) * (1000 / STEP_MS)) + 4;
     let steps = 0;
     const gid = greed.id;
+    const hitRadiusSq = GREED_FIREBALL_HIT_RADIUS * GREED_FIREBALL_HIT_RADIUS;
+    const applyGreedFireballImpact = () => {
+      this.room.damagePlayersInHorizontalRing(
+        { x: pos.x, z: pos.z },
+        GREED_FIREBALL_HIT_RADIUS,
+        GREED_RED_DAMAGE,
+        'greed_fireball',
+        { sourceEnemyId: gid },
+      );
+      this.room.tryDamageAlliedKnightInXZDisk(
+        { x: pos.x, z: pos.z },
+        GREED_FIREBALL_HIT_RADIUS,
+        GREED_RED_DAMAGE,
+        { sourceEnemyId: gid, damageType: 'greed_fireball' },
+      );
+      this.io?.to(this.roomId).emit('greed-fireball-impact', {
+        greedId: gid, position: pos, hit: true, timestamp: Date.now(),
+      });
+    };
     const intervalId = setInterval(() => {
       if (!this.room?.getGameStarted()) {
         clearInterval(intervalId);
@@ -9837,15 +10688,21 @@ class EnemyAI {
         if (p.health <= 0) continue;
         const hdx = p.position.x - pos.x;
         const hdz = p.position.z - pos.z;
-        if (hdx * hdx + hdz * hdz <= GREED_FIREBALL_HIT_RADIUS * GREED_FIREBALL_HIT_RADIUS) {
+        if (hdx * hdx + hdz * hdz <= hitRadiusSq) {
           clearInterval(intervalId);
           this._removeEnemyHazardInterval(gid, intervalId);
-          this.room.damagePlayersInHorizontalRing(
-            { x: pos.x, z: pos.z }, GREED_FIREBALL_HIT_RADIUS, GREED_RED_DAMAGE, 'greed_fireball', { sourceEnemyId: gid },
-          );
-          this.io?.to(this.roomId).emit('greed-fireball-impact', {
-            greedId: gid, position: pos, hit: true, timestamp: Date.now(),
-          });
+          applyGreedFireballImpact();
+          return;
+        }
+      }
+      for (const ally of this.room?.getEnemies?.() || []) {
+        if (!ally?.alliedUnit || ally.isDying || ally.health <= 0) continue;
+        const hdx = (ally.position?.x ?? 0) - pos.x;
+        const hdz = (ally.position?.z ?? 0) - pos.z;
+        if (hdx * hdx + hdz * hdz <= hitRadiusSq) {
+          clearInterval(intervalId);
+          this._removeEnemyHazardInterval(gid, intervalId);
+          applyGreedFireballImpact();
           return;
         }
       }
@@ -10281,7 +11138,1299 @@ class EnemyAI {
     });
   }
 
+  // ─── Sunken Temple enemies ─────────────────────────────────────────────────
+
+  notifyPlayerAttackThreat(playerId, position, direction) {
+    if (!position || !direction) return;
+    const dirLen = Math.hypot(direction.x, direction.z) || 1;
+    const dirX = direction.x / dirLen;
+    const dirZ = direction.z / dirLen;
+    const now = Date.now();
+
+    for (const enemy of this._tickEnemies) {
+      if (enemy.type !== 'sentinel' || enemy.isDying) continue;
+      const sx = enemy.position.x - position.x;
+      const sz = enemy.position.z - position.z;
+      const along = sx * dirX + sz * dirZ;
+      if (along < 0 || along > SENTINEL_THREAT_RADIUS) continue;
+      const perp = Math.abs(sx * (-dirZ) + sz * dirX);
+      if (perp <= 2.5) {
+        this.sentinelIncomingShotThreat.set(enemy.id, now + SENTINEL_PLAYER_ATTACK_THREAT_MS);
+      }
+    }
+  }
+
+  isPlayerThreatToSentinel(sentinel, player) {
+    if (!player?.position || player.health <= 0) return false;
+    const dx = sentinel.position.x - player.position.x;
+    const dz = sentinel.position.z - player.position.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > SENTINEL_THREAT_RADIUS) return false;
+
+    const threatUntil = this.sentinelIncomingShotThreat.get(sentinel.id) || 0;
+    if (Date.now() < threatUntil) return true;
+
+    const toSentinelX = dx / (dist || 1);
+    const toSentinelZ = dz / (dist || 1);
+    const facingX = Math.sin(player.rotation?.y ?? 0);
+    const facingZ = Math.cos(player.rotation?.y ?? 0);
+    const aimDot = facingX * toSentinelX + facingZ * toSentinelZ;
+    if (aimDot > SENTINEL_AIM_DOT_THRESHOLD) return true;
+
+    const md = player.movementDirection;
+    if (md) {
+      const moveMag = Math.hypot(md.x, md.z);
+      if (moveMag > 0.15) {
+        const moveDot = (md.x / moveMag) * toSentinelX + (md.z / moveMag) * toSentinelZ;
+        if (moveDot > SENTINEL_APPROACH_DOT_THRESHOLD) return true;
+      }
+    }
+    return false;
+  }
+
+  sentinelHasActiveThreat(sentinel, players) {
+    for (const p of players) {
+      if (this.isPlayerThreatToSentinel(sentinel, p)) return true;
+    }
+    return false;
+  }
+
+  fleeSentinelFromThreat(sentinel, players) {
+    if (this.sentinelMovementBlockedByStatus(sentinel)) {
+      this.cancelSentinelSprint(sentinel.id);
+      return false;
+    }
+
+    let nearestThreat = null;
+    let nearestDist = Infinity;
+    for (const p of players) {
+      if (!p || p.health <= 0) continue;
+      if (!this.isPlayerThreatToSentinel(sentinel, p)) continue;
+      const d = this.calculateDistance(sentinel.position, p.position);
+      if (d < nearestDist) {
+        nearestDist = d;
+        nearestThreat = p;
+      }
+    }
+    if (!nearestThreat) return false;
+
+    const now = Date.now();
+    const aggroData = this.enemyAggro.get(sentinel.id);
+    const allowSprint = this.sentinelHasShotThreat(sentinel) || aggroData?.threatFromDamage === true;
+    if (allowSprint && this.sentinelCanUseSprint(sentinel)) {
+      this.startSentinelSprint(
+        sentinel.id,
+        SENTINEL_SPRINT_DURATION_MS,
+        SENTINEL_SPRINT_COOLDOWN_MS,
+        'flee',
+      );
+    }
+
+    const isSprinting = now < (this.sentinelSprintUntil.get(sentinel.id) || 0);
+    const dx = sentinel.position.x - nearestThreat.position.x;
+    const dz = sentinel.position.z - nearestThreat.position.z;
+    const mag = Math.hypot(dx, dz) || 1;
+    const fleeTarget = {
+      id: 'sentinel-flee',
+      position: {
+        x: sentinel.position.x + (dx / mag) * 8,
+        y: sentinel.position.y,
+        z: sentinel.position.z + (dz / mag) * 8,
+      },
+    };
+    const savedSpeed = sentinel.moveSpeed;
+    sentinel.moveSpeed = isSprinting ? SENTINEL_SPRINT_SPEED : SENTINEL_WALK_SPEED;
+    this.moveEnemyTowardsTarget(sentinel, fleeTarget);
+    sentinel.moveSpeed = savedSpeed;
+    return true;
+  }
+
+  sentinelMovementBlockedByStatus(sentinel) {
+    if (!sentinel?.id || !this.room) return true;
+    const id = sentinel.id;
+    return (
+      this.room.isEnemyAffectedBy(id, 'stun')
+      || this.room.isEnemyAffectedBy(id, 'slow')
+      || this.room.isEnemyAffectedBy(id, 'freeze')
+      || this.room.isEnemyAffectedBy(id, 'entangle')
+      || this.room.isEnemyAffectedBy(id, 'hostileRoot')
+    );
+  }
+
+  sentinelHasShotThreat(sentinel) {
+    const threatUntil = this.sentinelIncomingShotThreat.get(sentinel.id) || 0;
+    return Date.now() < threatUntil;
+  }
+
+  sentinelCanUseSprint(sentinel) {
+    if (this.sentinelMovementBlockedByStatus(sentinel)) return false;
+    const now = Date.now();
+    const sprintUntil = this.sentinelSprintUntil.get(sentinel.id) || 0;
+    const sprintCdUntil = this.sentinelSprintCooldownUntil.get(sentinel.id) || 0;
+    return now >= sprintUntil && now >= sprintCdUntil;
+  }
+
+  startSentinelSprint(sentinelId, durationMs, cooldownMs, reason) {
+    const now = Date.now();
+    this.sentinelSprintUntil.set(sentinelId, now + durationMs);
+    this.sentinelSprintCooldownUntil.set(sentinelId, now + durationMs + cooldownMs);
+    this.sentinelSprintReason.set(sentinelId, reason);
+    if (this.io) {
+      this.io.to(this.roomId).emit('sentinel-sprint-start', {
+        sentinelId,
+        durationMs,
+        timestamp: now,
+      });
+    }
+  }
+
+  cancelSentinelSprint(sentinelId) {
+    const hadSprint = (this.sentinelSprintUntil.get(sentinelId) || 0) > Date.now();
+    this.sentinelSprintUntil.delete(sentinelId);
+    this.sentinelSprintReason.delete(sentinelId);
+    if (hadSprint && this.io) {
+      this.io.to(this.roomId).emit('sentinel-sprint-end', {
+        sentinelId,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  syncSentinelSprintEndIfExpired(sentinel) {
+    const now = Date.now();
+    const sprintUntil = this.sentinelSprintUntil.get(sentinel.id) || 0;
+    if (sprintUntil > 0 && now >= sprintUntil) {
+      this.sentinelSprintUntil.delete(sentinel.id);
+      this.sentinelSprintReason.delete(sentinel.id);
+      if (this.io) {
+        this.io.to(this.roomId).emit('sentinel-sprint-end', {
+          sentinelId: sentinel.id,
+          timestamp: now,
+        });
+      }
+    }
+  }
+
+  trySentinelRepositionSprint(sentinel, targetPos) {
+    if (this.sentinelMovementBlockedByStatus(sentinel)) return false;
+    if (!this.sentinelCanUseSprint(sentinel)) return false;
+
+    const distToTarget = this.calculateDistance(sentinel.position, targetPos);
+    if (distToTarget >= SENTINEL_KITE_MIN_RANGE && distToTarget <= SENTINEL_KITE_MAX_RANGE) {
+      return false;
+    }
+
+    const dx = sentinel.position.x - targetPos.x;
+    const dz = sentinel.position.z - targetPos.z;
+    const mag = Math.hypot(dx, dz) || 1;
+    const desiredDist = distToTarget < SENTINEL_KITE_MIN_RANGE
+      ? SENTINEL_KITE_MAX_RANGE - 1
+      : (SENTINEL_KITE_MIN_RANGE + SENTINEL_KITE_MAX_RANGE) / 2;
+    const kiteTarget = {
+      id: 'sentinel-kite',
+      position: {
+        x: targetPos.x + (dx / mag) * desiredDist,
+        y: sentinel.position.y,
+        z: targetPos.z + (dz / mag) * desiredDist,
+      },
+    };
+
+    this.startSentinelSprint(
+      sentinel.id,
+      SENTINEL_REPOSITION_SPRINT_MS,
+      SENTINEL_SPRINT_COOLDOWN_MS,
+      'reposition',
+    );
+    const savedSpeed = sentinel.moveSpeed;
+    sentinel.moveSpeed = SENTINEL_SPRINT_SPEED;
+    this.moveEnemyTowardsTarget(sentinel, kiteTarget);
+    sentinel.moveSpeed = savedSpeed;
+    return true;
+  }
+
+  seedSunkenTempleDuelAggro(nemesisId, spectreIds) {
+    const nemesis = this.room?.enemies?.get?.(nemesisId);
+    if (!nemesis || nemesis.type !== 'nemesis' || !Array.isArray(spectreIds)) return;
+
+    for (const spectreId of spectreIds) {
+      this.applyHostileEnemyThreat(spectreId, nemesisId, 100);
+    }
+
+    let closestSpectreId = spectreIds[0] ?? null;
+    let closestDist = Infinity;
+    for (const spectreId of spectreIds) {
+      const spectre = this.room?.enemies?.get?.(spectreId);
+      if (!spectre) continue;
+      const dist = this.calculateDistance(nemesis.position, spectre.position);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestSpectreId = spectreId;
+      }
+    }
+    if (closestSpectreId) {
+      this.applyNemesisRetaliationThreat(nemesisId, closestSpectreId, 100);
+    }
+  }
+
+  findAlliesAndZombiesInRange(center, range) {
+    const results = [];
+    const enemies = this.room?.getEnemies?.() || [];
+    for (const e of enemies) {
+      if (!e || e.isDying || e.health <= 0) continue;
+      if (!this.room?._isCoopPlayerAllyEnemy?.(e)) continue;
+      const d = this.calculateDistance(center, e.position);
+      if (d <= range) results.push(e);
+    }
+    return results;
+  }
+
+  findPlayersInRange(center, range) {
+    const results = [];
+    const players = this.room?.getPlayers?.() || [];
+    for (const p of players) {
+      if (!p || p.health <= 0) continue;
+      const d = this.calculateDistance(center, p.position);
+      if (d <= range) results.push(p);
+    }
+    return results;
+  }
+
+  sentinelCastEntangle(sentinel) {
+    const now = Date.now();
+    this.sentinelEntangleCooldown.set(sentinel.id, now);
+    this.meleeLockUntil.set(sentinel.id, now + SENTINEL_ENTANGLE_CAST_MS);
+    if (this.io) {
+      this.io.to(this.roomId).emit('sentinel-entangle-cast', {
+        sentinelId: sentinel.id,
+        durationMs: SENTINEL_ENTANGLE_CAST_MS,
+        timestamp: now,
+      });
+    }
+    const sid = sentinel.id;
+    this._scheduleEnemyTimeout(sid, () => {
+      const live = this.room?.getEnemy?.(sid);
+      if (!live || live.isDying) return;
+      const allies = this.findAlliesAndZombiesInRange(live.position, SENTINEL_ENTANGLE_RANGE);
+      for (const t of allies) {
+        this.room?.applyHostileRootOnAlly?.(t.id, SENTINEL_ENTANGLE_DURATION_MS);
+      }
+      const players = this.findPlayersInRange(live.position, SENTINEL_ENTANGLE_RANGE);
+      for (const p of players) {
+        this.room?.applyHostileRootOnPlayer?.(p.id, SENTINEL_ENTANGLE_DURATION_MS);
+      }
+    }, SENTINEL_ENTANGLE_DELAY_MS);
+  }
+
+  sentinelCastVoidOrb(sentinel, targetPlayer) {
+    const now = Date.now();
+    this.sentinelOrbCooldown.set(sentinel.id, now);
+    this.meleeLockUntil.set(sentinel.id, now + SENTINEL_ORB_CAST_MS);
+    const dx = targetPlayer.position.x - sentinel.position.x;
+    const dz = targetPlayer.position.z - sentinel.position.z;
+    if (dx || dz) sentinel.rotation = Math.atan2(dx, dz);
+    this._queueMove(sentinel.id, sentinel.position, sentinel.rotation);
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('sentinel-orb-cast', {
+        sentinelId: sentinel.id,
+        durationMs: SENTINEL_ORB_CAST_MS,
+        timestamp: now,
+      });
+    }
+
+    const sid = sentinel.id;
+    const pid = targetPlayer.id;
+    this._scheduleEnemyTimeout(sid, () => {
+      const live = this.room?.getEnemy?.(sid);
+      if (!live || live.isDying) return;
+      const players = this.room?.getPlayers?.() || [];
+      const target = players.find((p) => p.id === pid && p.health > 0) || targetPlayer;
+      this.sentinelLaunchVoidOrb(live, target);
+    }, SENTINEL_ORB_CAST_MS);
+  }
+
+  sentinelLaunchVoidOrb(sentinel, targetPlayer) {
+    const start = { x: sentinel.position.x, y: (sentinel.position.y ?? 0) + 1.4, z: sentinel.position.z };
+    const target = { x: targetPlayer.position.x, y: (targetPlayer.position.y ?? 0) + 1.0, z: targetPlayer.position.z };
+    if (this.io) {
+      this.io.to(this.roomId).emit('sentinel-orb-telegraph', {
+        sentinelId: sentinel.id,
+        startPosition: start,
+        targetPosition: target,
+        damage: SENTINEL_ORB_DAMAGE,
+        timestamp: Date.now(),
+      });
+    }
+
+    const dirLen = Math.hypot(target.x - start.x, target.z - start.z) || 1;
+    const dir = { x: (target.x - start.x) / dirLen, z: (target.z - start.z) / dirLen };
+    const pos = { x: start.x, z: start.z };
+    const STEP_MS = 50;
+    const maxSteps = Math.ceil((dirLen / SENTINEL_ORB_SPEED) * (1000 / STEP_MS)) + 4;
+    let steps = 0;
+    const sid = sentinel.id;
+    const intervalId = setInterval(() => {
+      if (!this.room?.getGameStarted()) {
+        clearInterval(intervalId);
+        this._removeEnemyHazardInterval(sid, intervalId);
+        return;
+      }
+      steps++;
+      pos.x += dir.x * SENTINEL_ORB_SPEED * (STEP_MS / 1000);
+      pos.z += dir.z * SENTINEL_ORB_SPEED * (STEP_MS / 1000);
+      const livePlayers = this.room?.getPlayers() || [];
+      for (const p of livePlayers) {
+        if (p.health <= 0) continue;
+        const hdx = p.position.x - pos.x;
+        const hdz = p.position.z - pos.z;
+        if (hdx * hdx + hdz * hdz <= SENTINEL_ORB_HIT_RADIUS * SENTINEL_ORB_HIT_RADIUS) {
+          clearInterval(intervalId);
+          this._removeEnemyHazardInterval(sid, intervalId);
+          this.room.damagePlayersInHorizontalRing(
+            { x: pos.x, z: pos.z }, SENTINEL_ORB_HIT_RADIUS, SENTINEL_ORB_DAMAGE, 'sentinel_void_orb', { sourceEnemyId: sid },
+          );
+          this.io?.to(this.roomId).emit('sentinel-orb-impact', {
+            sentinelId: sid, position: pos, hit: true, timestamp: Date.now(),
+          });
+          return;
+        }
+      }
+      if (steps >= maxSteps) {
+        clearInterval(intervalId);
+        this._removeEnemyHazardInterval(sid, intervalId);
+        this.io?.to(this.roomId).emit('sentinel-orb-impact', {
+          sentinelId: sid, position: pos, hit: false, timestamp: Date.now(),
+        });
+      }
+    }, STEP_MS);
+    this._addEnemyHazardInterval(sid, intervalId);
+  }
+
+  updateSentinelAI(sentinel, players) {
+    let aggroData = this.enemyAggro.get(sentinel.id);
+    if (!aggroData) {
+      const closestPlayer = this.findClosestPlayer(sentinel, players);
+      if (!closestPlayer) return;
+      aggroData = {
+        targetPlayerId: closestPlayer.id,
+        targetZombieId: null,
+        targetTrapId: null,
+        lastUpdate: Date.now(),
+        aggro: 100,
+        isAggroed: false,
+      };
+      this.enemyAggro.set(sentinel.id, aggroData);
+    }
+
+    const resolved = this.resolveAggroCombatTarget(aggroData, sentinel, players);
+    if (!resolved) return;
+
+    const tpos = this.combatTargetPosition(resolved);
+    const distance = this.calculateDistance(sentinel.position, tpos);
+    const aggroRadius = SENTINEL_AGGRO_RADIUS;
+    const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
+    const losOk = this.hasLineOfSight(sentinel.position, tpos);
+
+    if (!aggroData.isAggroed && distance <= aggroRadius && losOk) {
+      aggroData.isAggroed = true;
+    } else if (aggroData.isAggroed && distance > leashRadius) {
+      aggroData.isAggroed = false;
+      aggroData.threatFromDamage = false;
+    }
+
+    if (!aggroData.isAggroed) return;
+
+    this.syncSentinelSprintEndIfExpired(sentinel);
+
+    const now = Date.now();
+    const lockUntil = this.meleeLockUntil.get(sentinel.id) || 0;
+    if (now < lockUntil) return;
+
+    const hasThreat = this.sentinelHasActiveThreat(sentinel, players);
+    if (hasThreat) {
+      this.fleeSentinelFromThreat(sentinel, players);
+      return;
+    }
+
+    if (this.sentinelSprintReason.get(sentinel.id) === 'flee') {
+      this.cancelSentinelSprint(sentinel.id);
+    }
+
+    if (resolved.kind === 'player') {
+      const targetPlayer = resolved.player;
+      const lastEntangle = this.sentinelEntangleCooldown.get(sentinel.id) || 0;
+      const alliesInRange = this.findAlliesAndZombiesInRange(sentinel.position, SENTINEL_ENTANGLE_RANGE);
+      const playersInRange = this.findPlayersInRange(sentinel.position, SENTINEL_ENTANGLE_RANGE);
+      if (now - lastEntangle >= SENTINEL_ENTANGLE_COOLDOWN_MS && (alliesInRange.length > 0 || playersInRange.length > 0)) {
+        this.sentinelCastEntangle(sentinel);
+        return;
+      }
+
+      const lastOrb = this.sentinelOrbCooldown.get(sentinel.id) || 0;
+      if (now - lastOrb >= SENTINEL_ORB_COOLDOWN_MS && distance <= SENTINEL_ORB_RANGE) {
+        this.sentinelCastVoidOrb(sentinel, targetPlayer);
+        return;
+      }
+    }
+
+    const moveTarget = this.aggroTargetToMoveTarget(resolved);
+    const targetPos = moveTarget?.position ?? tpos;
+    if (this.trySentinelRepositionSprint(sentinel, targetPos)) {
+      return;
+    }
+
+    sentinel.moveSpeed = SENTINEL_WALK_SPEED;
+    this.moveEnemyTowardsTarget(sentinel, moveTarget);
+  }
+
+  scheduleGenericSpinPathDamage(enemy, startPosition, endPosition, damage, travelMs, stripHalfWidth, hitEventName, idFieldName, landEventConfig, hostileDamageType = null) {
+    if (this.coopTransitionBlocksOutgoingPlayerHits()) return;
+
+    const hitPlayerIds = new Set();
+    const hitAllyIds = new Set();
+    const hitHostileIds = new Set();
+    const startedAt = Date.now();
+    const sampleEveryMs = 50;
+    const sx = startPosition.x;
+    const sz = startPosition.z;
+    const ex = endPosition.x;
+    const ez = endPosition.z;
+    const pathX = ex - sx;
+    const pathZ = ez - sz;
+    const pathLen = Math.hypot(pathX, pathZ);
+    if (pathLen < 1e-4) return;
+
+    const eid = enemy.id;
+    const interval = setInterval(() => {
+      if (enemy.isDying || !this.room?.getGameStarted()) {
+        clearInterval(interval);
+        this._removeEnemyHazardInterval(eid, interval);
+        return;
+      }
+      const elapsed = Date.now() - startedAt;
+      const progress = Math.min(1, elapsed / travelMs);
+      const currentX = sx + pathX * progress;
+      const currentZ = sz + pathZ * progress;
+      const segX = currentX - sx;
+      const segZ = currentZ - sz;
+      const segLenSq = segX * segX + segZ * segZ;
+      if (segLenSq >= 1e-4) {
+        const livePlayers = this.room?.getPlayers?.() || [];
+        for (const player of livePlayers) {
+          if (!player || player.health <= 0 || hitPlayerIds.has(player.id)) continue;
+          const px = player.position.x - sx;
+          const pz = player.position.z - sz;
+          const t = Math.max(0, Math.min(1, (px * segX + pz * segZ) / segLenSq));
+          const closestX = sx + segX * t;
+          const closestZ = sz + segZ * t;
+          const perpendicular = Math.hypot(player.position.x - closestX, player.position.z - closestZ);
+          if (perpendicular > stripHalfWidth) continue;
+          hitPlayerIds.add(player.id);
+          this.recordAlliedProtectionThreat(enemy.id, player.id, damage);
+          if (this.io) {
+            this.io.to(this.roomId).emit(hitEventName, {
+              [idFieldName]: enemy.id,
+              targetPlayerId: player.id,
+              damage,
+              position: { x: closestX, y: startPosition.y ?? 0, z: closestZ },
+              timestamp: Date.now(),
+            });
+          }
+        }
+        this.damageAlliedUnitsAlongSpinStrip(
+          sx,
+          sz,
+          segX,
+          segZ,
+          stripHalfWidth,
+          damage,
+          { sourceEnemyId: enemy.id, damageType: hostileDamageType || 'enemy_spin' },
+          hitAllyIds,
+        );
+      }
+      if (hostileDamageType) {
+        const liveEnemies = this.room?.getEnemies?.() || [];
+        for (const target of liveEnemies) {
+          if (!target || target.id === enemy.id || target.isDying || target.health <= 0) continue;
+          if (hitHostileIds.has(target.id)) continue;
+          if (!this.isValidHostileEnemyAggroTarget(enemy, target)) continue;
+          const tx = target.position.x - sx;
+          const tz = target.position.z - sz;
+          const t = Math.max(0, Math.min(1, (tx * segX + tz * segZ) / segLenSq));
+          const closestX = sx + segX * t;
+          const closestZ = sz + segZ * t;
+          const perpendicular = Math.hypot(target.position.x - closestX, target.position.z - closestZ);
+          if (perpendicular > stripHalfWidth) continue;
+          hitHostileIds.add(target.id);
+          this.damageHostileMobFromMob(enemy, target, damage, hostileDamageType);
+        }
+      }
+      if (progress >= 1) {
+        clearInterval(interval);
+        this._removeEnemyHazardInterval(eid, interval);
+        if (landEventConfig?.event === 'spectre-spin-land') {
+          const facing = enemy.rotation ?? 0;
+          this.room?.damagePlayersInCone?.(
+            ex,
+            ez,
+            facing,
+            SPECTRE_SPIN_LAND_RANGE,
+            SPECTRE_SPIN_LAND_HALF_ANGLE,
+            SPECTRE_SPIN_LAND_DAMAGE,
+            'spectre_spin_land',
+            { sourceEnemyId: enemy.id },
+          );
+          this.room?.tryDamageAlliedUnitsInCone?.(
+            ex,
+            ez,
+            facing,
+            SPECTRE_SPIN_LAND_RANGE,
+            SPECTRE_SPIN_LAND_HALF_ANGLE,
+            SPECTRE_SPIN_LAND_DAMAGE,
+            { sourceEnemyId: enemy.id, damageType: 'spectre_spin_land' },
+          );
+        }
+        if (landEventConfig?.event && this.io && !enemy.isDying) {
+          const landPayload = {
+            position: { x: ex, y: startPosition.y ?? 0, z: ez },
+            rotation: enemy.rotation ?? 0,
+            timestamp: Date.now(),
+          };
+          landPayload[landEventConfig.idField] = enemy.id;
+          this.io.to(this.roomId).emit(landEventConfig.event, landPayload);
+        }
+      }
+    }, sampleEveryMs);
+    this._addEnemyHazardInterval(eid, interval);
+  }
+
+  tryEnemySpinLunge(enemy, targetPlayer, now, distance, config) {
+    if (this.room?.isEnemyAffectedBy(enemy.id, 'freeze')) return false;
+    if (this.room?.isEnemyAffectedBy(enemy.id, 'stun')) return false;
+    if (!targetPlayer?.position) return false;
+    const liveAlly = this.room?.getEnemy?.(targetPlayer.id);
+    const isCombatAllyTarget = this._isPlayerCombatAlly(liveAlly);
+    const targetAlive = (targetPlayer.health ?? 0) > 0
+      || (isCombatAllyTarget && !liveAlly.isDying && liveAlly.health > 0);
+    if (!targetAlive) return false;
+    if (distance > config.castRange) return false;
+
+    const last = config.cooldownMap.get(enemy.id) || 0;
+    if (now - last < config.cooldownMs) return false;
+
+    const dx = targetPlayer.position.x - enemy.position.x;
+    const dz = targetPlayer.position.z - enemy.position.z;
+    const mag = Math.sqrt(dx * dx + dz * dz);
+    if (mag < 1e-4) return false;
+
+    const dirX = dx / mag;
+    const dirZ = dz / mag;
+    enemy.rotation = Math.atan2(dirX, dirZ);
+
+    config.cooldownMap.set(enemy.id, now);
+    this.meleeLockUntil.set(enemy.id, now + config.chargeMs + config.travelMs);
+    this.enemyPaths.delete(enemy.id);
+
+    const chargePosition = { ...enemy.position };
+    if (this.io) {
+      const chargePayload = {
+        position: chargePosition,
+        rotation: enemy.rotation,
+        chargeMs: config.chargeMs,
+        timestamp: Date.now(),
+        targetPlayerId: targetPlayer.id,
+      };
+      chargePayload[config.idField] = enemy.id;
+      if (config.variant != null) chargePayload.variant = config.variant;
+      this.io.to(this.roomId).emit(config.chargeEvent, chargePayload);
+      this._queueMove(enemy.id, enemy.position, enemy.rotation);
+    }
+
+    const originalTargetId = targetPlayer.id;
+    const originalAim = { ...targetPlayer.position };
+    const eid = enemy.id;
+    this._scheduleEnemyTimeout(eid, () => {
+      if (enemy.isDying || !this.room?.getGameStarted()) return;
+      if (this.room?.isEnemyAffectedBy(eid, 'stun')) return;
+      if (this.room?.isEnemyAffectedBy(eid, 'freeze')) return;
+
+      const currentPlayers = this.room?.getPlayers?.() || [];
+      const liveTarget = currentPlayers.find((p) => p.id === originalTargetId && p.health > 0);
+      const liveAllyTarget = !liveTarget ? this.room?.getEnemy?.(originalTargetId) : null;
+      const aimPosition = liveTarget?.position
+        || (this._isPlayerCombatAlly(liveAllyTarget) && !liveAllyTarget.isDying && liveAllyTarget.health > 0
+          ? liveAllyTarget.position
+          : originalAim);
+      const aimDx = aimPosition.x - enemy.position.x;
+      const aimDz = aimPosition.z - enemy.position.z;
+      const aimMag = Math.sqrt(aimDx * aimDx + aimDz * aimDz);
+      if (aimMag < 1e-4) return;
+
+      const spinDirX = aimDx / aimMag;
+      const spinDirZ = aimDz / aimMag;
+      const startPosition = { ...enemy.position };
+      const rawX = enemy.position.x + spinDirX * config.lungeDistance;
+      const rawZ = enemy.position.z + spinDirZ * config.lungeDistance;
+
+      let resolved = this.resolveEnemyWallCollisions(rawX, rawZ);
+      resolved = this.resolveMeleePeerSeparation(enemy, resolved.x, resolved.z);
+      const moved = Math.hypot(resolved.x - enemy.position.x, resolved.z - enemy.position.z);
+      if (moved < 0.5) return;
+
+      enemy.position.x = resolved.x;
+      enemy.position.z = resolved.z;
+      enemy.rotation = Math.atan2(spinDirX, spinDirZ);
+      const endPosition = { ...enemy.position };
+
+      if (this.io) {
+        const dashPayload = {
+          targetPlayerId: originalTargetId,
+          startPosition,
+          endPosition,
+          rotation: enemy.rotation,
+          distance: moved,
+          durationMs: config.travelMs,
+          damage: config.damage,
+          timestamp: Date.now(),
+        };
+        dashPayload[config.idField] = enemy.id;
+        if (config.variant != null) dashPayload.variant = config.variant;
+        this.io.to(this.roomId).emit(config.dashEvent, dashPayload);
+        this._queueMove(eid, enemy.position, enemy.rotation);
+      }
+
+      this.scheduleGenericSpinPathDamage(
+        enemy, startPosition, endPosition, config.damage, config.travelMs,
+        config.stripHalfWidth, config.hitEvent, config.idField,
+        config.landEvent ? { event: config.landEvent, idField: config.idField } : null,
+      );
+    }, config.chargeMs);
+
+    return true;
+  }
+
+  tryEnemySpinLungeVsHostile(enemy, targetEnemy, now, distance, config) {
+    if (this.room?.isEnemyAffectedBy(enemy.id, 'freeze')) return false;
+    if (this.room?.isEnemyAffectedBy(enemy.id, 'stun')) return false;
+    if (!targetEnemy?.position || targetEnemy.isDying || targetEnemy.health <= 0) return false;
+    if (!this.isValidHostileEnemyAggroTarget(enemy, targetEnemy)) return false;
+    if (distance > config.castRange) return false;
+
+    const last = config.cooldownMap.get(enemy.id) || 0;
+    if (now - last < config.cooldownMs) return false;
+
+    const dx = targetEnemy.position.x - enemy.position.x;
+    const dz = targetEnemy.position.z - enemy.position.z;
+    const mag = Math.sqrt(dx * dx + dz * dz);
+    if (mag < 1e-4) return false;
+
+    const dirX = dx / mag;
+    const dirZ = dz / mag;
+    enemy.rotation = Math.atan2(dirX, dirZ);
+
+    config.cooldownMap.set(enemy.id, now);
+    this.meleeLockUntil.set(enemy.id, now + config.chargeMs + config.travelMs);
+    this.enemyPaths.delete(enemy.id);
+
+    const chargePosition = { ...enemy.position };
+    if (this.io) {
+      const chargePayload = {
+        position: chargePosition,
+        rotation: enemy.rotation,
+        chargeMs: config.chargeMs,
+        timestamp: Date.now(),
+        targetHostileEnemyId: targetEnemy.id,
+      };
+      chargePayload[config.idField] = enemy.id;
+      if (config.variant != null) chargePayload.variant = config.variant;
+      this.io.to(this.roomId).emit(config.chargeEvent, chargePayload);
+      this._queueMove(enemy.id, enemy.position, enemy.rotation);
+    }
+
+    const originalTargetId = targetEnemy.id;
+    const originalAim = { ...targetEnemy.position };
+    const eid = enemy.id;
+    this._scheduleEnemyTimeout(eid, () => {
+      if (enemy.isDying || !this.room?.getGameStarted()) return;
+      if (this.room?.isEnemyAffectedBy(eid, 'stun')) return;
+      if (this.room?.isEnemyAffectedBy(eid, 'freeze')) return;
+
+      const liveTarget = this.room?.getEnemy?.(originalTargetId);
+      const aimPosition = (liveTarget && !liveTarget.isDying && liveTarget.health > 0)
+        ? liveTarget.position
+        : originalAim;
+      const aimDx = aimPosition.x - enemy.position.x;
+      const aimDz = aimPosition.z - enemy.position.z;
+      const aimMag = Math.sqrt(aimDx * aimDx + aimDz * aimDz);
+      if (aimMag < 1e-4) return;
+
+      const spinDirX = aimDx / aimMag;
+      const spinDirZ = aimDz / aimMag;
+      const startPosition = { ...enemy.position };
+      const rawX = enemy.position.x + spinDirX * config.lungeDistance;
+      const rawZ = enemy.position.z + spinDirZ * config.lungeDistance;
+
+      let resolved = this.resolveEnemyWallCollisions(rawX, rawZ);
+      resolved = this.resolveMeleePeerSeparation(enemy, resolved.x, resolved.z);
+      const moved = Math.hypot(resolved.x - enemy.position.x, resolved.z - enemy.position.z);
+      if (moved < 0.5) return;
+
+      enemy.position.x = resolved.x;
+      enemy.position.z = resolved.z;
+      enemy.rotation = Math.atan2(spinDirX, spinDirZ);
+      const endPosition = { ...enemy.position };
+
+      if (this.io) {
+        const dashPayload = {
+          targetHostileEnemyId: originalTargetId,
+          startPosition,
+          endPosition,
+          rotation: enemy.rotation,
+          distance: moved,
+          durationMs: config.travelMs,
+          damage: config.damage,
+          timestamp: Date.now(),
+        };
+        dashPayload[config.idField] = enemy.id;
+        if (config.variant != null) dashPayload.variant = config.variant;
+        this.io.to(this.roomId).emit(config.dashEvent, dashPayload);
+        this._queueMove(eid, enemy.position, enemy.rotation);
+      }
+
+      this.scheduleGenericSpinPathDamage(
+        enemy, startPosition, endPosition, config.damage, config.travelMs,
+        config.stripHalfWidth, config.hitEvent, config.idField,
+        config.landEvent ? { event: config.landEvent, idField: config.idField } : null,
+        config.hostileDamageType || null,
+      );
+    }, config.chargeMs);
+
+    return true;
+  }
+
+  updateSpectreAI(spectre, players) {
+    let aggroData = this.enemyAggro.get(spectre.id);
+    if (!aggroData) {
+      const closest = this.findClosestCombatantForSpectre(spectre, players);
+      if (!closest) return;
+      aggroData = {
+        targetPlayerId: closest.kind === 'player' ? closest.player.id : null,
+        targetZombieId: null,
+        targetTrapId: null,
+        targetHostileEnemyId: closest.kind === 'hostile' ? closest.enemy.id : null,
+        lastUpdate: Date.now(),
+        aggro: 100,
+      };
+      this.enemyAggro.set(spectre.id, aggroData);
+    }
+
+    const resolved = this.resolveAggroCombatTarget(aggroData, spectre, players);
+    if (!resolved) return;
+
+    const moveTarget = this.aggroTargetToMoveTarget(resolved);
+    const tpos = this.combatTargetPosition(resolved);
+    const distance = this.calculateDistance(spectre.position, tpos);
+    const aggroRadius = SPECTRE_AGGRO_RADIUS;
+    const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
+    const losOk = this.hasLineOfSight(spectre.position, tpos);
+
+    if (!aggroData.isAggroed && distance <= aggroRadius && losOk) {
+      aggroData.isAggroed = true;
+    } else if (aggroData.isAggroed && distance > leashRadius) {
+      aggroData.isAggroed = false;
+      aggroData.threatFromDamage = false;
+    }
+
+    if (!aggroData.isAggroed) return;
+
+    const now = Date.now();
+    const lockUntil = this.meleeLockUntil.get(spectre.id) || 0;
+    if (now < lockUntil) return;
+
+    if (resolved.kind === 'player') {
+      const targetPlayer = resolved.player;
+      if (this.tryEnemySpinLunge(spectre, targetPlayer, now, distance, {
+        cooldownMap: this.spectreSpinCooldown,
+        cooldownMs: SPECTRE_SPIN_COOLDOWN_MS,
+        castRange: SPECTRE_SPIN_CAST_RANGE,
+        chargeMs: SPECTRE_SPIN_CHARGE_MS,
+        travelMs: SPECTRE_SPIN_TRAVEL_MS,
+        lungeDistance: SPECTRE_SPIN_DISTANCE,
+        damage: SPECTRE_SPIN_DAMAGE,
+        stripHalfWidth: SPECTRE_SPIN_STRIP_HALF_WIDTH,
+        chargeEvent: 'spectre-spin-charge',
+        dashEvent: 'spectre-spin-dash',
+        hitEvent: 'spectre-spin-hit',
+        landEvent: 'spectre-spin-land',
+        idField: 'spectreId',
+      })) return;
+    } else if (resolved.kind === 'zombie') {
+      const z = resolved.zombie;
+      const fakeTarget = { id: z.id, position: z.position, health: z.health };
+      if (this.tryEnemySpinLunge(spectre, fakeTarget, now, distance, {
+        cooldownMap: this.spectreSpinCooldown,
+        cooldownMs: SPECTRE_SPIN_COOLDOWN_MS,
+        castRange: SPECTRE_SPIN_CAST_RANGE,
+        chargeMs: SPECTRE_SPIN_CHARGE_MS,
+        travelMs: SPECTRE_SPIN_TRAVEL_MS,
+        lungeDistance: SPECTRE_SPIN_DISTANCE,
+        damage: SPECTRE_SPIN_DAMAGE,
+        stripHalfWidth: SPECTRE_SPIN_STRIP_HALF_WIDTH,
+        chargeEvent: 'spectre-spin-charge',
+        dashEvent: 'spectre-spin-dash',
+        hitEvent: 'spectre-spin-hit',
+        landEvent: 'spectre-spin-land',
+        idField: 'spectreId',
+      })) return;
+    } else if (resolved.kind === 'hostile') {
+      const targetEnemy = resolved.enemy;
+      if (this.tryEnemySpinLungeVsHostile(spectre, targetEnemy, now, distance, {
+        cooldownMap: this.spectreSpinCooldown,
+        cooldownMs: SPECTRE_SPIN_COOLDOWN_MS,
+        castRange: SPECTRE_SPIN_CAST_RANGE,
+        chargeMs: SPECTRE_SPIN_CHARGE_MS,
+        travelMs: SPECTRE_SPIN_TRAVEL_MS,
+        lungeDistance: SPECTRE_SPIN_DISTANCE,
+        damage: SPECTRE_SPIN_DAMAGE,
+        stripHalfWidth: SPECTRE_SPIN_STRIP_HALF_WIDTH,
+        chargeEvent: 'spectre-spin-charge',
+        dashEvent: 'spectre-spin-dash',
+        hitEvent: 'spectre-spin-hit',
+        landEvent: 'spectre-spin-land',
+        idField: 'spectreId',
+        hostileDamageType: 'spectre_spin',
+      })) return;
+    }
+
+    this.moveEnemyTowardsTarget(spectre, moveTarget, { meleeSurroundAttackRange: SPECTRE_SPIN_CAST_RANGE });
+  }
+
+  valkyrieCastJudgment(valkyrie, target, applyCorrupted = true) {
+    const now = Date.now();
+    if (this.room?.isEnemyAffectedBy(valkyrie.id, 'freeze')) return false;
+    if (this.room?.isEnemyAffectedBy(valkyrie.id, 'stun')) return false;
+    if (!target?.position) return false;
+
+    const last = this.valkyrieJudgmentCooldown.get(valkyrie.id) || 0;
+    if (now - last < VALKYRIE_JUDGMENT_COOLDOWN_MS) return false;
+
+    const distance = this.calculateDistance(valkyrie.position, target.position);
+    if (distance > VALKYRIE_JUDGMENT_CAST_RANGE) return false;
+
+    const dx = target.position.x - valkyrie.position.x;
+    const dz = target.position.z - valkyrie.position.z;
+    if (dx || dz) valkyrie.rotation = Math.atan2(dx, dz);
+
+    this.valkyrieJudgmentCooldown.set(valkyrie.id, now);
+    this.meleeLockUntil.set(valkyrie.id, now + VALKYRIE_JUDGMENT_CAST_MS);
+    this.enemyPaths.delete(valkyrie.id);
+
+    const targetId = target.id;
+    const vid = valkyrie.id;
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('valkyrie-judgment-cast', {
+        valkyrieId: valkyrie.id,
+        rotation: valkyrie.rotation,
+        castMs: VALKYRIE_JUDGMENT_CAST_MS,
+        timestamp: now,
+      });
+      this._queueMove(valkyrie.id, valkyrie.position, valkyrie.rotation);
+    }
+
+    this._scheduleEnemyTimeout(vid, () => {
+      const liveValkyrie = this.room?.getEnemy?.(vid);
+      if (!liveValkyrie || liveValkyrie.isDying) return;
+
+      let liveTarget = this.room?.getPlayers?.()?.find((p) => p.id === targetId && p.health > 0) || null;
+      if (!liveTarget) {
+        const liveEnemy = this.room?.getEnemy?.(targetId);
+        if (liveEnemy && !liveEnemy.isDying && liveEnemy.health > 0) {
+          liveTarget = liveEnemy;
+        }
+      }
+      if (!liveTarget?.position) {
+        liveTarget = target;
+      }
+      if (!liveTarget?.position) return;
+
+      const fallStartNow = Date.now();
+      const strikePosition = {
+        x: liveTarget.position.x,
+        y: liveTarget.position.y ?? 0,
+        z: liveTarget.position.z,
+      };
+      const strikeAt = fallStartNow + VALKYRIE_JUDGMENT_HOVER_MS + VALKYRIE_JUDGMENT_FALL_MS;
+
+      if (this.io) {
+        this.io.to(this.roomId).emit('valkyrie-judgment-cast', {
+          valkyrieId: vid,
+          targetPlayerId: targetId,
+          targetPosition: strikePosition,
+          rotation: liveValkyrie.rotation,
+          castMs: VALKYRIE_JUDGMENT_CAST_MS,
+          hoverMs: VALKYRIE_JUDGMENT_HOVER_MS,
+          fallMs: VALKYRIE_JUDGMENT_FALL_MS,
+          strikeAt,
+          skyHeight: VALKYRIE_JUDGMENT_SKY_HEIGHT,
+          aoeRadius: VALKYRIE_JUDGMENT_AOE_RADIUS,
+          timestamp: fallStartNow,
+        });
+      }
+
+      this._scheduleEnemyTimeout(vid, () => {
+        const live = this.room?.getEnemy?.(vid);
+        if (!live || live.isDying) return;
+        if (applyCorrupted) {
+          this.room?.damagePlayersInHorizontalRing(
+            strikePosition,
+            VALKYRIE_JUDGMENT_AOE_RADIUS,
+            VALKYRIE_JUDGMENT_DAMAGE,
+            'valkyrie_judgment',
+            { sourceEnemyId: vid },
+          );
+          const players = this.findPlayersInRange(strikePosition, VALKYRIE_JUDGMENT_AOE_RADIUS);
+          for (const p of players) {
+            this.room?.applyHostileCorruptedOnPlayer?.(p.id, VALKYRIE_JUDGMENT_CORRUPTED_MS);
+          }
+        } else {
+          this.room?.damageEnemiesInHorizontalRing(
+            strikePosition,
+            VALKYRIE_JUDGMENT_AOE_RADIUS,
+            VALKYRIE_JUDGMENT_DAMAGE,
+            'valkyrie_judgment',
+          );
+        }
+      }, VALKYRIE_JUDGMENT_HOVER_MS + VALKYRIE_JUDGMENT_FALL_MS);
+    }, VALKYRIE_JUDGMENT_CAST_MS);
+
+    return true;
+  }
+
+  updateValkyrieAI(valkyrie, players) {
+    let aggroData = this.enemyAggro.get(valkyrie.id);
+    if (!aggroData) {
+      const closestPlayer = this.findClosestPlayer(valkyrie, players);
+      if (!closestPlayer) return;
+      aggroData = {
+        targetPlayerId: closestPlayer.id,
+        targetZombieId: null,
+        targetTrapId: null,
+        lastUpdate: Date.now(),
+        aggro: 100,
+      };
+      this.enemyAggro.set(valkyrie.id, aggroData);
+    }
+
+    const resolved = this.resolveAggroCombatTarget(aggroData, valkyrie, players);
+    if (!resolved) return;
+
+    const tpos = this.combatTargetPosition(resolved);
+    const distance = this.calculateDistance(valkyrie.position, tpos);
+    const aggroRadius = VALKYRIE_AGGRO_RADIUS;
+    const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
+    const losOk = this.hasLineOfSight(valkyrie.position, tpos);
+
+    if (!aggroData.isAggroed && distance <= aggroRadius && losOk) {
+      aggroData.isAggroed = true;
+    } else if (aggroData.isAggroed && distance > leashRadius) {
+      aggroData.isAggroed = false;
+      aggroData.threatFromDamage = false;
+    }
+
+    if (!aggroData.isAggroed) return;
+
+    const now = Date.now();
+    const lockUntil = this.meleeLockUntil.get(valkyrie.id) || 0;
+    if (now < lockUntil) return;
+
+    if (resolved.kind === 'player') {
+      const targetPlayer = resolved.player;
+      this._smoothRotateEnemyTowardPoint(valkyrie, targetPlayer.position);
+      this._queueMoveIfChanged(valkyrie.id, valkyrie.position, valkyrie.rotation);
+
+      const lastJudgment = this.valkyrieJudgmentCooldown.get(valkyrie.id) || 0;
+      const judgmentReady = now - lastJudgment >= VALKYRIE_JUDGMENT_COOLDOWN_MS;
+      if (judgmentReady && distance <= VALKYRIE_JUDGMENT_CAST_RANGE) {
+        if (this.valkyrieCastJudgment(valkyrie, targetPlayer, true)) return;
+      }
+
+      const last1 = this.valkyrieLunge1Cooldown.get(valkyrie.id) || 0;
+      const last2 = this.valkyrieLunge2Cooldown.get(valkyrie.id) || 0;
+      const lunge1Ready = now - last1 >= VALKYRIE_LUNGE1_COOLDOWN_MS;
+      const lunge2Ready = now - last2 >= VALKYRIE_LUNGE2_COOLDOWN_MS;
+
+      if (lunge1Ready && distance <= VALKYRIE_LUNGE_CAST_RANGE) {
+        if (this.tryEnemySpinLunge(valkyrie, targetPlayer, now, distance, {
+          cooldownMap: this.valkyrieLunge1Cooldown,
+          cooldownMs: VALKYRIE_LUNGE1_COOLDOWN_MS,
+          castRange: VALKYRIE_LUNGE_CAST_RANGE,
+          chargeMs: VALKYRIE_LUNGE_CHARGE_MS,
+          travelMs: VALKYRIE_LUNGE_TRAVEL_MS,
+          lungeDistance: VALKYRIE_LUNGE1_DISTANCE,
+          damage: VALKYRIE_LUNGE1_DAMAGE,
+          stripHalfWidth: VALKYRIE_LUNGE_STRIP_HALF_WIDTH,
+          chargeEvent: 'valkyrie-lunge-charge',
+          dashEvent: 'valkyrie-lunge-dash',
+          hitEvent: 'valkyrie-lunge-hit',
+          idField: 'valkyrieId',
+          variant: 1,
+        })) return;
+      }
+
+      if (lunge2Ready && distance <= VALKYRIE_LUNGE_CAST_RANGE) {
+        if (this.tryEnemySpinLunge(valkyrie, targetPlayer, now, distance, {
+          cooldownMap: this.valkyrieLunge2Cooldown,
+          cooldownMs: VALKYRIE_LUNGE2_COOLDOWN_MS,
+          castRange: VALKYRIE_LUNGE_CAST_RANGE,
+          chargeMs: VALKYRIE_LUNGE_CHARGE_MS,
+          travelMs: VALKYRIE_LUNGE_TRAVEL_MS,
+          lungeDistance: VALKYRIE_LUNGE2_DISTANCE,
+          damage: VALKYRIE_LUNGE2_DAMAGE,
+          stripHalfWidth: VALKYRIE_LUNGE_STRIP_HALF_WIDTH,
+          chargeEvent: 'valkyrie-lunge-charge',
+          dashEvent: 'valkyrie-lunge-dash',
+          hitEvent: 'valkyrie-lunge-hit',
+          idField: 'valkyrieId',
+          variant: 2,
+        })) return;
+      }
+    } else if (resolved.kind === 'zombie') {
+      const z = resolved.zombie;
+      const fakeTarget = { id: z.id, position: z.position, health: z.health };
+      this._smoothRotateEnemyTowardPoint(valkyrie, z.position);
+      this._queueMoveIfChanged(valkyrie.id, valkyrie.position, valkyrie.rotation);
+
+      const lastJudgment = this.valkyrieJudgmentCooldown.get(valkyrie.id) || 0;
+      const judgmentReady = now - lastJudgment >= VALKYRIE_JUDGMENT_COOLDOWN_MS;
+      if (judgmentReady && distance <= VALKYRIE_JUDGMENT_CAST_RANGE) {
+        if (this.valkyrieCastJudgment(valkyrie, fakeTarget, false)) return;
+      }
+
+      const last1 = this.valkyrieLunge1Cooldown.get(valkyrie.id) || 0;
+      const last2 = this.valkyrieLunge2Cooldown.get(valkyrie.id) || 0;
+      const lunge1Ready = now - last1 >= VALKYRIE_LUNGE1_COOLDOWN_MS;
+      const lunge2Ready = now - last2 >= VALKYRIE_LUNGE2_COOLDOWN_MS;
+
+      if (lunge1Ready && distance <= VALKYRIE_LUNGE_CAST_RANGE) {
+        if (this.tryEnemySpinLunge(valkyrie, fakeTarget, now, distance, {
+          cooldownMap: this.valkyrieLunge1Cooldown,
+          cooldownMs: VALKYRIE_LUNGE1_COOLDOWN_MS,
+          castRange: VALKYRIE_LUNGE_CAST_RANGE,
+          chargeMs: VALKYRIE_LUNGE_CHARGE_MS,
+          travelMs: VALKYRIE_LUNGE_TRAVEL_MS,
+          lungeDistance: VALKYRIE_LUNGE1_DISTANCE,
+          damage: VALKYRIE_LUNGE1_DAMAGE,
+          stripHalfWidth: VALKYRIE_LUNGE_STRIP_HALF_WIDTH,
+          chargeEvent: 'valkyrie-lunge-charge',
+          dashEvent: 'valkyrie-lunge-dash',
+          hitEvent: 'valkyrie-lunge-hit',
+          idField: 'valkyrieId',
+          variant: 1,
+        })) return;
+      }
+
+      if (lunge2Ready && distance <= VALKYRIE_LUNGE_CAST_RANGE) {
+        if (this.tryEnemySpinLunge(valkyrie, fakeTarget, now, distance, {
+          cooldownMap: this.valkyrieLunge2Cooldown,
+          cooldownMs: VALKYRIE_LUNGE2_COOLDOWN_MS,
+          castRange: VALKYRIE_LUNGE_CAST_RANGE,
+          chargeMs: VALKYRIE_LUNGE_CHARGE_MS,
+          travelMs: VALKYRIE_LUNGE_TRAVEL_MS,
+          lungeDistance: VALKYRIE_LUNGE2_DISTANCE,
+          damage: VALKYRIE_LUNGE2_DAMAGE,
+          stripHalfWidth: VALKYRIE_LUNGE_STRIP_HALF_WIDTH,
+          chargeEvent: 'valkyrie-lunge-charge',
+          dashEvent: 'valkyrie-lunge-dash',
+          hitEvent: 'valkyrie-lunge-hit',
+          idField: 'valkyrieId',
+          variant: 2,
+        })) return;
+      }
+    }
+
+    const moveTarget = this.aggroTargetToMoveTarget(resolved);
+    valkyrie.moveSpeed = VALKYRIE_WALK_SPEED;
+    this.moveEnemyTowardsTarget(valkyrie, moveTarget, { meleeSurroundAttackRange: VALKYRIE_JUDGMENT_CAST_RANGE });
+  }
+
+  telegraphNemesisAttack(nemesis, target, attackVariant) {
+    if (this.io) {
+      this.io.to(this.roomId).emit('nemesis-attack-telegraph', {
+        nemesisId: nemesis.id,
+        targetPlayerId: target.id,
+        attackVariant,
+        position: nemesis.position,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  nemesisAttackHostileEnemy(nemesis, targetEnemy) {
+    const damage = nemesis.damage || 72;
+    this.damageHostileMobFromMob(nemesis, targetEnemy, damage, 'nemesis_melee');
+  }
+
+  nemesisAttackPlayer(nemesis, player) {
+    if (this.coopTransitionBlocksOutgoingPlayerHits()) return;
+    const damage = nemesis.damage || 72;
+    this.recordAlliedProtectionThreat(nemesis.id, player.id, damage);
+    if (this.io) {
+      this.io.to(this.roomId).emit('nemesis-attack', {
+        nemesisId: nemesis.id,
+        targetPlayerId: player.id,
+        damage,
+        position: nemesis.position,
+        timestamp: Date.now(),
+      });
+      const dx = player.position.x - nemesis.position.x;
+      const dz = player.position.z - nemesis.position.z;
+      const len = Math.hypot(dx, dz) || 1;
+      this.io.to(this.roomId).emit('player-knockback', {
+        targetPlayerId: player.id,
+        direction: { x: dx / len, y: 0, z: dz / len },
+        distance: NEMESIS_KNOCKBACK_DISTANCE,
+        duration: NEMESIS_KNOCKBACK_DURATION,
+        coopRoomEntryToken: this.room?.getCoopRoomEntryToken?.() ?? 0,
+        timestamp: Date.now(),
+      });
+    }
+    this.room?.tryDamageAlliedKnightInXZDisk(
+      { x: nemesis.position.x, z: nemesis.position.z },
+      NEMESIS_ATTACK_RANGE,
+      damage,
+      { sourceEnemyId: nemesis.id, damageType: 'nemesis_melee' },
+    );
+  }
+
+  updateNemesisAI(nemesis, players) {
+    let aggroData = this.enemyAggro.get(nemesis.id);
+    if (!aggroData) {
+      const closest = this.findClosestCombatantForNemesis(nemesis, players);
+      if (!closest) return;
+      aggroData = {
+        targetPlayerId: closest.kind === 'player' ? closest.player.id : null,
+        targetZombieId: null,
+        targetTrapId: null,
+        targetHostileEnemyId: closest.kind === 'hostile' ? closest.enemy.id : null,
+        lastUpdate: Date.now(),
+        aggro: 0,
+        isAggroed: false,
+        threatFromDamage: false,
+        directPlayerDamageAggroed: false,
+      };
+      this.enemyAggro.set(nemesis.id, aggroData);
+    }
+
+    const now = Date.now();
+    const lockUntil = this.meleeLockUntil.get(nemesis.id) || 0;
+    if (now < lockUntil) return;
+
+    const attackRange = NEMESIS_ATTACK_RANGE;
+    const attackCooldown = nemesis.attackCooldown ?? 1250;
+    const aggroRadius = NEMESIS_AGGRO_RADIUS;
+    const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
+
+    if (!aggroData.isAggroed) {
+      const closest = this.findClosestCombatantForNemesis(nemesis, players);
+      if (closest) {
+        aggroData.isAggroed = true;
+        aggroData.targetZombieId = null;
+        aggroData.targetTrapId = null;
+        if (closest.kind === 'player') {
+          aggroData.targetPlayerId = closest.player.id;
+          aggroData.targetHostileEnemyId = null;
+        } else {
+          aggroData.targetHostileEnemyId = closest.enemy.id;
+        }
+      }
+    }
+
+    if (!aggroData.isAggroed) return;
+
+    const resolved = this.resolveAggroCombatTarget(aggroData, nemesis, players);
+    if (!resolved) {
+      aggroData.isAggroed = false;
+      return;
+    }
+
+    const moveTarget = this.aggroTargetToMoveTarget(resolved);
+    const tpos = this.combatTargetPosition(resolved);
+    const distance = this.calculateDistance(nemesis.position, tpos);
+
+    if (aggroData.isAggroed && distance > leashRadius && !aggroData.threatFromDamage && !aggroData.directPlayerDamageAggroed) {
+      aggroData.isAggroed = false;
+      aggroData.threatFromDamage = false;
+      return;
+    }
+
+    if (distance <= attackRange) {
+      if (!this.nemesisAttackCooldown.has(nemesis.id)) {
+        this.nemesisAttackCooldown.set(nemesis.id, 0);
+      }
+      const lastAttackTime = this.nemesisAttackCooldown.get(nemesis.id);
+      if (now - lastAttackTime >= attackCooldown) {
+        this.nemesisAttackCooldown.set(nemesis.id, now);
+        this.meleeLockUntil.set(nemesis.id, now + NEMESIS_SWING_LOCK_MS);
+        const attackVariant = nemesis.attackVariant === 2 ? 2 : 1;
+        nemesis.attackVariant = attackVariant === 1 ? 2 : 1;
+
+        if (resolved.kind === 'player') {
+          this.telegraphNemesisAttack(nemesis, resolved.player, attackVariant);
+          const pid = resolved.player.id;
+          setTimeout(() => {
+            if (nemesis.isDying || !this.room?.getGameStarted()) return;
+            if (this.room?.isEnemyAffectedBy(nemesis.id, 'stun')) return;
+            const currentPlayers = this.room?.getPlayers();
+            if (!currentPlayers) return;
+            const currentTarget = currentPlayers.find((p) => p.id === pid);
+            if (!currentTarget || currentTarget.health <= 0) return;
+            const currentDistance = this.calculateDistance(nemesis.position, currentTarget.position);
+            if (currentDistance <= attackRange) {
+              this.nemesisAttackPlayer(nemesis, currentTarget);
+            }
+          }, NEMESIS_HIT_DELAY_MS);
+        } else if (resolved.kind === 'hostile') {
+          const hostile = resolved.enemy;
+          this.telegraphNemesisAttack(nemesis, hostile, attackVariant);
+          const hid = hostile.id;
+          setTimeout(() => {
+            if (nemesis.isDying || !this.room?.getGameStarted()) return;
+            if (this.room?.isEnemyAffectedBy(nemesis.id, 'stun')) return;
+            const liveTarget = this.room?.getEnemy(hid);
+            if (!liveTarget || liveTarget.isDying || liveTarget.health <= 0) return;
+            const currentDistance = this.calculateDistance(nemesis.position, liveTarget.position);
+            if (currentDistance <= attackRange) {
+              this.nemesisAttackHostileEnemy(nemesis, liveTarget);
+            }
+          }, NEMESIS_HIT_DELAY_MS);
+        } else if (resolved.kind === 'zombie') {
+          const z = resolved.zombie;
+          this.telegraphNemesisAttack(nemesis, {
+            id: z.ownerPlayerId || z.id,
+            position: z.position,
+          }, attackVariant);
+          const zid = z.id;
+          setTimeout(() => {
+            if (nemesis.isDying || !this.room?.getGameStarted()) return;
+            if (this.room?.isEnemyAffectedBy(nemesis.id, 'stun')) return;
+            const liveZ = this.room?.getEnemy(zid);
+            if (!liveZ || liveZ.isDying || liveZ.health <= 0) return;
+            const currentDistance = this.calculateDistance(nemesis.position, liveZ.position);
+            if (currentDistance <= attackRange) {
+              this.damagePlayerZombieFromMob(nemesis, liveZ, nemesis.damage || 72, 'nemesis_melee');
+            }
+          }, NEMESIS_HIT_DELAY_MS);
+        }
+        return;
+      }
+    }
+
+    this.moveEnemyTowardsTarget(nemesis, moveTarget, { meleeSurroundAttackRange: attackRange });
+  }
+
   removeEnemyAggro(enemyId) {
+    this.clearHostileEnemyAsAggroTarget(enemyId);
     this._clearEnemyTimeouts(enemyId);
     this._clearEnemyHazardIntervals(enemyId);
     const tst = this.tentacleSlamTimeouts.get(enemyId);
@@ -10409,6 +12558,17 @@ class EnemyAI {
     this.knightSmiteCooldown.delete(enemyId);
     this.knightDashCooldown.delete(enemyId);
     this.knightSpinCooldown.delete(enemyId);
+    this.spectreSpinCooldown.delete(enemyId);
+    this.nemesisAttackCooldown.delete(enemyId);
+    this.valkyrieLunge1Cooldown.delete(enemyId);
+    this.valkyrieLunge2Cooldown.delete(enemyId);
+    this.valkyrieJudgmentCooldown.delete(enemyId);
+    this.sentinelSprintUntil.delete(enemyId);
+    this.sentinelSprintCooldownUntil.delete(enemyId);
+    this.sentinelSprintReason.delete(enemyId);
+    this.sentinelEntangleCooldown.delete(enemyId);
+    this.sentinelOrbCooldown.delete(enemyId);
+    this.sentinelIncomingShotThreat.delete(enemyId);
     const stormLashHandles = this.knightStormLashTimeouts.get(enemyId);
     if (stormLashHandles) {
       for (const h of stormLashHandles) clearTimeout(h);
@@ -10522,6 +12682,85 @@ class EnemyAI {
     });
   }
 
+  clearHostileEnemyAsAggroTarget(hostileEnemyId) {
+    this.enemyAggro.forEach((data) => {
+      if (data.targetHostileEnemyId === hostileEnemyId) data.targetHostileEnemyId = null;
+    });
+  }
+
+  /**
+   * Threat from Nemesis ↔ camp mob combat — mob focuses the hostile enemy.
+   */
+  applyHostileEnemyThreat(defenderEnemyId, attackerId, aggroAmount = 50) {
+    const attacker = this.room?.enemies?.get?.(attackerId);
+    const defender = this.room?.enemies?.get?.(defenderEnemyId);
+    if (!attacker || !defender) return;
+    if (!this.isValidHostileEnemyAggroTarget(defender, attacker)) return;
+
+    const players = this.room?.getPlayers?.();
+    let fallbackPlayerId = null;
+    if (players && defender) {
+      const closest = this.findClosestPlayer(defender, players);
+      if (closest) fallbackPlayerId = closest.id;
+    }
+
+    let aggroData = this.enemyAggro.get(defenderEnemyId);
+    if (!aggroData) {
+      aggroData = {
+        targetPlayerId: fallbackPlayerId,
+        targetZombieId: null,
+        targetTrapId: null,
+        targetHostileEnemyId: attackerId,
+        lastUpdate: Date.now(),
+        aggro: 100,
+      };
+      this.enemyAggro.set(defenderEnemyId, aggroData);
+    }
+
+    aggroData.targetHostileEnemyId = attackerId;
+    aggroData.targetZombieId = null;
+    aggroData.targetTrapId = null;
+    if (fallbackPlayerId) aggroData.targetPlayerId = fallbackPlayerId;
+    aggroData.aggro += aggroAmount;
+    aggroData.lastUpdate = Date.now();
+    aggroData.isAggroed = true;
+    aggroData.threatFromDamage = true;
+    aggroData.directPlayerDamageAggroed = false;
+  }
+
+  applyNemesisRetaliationThreat(nemesisId, attackerId, aggroAmount = 50) {
+    const nemesis = this.room?.enemies?.get?.(nemesisId);
+    const attacker = this.room?.enemies?.get?.(attackerId);
+    if (!nemesis || nemesis.type !== 'nemesis' || !this.isValidAttackerOnNemesis(attacker)) return;
+
+    let aggroData = this.enemyAggro.get(nemesisId);
+    if (!aggroData) {
+      const players = this.room?.getPlayers?.() || [];
+      const closestPlayer = this.findClosestPlayer(nemesis, players);
+      aggroData = {
+        targetPlayerId: closestPlayer?.id ?? null,
+        targetZombieId: null,
+        targetTrapId: null,
+        targetHostileEnemyId: attackerId,
+        lastUpdate: Date.now(),
+        aggro: 0,
+        isAggroed: false,
+        threatFromDamage: false,
+        directPlayerDamageAggroed: false,
+      };
+      this.enemyAggro.set(nemesisId, aggroData);
+    }
+
+    aggroData.targetHostileEnemyId = attackerId;
+    aggroData.targetZombieId = null;
+    aggroData.targetTrapId = null;
+    aggroData.aggro += aggroAmount;
+    aggroData.lastUpdate = Date.now();
+    aggroData.isAggroed = true;
+    aggroData.threatFromDamage = true;
+    aggroData.directPlayerDamageAggroed = false;
+  }
+
   /**
    * Threat from infested zombie melee — mob focuses the zombie, keeps owner as player fallback for leash/retarget.
    */
@@ -10553,6 +12792,7 @@ class EnemyAI {
 
     aggroData.targetZombieId = zombieId;
     aggroData.targetTrapId = null;
+    aggroData.targetHostileEnemyId = null;
     if (fallbackPlayerId) aggroData.targetPlayerId = fallbackPlayerId;
     aggroData.aggro += aggroAmount;
     aggroData.lastUpdate = Date.now();
@@ -10565,7 +12805,7 @@ class EnemyAI {
     if (!unitId) return 0;
     let count = 0;
     this.enemyAggro.forEach((data) => {
-      if (data.targetZombieId === unitId || data.targetTrapId === unitId) count += 1;
+      if (data.targetZombieId === unitId || data.targetTrapId === unitId || data.targetHostileEnemyId === unitId) count += 1;
     });
     return count;
   }
@@ -10585,6 +12825,7 @@ class EnemyAI {
     this.enemyAggro.forEach((data) => {
       data.targetZombieId = null;
       data.targetTrapId = null;
+      data.targetHostileEnemyId = null;
     });
   }
 
@@ -10600,6 +12841,7 @@ class EnemyAI {
       this.enemyAggro.forEach((data, enemyId) => {
         let focus = 'player';
         if (data.targetTrapId) focus = `trap:${data.targetTrapId}`;
+        else if (data.targetHostileEnemyId) focus = `hostile:${data.targetHostileEnemyId}`;
         else if (data.targetZombieId) focus = `ally:${data.targetZombieId}`;
         rows.push({
           enemyId,
@@ -10656,9 +12898,16 @@ class EnemyAI {
     const tr = this.room?.enemies?.get?.(trapId);
     if (!tr || tr.type !== 'tentacle-spine' || tr.isDying || tr.health <= 0) return;
 
+    const selfEnemy = this.room?.enemies?.get?.(defenderEnemyId);
+    if (selfEnemy && this._isPlayerCombatAlly(selfEnemy)) {
+      this._recordAlliedTrapThreat(defenderEnemyId, trapId);
+      selfEnemy.combatInitiated = true;
+      selfEnemy.alliedTargetEnemyId = trapId;
+      return;
+    }
+
     const players = this.room?.getPlayers?.();
     let fallbackPlayerId = null;
-    const selfEnemy = this.room?.enemies?.get?.(defenderEnemyId);
     if (players && selfEnemy) {
       const closest = this.findClosestPlayer(selfEnemy, players);
       if (closest) fallbackPlayerId = closest.id;
@@ -10680,6 +12929,7 @@ class EnemyAI {
 
     aggroData.targetTrapId = trapId;
     aggroData.targetZombieId = null;
+    aggroData.targetHostileEnemyId = null;
     if (fallbackPlayerId) aggroData.targetPlayerId = fallbackPlayerId;
     aggroData.aggro += aggroAmount;
     aggroData.lastUpdate = Date.now();
@@ -10811,8 +13061,8 @@ class EnemyAI {
   }
 
   /**
-   * Prefer trap → zombie → player.
-   * @returns {{ kind: 'player', player: object } | { kind: 'zombie', zombie: object } | { kind: 'trap', trap: object } | null}
+   * Prefer structure → trap → hostile enemy → zombie → player.
+   * @returns {{ kind: 'player', player: object } | { kind: 'zombie', zombie: object } | { kind: 'trap', trap: object } | { kind: 'hostile', enemy: object } | { kind: 'structure', structure: object } | null}
    */
   resolveAggroCombatTarget(aggroData, moverEnemy, players) {
     if (!aggroData || !moverEnemy || !players) return null;
@@ -10823,9 +13073,29 @@ class EnemyAI {
       && !targetedAlly.isDying
       && targetedAlly.health > 0;
 
+    if (
+      moverEnemy.deliriumGhoul
+      && moverEnemy.targetStructure
+      && aggroData.targetStructure
+    ) {
+      const structure = this.room?.deliriumStructure;
+      if (structure && !structure.destroyed && structure.hp > 0) {
+        return { kind: 'structure', structure };
+      }
+    }
+
     const preferPlayerOverAlly =
       aggroData.directPlayerDamageAggroed
       || (!isCombatAllyFocus && this._shouldPreferPlayerOverAlly(moverEnemy, players));
+
+    if (aggroData.targetStructure && !preferPlayerOverAlly) {
+      const structure = this.room?.deliriumStructure;
+      if (structure && !structure.destroyed && structure.hp > 0) {
+        return { kind: 'structure', structure };
+      }
+      aggroData.targetStructure = false;
+      if (moverEnemy.targetStructure) moverEnemy.targetStructure = false;
+    }
 
     const tid = aggroData.targetTrapId;
     if (tid && !preferPlayerOverAlly) {
@@ -10836,6 +13106,15 @@ class EnemyAI {
       aggroData.targetTrapId = null;
     }
 
+    const hid = aggroData.targetHostileEnemyId;
+    if (hid && !preferPlayerOverAlly) {
+      const hostile = this.room?.enemies?.get(hid);
+      if (this.isValidHostileEnemyAggroTarget(moverEnemy, hostile)) {
+        return { kind: 'hostile', enemy: hostile };
+      }
+      aggroData.targetHostileEnemyId = null;
+    }
+
     if (zid && !preferPlayerOverAlly) {
       const z = this.room?.enemies?.get(zid);
       if (z && this.isFriendlyCombatUnit(z) && !z.isDying && z.health > 0) {
@@ -10844,31 +13123,83 @@ class EnemyAI {
       aggroData.targetZombieId = null;
     }
 
-    let targetPlayer = players.find((p) => p.id === aggroData.targetPlayerId);
+    let targetPlayer = aggroData.targetPlayerId
+      ? players.find((p) => p.id === aggroData.targetPlayerId)
+      : null;
     if (!targetPlayer || targetPlayer.health <= 0) {
       const newTarget = this.findClosestPlayer(moverEnemy, players);
       if (newTarget) {
         aggroData.targetPlayerId = newTarget.id;
         targetPlayer = newTarget;
-      } else {
+      } else if (!aggroData.targetHostileEnemyId) {
         return null;
       }
     }
-    return { kind: 'player', player: targetPlayer };
+    if (targetPlayer && targetPlayer.health > 0) {
+      return { kind: 'player', player: targetPlayer };
+    }
+    return null;
   }
 
   aggroTargetToMoveTarget(resolved) {
     if (!resolved) return null;
     if (resolved.kind === 'player') return resolved.player;
+    if (resolved.kind === 'structure') {
+      return {
+        id: 'delirium-structure',
+        position: {
+          x: resolved.structure.position.x,
+          y: 0,
+          z: resolved.structure.position.z,
+        },
+      };
+    }
     if (resolved.kind === 'trap') return { id: resolved.trap.id, position: resolved.trap.position };
+    if (resolved.kind === 'hostile') return { id: resolved.enemy.id, position: resolved.enemy.position };
     return { id: resolved.zombie.id, position: resolved.zombie.position };
   }
 
   combatTargetPosition(resolved) {
     if (!resolved) return null;
     if (resolved.kind === 'player') return resolved.player.position;
+    if (resolved.kind === 'structure') {
+      return {
+        x: resolved.structure.position.x,
+        y: 0,
+        z: resolved.structure.position.z,
+      };
+    }
     if (resolved.kind === 'trap') return resolved.trap.position;
+    if (resolved.kind === 'hostile') return resolved.enemy.position;
     return resolved.zombie.position;
+  }
+
+  setDeliriumGhoulAggro(ghoulId) {
+    const ghoul = this.room?.getEnemy(ghoulId);
+    if (!ghoul) return;
+    const players = this.room?.getPlayers() || [];
+    const closestPlayer = players.length ? this.findClosestPlayer(ghoul, players) : null;
+    this.enemyAggro.set(ghoulId, {
+      targetPlayerId: closestPlayer?.id ?? null,
+      targetZombieId: null,
+      targetTrapId: null,
+      targetStructure: true,
+      lastUpdate: Date.now(),
+      aggro: 100,
+      isAggroed: true,
+    });
+  }
+
+  clearDeliriumStructureAggro(enemyId) {
+    const aggro = this.enemyAggro.get(enemyId);
+    if (!aggro) return;
+    aggro.targetStructure = false;
+    const enemy = this.room?.getEnemy(enemyId);
+    const players = this.room?.getPlayers() || [];
+    if (enemy && players.length) {
+      const closest = this.findClosestPlayer(enemy, players);
+      if (closest) aggro.targetPlayerId = closest.id;
+    }
   }
 
   /** Purple shade: 3 daggers; blue shade: 2 longer/faster daggers. */
@@ -10943,6 +13274,7 @@ class EnemyAI {
     aggroData.targetPlayerId = playerId;
     aggroData.targetZombieId = null;
     aggroData.targetTrapId = null;
+    aggroData.targetHostileEnemyId = null;
     aggroData.aggro += aggroAmount;
     aggroData.lastUpdate = Date.now();
     aggroData.isAggroed = true;
@@ -10975,6 +13307,7 @@ class EnemyAI {
         aggroData.targetPlayerId = null;
         aggroData.targetZombieId = null;
         aggroData.targetTrapId = null;
+        aggroData.targetHostileEnemyId = null;
         aggroData.aggro = 0;
         aggroData.isAggroed = false;
         aggroData.threatFromDamage = false;

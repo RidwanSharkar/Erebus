@@ -127,27 +127,27 @@ export default function DeathEffect({
     const currentIntensity = pulseIntensity * currentFadeProgress;
 
     if (coreMatRef.current) {
-      coreMatRef.current.emissiveIntensity = 0.4 * currentIntensity;
-      coreMatRef.current.opacity = 0.6 * currentFadeProgress;
+      coreMatRef.current.emissiveIntensity = 0.35 * currentIntensity;
+      coreMatRef.current.opacity = 0.5 * currentFadeProgress;
     }
     for (const mat of mistMatRefs.current) {
       if (mat) {
-        mat.emissiveIntensity = 0.6 * currentIntensity;
+        mat.emissiveIntensity = 0.45 * currentIntensity;
         mat.opacity = 0.4 * currentFadeProgress;
       }
     }
     for (const mat of ringMatRefs.current) {
       if (mat) {
-        mat.emissiveIntensity = 0.5 * currentIntensity;
+        mat.emissiveIntensity = 0.35 * currentIntensity;
         mat.opacity = 0.5 * currentFadeProgress;
       }
     }
     if (skullMatRef.current) {
-      skullMatRef.current.emissiveIntensity = 0.8 * currentIntensity;
+      skullMatRef.current.emissiveIntensity = 0.65 * currentIntensity;
       skullMatRef.current.opacity = 0.7 * currentFadeProgress;
     }
     if (glowMatRef.current) {
-      glowMatRef.current.emissiveIntensity = 0.15 * currentIntensity;
+      glowMatRef.current.emissiveIntensity = 0.1 * currentIntensity;
       glowMatRef.current.opacity = 0.3 * currentFadeProgress;
     }
 

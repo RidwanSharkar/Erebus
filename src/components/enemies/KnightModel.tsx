@@ -7,7 +7,7 @@ import { GLTFLoader } from 'three-stdlib';
 import { peek as suspendPeek } from 'suspend-react';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadGltfAnimationClips, preloadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
-import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { applySelfIllumination, KNIGHT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 import { filterAnimationTracksForRoot, getCachedProcessedClips } from '@/utils/enemyAnimationClipCache';
 
 export type KnightAbilityClip = 'Smite' | 'Aggro' | 'Cast' | 'Spin' | 'StartBlock' | 'IdleBlock';
@@ -239,6 +239,7 @@ export default React.memo(function KnightModel({
           : child.material.clone();
       }
     });
+    applySelfIllumination(clone, { intensity: KNIGHT_SELF_ILLUMINATION_INTENSITY });
     return clone;
   }, [scene, castShadow]);
 

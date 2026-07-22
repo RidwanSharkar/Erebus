@@ -7,6 +7,7 @@ import { Transform } from '@/ecs/components/Transform';
 import { Health } from '@/ecs/components/Health';
 import StunnedEffect from './StunnedEffect';
 import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
+import { isImmuneToPlayerStunAndFreeze } from '@/utils/enemyStatusImmunity';
 
 interface StunnedEnemyData {
   enemyId: string;
@@ -69,6 +70,7 @@ export default function StunManager({ world }: StunManagerProps) {
     if (world) {
       const entity = world.getAllEntities().find(e => e.id.toString() === enemyId);
       if (entity && isCoopPlayerAllyEntity(entity)) return;
+      if (entity && isImmuneToPlayerStunAndFreeze(entity.userData?.coopServerEnemyType as string | undefined)) return;
     }
     setStunnedEnemies(prev => {
       const rest = prev.filter(se => se.enemyId !== enemyId);

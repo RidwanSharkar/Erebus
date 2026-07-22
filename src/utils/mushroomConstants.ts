@@ -1,8 +1,8 @@
 import { MELEE_ARC_RANGE } from './meleeArcConstants';
 
 /** Co-op destructible instanced mushrooms — keep numeric gameplay values in sync with `backend/mushroomConstants.js`. */
-export const MUSHROOM_MAX_HP = 10;
-export const MUSHROOM_ERUPTION_PLAYER_DMG = 15;
+export const MUSHROOM_MAX_HP = 30;
+export const MUSHROOM_ERUPTION_PLAYER_DMG = 0;
 export const MUSHROOM_ERUPTION_ENEMY_DMG = 300;
 export const MUSHROOM_ERUPTION_ALLY_DMG = 25;
 /** Horizontal XZ distance from mushroom origin for server AoE and tuning; visual is separate. */

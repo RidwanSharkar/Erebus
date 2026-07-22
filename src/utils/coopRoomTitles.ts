@@ -9,18 +9,20 @@ export interface RoomTitleAnnouncement {
 
 export const TRIAL_ROOM_PEDESTAL_GOLD = 250;
 export const STAT_ROOM_PEDESTAL_POINTS = StatSystem.STAT_ROOM_PEDESTAL_POINTS;
-export const BOON_REROLL_GOLD_COST = 50;
+export const BOON_REROLL_FATE_COST = 1;
+export const STARTING_FATE = 3;
 
 export const ROOM_TITLE_ANNOUNCEMENT_MS = 4100;
 
 export const REWARD_ANNOUNCEMENT_COLORS = {
   gold: '#eab308',
-  stat: '#eab308',
+  stat: '#f97316',
   purchased: '#ec4899',
   unlocked: '#c084fc',
 } as const;
 
 export const INTRO_ROOM_GOLD_REWARDS = [50, 75, 100, 0] as const;
+export const SUNKEN_ROOM_GOLD_REWARDS = INTRO_ROOM_GOLD_REWARDS;
 export const DEEP_SANCTUM_STAT_POINTS = 8;
 export const DEEP_SANCTUM_GOLD_MIN = 150;
 
@@ -30,9 +32,15 @@ export const GUIDE_ANNOUNCEMENTS = {
   descendPortal: { title: 'DESCEND', color: '#c084fc' },
   drinkFountain: { title: 'DRINK FROM THE FOUNTAIN', color: '#22d3ee' },
   chooseAlly: { title: 'CHOOSE YOUR ALLY', color: '#eab308' },
+  speakWithArchitect: { title: 'SPEAK WITH THE ARCHITECT', color: '#88ddff' },
   claimReward: { title: 'CLAIM YOUR REWARD', color: '#94a3b8' },
   chooseGateway: { title: 'CHOOSE A GATEWAY', color: '#94a3b8' },
   descendVoid: { title: 'DESCEND', color: '#c084fc' },
+  killSpines: { title: 'DESTROY THE SPINES', color: '#ef4444' },
+  defendStructure: { title: 'DEFEND THE STRUCTURE', color: '#f59e0b' },
+  defeatChampion: { title: 'DEFEAT THE CHAMPION', color: '#dc2626' },
+  deliriumSuccess: { title: 'STRUCTURE HELD — REWARD EARNED', color: '#22c55e' },
+  deliriumFailed: { title: 'CLEAR THE GHOULS', color: '#ef4444' },
 } as const;
 
 export const LEVEL_UP_ANNOUNCEMENT = { title: 'LEVEL UP', color: '#eab308' } as const;
@@ -51,7 +59,7 @@ export const BOSS_SLAIN_ANNOUNCEMENTS: Record<
   { title: string; color: string }
 > = {
   hate: { title: 'HATE SLAIN', color: '#dc2626' },
-  knights: { title: 'KNIGHTS SLAIN', color: '#dc2626' },
+  knights: { title: 'TWIN EMPERORS SLAIN', color: '#dc2626' },
   envy: { title: 'ENVY SLAIN', color: '#22c55e' },
   fear: { title: 'FEAR SLAIN', color: '#6c3dff' },
   trinity: { title: 'TRINITY SLAIN', color: '#dc2626' },
@@ -61,14 +69,15 @@ export const BOSS_SLAIN_ANNOUNCEMENTS: Record<
 const ROOM_TITLE_COLORS = {
   throne: '#eab308',
   merchant: '#ec4899',
-  trial: '#f97316',
-  stat: '#eab308',
+  trial: '#eab308',
+  stat: '#f97316',
   red: '#ef4444',
   blue: '#3b82f6',
   green: '#22c55e',
   purple: '#6c3dff',
   boss: '#dc2626',
   intro: '#f5e6b8',
+  sunken: '#7dd3fc',
 } as const;
 
 const COLORED_HALL_BASE: Record<'red' | 'blue' | 'green' | 'purple', string> = {
@@ -123,7 +132,7 @@ export function buildRoomTitleAnnouncement(
 
   if (kind === 'merchant') {
     return {
-      title: 'CRYPT',
+      title: 'AVERNUS',
       color: ROOM_TITLE_COLORS.merchant,
       glowColor: ROOM_TITLE_COLORS.merchant,
     };
@@ -131,7 +140,7 @@ export function buildRoomTitleAnnouncement(
 
   if (kind === 'trial') {
     return {
-      title: 'TRIAL ROOM',
+      title: 'CRYPT OF CURRENCY',
       color: ROOM_TITLE_COLORS.trial,
       glowColor: ROOM_TITLE_COLORS.trial,
     };
@@ -139,7 +148,7 @@ export function buildRoomTitleAnnouncement(
 
   if (kind === 'stat') {
     return {
-      title: 'STAT ROOM',
+      title: 'CRYPT OF SKILL',
       color: ROOM_TITLE_COLORS.stat,
       glowColor: ROOM_TITLE_COLORS.stat,
     };
@@ -169,6 +178,55 @@ export function buildRoomTitleAnnouncement(
       title: `INNER SANCTUM ${toRomanNumeral(index)}`,
       color: ROOM_TITLE_COLORS.intro,
       glowColor: ROOM_TITLE_COLORS.intro,
+    };
+  }
+
+  if (kind === 'sunken_temple') {
+    const index = visitIndex != null && visitIndex > 0 ? visitIndex : 1;
+    return {
+      title: `SUNKEN TEMPLE ${toRomanNumeral(index)}`,
+      color: ROOM_TITLE_COLORS.sunken,
+      glowColor: ROOM_TITLE_COLORS.sunken,
+    };
+  }
+
+  if (kind === 'eden') {
+    return {
+      title: 'EDEN',
+      color: '#86efac',
+      glowColor: '#22c55e',
+    };
+  }
+
+  if (kind === 'false_eden') {
+    return {
+      title: 'DISTORTED EDEN',
+      color: '#86efac',
+      glowColor: '#22c55e',
+    };
+  }
+
+  if (kind === 'delirium_gate') {
+    return {
+      title: 'DELIRIUM GATE',
+      color: '#f59e0b',
+      glowColor: '#dc2626',
+    };
+  }
+
+  if (kind === 'erebus_gate') {
+    return {
+      title: 'EREBUS GATE',
+      color: '#d4a574',
+      glowColor: '#991b1b',
+    };
+  }
+
+  if (kind === 'dream_layer') {
+    return {
+      title: 'DREAM LAYER',
+      color: '#9ad8ff',
+      glowColor: '#3b82f6',
     };
   }
 

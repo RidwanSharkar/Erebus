@@ -16,7 +16,7 @@ import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 export const VOID_PORTAL_RADIUS = 2.5;
 export const VOID_PORTAL_INTERACT_RADIUS = 3.3;
 
-export type VoidPortalScheme = 'void' | 'boss';
+export type VoidPortalScheme = 'void' | 'boss' | 'sunken';
 
 const VOID_PORTAL_SCHEMES: Record<
   VoidPortalScheme,
@@ -44,6 +44,14 @@ const VOID_PORTAL_SCHEMES: Record<
     light: '#dc2626',
     particleDim: [0.15, 0.0, 0.02],
     particleBright: [1.0, 0.1, 0.1],
+  },
+  sunken: {
+    energyDim: [0.0, 0.04, 0.18],
+    energyBright: [0.1, 0.55, 1.0],
+    rim: '#3b82f6',
+    light: '#3b82f6',
+    particleDim: [0.0, 0.04, 0.22],
+    particleBright: [0.03, 0.75, 1.0],
   },
 };
 

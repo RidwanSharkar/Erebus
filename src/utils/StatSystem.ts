@@ -21,8 +21,8 @@ export interface StatPointData {
 }
 
 export class StatSystem {
-  private static readonly INITIAL_STAT_POINTS = 3;
-  private static readonly STAT_POINTS_PER_LEVEL = 3;
+  private static readonly INITIAL_STAT_POINTS = 0;
+  private static readonly STAT_POINTS_PER_LEVEL = 5;
 
   static readonly BASE_MAX_SHIELD = 25;
   static readonly STRENGTH_CRIT_DAMAGE_MULT_PER_POINT = 0.05;

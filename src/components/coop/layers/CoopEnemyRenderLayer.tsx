@@ -1,6 +1,6 @@
 'use client';
 
-import React, { memo } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Enemy } from '@/contexts/MultiplayerContext';
 import KnightRenderer from '@/components/enemies/KnightRenderer';
 import GhoulRenderer from '@/components/enemies/GhoulRenderer';
@@ -13,6 +13,10 @@ import TitanRenderer from '@/components/enemies/TitanRenderer';
 import GreedRenderer from '@/components/enemies/GreedRenderer';
 import MartyrRenderer from '@/components/enemies/MartyrRenderer';
 import WraithRenderer from '@/components/enemies/WraithRenderer';
+import SpectreRenderer from '@/components/enemies/SpectreRenderer';
+import SentinelRenderer from '@/components/enemies/SentinelRenderer';
+import NemesisRenderer from '@/components/enemies/NemesisRenderer';
+import ValkyrieRenderer from '@/components/enemies/ValkyrieRenderer';
 import ZombieRenderer from '@/components/enemies/ZombieRenderer';
 import AlliedKnightRenderer from '@/components/enemies/AlliedKnightRenderer';
 import AlliedHealerRenderer from '@/components/enemies/AlliedHealerRenderer';
@@ -27,10 +31,71 @@ type CoopEnemyRenderLayerProps = {
   isCoopEnemyVisibleForRender: (x: number, z: number) => boolean;
 };
 
-/** Unmount renderers immediately on death so cloned GLB materials / Troika HP text dispose. */
-function shouldRenderCoopEnemy(enemy: Enemy): boolean {
-  if (enemy.isDying && enemy.type !== 'training-dummy') return false;
-  return true;
+const DEATH_VISUAL_LINGER_MS = 1000;
+
+/** Keep dying enemies mounted briefly so death GLB clips can play before dispose. */
+function useCoopEnemyDeathLinger(enemiesByType: Map<string, Enemy[]>) {
+  const deathStartByIdRef = useRef<Map<string, number>>(new Map());
+  const lingerTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const [expiredDeathIds, setExpiredDeathIds] = useState<Set<string>>(() => new Set());
+
+  const allEnemies = useMemo(
+    () => Array.from(enemiesByType.values()).flat(),
+    [enemiesByType],
+  );
+
+  useEffect(() => {
+    const currentIds = new Set(allEnemies.map((enemy) => enemy.id));
+
+    lingerTimersRef.current.forEach((timer, enemyId) => {
+      if (currentIds.has(enemyId)) return;
+      clearTimeout(timer);
+      lingerTimersRef.current.delete(enemyId);
+      deathStartByIdRef.current.delete(enemyId);
+      setExpiredDeathIds((prev) => {
+        if (!prev.has(enemyId)) return prev;
+        const next = new Set(prev);
+        next.delete(enemyId);
+        return next;
+      });
+    });
+
+    for (const enemy of allEnemies) {
+      if (enemy.type === 'training-dummy') continue;
+      if (!enemy.isDying) continue;
+      if (deathStartByIdRef.current.has(enemy.id)) continue;
+
+      deathStartByIdRef.current.set(enemy.id, Date.now());
+      const timer = setTimeout(() => {
+        lingerTimersRef.current.delete(enemy.id);
+        setExpiredDeathIds((prev) => {
+          const next = new Set(prev);
+          next.add(enemy.id);
+          return next;
+        });
+      }, DEATH_VISUAL_LINGER_MS);
+      lingerTimersRef.current.set(enemy.id, timer);
+    }
+  }, [allEnemies]);
+
+  useEffect(() => {
+    return () => {
+      lingerTimersRef.current.forEach((timer) => {
+        clearTimeout(timer);
+      });
+      lingerTimersRef.current.clear();
+      deathStartByIdRef.current.clear();
+    };
+  }, []);
+
+  return useCallback(
+    (enemy: Enemy): boolean => {
+      if (enemy.type === 'training-dummy') return true;
+      if (!enemy.isDying) return true;
+      return !expiredDeathIds.has(enemy.id);
+    },
+    [expiredDeathIds],
+  );
 }
 
 /** Memoized enemy roster — skips re-render when unrelated room UI state changes. */
@@ -38,6 +103,8 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
   enemiesByType,
   isCoopEnemyVisibleForRender,
 }: CoopEnemyRenderLayerProps) {
+  const shouldRenderCoopEnemy = useCoopEnemyDeathLinger(enemiesByType);
+
   return (
     <>
       {(enemiesByType.get('boss-skeleton') ?? []).map((enemy) => {
@@ -340,6 +407,82 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
               staggerBuildup={enemy.staggerBuildup ?? 0}
               bladestormActive={enemy.bladestormActive}
               bladestormStartTime={enemy.bladestormStartTime}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('spectre') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <SpectreRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('sentinel') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <SentinelRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('nemesis') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <NemesisRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('valkyrie') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <ValkyrieRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
             />
           </React.Suspense>
         );

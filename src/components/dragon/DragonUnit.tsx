@@ -22,10 +22,12 @@ import Reanimate, { ReanimateRef } from '../weapons/Reanimate';
 import BoneTail from './BoneTail';
 import ArchmageCrest from './ArchmageCrest';
 import SpellCastingAura from '../weapons/SpellCastingAura';
+import PrimeMateriaAura from '../weapons/PrimeMateriaAura';
+import IncinerationChargeAura from '../weapons/IncinerationChargeAura';
 import SpellCastingHalos from '../weapons/SpellCastingHalos';
 import DeflectShield from '../weapons/DeflectShield';
 import type { AegisPaletteVariant } from '@/utils/aegisShieldPalette';
-import type { VorpalGustStabBoonBeamTheme, TalentLoadout } from '@/utils/talents';
+import { isShiftEnergyHaloActive, type VorpalGustStabBoonBeamTheme, type TalentLoadout } from '@/utils/talents';
 
 interface DragonUnitProps {
   position?: Vector3;
@@ -60,12 +62,22 @@ interface DragonUnitProps {
   getRunebladeCrusaderLmbFlatBonus?: () => number;
   /** Local: Crusader — corrupted palette on Runeblade meshes (F aura VFX separate). */
   crusaderBladeThemeActive?: boolean;
+  /** Local: Titan's Grip — permanent red blade palette. */
+  titansGripBladeThemeActive?: boolean;
+  /** Local: Psionic Blades — permanent purple blade palette. */
+  psionicBladesBladeThemeActive?: boolean;
   /** Local: Blizzard talent — storm visibility from ControlSystem (omit when talent not taken). */
   getRunebladeBlizzardTalentActive?: () => boolean;
+  /** Local: Runeblade Blizzard — stat-scaled tick damage. */
+  getRunebladeBlizzardDamagePerTick?: () => number;
   /** Local: Awakened Eye — scaled Runeblade Blizzard storm hit radius. */
   getRunebladeBlizzardStormHitRadius?: () => number;
   /** Local: Awakened Eye — denser Runeblade Blizzard frost particles. */
   getRunebladeBlizzardParticleSpawnMultiplier?: () => number;
+  /** Local: Titan's Grip — flat STR-scaled LMB damage per combo strike. */
+  getRunebladeTitansGripLmbFlatBonus?: () => number;
+  /** Local: Titan's Grip — 25% per-hit stun proc on Runeblade LMB hits. */
+  onRunebladeTitansGripHit?: (targetId: string) => void;
   onBowRelease?: (finalProgress: number, isPerfectShot?: boolean) => void;
   onScytheSwingComplete?: () => void;
   onSwordSwingComplete?: () => void;
@@ -97,6 +109,16 @@ interface DragonUnitProps {
   isDeathGrasping?: boolean;
   isWraithStriking?: boolean;
   isCorruptedAuraActive?: boolean;
+  /** Alchemist Prime Materia — toggle Shift red aura ring. */
+  isPrimeMateriaActive?: boolean;
+  /** Sorceress Incineration — hold Shift fiery charge aura. */
+  isIncinerationCharging?: boolean;
+  /** Sorceress Incineration — shift released, charge armed for LMB detonate. */
+  isIncinerationArmed?: boolean;
+  /** Acolyte Locusts — hold Shift volley channel. */
+  isLocustChanneling?: boolean;
+  /** Hold-Shift sprint (Rogue / legacy PvP). */
+  isSprinting?: boolean;
   onSmiteComplete?: () => void;
   onColossusStrikeComplete?: () => void;
   onDeathGraspComplete?: () => void;
@@ -244,10 +266,20 @@ export default function DragonUnit({
   isDeathGrasping = false,
   isWraithStriking = false,
   isCorruptedAuraActive = false,
+  isPrimeMateriaActive = false,
+  isIncinerationCharging = false,
+  isIncinerationArmed = false,
+  isLocustChanneling = false,
+  isSprinting = false,
   crusaderBladeThemeActive = false,
+  titansGripBladeThemeActive = false,
+  psionicBladesBladeThemeActive = false,
   getRunebladeBlizzardTalentActive,
+  getRunebladeBlizzardDamagePerTick,
   getRunebladeBlizzardStormHitRadius,
   getRunebladeBlizzardParticleSpawnMultiplier,
+  getRunebladeTitansGripLmbFlatBonus,
+  onRunebladeTitansGripHit,
   onSmiteComplete = () => {},
   onColossusStrikeComplete = () => {},
   onDeathGraspComplete = () => {},
@@ -474,6 +506,49 @@ export default function DragonUnit({
     isLocalPlayer &&
     (showSpellAura || abilityPulseActive || cappedLongCastAura);
 
+  const [shiftHaloPulseActive, setShiftHaloPulseActive] = useState(false);
+  const shiftHaloPulseClearRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleShiftHaloPulse = useCallback((durationMs: number) => {
+    setShiftHaloPulseActive(true);
+    if (shiftHaloPulseClearRef.current) clearTimeout(shiftHaloPulseClearRef.current);
+    shiftHaloPulseClearRef.current = setTimeout(() => {
+      setShiftHaloPulseActive(false);
+      shiftHaloPulseClearRef.current = null;
+    }, durationMs);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (shiftHaloPulseClearRef.current) clearTimeout(shiftHaloPulseClearRef.current);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!isLocalPlayer) return;
+
+    const onShiftEnergyHaloPulse = (event: Event) => {
+      const detail = (event as CustomEvent<{ durationMs?: number }>).detail;
+      scheduleShiftHaloPulse(detail?.durationMs ?? 1000);
+    };
+
+    window.addEventListener('shift-energy-halo-pulse', onShiftEnergyHaloPulse);
+    return () => window.removeEventListener('shift-energy-halo-pulse', onShiftEnergyHaloPulse);
+  }, [isLocalPlayer, scheduleShiftHaloPulse]);
+
+  const shiftEnergyHaloVisible =
+    isLocalPlayer &&
+    isShiftEnergyHaloActive({
+      isSprinting,
+      isPrimeMateriaActive,
+      isIncinerationCharging,
+      isIncinerationArmed,
+      isLocustChanneling,
+      isBlockingDeflect,
+      pulseActive: shiftHaloPulseActive,
+    });
+
   // Weapon rendering logic
   const renderWeapon = () => {
     if (currentWeapon === WeaponType.NONE || currentWeapon == null) {
@@ -563,6 +638,7 @@ export default function DragonUnit({
             onBackstabComplete={onBackstabComplete}
             onSunderComplete={onSunderComplete}
             subclass={currentSubclass}
+            psionicBladesBladeThemeActive={psionicBladesBladeThemeActive}
             enemyData={enemyData}
             onHit={onHit}
           />
@@ -583,6 +659,7 @@ export default function DragonUnit({
           isWraithStriking={isWraithStriking}
           isCorruptedAuraActive={isCorruptedAuraActive}
           crusaderBladeThemeActive={crusaderBladeThemeActive}
+          titansGripBladeThemeActive={titansGripBladeThemeActive}
           isOathstriking={false}
           isCharging={isSwordCharging}
           isDeflecting={isDeflecting}
@@ -614,7 +691,9 @@ export default function DragonUnit({
           comboStepResolver={runebladeComboStepResolver}
           getExecutionerFlatBonus={getRunebladeExecutionerFlatBonus}
           getCrusaderLmbFlatBonus={getRunebladeCrusaderLmbFlatBonus}
+          getTitansGripLmbFlatBonus={getRunebladeTitansGripLmbFlatBonus}
           getBlizzardTalentActive={getRunebladeBlizzardTalentActive}
+          getBlizzardDamagePerTick={getRunebladeBlizzardDamagePerTick}
           getBlizzardStormHitRadius={getRunebladeBlizzardStormHitRadius}
           getBlizzardParticleSpawnMultiplier={getRunebladeBlizzardParticleSpawnMultiplier}
           mushroomTargets={mushroomTargets}
@@ -793,10 +872,20 @@ export default function DragonUnit({
             isActive={spellAuraVisible}
           />
 
-          {/* Rising cast halos — Reanimate-style rings, ~50% scale; torso-height on humanoid weapon rig */}
+          {/* Rising cast halos — Shift-energy spend only; LMB/Q/E casts use SpellCastingAura */}
           <group position={[0, hideBody ? 1.05 : 0.55, 0]}>
-            <SpellCastingHalos isActive={spellAuraVisible} />
+            <SpellCastingHalos isActive={shiftEnergyHaloVisible} />
           </group>
+
+          <PrimeMateriaAura
+            parentRef={groupRef}
+            isActive={isPrimeMateriaActive}
+          />
+
+          <IncinerationChargeAura
+            parentRef={groupRef}
+            isActive={isIncinerationCharging}
+          />
         </>
       )}
 

@@ -189,8 +189,12 @@ function handleEnemyEvents(socket, gameRooms) {
       if (data.icebeamWrathful) hitMeta.icebeamWrathful = true;
       if (data.icebeamInfested) hitMeta.icebeamInfested = true;
       if (icebeamArcticChill) hitMeta.icebeamArcticChill = true;
+    } else if (damageType === 'incineration') {
+      hitMeta = { damageType: 'incineration' };
     } else if (damageType === 'locust') {
       hitMeta = { damageType: 'locust' };
+    } else if (damageType === 'deflect_smite') {
+      hitMeta = { damageType: 'deflect_smite' };
     }
     room.damageEnemy(enemyId, damage, actualSourcePlayerId, player, hitMeta);
   });
@@ -246,7 +250,7 @@ function handleEnemyEvents(socket, gameRooms) {
 
   // Handle status effect applications
   socket.on('apply-status-effect', (data) => {
-    const { roomId, enemyId, effectType, duration } = data;
+    const { roomId, enemyId, effectType, duration, source } = data;
     
     if (!gameRooms.has(roomId)) return;
     
@@ -259,7 +263,14 @@ function handleEnemyEvents(socket, gameRooms) {
     ) {
       return;
     }
-    const success = room.applyStatusEffect(enemyId, effectType, duration);
+    if (
+      targetEnemy &&
+      targetEnemy.type === 'titan' &&
+      (effectType === 'stun' || effectType === 'freeze')
+    ) {
+      return;
+    }
+    const success = room.applyStatusEffect(enemyId, effectType, duration, { source });
     
     if (success) {
       // console.log(`🎯 Applied ${effectType} to enemy ${enemyId} for ${duration}ms by player ${socket.id}`);

@@ -15,7 +15,8 @@ export type KnightSmiteLightningVariant =
   | 'enemy-blue'
   | 'enemy-green'
   | 'enemy-purple'
-  | 'ally-gold';
+  | 'ally-gold'
+  | 'titans-grip';
 
 interface KnightSmiteLightningProps {
   position: Vector3;
@@ -31,6 +32,7 @@ const PALETTES: Record<KnightSmiteLightningVariant, { core: string; glow: string
   'enemy-green': { core: '#00ff88', glow: '#00cc55', light: '#00ff66' },
   'enemy-purple': { core: '#cc44ff', glow: '#8811cc', light: '#bb33ff' },
   'ally-gold': { core: '#fff7ad', glow: '#facc15', light: '#f59e0b' },
+  'titans-grip': { core: '#ff8888', glow: '#B51010', light: '#EE6666' },
 };
 
 /** Sky-to-ground strike for knight smites — soul-themed for enemies, gold for allied knight. */

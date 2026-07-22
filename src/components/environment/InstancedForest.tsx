@@ -19,7 +19,7 @@ import {
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
-const TREE_COUNT = 26;
+const TREE_COUNT = 20;
 const DEFAULT_INNER_R = MAIN_MAP_HALF_X - 1.8;
 const DEFAULT_OUTER_R = MAIN_MAP_HALF_X - 0.7;
 

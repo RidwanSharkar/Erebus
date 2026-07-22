@@ -16,9 +16,11 @@ interface AscendantBoneWingsProps {
   isLeftWing: boolean;
   parentRef: React.RefObject<Group>;
   isDashing: boolean;
+  /** Enemy cosmetics skip pooled lights to avoid exhausting the global effect-light pool. */
+  omitLights?: boolean;
 }
 
-export default function AscendantBoneWings({ isLeftWing, parentRef, isDashing }: AscendantBoneWingsProps) {
+export default function AscendantBoneWings({ isLeftWing, parentRef, isDashing, omitLights = false }: AscendantBoneWingsProps) {
   const wingsRef = useRef<Group>(null);
   const isFlappingRef = useRef(false);
   const flapStartTimeRef = useRef(0);
@@ -220,12 +222,14 @@ export default function AscendantBoneWings({ isLeftWing, parentRef, isDashing }:
     >
       {/* Base feather */}
       <mesh geometry={featherGeometry} material={materials.feather}>
-        <PooledEffectLight
-          color="#F5F5DC"
-          intensity={0.3}
-          distance={0.8}
-          decay={2}
-        />
+        {!omitLights && (
+          <PooledEffectLight
+            color="#F5F5DC"
+            intensity={0.3}
+            distance={0.8}
+            decay={2}
+          />
+        )}
       </mesh>
 
       {/* Red marking overlay */}
@@ -235,12 +239,14 @@ export default function AscendantBoneWings({ isLeftWing, parentRef, isDashing }:
           material={materials.redMarking}
           position={[0, 0, 0.01]}
         >
-          <PooledEffectLight
-            color="#FF0000"
-            intensity={1.2}
-            distance={1.2}
-            decay={2}
-          />
+          {!omitLights && (
+            <PooledEffectLight
+              color="#FF0000"
+              intensity={1.2}
+              distance={1.2}
+              decay={2}
+            />
+          )}
         </mesh>
       )}
     </group>

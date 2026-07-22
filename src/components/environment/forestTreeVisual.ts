@@ -239,7 +239,7 @@ export function forestAddHeightRatio(geo: CylinderGeometry | SphereGeometry): vo
 }
 
 /** Matches `createForestTrunkGeometry` / InstancedForest trunk height. */
-export const FOREST_TRUNK_CYL_H = 3.25;
+export const FOREST_TRUNK_CYL_H = 3.5;
 
 /** Taper radius at relative height t in [0,1] — same as unscaled Cylinder(0.05,1,h) * trunkR. */
 export function forestTrunkRadiusAtT(trunkR: number, t: number): number {

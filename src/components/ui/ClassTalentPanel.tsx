@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { WeaponType } from '@/components/dragon/weapons';
 import type { AbilityLoadout } from '@/utils/weaponAbilities';
 import type { TalentId, TalentLoadout } from '@/utils/talents';
@@ -14,9 +14,6 @@ import {
 const MAX_VISIBLE_SLOTS = 10;
 const SLOT_GAP_PX = 8;
 const SCROLL_STEP_PX = TALENT_SLOT_PX + SLOT_GAP_PX;
-const DPS_METER_HUD_ID = 'dps-meter-hud';
-const PANEL_TOP_GAP_PX = 8;
-const FALLBACK_TOP_OFFSET_PX = 16 + 88 + PANEL_TOP_GAP_PX;
 
 interface ClassTalentPanelProps {
   currentWeapon: WeaponType;
@@ -34,28 +31,6 @@ export default function ClassTalentPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollUp, setCanScrollUp] = useState(false);
   const [canScrollDown, setCanScrollDown] = useState(false);
-  const [topOffsetPx, setTopOffsetPx] = useState(FALLBACK_TOP_OFFSET_PX);
-
-  useLayoutEffect(() => {
-    const dpsMeter = document.getElementById(DPS_METER_HUD_ID);
-    if (!dpsMeter) return;
-
-    const updateTopOffset = () => {
-      const rect = dpsMeter.getBoundingClientRect();
-      setTopOffsetPx(rect.bottom + PANEL_TOP_GAP_PX);
-    };
-
-    updateTopOffset();
-
-    const resizeObserver = new ResizeObserver(updateTopOffset);
-    resizeObserver.observe(dpsMeter);
-    window.addEventListener('resize', updateTopOffset);
-
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener('resize', updateTopOffset);
-    };
-  }, []);
 
   const { classTalents, duoBoons, ultimateBoons } = useMemo(
     () =>
@@ -168,7 +143,7 @@ export default function ClassTalentPanel({
 
   return (
     <>
-      <div className="fixed left-4 z-40" style={{ top: topOffsetPx }} data-block-game-input>
+      <div data-block-game-input>
         <div
           className="backdrop-blur-md px-3 py-3"
           style={{

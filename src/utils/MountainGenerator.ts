@@ -225,9 +225,9 @@ export function generateBorderMountains({
   // between them rather than a solid triangular wall. Outer rings are bigger and
   // form the distant backdrop seen behind the inner range.
   const rings: Array<[number, number, number, number]> = [
-    [arenaRadius + 1.0, 9.5, 0.7, 1.05],
-    [arenaRadius + 6, 12.0, 0.95, 1.45],
-    [arenaRadius + 15, 15.0, 1.25, 1.9],
+    [arenaRadius + 5, 9.5, 0.7, 1.05],
+    [arenaRadius + 10, 12.0, 0.95, 1.45],
+    [arenaRadius + 17.5, 15.0, 1.25, 1.9],
   ];
 
   let variantCursor = 0;
@@ -251,7 +251,7 @@ export function generateBorderMountains({
         position: {
           x: Math.cos(angle) * r,
           // Sink the base slightly so there is no visible gap at the ground seam.
-          y: -0.8 - rand() * 0.6,
+          y: -2.8 - rand() * 0.6,
           z: Math.sin(angle) * r,
         },
         scale,

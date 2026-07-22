@@ -7,7 +7,7 @@ import { GLTFLoader } from 'three-stdlib';
 import { peek as suspendPeek } from 'suspend-react';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadGltfAnimationClips, preloadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
-import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 import { getCachedProcessedClips } from '@/utils/enemyAnimationClipCache';
 
 /** Greed uses the idle mesh (same as allied healer / merchant NPC) and always plays Walk. */
@@ -17,6 +17,8 @@ export type GreedAbilityClip = 'Cast' | 'HealCast' | 'Launch';
 interface GreedModelProps {
   isDying: boolean;
   abilityClip?: GreedAbilityClip | null;
+  /** When false, hold Idle instead of the default always-on Walk loop. Defaults to true. */
+  isWalking?: boolean;
 }
 
 const GREED_MODEL_PATHS = [
@@ -71,7 +73,7 @@ export async function warmupGreedModels(): Promise<void> {
   }
 }
 
-export default React.memo(function GreedModel({ isDying, abilityClip }: GreedModelProps) {
+export default React.memo(function GreedModel({ isDying, abilityClip, isWalking = true }: GreedModelProps) {
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
   const extraActionsRef = useRef<Partial<Record<GreedClip, AnimationAction>>>({});
@@ -121,6 +123,7 @@ export default React.memo(function GreedModel({ isDying, abilityClip }: GreedMod
           : child.material.clone();
       }
     });
+    applySelfIllumination(clone, { intensity: UNIT_SELF_ILLUMINATION_INTENSITY });
     return clone;
   }, [scene]);
 
@@ -180,7 +183,7 @@ export default React.memo(function GreedModel({ isDying, abilityClip }: GreedMod
       ? getAction('Death')
       : abilityClip
         ? getAction(abilityClip)
-        : getAction('Walk') ?? getAction('Idle');
+        : (isWalking ? getAction('Walk') : getAction('Idle')) ?? getAction('Idle');
     if (!nextAction || nextAction === currentActionRef.current) return;
 
     currentActionRef.current?.fadeOut(0.2);
@@ -194,14 +197,14 @@ export default React.memo(function GreedModel({ isDying, abilityClip }: GreedMod
       nextAction.reset().fadeIn(0.2).play();
     }
     currentActionRef.current = nextAction;
-  }, [idleActions, abilityClip, isDying, deferredAnimationClips]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [idleActions, abilityClip, isDying, isWalking, deferredAnimationClips]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!mixer || isDying) return;
     const handleFinish = (e: { action: AnimationAction }) => {
       const name = e.action.getClip().name;
       if (name !== 'Cast' && name !== 'HealCast' && name !== 'Launch') return;
-      const fallback = getAction('Walk') ?? getAction('Idle');
+      const fallback = (isWalking ? getAction('Walk') : getAction('Idle')) ?? getAction('Idle');
       if (!fallback) return;
       fallback.enabled = true;
       fallback.setLoop(LoopRepeat, Infinity);
@@ -211,7 +214,7 @@ export default React.memo(function GreedModel({ isDying, abilityClip }: GreedMod
     };
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
-  }, [mixer, isDying, idleActions, deferredAnimationClips]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mixer, isDying, isWalking, idleActions, deferredAnimationClips]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <group ref={sceneGroupRef}>

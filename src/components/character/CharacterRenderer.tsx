@@ -114,13 +114,23 @@ function computeModelYawOffset(
   facingDir: Vector3,
   inputStrength: number,
 ): number {
-  if (!moveDir || inputStrength <= 0.05) return 0;
-  const cardinal = animCardinalAngle(animState);
-  if (cardinal === null) return 0;
+  if (!moveDir) return 0;
 
   const dot = facingDir.dot(moveDir);
   const crossY = facingDir.x * moveDir.z - facingDir.z * moveDir.x;
   const angle = Math.atan2(crossY, dot);
+
+  // Jump clip faces forward; rotate only for leftward takeoff (A / W+A).
+  if (animState === 'Jump') {
+    if (angle >= 0) return 0;
+    const offset = -angle * YAW_OFFSET_FACTOR_SPRINT;
+    return Math.min(YAW_OFFSET_MAX_SPRINT, offset);
+  }
+
+  if (inputStrength <= 0.05) return 0;
+  const cardinal = animCardinalAngle(animState);
+  if (cardinal === null) return 0;
+
   let residual = angle - cardinal;
   while (residual > Math.PI) residual -= Math.PI * 2;
   while (residual < -Math.PI) residual += Math.PI * 2;
@@ -168,6 +178,7 @@ export default function CharacterRenderer({
   const wasGrounded          = useRef(true);
   const jumpIsBack           = useRef(false);
   const jumpIsFront          = useRef(false);
+  const jumpMoveDirRef       = useRef<Vector3 | null>(null);
   /** True while LMB or bow ability warmup holds DrawBow pose (Barrage, Cobra, Reaping Talons, Rejuvenating Shot). */
   const bowDrawHoldActive =
     currentWeapon === WeaponType.BOW &&
@@ -417,6 +428,7 @@ export default function CharacterRenderer({
           md.y = 0;
           if (md.length() > 0.01) {
             md.normalize();
+            jumpMoveDirRef.current = md;
             const dot    = facingDir.dot(md);
             const crossY = facingDir.x * md.z - facingDir.z * md.x;
             const angle  = Math.atan2(crossY, dot);
@@ -425,10 +437,12 @@ export default function CharacterRenderer({
             jumpIsFront.current = absAngle < Math.PI / 8;
             jumpIsBack.current  = absAngle > (3 * Math.PI) / 4;
           } else {
+            jumpMoveDirRef.current = null;
             jumpIsFront.current = false;
             jumpIsBack.current  = false;
           }
         } else {
+          jumpMoveDirRef.current = null;
           jumpIsFront.current = false;
           jumpIsBack.current  = false;
         }
@@ -437,6 +451,7 @@ export default function CharacterRenderer({
       next = jumpIsBack.current ? 'JumpBack' : jumpIsFront.current ? 'JumpFront' : 'Jump';
     } else {
       wasGrounded.current = true;
+      jumpMoveDirRef.current = null;
 
       if (movement.inputStrength > 0.05) {
         // Movement cancels any in-progress ability cast animation.
@@ -577,7 +592,9 @@ export default function CharacterRenderer({
       setAnimState(next);
     }
 
-    applyModelYawOffset(next, locomotionMoveDir);
+    const yawMoveDir =
+      !movement.isGrounded && next === 'Jump' ? jumpMoveDirRef.current : locomotionMoveDir;
+    applyModelYawOffset(next, yawMoveDir);
   });
 
   const wType = currentWeapon ?? WeaponType.NONE;

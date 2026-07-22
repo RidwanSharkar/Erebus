@@ -27,6 +27,37 @@ export function getUtilityStock(inventory: MerchantStockItem[]): MerchantStockIt
   return inventory.find((entry) => entry.kind === 'oxygen' || entry.kind === 'warpdrive');
 }
 
+export function isMerchantSlotTaken(
+  slot: MerchantShopSlotKind,
+  inventory: MerchantStockItem[],
+  purchaseState: MerchantPurchaseState,
+): boolean {
+  switch (slot) {
+    case 'dash_charge':
+      return purchaseState.dashChargePurchased;
+    case 'weapon_talent':
+      return purchaseState.weaponTalentPurchasedThisVisit
+        || purchaseState.weaponTalentPurchases >= MERCHANT_WEAPON_TALENT_MAX;
+    case 'heal':
+      return purchaseState.healPurchasedThisVisit;
+    case 'utility': {
+      const entry = getUtilityStock(inventory);
+      if (!entry) return true;
+      if (purchaseState.utilityPurchasedThisVisit) return true;
+      if (entry.kind === 'oxygen') {
+        return purchaseState.oxygenPurchases >= MERCHANT_UTILITY_MAX;
+      }
+      return purchaseState.warpdrivePurchases >= MERCHANT_UTILITY_MAX;
+    }
+    case 'boss_drop': {
+      const entry = inventory.find((s) => s.kind === 'boss_drop');
+      return !!entry?.sold;
+    }
+    default:
+      return false;
+  }
+}
+
 export function getStockForSlot(
   slot: MerchantShopSlotKind,
   inventory: MerchantStockItem[],
@@ -59,16 +90,16 @@ export function getMerchantShopTooltipData(
       };
     }
     case 'weapon_talent': {
+      if (isMerchantSlotTaken('weapon_talent', inventory, purchaseState)) return null;
       const entry = inventory.find((item) => item.kind === 'weapon_talent');
-      const purchases = purchaseState.weaponTalentPurchases;
       return {
         name: entry?.label ?? 'Class Talent',
         cost: entry?.cost ?? 600,
         description: entry?.description ?? 'Grants a random unowned class talent from your weapon.',
-        limitLabel: purchases > 0 ? `${purchases}/${MERCHANT_WEAPON_TALENT_MAX} purchased` : undefined,
       };
     }
     case 'heal':
+      if (isMerchantSlotTaken('heal', inventory, purchaseState)) return null;
       return {
         name: 'Heart Heal',
         cost: MERCHANT_HEAL_COST,
@@ -96,12 +127,11 @@ export function getMerchantShopTooltipData(
     }
     case 'utility': {
       const entry = getUtilityStock(inventory);
-      if (!entry) return null;
+      if (!entry || isMerchantSlotTaken('utility', inventory, purchaseState)) return null;
       const purchases =
         entry.kind === 'oxygen'
           ? purchaseState.oxygenPurchases
           : purchaseState.warpdrivePurchases;
-      if (purchases >= MERCHANT_UTILITY_MAX) return null;
       const nextEnergy = getOxygenMaxEnergy(purchases + 1);
       const nextDash = getWarpdriveDashDistance(purchases + 1);
       const description =
@@ -109,10 +139,9 @@ export function getMerchantShopTooltipData(
           ? entry.description ?? `Increases max Energy to ${nextEnergy} (+20 per purchase, max 160).`
           : entry.description ?? `Increases dash distance to ${nextDash.toFixed(3)} (+0.375 per purchase).`;
       return {
-        name: entry.label ?? (entry.kind === 'oxygen' ? 'Oxygen' : 'Warpdrive'),
+        name: entry.label ?? (entry.kind === 'oxygen' ? 'Oxygen' : 'Hydrogen'),
         cost: entry.cost,
         description,
-        limitLabel: purchases > 0 ? `${purchases}/${MERCHANT_UTILITY_MAX} purchased` : undefined,
       };
     }
     default:

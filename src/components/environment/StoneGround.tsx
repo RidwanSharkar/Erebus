@@ -275,8 +275,7 @@ const StoneGround: React.FC<{
     const radii = Array.isArray(thronePerimeterRingRadius)
       ? thronePerimeterRingRadius
       : [thronePerimeterRingRadius];
-    const rings = radii.flatMap((r) => buildThronePerimeterSlabs(r));
-    return [...THRONE_SLABS, ...rings];
+    return radii.flatMap((r) => buildThronePerimeterSlabs(r));
   }, [variant, thronePerimeterRingRadius]);
 
   const slabCount = slabs.length;

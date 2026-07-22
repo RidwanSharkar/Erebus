@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StatSystem, StatPointData, StatKey } from '@/utils/StatSystem';
 import { InventoryItem } from '@/contexts/MultiplayerContext';
-import { ITEM_RARITY_COLORS, formatRarityLabel, isItemRarity } from '@/utils/itemRarity';
 import {
   TalentLoadout,
   shouldApplySpellbladeTalent,
@@ -18,46 +17,15 @@ interface StatsPanelProps {
   statPointData: StatPointData;
   onAllocateStat: (stat: StatKey) => void;
   playerLevel: number;
+  /** Used for effective stat calculation (inventory bonuses) */
   inventory?: InventoryItem[];
   talentLoadout?: TalentLoadout | null;
   abilityLoadout?: AbilityLoadout | null;
+  criticalChance?: number;
+  criticalDamageMultiplier?: number;
 }
 
 const STAT_KEYS: StatKey[] = ['strength', 'stamina', 'agility', 'intellect'];
-
-const AMULET_ICONS: Record<string, string> = {
-  AMULET_OF_STRENGTH:  '🛡',
-  AMULET_OF_STAMINA:   '❤️',
-  AMULET_OF_AGILITY:   '⚡',
-  AMULET_OF_INTELLECT: '✨',
-};
-
-const AMULET_DISPLAY_NAMES: Record<string, string> = {
-  AMULET_OF_STRENGTH:  'Blood Rune',
-  AMULET_OF_STAMINA:   'Life Rune',
-  AMULET_OF_AGILITY:   'Storm Rune',
-  AMULET_OF_INTELLECT: 'Mind Rune',
-};
-
-function groupRunesByType(amulets: InventoryItem[]) {
-  const map = new Map<string, { type: string; stat?: StatKey; count: number }>();
-  for (const item of amulets) {
-    const existing = map.get(item.type);
-    if (existing) {
-      existing.count += 1;
-    } else {
-      map.set(item.type, { type: item.type, stat: item.stat, count: 1 });
-    }
-  }
-  return Array.from(map.values());
-}
-
-const BOSS_ITEM_ICONS: Record<string, string> = {
-  MANA_SHIELD:    '✨',
-  COLOSSUS_LUNGS: '🫁',
-  REAPER_CLAWS:   '⚔️',
-  TITAN_HEART:    '💪',
-};
 
 const TOOLTIP_WIDTH = 240;
 const VIEWPORT_PAD = 12;
@@ -127,9 +95,10 @@ export default function StatsPanel({
   inventory = [],
   talentLoadout,
   abilityLoadout,
+  criticalChance,
+  criticalDamageMultiplier,
 }: StatsPanelProps) {
   const [expanded, setExpanded] = useState(statPointData.statPoints > 0);
-  const [tab, setTab] = useState<'stats' | 'inventory'>('stats');
   const [tooltipContent, setTooltipContent] = useState<{ name: string; description: string } | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const [tooltipOpacity, setTooltipOpacity] = useState(1);
@@ -185,7 +154,6 @@ export default function StatsPanel({
     const prev = prevStatPointsRef.current;
     if (statPoints > prev) {
       setExpanded(true);
-      setTab('stats');
     }
     if (statPoints === 0) {
       setExpanded(false);
@@ -198,7 +166,6 @@ export default function StatsPanel({
     [inventory, stats],
   );
 
-  // Compute per-stat talent bonuses so they're visible in the panel
   const talentStatBonuses = useMemo(() => {
     const bonuses = { strength: 0, stamina: 0, agility: 0, intellect: 0 };
     if (shouldApplySpellbladeTalent(talentLoadout, abilityLoadout ?? null)) {
@@ -224,34 +191,39 @@ export default function StatsPanel({
   const hasPoints = statPoints > 0;
 
   return (
-    <div className="fixed bottom-4 left-4 z-40 select-none" style={{ width: 228 }} data-block-game-input>
-      <div className="rounded-xl border border-white/15 bg-gray-950/92 backdrop-blur-md shadow-2xl overflow-hidden">
-
-        {/* ── Header / toggle ── */}
+    <div className="select-none" style={{ width: 228 }} data-block-game-input>
+      <div
+        className="overflow-hidden backdrop-blur-md shadow-2xl"
+        style={{
+          background:
+            'linear-gradient(180deg, rgba(8,10,22,0.94) 0%, rgba(4,5,14,0.97) 100%)',
+          border: '1px solid rgba(80,120,200,0.22)',
+          clipPath:
+            'polygon(10px 0%, calc(100% - 10px) 0%, 100% 10px, 100% calc(100% - 10px), calc(100% - 10px) 100%, 10px 100%, 0% calc(100% - 10px), 0% 10px)',
+        }}
+      >
+        {/* Header / toggle */}
         <button
-          onClick={() => setExpanded(e => !e)}
+          onClick={() => setExpanded((e) => !e)}
           className="w-full px-3 py-2 flex items-center justify-between hover:bg-white/5 transition-colors"
         >
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-black uppercase tracking-widest text-white/70">Character</span>
+            <span className="text-[11px] font-black uppercase tracking-widest text-white/70">
+              STATS
+            </span>
             <span className="text-[11px] text-white/30">Lv {playerLevel}</span>
             {hasPoints && (
               <span className="flex items-center justify-center w-4 h-4 rounded-full bg-yellow-500 text-black text-[10px] font-black leading-none animate-pulse">
                 {statPoints}
               </span>
             )}
-            {inventory.length > 0 && (
-              <span className="flex items-center justify-center w-4 h-4 rounded-full bg-purple-500/80 text-white text-[10px] font-black leading-none">
-                {inventory.length}
-              </span>
-            )}
           </div>
           <span className="text-[10px] text-white/30">{expanded ? '▼' : '▲'}</span>
         </button>
 
-        {/* ── Compact stat summary (always visible) ── */}
+        {/* Compact stat summary (always visible) */}
         <div className="px-3 pb-2.5 grid grid-cols-4 gap-1">
-          {STAT_KEYS.map(stat => {
+          {STAT_KEYS.map((stat) => {
             const color = StatSystem.getStatColor(stat);
             const value = talentAdjustedStats[stat];
             const talentBonus = talentStatBonuses[stat];
@@ -263,7 +235,10 @@ export default function StatsPanel({
                 onMouseLeave={handleStatLeave}
               >
                 <span className="text-sm leading-none">{StatSystem.getStatIcon(stat)}</span>
-                <span className="text-xs font-black tabular-nums leading-none" style={{ color }}>
+                <span
+                  className="text-xs font-black tabular-nums leading-none"
+                  style={{ color }}
+                >
                   {value}
                 </span>
                 {talentBonus > 0 && (
@@ -274,224 +249,79 @@ export default function StatsPanel({
           })}
         </div>
 
-        {/* ── Expanded panel ── */}
+        {/* Expanded stat allocation */}
         {expanded && (
-          <>
-            {/* Tabs */}
-            <div className="flex border-t border-white/10">
-              <button
-                onClick={() => setTab('stats')}
-                className={`flex-1 py-2 text-[11px] font-bold uppercase tracking-wider transition-colors ${
-                  tab === 'stats'
-                    ? 'text-white border-b-2 border-yellow-400'
-                    : 'text-white/40 hover:text-white/60'
-                }`}
-              >
-                Stats
-              </button>
-              <button
-                onClick={() => setTab('inventory')}
-                className={`flex-1 py-2 text-[11px] font-bold uppercase tracking-wider transition-colors relative ${
-                  tab === 'inventory'
-                    ? 'text-white border-b-2 border-yellow-400'
-                    : 'text-white/40 hover:text-white/60'
-                }`}
-              >
-                Items
-                {inventory.length > 0 && (
-                  <span className="ml-1 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-yellow-500 text-black text-[9px] font-black">
-                    {inventory.length}
-                  </span>
-                )}
-              </button>
-            </div>
-
-            {/* Stats tab */}
-            {tab === 'stats' && (
-              <div className="px-3 py-2.5 space-y-2">
-                {hasPoints && (
-                  <p className="text-[11px] text-yellow-300 font-bold text-center">
-                    {statPoints} point{statPoints > 1 ? 's' : ''} available!
-                  </p>
-                )}
-                {STAT_KEYS.map(stat => {
-                  const value = talentAdjustedStats[stat];
-                  const talentBonus = talentStatBonuses[stat];
-                  const color = StatSystem.getStatColor(stat);
-                  const canAllocate = statPoints > 0;
-                  return (
-                    <div
-                      key={stat}
-                      className="flex items-center gap-2 cursor-default"
-                      onMouseEnter={(e) => handleStatHover(e, stat)}
-                      onMouseLeave={handleStatLeave}
-                    >
-                      <div
-                        className="w-6 h-6 rounded-lg flex items-center justify-center text-xs flex-shrink-0"
-                        style={{ background: `${color}22`, border: `1px solid ${color}44` }}
-                      >
-                        {StatSystem.getStatIcon(stat)}
-                      </div>
-                      <span className="text-xs text-white/70 flex-1">{StatSystem.getStatDisplayName(stat)}</span>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-xs font-black tabular-nums" style={{ color }}>{value}</span>
-                        {talentBonus > 0 && (
-                          <span className="text-[9px] font-bold text-purple-300/70">(+{talentBonus})</span>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => canAllocate && onAllocateStat(stat)}
-                        disabled={!canAllocate}
-                        className={`w-5 h-5 rounded text-xs font-black flex items-center justify-center transition-all
-                          ${canAllocate
-                            ? 'text-white hover:scale-110 active:scale-95 cursor-pointer'
-                            : 'text-white/20 cursor-not-allowed'
-                          }`}
-                        style={canAllocate ? { background: color, boxShadow: `0 0 8px ${color}50` } : { background: '#2a2a2a' }}
-                      >
-                        +
-                      </button>
-                    </div>
-                  );
-                })}
-                <p className="text-[10px] text-white/25 text-center pt-1">
-                  Lv {playerLevel} · {StatSystem.getTotalStatPointsForLevel(playerLevel)} total pts
-                </p>
-              </div>
+          <div className="px-3 py-2.5 space-y-2 border-t border-white/10">
+            {hasPoints && (
+              <p className="text-[11px] text-yellow-300 font-bold text-center">
+                {statPoints} point{statPoints > 1 ? 's' : ''} available!
+              </p>
             )}
-
-            {/* Inventory tab */}
-            {tab === 'inventory' && (
-              <div className="px-3 py-2.5">
-                {inventory.length === 0 ? (
-                  <div className="flex flex-col items-center py-4 text-white/30">
-                    <span className="text-2xl mb-1">💍</span>
-                    <p className="text-xs">No items yet</p>
-                    <p className="text-[10px] mt-0.5 text-center">Defeat skeletons to find runes</p>
+            {STAT_KEYS.map((stat) => {
+              const value = talentAdjustedStats[stat];
+              const talentBonus = talentStatBonuses[stat];
+              const color = StatSystem.getStatColor(stat);
+              const canAllocate = statPoints > 0;
+              return (
+                <div
+                  key={stat}
+                  className="flex items-center gap-2 cursor-default"
+                  onMouseEnter={(e) => handleStatHover(e, stat)}
+                  onMouseLeave={handleStatLeave}
+                >
+                  <div
+                    className="w-6 h-6 rounded-lg flex items-center justify-center text-xs flex-shrink-0"
+                    style={{ background: `${color}22`, border: `1px solid ${color}44` }}
+                  >
+                    {StatSystem.getStatIcon(stat)}
                   </div>
-                ) : (() => {
-                  const amulets   = inventory.filter(i => i.category !== 'boss_drop');
-                  const bossDrops = inventory.filter(i => i.category === 'boss_drop');
-                  return (
-                    <div className="space-y-2 max-h-52 overflow-y-auto pr-0.5">
+                  <span className="text-xs text-white/70 flex-1">
+                    {StatSystem.getStatDisplayName(stat)}
+                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-xs font-black tabular-nums" style={{ color }}>
+                      {value}
+                    </span>
+                    {talentBonus > 0 && (
+                      <span className="text-[9px] font-bold text-purple-300/70">
+                        (+{talentBonus})
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => canAllocate && onAllocateStat(stat)}
+                    disabled={!canAllocate}
+                    className={`w-5 h-5 rounded text-xs font-black flex items-center justify-center transition-all
+                      ${canAllocate
+                        ? 'text-white hover:scale-110 active:scale-95 cursor-pointer'
+                        : 'text-white/20 cursor-not-allowed'
+                      }`}
+                    style={
+                      canAllocate
+                        ? { background: color, boxShadow: `0 0 8px ${color}50` }
+                        : { background: '#2a2a2a' }
+                    }
+                  >
+                    +
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
 
-                      {/* Boss Rewards */}
-                      {bossDrops.length > 0 && (
-                        <div>
-                          <p className="text-[10px] font-bold uppercase tracking-widest text-yellow-400/70 mb-1">
-                            👑 Boss Rewards
-                          </p>
-                          <div className="space-y-1">
-                            {bossDrops.map((item, idx) => {
-                              const rarityColor =
-                                item.rarity && isItemRarity(item.rarity)
-                                  ? ITEM_RARITY_COLORS[item.rarity]
-                                  : '#fbbf24';
-                              const icon = BOSS_ITEM_ICONS[item.type] || '👑';
-                              const statColor = item.stat ? StatSystem.getStatColor(item.stat) : rarityColor;
-                              const bonusLine =
-                                item.stat != null && item.statBonus != null
-                                  ? `+${item.statBonus} ${StatSystem.getStatDisplayName(item.stat)}`
-                                  : '';
-                              return (
-                                <div
-                                  key={`${item.id}-${idx}`}
-                                  className="flex items-center gap-2 rounded-lg px-2 py-1.5"
-                                  style={{ background: `${rarityColor}18`, border: `1px solid ${rarityColor}35` }}
-                                >
-                                  <span className="text-sm">{icon}</span>
-                                  <div className="flex-1 min-w-0">
-                                    <p
-                                      className="text-xs font-semibold truncate"
-                                      style={{ color: rarityColor }}
-                                    >
-                                      {item.label}
-                                    </p>
-                                    {item.rarity && isItemRarity(item.rarity) && (
-                                      <p
-                                        className="text-[9px] font-black uppercase tracking-wider truncate"
-                                        style={{ color: rarityColor }}
-                                      >
-                                        {formatRarityLabel(item.rarity)}
-                                      </p>
-                                    )}
-                                    {bonusLine && (
-                                      <p className="text-[10px] truncate" style={{ color: statColor }}>
-                                        {bonusLine}
-                                      </p>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Runes */}
-                      {amulets.length > 0 && (
-                        <div>
-                          {bossDrops.length > 0 && (
-                            <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-1">
-                              💍 Runes
-                            </p>
-                          )}
-                          <div className="space-y-1">
-                            {groupRunesByType(amulets).map((group) => {
-                              const color = group.stat ? StatSystem.getStatColor(group.stat) : '#888';
-                              const icon  = AMULET_ICONS[group.type] || '💍';
-                              const displayName = AMULET_DISPLAY_NAMES[group.type] ?? group.type;
-                              return (
-                                <div
-                                  key={group.type}
-                                  className="flex items-center gap-2 rounded-lg px-2 py-1.5"
-                                  style={{ background: `${color}12`, border: `1px solid ${color}25` }}
-                                >
-                                  <span className="text-sm">{icon}</span>
-                                  <span className="text-xs text-white/80 flex-1 truncate">
-                                    {displayName}
-                                    {group.count > 1 && (
-                                      <span className="text-white/50 ml-1">x{group.count}</span>
-                                    )}
-                                  </span>
-                                  <span className="text-[11px] font-black" style={{ color }}>+{group.count}</span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Stat bonuses summary (amulet count + boss flat bonuses per stat) */}
-                      {(amulets.length > 0 || bossDrops.length > 0) && (
-                        <div className="pt-1.5 border-t border-white/10 grid grid-cols-2 gap-1">
-                          {STAT_KEYS.map(stat => {
-                            const fromAmulets = amulets.filter(i => i.stat === stat).length;
-                            const fromBoss = bossDrops
-                              .filter(i => i.stat === stat)
-                              .reduce((s, i) => s + (i.statBonus ?? 0), 0);
-                            const bonus = fromAmulets + fromBoss;
-                            if (bonus === 0) return null;
-                            const color = StatSystem.getStatColor(stat);
-                            return (
-                              <div
-                                key={stat}
-                                className="flex items-center gap-1.5 rounded px-2 py-1"
-                                style={{ background: `${color}18`, border: `1px solid ${color}30` }}
-                              >
-                                <span className="text-xs">{StatSystem.getStatIcon(stat)}</span>
-                                <span className="text-[11px] font-black" style={{ color }}>+{bonus}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-          </>
+        {criticalChance != null && criticalDamageMultiplier != null && (
+          <div className="px-3 py-2 border-t border-white/10 flex items-center justify-center gap-1.5">
+            <img
+              src="/icons/dice.svg"
+              alt=""
+              className="h-4 w-4 shrink-0 object-contain opacity-60"
+              aria-hidden
+            />
+            <span className="text-[10px] text-white/40 font-mono tabular-nums">
+              Crit: {(criticalChance * 100).toFixed(1)}% | ×{(criticalDamageMultiplier * 100).toFixed(0)}%
+            </span>
+          </div>
         )}
       </div>
 

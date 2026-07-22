@@ -20,7 +20,7 @@ export class ExperienceSystem {
 
   // Health scaling per level
   private static readonly BASE_HEALTH = 200;
-  private static readonly HEALTH_PER_LEVEL = 25;
+  private static readonly HEALTH_PER_LEVEL = 20;
 
   /**
    * Calculate the level based on total experience

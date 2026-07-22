@@ -4,15 +4,14 @@ import {
   InstancedMesh,
   MeshBasicMaterial,
   PlaneGeometry,
-  CircleGeometry,
   BoxGeometry,
   ConeGeometry,
-  OctahedronGeometry,
+  TubeGeometry,
+  CatmullRomCurve3,
   Matrix4,
   Vector3,
   Group,
   Euler,
-  Quaternion
 } from '@/utils/three-exports';
 
 export type RoomBorderTheme = 'red' | 'blue' | 'green' | 'purple';
@@ -27,6 +26,8 @@ interface SimpleBorderEffectsProps {
   particleCount?: number;
   /** Camp archetype, or `gold` (throne) */
   borderTheme?: SimpleBorderColorTheme;
+  /** `minimal` drops archways, middle poles, and cone caps — used by Prime Materia aura. */
+  variant?: 'full' | 'minimal';
 }
 
 /** Perimeter pillar + particle colours aligned with camp type */
@@ -95,13 +96,15 @@ interface SimpleBorderEffectsInnerProps extends SimpleBorderEffectsProps {
 
 const SimpleBorderEffectsInner: React.FC<SimpleBorderEffectsInnerProps> = ({
   radius = 25,
-  count = 64,
+  count = 40,
   enableParticles = true,
   particleCount = 100,
   borderTheme = 'red',
   halfHeight = false,
   reverseRotation = false,
+  variant = 'full',
 }) => {
+  const isMinimal = variant === 'minimal';
   const particleRef = useRef<InstancedMesh>(null);
   const glowRef = useRef<InstancedMesh>(null);
   const coneRef = useRef<InstancedMesh>(null);
@@ -111,7 +114,6 @@ const SimpleBorderEffectsInner: React.FC<SimpleBorderEffectsInnerProps> = ({
 
   // CRITICAL: Cache Matrix4 to prevent memory leak from creating new ones every frame
   const matrixRef = useRef<Matrix4>(new Matrix4());
-  const quaternionRef = useRef<Quaternion>(new Quaternion());
 
   // Generate particle positions in a ring around the border
   const particlePositions = useMemo(() => {
@@ -149,69 +151,44 @@ const SimpleBorderEffectsInner: React.FC<SimpleBorderEffectsInnerProps> = ({
     return positions;
   }, [radius, count, halfHeight]);
 
-  // Generate archway segments between poles
-  const archwayData = useMemo(() => {
-    const segments: { position: Vector3; rotation: Euler }[] = [];
+  // One transform per gate — shared tube arch geometry is instanced at each midpoint
+  const gateArchTransforms = useMemo(() => {
+    if (isMinimal) return [] as { position: Vector3; rotation: Euler }[];
+
+    const transforms: { position: Vector3; rotation: Euler }[] = [];
     const angleStep = (Math.PI * 2) / count;
-    const segmentsPerArch = 12; // Number of segments per archway
-    const archHeight = halfHeight ? 1.35 : 2.125; // Half height for compact version
 
     for (let i = 0; i < count; i++) {
       const startAngle = i * angleStep;
       const endAngle = ((i + 1) % count) * angleStep;
 
-      // Calculate arch parameters
-      const archRadius = radius;
+      const x1 = Math.cos(startAngle) * radius;
+      const z1 = Math.sin(startAngle) * radius;
+      const x2 = Math.cos(endAngle) * radius;
+      const z2 = Math.sin(endAngle) * radius;
 
-      for (let j = 0; j < segmentsPerArch; j++) {
-        // Create segments that connect between points
-        const t1 = j / segmentsPerArch;
-        const t2 = (j + 1) / segmentsPerArch;
+      // Chord midpoint so tube endpoints land on the gate pillars
+      const midX = (x1 + x2) / 2;
+      const midZ = (z1 + z2) / 2;
 
-        // Calculate positions for start and end of this segment
-        const angle1 = startAngle + (endAngle - startAngle) * t1;
-        const angle2 = startAngle + (endAngle - startAngle) * t2;
+      const dirX = x2 - x1;
+      const dirZ = z2 - z1;
+      // Three.js Y-rotation maps local +X to (cos θ, 0, -sin θ), so align with atan2(-dz, dx)
+      const rotationY = Math.atan2(-dirZ, dirX);
 
-        // Calculate base positions along the circle
-        const x1 = Math.cos(angle1) * archRadius;
-        const z1 = Math.sin(angle1) * archRadius;
-        const x2 = Math.cos(angle2) * archRadius;
-        const z2 = Math.sin(angle2) * archRadius;
-
-        // Create parabolic arch heights
-        const archProgress1 = Math.sin(t1 * Math.PI);
-        const archProgress2 = Math.sin(t2 * Math.PI);
-        const y1 = archProgress1 * archHeight;
-        const y2 = archProgress2 * archHeight;
-
-        // Position segment at the midpoint angle along the circle (not the straight-line midpoint)
-        const midAngle = (angle1 + angle2) / 2;
-        const midX = Math.cos(midAngle) * archRadius;
-        const midZ = Math.sin(midAngle) * archRadius;
-        const midT = (t1 + t2) / 2;
-        const midArchProgress = Math.sin(midT * Math.PI);
-        const midY = midArchProgress * archHeight;
-
-        // Calculate direction vector for rotation
-        const dirX = x2 - x1;
-        const dirZ = z2 - z1;
-        const segmentAngle = Math.atan2(dirZ, dirX);
-
-        // Calculate rotation to align with the curve direction
-        const rotation = new Euler(0, segmentAngle, 0);
-
-        segments.push({
-          position: new Vector3(midX, midY, midZ),
-          rotation: rotation
-        });
-      }
+      transforms.push({
+        position: new Vector3(midX, 0, midZ),
+        rotation: new Euler(0, rotationY, 0),
+      });
     }
 
-    return segments;
-  }, [radius, count]);
+    return transforms;
+  }, [radius, count, isMinimal]);
 
   // Generate middle poles at the highest points of archways (2 per archway segment)
   const middlePolesPositions = useMemo(() => {
+    if (isMinimal) return [] as Vector3[];
+
     const positions: Vector3[] = [];
     const angleStep = (Math.PI * 2) / count;
     const archHeight = halfHeight ? 1.35 : 3; // Height of the arch peak
@@ -239,7 +216,7 @@ const SimpleBorderEffectsInner: React.FC<SimpleBorderEffectsInnerProps> = ({
     }
 
     return positions;
-  }, [radius, count, halfHeight]);
+  }, [radius, count, halfHeight, isMinimal]);
 
   // Stable material instances: R3F instancedMesh only applies `args` materials on first mount,
   // so swapping material refs when campTypes arrives would leave meshes stuck on the old colour.
@@ -317,25 +294,49 @@ const SimpleBorderEffectsInner: React.FC<SimpleBorderEffectsInnerProps> = ({
   // Geometries - support half height
   const particleGeometry = useMemo(() => new PlaneGeometry(0.05, 0.05), []);
   const glowGeometry = useMemo(() => new BoxGeometry(0.0675, halfHeight ? 0.75 : 1.5, 0.0675), [halfHeight]); // 3D pillars visible from all angles
-  const coneGeometry = useMemo(() => new ConeGeometry(0.1, halfHeight ? 0.175 : 0.35, 8), [halfHeight]); // Small cone on top of pillars
-  const middlePolesGeometry = useMemo(() => new BoxGeometry(0.0625, halfHeight ? 1.175 : 2.35, 0.0625), [halfHeight]); // Taller poles for middle positions
-  const archwayGeometry = useMemo(() => new OctahedronGeometry(0.075, 0), []); // Diamond-shaped segments for archways
+  const coneGeometry = useMemo(
+    () => (isMinimal ? null : new ConeGeometry(0.1, halfHeight ? 0.175 : 0.35, 8)),
+    [halfHeight, isMinimal],
+  );
+  const middlePolesGeometry = useMemo(
+    () => (isMinimal ? null : new BoxGeometry(0.0625, halfHeight ? 1.175 : 2.35, 0.0625)),
+    [halfHeight, isMinimal],
+  );
+  const archwayGeometry = useMemo(() => {
+    if (isMinimal) return null;
+
+    const archHeight = halfHeight ? 2.35 : 2.125;
+    const span = 2 * radius * Math.sin(Math.PI / count);
+    const halfSpan = span / 2;
+    const numPoints = 9;
+
+    const curvePoints: Vector3[] = [];
+    for (let k = 0; k <= numPoints; k++) {
+      const t = k / numPoints;
+      const x = -halfSpan + t * span;
+      const y = Math.sin(t * Math.PI) * archHeight;
+      curvePoints.push(new Vector3(x, y, 0));
+    }
+
+    const curve = new CatmullRomCurve3(curvePoints);
+    return new TubeGeometry(curve, 10, 0.055, 4, false);
+  }, [radius, count, halfHeight, isMinimal]);
 
   // Cleanup geometries and materials on unmount to prevent memory leaks
   useEffect(() => {
     return () => {
       particleGeometry.dispose();
       glowGeometry.dispose();
-      coneGeometry.dispose();
-      middlePolesGeometry.dispose();
-      archwayGeometry.dispose();
+      coneGeometry?.dispose();
+      middlePolesGeometry?.dispose();
+      archwayGeometry?.dispose();
       particleMaterial.dispose();
       glowMaterial.dispose();
       coneMaterial.dispose();
       archwayMaterial.dispose();
       middlePolesMaterial.dispose();
     };
-  }, [particleGeometry, glowGeometry, coneGeometry, middlePolesGeometry, archwayGeometry, particleMaterial, glowMaterial, coneMaterial, archwayMaterial, middlePolesMaterial, halfHeight]);
+  }, [particleGeometry, glowGeometry, coneGeometry, middlePolesGeometry, archwayGeometry, particleMaterial, glowMaterial, coneMaterial, archwayMaterial, middlePolesMaterial, halfHeight, isMinimal]);
 
   // Update instanced matrices
   useEffect(() => {
@@ -360,8 +361,8 @@ const SimpleBorderEffectsInner: React.FC<SimpleBorderEffectsInnerProps> = ({
     }
 
     // Update cone instances (positioned on top of pillars)
-    if (coneRef.current) {
-      const pillarHeight = halfHeight ? 0.58 : 1.125;
+    if (!isMinimal && coneRef.current && coneGeometry) {
+      const pillarHeight = halfHeight ? 0.58 : 1.225;
       const halfConeHeight = halfHeight ? 0.0875 : 0.175;
       glowPositions.forEach((position, i) => {
         matrix.makeTranslation(position.x, position.y + pillarHeight - halfConeHeight, position.z); // Top of pillar + half cone height
@@ -370,25 +371,25 @@ const SimpleBorderEffectsInner: React.FC<SimpleBorderEffectsInnerProps> = ({
       coneRef.current.instanceMatrix.needsUpdate = true;
     }
 
-    // Update archway instances
-    if (archwayRef.current) {
-      archwayData.forEach((segment, i) => {
-        matrix.makeRotationFromEuler(segment.rotation);
-        matrix.setPosition(segment.position);
+    // Update archway instances (one tube arch per gate)
+    if (!isMinimal && archwayRef.current && archwayGeometry) {
+      gateArchTransforms.forEach((gate, i) => {
+        matrix.makeRotationFromEuler(gate.rotation);
+        matrix.setPosition(gate.position);
         archwayRef.current?.setMatrixAt(i, matrix);
       });
       archwayRef.current.instanceMatrix.needsUpdate = true;
     }
 
     // Update middle poles instances
-    if (middlePolesRef.current) {
+    if (!isMinimal && middlePolesRef.current && middlePolesGeometry) {
       middlePolesPositions.forEach((position, i) => {
         matrix.makeTranslation(position.x, position.y, position.z);
         middlePolesRef.current?.setMatrixAt(i, matrix);
       });
       middlePolesRef.current.instanceMatrix.needsUpdate = true;
     }
-  }, [particlePositions, glowPositions, archwayData, middlePolesPositions, count, halfHeight]);
+  }, [particlePositions, glowPositions, gateArchTransforms, middlePolesPositions, count, halfHeight, isMinimal, coneGeometry, archwayGeometry, middlePolesGeometry]);
 
   // Animate particles
   useFrame((state) => {
@@ -434,26 +435,30 @@ const SimpleBorderEffectsInner: React.FC<SimpleBorderEffectsInnerProps> = ({
         frustumCulled={false}
       />
 
-      {/* Cone caps on top of pillars */}
-      <instancedMesh
-        ref={coneRef}
-        args={[coneGeometry, coneMaterial, count]}
-        frustumCulled={false}
-      />
+      {!isMinimal && coneGeometry && (
+        <>
+          {/* Cone caps on top of pillars */}
+          <instancedMesh
+            ref={coneRef}
+            args={[coneGeometry, coneMaterial, count]}
+            frustumCulled={false}
+          />
 
-      {/* Middle poles at highest archway points */}
-      <instancedMesh
-        ref={middlePolesRef}
-        args={[middlePolesGeometry, middlePolesMaterial, middlePolesPositions.length]}
-        frustumCulled={false}
-      />
+          {/* Middle poles at highest archway points */}
+          <instancedMesh
+            ref={middlePolesRef}
+            args={[middlePolesGeometry!, middlePolesMaterial, middlePolesPositions.length]}
+            frustumCulled={false}
+          />
 
-      {/* Curved archway segments */}
-      <instancedMesh
-        ref={archwayRef}
-        args={[archwayGeometry, archwayMaterial, archwayData.length]}
-        frustumCulled={false}
-      />
+          {/* Curved archway rails */}
+          <instancedMesh position={[0, 0.375, 0]}
+            ref={archwayRef}
+            args={[archwayGeometry!, archwayMaterial, count]}
+            frustumCulled={false}
+          />
+        </>
+      )}
     </group>
   );
 };

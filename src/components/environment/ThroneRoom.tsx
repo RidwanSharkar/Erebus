@@ -1,14 +1,13 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { AdditiveBlending, BackSide, Group, MathUtils, MeshBasicMaterial, SphereGeometry, TorusGeometry, Vector3 } from '@/utils/three-exports';
 import CustomSky from './CustomSky';
-import type { RoomBorderTheme, SimpleBorderColorTheme } from './SimpleBorderEffects';
-import SimpleBorderEffects from './SimpleBorderEffects';
-import StylizedGrass from './StylizedGrass';
-import StoneGround from './StoneGround';
+import ThroneCenterSeal from './ThroneCenterSeal';
+import ThroneOuterFloor from './ThroneOuterFloor';
 import VoidPortal from './VoidPortal';
 import Pillar from './Pillar';
+import { ArenaRewardPedestalBase } from './CombatArenaPedestal';
 import ThronePedestalAura from './ThronePedestalAura';
 import { WeaponSubclass, WeaponType } from '@/components/dragon/weapons';
 import EtherealBow from '@/components/weapons/EtherBow';
@@ -24,20 +23,28 @@ import {
   type Archetype,
   type ThroneArchetype,
 } from '@/utils/archetypes';
+import {
+  clearMerchantShopTooltip,
+  publishMerchantShopTooltip,
+} from '@/utils/merchantShopTooltipStore';
+import { getThroneWeaponTooltipData } from '@/utils/weaponIcons';
 
 /** Shared portal ring geometry — reused across all ThronePortalRing instances. */
 const THRONE_PORTAL_RING_TORUS_GEO = new TorusGeometry(2.1, 0.12, 10, 48);
 const THRONE_PORTAL_INNER_SPHERE_GEO = new SphereGeometry(1.35, 24, 24);
 
 /** Original throne staging layout (portals, pedestals, inner pavers); unchanged when expanding grass. */
-export const COOP_THRONE_LAYOUT_RADIUS = 16;
+export const COOP_THRONE_LAYOUT_RADIUS = 15;
 
 /** Grass, VFX, physics clamp, outer perimeter — 2× the legacy 16m playable disk. */
-export const COOP_THRONE_ROOM_RADIUS = 16
+export const COOP_THRONE_ROOM_RADIUS = 15
 
 
-/** XZ radius for movement physics, sword charge, and ECS `PillarCollision` cylinders on these pillars. */
+/** XZ radius for movement physics, sword charge, and ECS `PillarCollision` cylinders on weapon pillars. */
 export const THRONE_PILLAR_HULL_RADIUS = 0.55;
+
+/** Smaller XZ hull for compact archetype pedestals (`ArenaRewardPedestalBase`). */
+export const THRONE_ARCHETYPE_PEDESTAL_HULL_RADIUS = 0.35;
 
 export type ThronePillarDef = {
   position: [number, number, number];
@@ -46,10 +53,10 @@ export type ThronePillarDef = {
 
 /** Four pillars in a ring — orb colours: green, blue, red, light purple. */
 export const THRONE_PILLAR_DEFS: ThronePillarDef[] = [
-  { position: [-5.5, 0.15, -2], orbColorHex: '#22c55e' }, // BOW
-  { position: [5.5, 0.15, -2], orbColorHex: '#FFC300' }, // RUNEBLADE
-  { position: [-3.25, 0.15, -5], orbColorHex: '#ef4444' }, // SABRES
-  { position: [3.25, 0.15, -5], orbColorHex: '#00B7FF' }, // SCYTHE 8667E5
+  { position: [-5.76, 0.15, -4.2], orbColorHex: '#22c55e' }, // BOW
+  { position: [5.76, 0.15, -4.2], orbColorHex: '#FFC300' }, // RUNEBLADE
+  { position: [-2.1, 0.15, -6.5], orbColorHex: '#ef4444' }, // SABRES
+  { position: [2.1, 0.15, -6.5], orbColorHex: '#00B7FF' }, // SCYTHE 8667E5
 ];
 
 /** Stable reference for `PillarCollision` (avoid new array identity every React render). */
@@ -67,15 +74,6 @@ export function getThronePillarPhysicsObstacles(): Array<{ x: number; z: number;
 
 /** Inset from grass radius so portal / dummy sit just inside the rim. */
 export const THRONE_RIM_INSET = 1.25;
-
-/** Gap from grass rim to tangential paver tile centers (matches `StoneGround` throne ring). */
-export const THRONE_PERIMETER_RING_INSET = 1.35;
-
-/** Inner ring: legacy rim near portals; outer ring: expanded grass edge. */
-export const THRONE_PERIMETER_RING_RADII: readonly number[] = [
-  COOP_THRONE_LAYOUT_RADIUS - THRONE_PERIMETER_RING_INSET,
-  COOP_THRONE_ROOM_RADIUS - THRONE_PERIMETER_RING_INSET,
-];
 
 const THRONE_PORTAL_Y = 1.15;
 const THRONE_PORTAL_Z = -(COOP_THRONE_LAYOUT_RADIUS - THRONE_RIM_INSET);
@@ -148,6 +146,40 @@ export const MERCHANT_SHOP_INTERACT_DEFS: MerchantShopInteractDef[] =
     z: p.z,
   }));
 
+/** Dream Layer secret shop NPC — same layout shell as merchant. */
+export const ARCHITECT_NPC_POSITION = Object.freeze({ x: 0, y: 0, z: 15.5 });
+export const ARCHITECT_NPC_DEFAULT_ROTATION_Y = Math.PI;
+export const ARCHITECT_NPC_FACE_RANGE = 7;
+
+export type DreamLayerShopSlotKind = 'heal' | 'warding_pendant' | 'exodia' | 'ring';
+
+export const DREAM_LAYER_SHOP_PEDESTAL_POSITIONS: ReadonlyArray<{
+  readonly slot: DreamLayerShopSlotKind;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}> = Object.freeze([
+  Object.freeze({ slot: 'heal' as const, x: -4.5, y: 0, z: 12.5 }),
+  Object.freeze({ slot: 'warding_pendant' as const, x: -1.5, y: 0, z: 12.5 }),
+  Object.freeze({ slot: 'exodia' as const, x: 1.5, y: 0, z: 12.5 }),
+  Object.freeze({ slot: 'ring' as const, x: 4.5, y: 0, z: 12.5 }),
+]);
+
+export const DREAM_LAYER_SHOP_INTERACT_RADIUS = 2.35;
+
+export type DreamLayerShopInteractDef = {
+  slot: DreamLayerShopSlotKind;
+  x: number;
+  z: number;
+};
+
+export const DREAM_LAYER_SHOP_INTERACT_DEFS: DreamLayerShopInteractDef[] =
+  DREAM_LAYER_SHOP_PEDESTAL_POSITIONS.map((p) => ({
+    slot: p.slot,
+    x: p.x,
+    z: p.z,
+  }));
+
 /** Half-distance on X between the two main-arena choice portals flanking the combat pedestal. */
 export const MAIN_COMBAT_PORTAL_HALF_SPACING_X = THRONE_PORTAL_HALF_SPACING_X;
 
@@ -184,8 +216,8 @@ const THRONE_PORTAL_COLOR_HEX: Record<CoopPortalKind, string> = {
   blue: '#3b82f6',
   red: '#ef4444',
   green: '#22c55e',
-  stat: '#eab308',
-  trial: '#f97316',
+  stat: '#f97316',
+  trial: '#eab308',
   merchant: '#ec4899',
   boss: '#dc2626',
 };
@@ -195,8 +227,8 @@ const PORTAL_RITUAL_COLORS: Record<CoopPortalKind, { base: string; glow: string 
   blue: { base: '#1e3a8a', glow: '#93c5fd' },
   red: { base: '#991b1b', glow: '#fca5a5' },
   green: { base: '#166534', glow: '#86efac' },
-  stat: { base: '#a16207', glow: '#fde047' },
-  trial: { base: '#c2410c', glow: '#fdba74' },
+  stat: { base: '#c2410c', glow: '#fdba74' },
+  trial: { base: '#a16207', glow: '#fde047' },
   merchant: { base: '#be185d', glow: '#f9a8d4' },
   boss: { base: '#991b1b', glow: '#fca5a5' },
 };
@@ -233,7 +265,7 @@ export type ThroneTrainingDummyVisual = 'knight';
 /**
  * North rim, centered on X (mirrors portal pair on south rim). Keep in sync with `backend/gameRoom.js` `THRONE_TRAINING_DUMMY_*`.
  */
-export const THRONE_TRAINING_DUMMY_SPAWN_Z = 16;
+export const THRONE_TRAINING_DUMMY_SPAWN_Z = 14;
 
 /** Server spawn list: stable id, foot XZ, and which model the client draws. */
 export const THRONE_TRAINING_DUMMY_SPAWNS: ReadonlyArray<{
@@ -288,9 +320,11 @@ export const THRONE_ARCHETYPE_PEDESTAL_POSITIONS: ReadonlyArray<{
   readonly y: number;
   readonly z: number;
 }> = Object.freeze([
-  Object.freeze({ archetype: 'ROGUE' as const, x: THRONE_ARCHETYPE_PEDESTAL_EDGE_X+14.5, y: 0, z: 7.5 }),
-  Object.freeze({ archetype: 'GLADIATOR' as const, x: THRONE_ARCHETYPE_PEDESTAL_EDGE_X+18, y: 0, z: 6 }),
-  Object.freeze({ archetype: 'ACOLYTE' as const, x: THRONE_ARCHETYPE_PEDESTAL_EDGE_X+11, y: 0, z: 6 }),
+  Object.freeze({ archetype: 'ROGUE' as const, x: THRONE_ARCHETYPE_PEDESTAL_EDGE_X+13.75, y: 0, z: 7.65 }),
+  Object.freeze({ archetype: 'GLADIATOR' as const, x: THRONE_ARCHETYPE_PEDESTAL_EDGE_X+19.625, y: 0, z: 5.205 }),
+  Object.freeze({ archetype: 'ACOLYTE' as const, x: THRONE_ARCHETYPE_PEDESTAL_EDGE_X+21.425, y: 0, z: -0.0045 }),
+  Object.freeze({ archetype: 'ALCHEMIST' as const, x: THRONE_ARCHETYPE_PEDESTAL_EDGE_X+7.9, y: 0, z: 5.215 }),
+  Object.freeze({ archetype: 'SORCERESS' as const, x: THRONE_ARCHETYPE_PEDESTAL_EDGE_X+6.105, y: 0, z: -0.14 }),
 ]);
 
 export const THRONE_ARCHETYPE_INTERACT_RADIUS = THRONE_WEAPON_INTERACT_RADIUS;
@@ -337,37 +371,18 @@ export const THRONE_DEV_BOSS_PORTAL_INTERACT_RADIUS = 1.25;
 /** Local dev / non-production builds — ability/talent pedestals and dev boss portals. */
 export const COOP_DEV_LOCALHOST_FEATURES = process.env.NODE_ENV !== 'production';
 
-/** Pillars + ability + talent pedestal hulls for movement / charge collision in the prep room. */
+/** Pillars + archetype pedestal hulls for movement / charge collision in the prep room. */
 export function getThronePrepPhysicsObstacles(): Array<{ x: number; z: number; radius: number }> {
   const obstacles = [...getThronePillarPhysicsObstacles()];
   for (const pedestal of THRONE_ARCHETYPE_PEDESTAL_POSITIONS) {
     obstacles.push({
       x: pedestal.x,
       z: pedestal.z,
-      radius: THRONE_PILLAR_HULL_RADIUS,
+      radius: THRONE_ARCHETYPE_PEDESTAL_HULL_RADIUS,
     });
-  }
-  if (COOP_DEV_LOCALHOST_FEATURES) {
-    obstacles.push(
-      {
-        x: THRONE_ABILITY_PEDESTAL_POSITION.x,
-        z: THRONE_ABILITY_PEDESTAL_POSITION.z,
-        radius: THRONE_PILLAR_HULL_RADIUS,
-      },
-      {
-        x: THRONE_TALENT_PEDESTAL_POSITION.x,
-        z: THRONE_TALENT_PEDESTAL_POSITION.z,
-        radius: THRONE_PILLAR_HULL_RADIUS,
-      },
-    );
   }
   return obstacles;
 }
-
-/** Area scales ~r²; keep blade density similar when expanding grass radius. */
-const THRONE_GRASS_COUNT = Math.round(6000 * (COOP_THRONE_ROOM_RADIUS / 10) ** 2);
-/** Match main-map purple sparsity vs green (`StylizedGrass` THEME_COUNTS). */
-const THRONE_PURPLE_GRASS_COUNT = Math.round(THRONE_GRASS_COUNT * (6000 / 6000));
 
 export function xzTowardRoomCenter(pillar: [number, number, number], inset: number): [number, number] {
   const [px, , pz] = pillar;
@@ -404,6 +419,26 @@ export const THRONE_WEAPON_INTERACT_DEFS: ThroneWeaponInteractDef[] = (() => {
 const THRONE_WEAPON_FADE_OUT_SPEED = 10;
 const THRONE_WEAPON_FADE_IN_SPEED = 5;
 
+const THRONE_PEDESTAL_TOOLTIP_WORLD_OFFSET = new Vector3(0, 1.35, 0);
+const _thronePedestalProjectScratch = new Vector3();
+
+type ThronePedestalTooltipKey = string;
+
+function thronePedestalTooltipKey(
+  kind: 'weapon' | 'archetype',
+  id: WeaponType | ThroneArchetype,
+): ThronePedestalTooltipKey {
+  return `${kind}:${id}`;
+}
+
+function getThroneArchetypeTooltipData(archetype: ThroneArchetype): {
+  name: string;
+  description: string;
+} {
+  const meta = ARCHETYPE_DISPLAY[archetype];
+  return { name: meta.label, description: meta.description };
+}
+
 /** Maps each THRONE_PILLAR_DEFS index to its weapon: [0]=BOW, [1]=RUNEBLADE, [2]=SABRES, [3]=SCYTHE */
 const THRONE_PILLAR_WEAPONS: WeaponType[] = [
   WeaponType.BOW,
@@ -413,9 +448,199 @@ const THRONE_PILLAR_WEAPONS: WeaponType[] = [
 ];
 
 /**
+ * Publishes merchant-style floating tooltips for throne weapon + archetype pedestals.
+ */
+function ThronePrepPedestalTooltips({
+  playerPositionRef,
+  equippedWeapon,
+  selectedArchetype,
+  symbolRefs,
+  hoveredKey,
+}: {
+  playerPositionRef: React.MutableRefObject<Vector3>;
+  equippedWeapon: WeaponType;
+  selectedArchetype: Archetype;
+  symbolRefs: React.MutableRefObject<Partial<Record<ThronePedestalTooltipKey, Group | null>>>;
+  hoveredKey: ThronePedestalTooltipKey | null;
+}) {
+  const { camera, size } = useThree();
+  const [proximityKey, setProximityKey] = useState<ThronePedestalTooltipKey | null>(null);
+  const lastPublishedTooltipRef = useRef<{
+    key: ThronePedestalTooltipKey;
+    x: number;
+    y: number;
+    name: string;
+    description: string;
+  } | null>(null);
+
+  const slots = useMemo(
+    () => [
+      ...THRONE_WEAPON_INTERACT_DEFS.map((def) => ({
+        key: thronePedestalTooltipKey('weapon', def.weapon),
+        kind: 'weapon' as const,
+        weapon: def.weapon,
+        x: def.x,
+        z: def.z,
+        taken:
+          equippedWeapon !== WeaponType.NONE && equippedWeapon === def.weapon,
+      })),
+      ...THRONE_ARCHETYPE_INTERACT_DEFS.map((def) => ({
+        key: thronePedestalTooltipKey('archetype', def.archetype),
+        kind: 'archetype' as const,
+        archetype: def.archetype,
+        x: def.x,
+        z: def.z,
+        taken:
+          selectedArchetype !== 'NONE' && selectedArchetype === def.archetype,
+      })),
+    ],
+    [equippedWeapon, selectedArchetype],
+  );
+
+  useEffect(() => () => clearMerchantShopTooltip(), []);
+
+  useFrame(() => {
+    const playerPos = playerPositionRef.current;
+    const interactRadiusSq =
+      THRONE_WEAPON_INTERACT_RADIUS * THRONE_WEAPON_INTERACT_RADIUS;
+    let nearest: { key: ThronePedestalTooltipKey; d2: number } | null = null;
+
+    for (const slot of slots) {
+      if (slot.taken) continue;
+      const dx = playerPos.x - slot.x;
+      const dz = playerPos.z - slot.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 <= interactRadiusSq && (!nearest || d2 < nearest.d2)) {
+        nearest = { key: slot.key, d2 };
+      }
+    }
+
+    const nextProximity = nearest?.key ?? null;
+    if (nextProximity !== proximityKey) {
+      setProximityKey(nextProximity);
+    }
+
+    const keyForTooltip = hoveredKey ?? nextProximity;
+    if (!keyForTooltip) {
+      if (lastPublishedTooltipRef.current !== null) {
+        lastPublishedTooltipRef.current = null;
+        publishMerchantShopTooltip(null);
+      }
+      return;
+    }
+
+    const slot = slots.find((entry) => entry.key === keyForTooltip);
+    if (!slot || slot.taken) {
+      if (lastPublishedTooltipRef.current !== null) {
+        lastPublishedTooltipRef.current = null;
+        publishMerchantShopTooltip(null);
+      }
+      return;
+    }
+
+    const tooltipData =
+      slot.kind === 'weapon'
+        ? getThroneWeaponTooltipData(slot.weapon)
+        : getThroneArchetypeTooltipData(slot.archetype);
+    if (!tooltipData) {
+      if (lastPublishedTooltipRef.current !== null) {
+        lastPublishedTooltipRef.current = null;
+        publishMerchantShopTooltip(null);
+      }
+      return;
+    }
+
+    const symbolGroup = symbolRefs.current[keyForTooltip];
+    if (!symbolGroup || size.width <= 0 || size.height <= 0) return;
+
+    symbolGroup.getWorldPosition(_thronePedestalProjectScratch);
+    _thronePedestalProjectScratch.add(THRONE_PEDESTAL_TOOLTIP_WORLD_OFFSET);
+    _thronePedestalProjectScratch.project(camera);
+
+    const x = (_thronePedestalProjectScratch.x * 0.5 + 0.5) * size.width;
+    const y = (_thronePedestalProjectScratch.y * -0.5 + 0.5) * size.height;
+
+    const last = lastPublishedTooltipRef.current;
+    const shouldPublish =
+      !last
+      || last.key !== keyForTooltip
+      || last.name !== tooltipData.name
+      || last.description !== tooltipData.description
+      || Math.abs(last.x - x) > 1.5
+      || Math.abs(last.y - y) > 1.5;
+
+    if (shouldPublish) {
+      lastPublishedTooltipRef.current = {
+        key: keyForTooltip,
+        x,
+        y,
+        name: tooltipData.name,
+        description: tooltipData.description,
+      };
+      publishMerchantShopTooltip({
+        visible: true,
+        x,
+        y,
+        name: tooltipData.name,
+        description: tooltipData.description,
+      });
+    }
+  });
+
+  return null;
+}
+
+function ThronePrepSelectionPedestals({
+  playerPositionRef,
+  equippedWeapon = WeaponType.NONE,
+  selectedArchetype = 'NONE',
+}: {
+  playerPositionRef: React.MutableRefObject<Vector3>;
+  equippedWeapon?: WeaponType;
+  selectedArchetype?: Archetype;
+}) {
+  const symbolRefs = useRef<Partial<Record<ThronePedestalTooltipKey, Group | null>>>({});
+  const [hoveredKey, setHoveredKey] = useState<ThronePedestalTooltipKey | null>(null);
+
+  const handleHoverChange = useCallback((key: ThronePedestalTooltipKey | null) => {
+    setHoveredKey(key);
+  }, []);
+
+  return (
+    <>
+      <ThronePrepPedestalTooltips
+        playerPositionRef={playerPositionRef}
+        equippedWeapon={equippedWeapon}
+        selectedArchetype={selectedArchetype}
+        symbolRefs={symbolRefs}
+        hoveredKey={hoveredKey}
+      />
+      <ThroneWeaponPedestals
+        equippedWeapon={equippedWeapon}
+        symbolRefs={symbolRefs}
+        onHoverChange={handleHoverChange}
+      />
+      <ThroneArchetypePedestals
+        selectedArchetype={selectedArchetype}
+        symbolRefs={symbolRefs}
+        onHoverChange={handleHoverChange}
+      />
+    </>
+  );
+}
+
+/**
  * Idle weapon replicas with a gentle float — uses the same weapon meshes as gameplay (Runeblade = “Sword”).
  */
-function ThroneWeaponPedestals({ equippedWeapon = WeaponType.NONE }: { equippedWeapon?: WeaponType }) {
+function ThroneWeaponPedestals({
+  equippedWeapon = WeaponType.NONE,
+  symbolRefs,
+  onHoverChange,
+}: {
+  equippedWeapon?: WeaponType;
+  symbolRefs: React.MutableRefObject<Partial<Record<ThronePedestalTooltipKey, Group | null>>>;
+  onHoverChange: (key: ThronePedestalTooltipKey | null) => void;
+}) {
   const bowPos = useMemo(() => new Vector3(0, 0, 0), []);
   const bowDir = useMemo(() => new Vector3(0, 0, -1), []);
   const scytheParentRef = useRef<Group>(null);
@@ -466,6 +691,14 @@ function ThroneWeaponPedestals({ equippedWeapon = WeaponType.NONE }: { equippedW
           xz={xzTowardRoomCenter(slot.pillar, THRONE_WEAPON_INSET)}
           phase={slot.phase}
           isTaken={isTaken}
+          symbolRef={(node) => {
+            symbolRefs.current[thronePedestalTooltipKey('weapon', slot.weapon)] = node;
+          }}
+          onHoverChange={(hovered) => {
+            onHoverChange(
+              hovered ? thronePedestalTooltipKey('weapon', slot.weapon) : null,
+            );
+          }}
         >
           {slot.key === 'bow' && (
             <group scale={1.05} rotation={[1.28, 4.75, -0.25]} position={[0.75, 2.2, -1.0]}>
@@ -541,11 +774,15 @@ function ThroneFloatingWeapon({
   phase,
   isTaken,
   children,
+  symbolRef,
+  onHoverChange,
 }: {
   xz: [number, number];
   phase: number;
   isTaken: boolean;
   children: ReactNode;
+  symbolRef?: (node: Group | null) => void;
+  onHoverChange?: (hovered: boolean) => void;
 }) {
   const rootRef = useRef<Group>(null);
   const visualRef = useRef<Group>(null);
@@ -587,7 +824,24 @@ function ThroneFloatingWeapon({
 
   return (
     <group ref={rootRef} position={[qx, 0.92, qz]}>
-      <group ref={visualRef}>{children}</group>
+      <group ref={visualRef}>
+        <group ref={symbolRef}>{children}</group>
+      </group>
+      {!isTaken && onHoverChange ? (
+        <mesh
+          onPointerOver={(event) => {
+            event.stopPropagation();
+            onHoverChange(true);
+          }}
+          onPointerOut={(event) => {
+            event.stopPropagation();
+            onHoverChange(false);
+          }}
+        >
+          <sphereGeometry args={[0.85, 10, 10]} />
+          <meshBasicMaterial visible={false} />
+        </mesh>
+      ) : null}
     </group>
   );
 }
@@ -688,6 +942,62 @@ function ThroneArchetypeSymbol({ archetype }: { archetype: ThroneArchetype }) {
     );
   }
 
+  if (archetype === 'ALCHEMIST') {
+    return (
+      <group>
+        <group ref={ringRef}>
+          {[0, 1, 2].map((i) => {
+            const angle = (i / 3) * Math.PI * 2;
+            return (
+              <mesh
+                key={`flask-mote-${i}`}
+                position={[Math.cos(angle) * 0.58, Math.sin(angle * 2) * 0.1, Math.sin(angle) * 0.58]}
+                rotation={[0.3, angle, 0]}
+                material={accentMat}
+              >
+                <coneGeometry args={[0.08, 0.28, 6]} />
+              </mesh>
+            );
+          })}
+        </group>
+        <mesh ref={coreRef as any} material={coreMat}>
+          <tetrahedronGeometry args={[0.3, 0]} />
+        </mesh>
+        <mesh material={haloMat}>
+          <torusGeometry args={[0.76, 0.045, 8, 24]} />
+        </mesh>
+      </group>
+    );
+  }
+
+  if (archetype === 'SORCERESS') {
+    return (
+      <group>
+        <group ref={ringRef}>
+          {[0, 1, 2, 3, 4].map((i) => {
+            const angle = (i / 5) * Math.PI * 2;
+            return (
+              <mesh
+                key={`flame-shard-${i}`}
+                position={[Math.cos(angle) * 0.6, Math.sin(angle * 2) * 0.12, Math.sin(angle) * 0.6]}
+                rotation={[0.5, angle, 0.2]}
+                material={accentMat}
+              >
+                <coneGeometry args={[0.07, 0.32, 5]} />
+              </mesh>
+            );
+          })}
+        </group>
+        <mesh ref={coreRef as any} material={coreMat}>
+          <octahedronGeometry args={[0.32, 0]} />
+        </mesh>
+        <mesh material={haloMat}>
+          <torusGeometry args={[0.8, 0.05, 8, 24]} />
+        </mesh>
+      </group>
+    );
+  }
+
   return (
     <group>
       <group ref={ringRef}>
@@ -714,7 +1024,15 @@ function ThroneArchetypeSymbol({ archetype }: { archetype: ThroneArchetype }) {
   );
 }
 
-function ThroneArchetypePedestals({ selectedArchetype = 'NONE' }: { selectedArchetype?: Archetype }) {
+function ThroneArchetypePedestals({
+  selectedArchetype = 'NONE',
+  symbolRefs,
+  onHoverChange,
+}: {
+  selectedArchetype?: Archetype;
+  symbolRefs: React.MutableRefObject<Partial<Record<ThronePedestalTooltipKey, Group | null>>>;
+  onHoverChange: (key: ThronePedestalTooltipKey | null) => void;
+}) {
   const slots = useMemo(
     () =>
       THRONE_ARCHETYPE_PEDESTAL_POSITIONS.map((pedestal, index) => ({
@@ -730,13 +1048,21 @@ function ThroneArchetypePedestals({ selectedArchetype = 'NONE' }: { selectedArch
         const isTaken = selectedArchetype !== 'NONE' && selectedArchetype === slot.archetype;
         return (
           <group key={`archetype-pedestal-${slot.archetype}`}>
-            <Pillar position={[slot.x, slot.y, slot.z]} showOrb={false} />
+            <ArenaRewardPedestalBase position={[slot.x, slot.y, slot.z]} />
             <ThroneFloatingWeapon
-              xz={[slot.x + 0.55, slot.z]}
+              xz={[slot.x, slot.z]}
               phase={slot.phase}
               isTaken={isTaken}
+              symbolRef={(node) => {
+                symbolRefs.current[thronePedestalTooltipKey('archetype', slot.archetype)] = node;
+              }}
+              onHoverChange={(hovered) => {
+                onHoverChange(
+                  hovered ? thronePedestalTooltipKey('archetype', slot.archetype) : null,
+                );
+              }}
             >
-              <group scale={0.75} position={[-0.5, 1.25, 0]}>
+              <group scale={0.75} position={[0, 1.0, 0]}>
                 <ThroneArchetypeSymbol archetype={slot.archetype} />
               </group>
             </ThroneFloatingWeapon>
@@ -860,51 +1186,28 @@ interface ThroneRoomProps {
   equippedWeapon?: WeaponType;
   /** Local player's selected archetype — hides that archetype symbol on its pedestal. */
   selectedArchetype?: Archetype;
+  /** Local player foot position — drives pedestal proximity tooltips. */
+  playerPositionRef?: React.MutableRefObject<Vector3>;
   /** Co-op intro: center void portal opens after weapon selection delay. */
   voidPortalOpen?: boolean;
   voidPortalOpenProgress?: number;
 }
 
 /**
- * Pre-combat staging space: same grass + stone language as the main map; expanded grass disc (`COOP_THRONE_ROOM_RADIUS`)
- * with legacy pillar/portal layout (`COOP_THRONE_LAYOUT_RADIUS`).
+ * Pre-combat staging space: textured outer floor (`outer.webp`) + center seal;
+ * legacy pillar/portal layout (`COOP_THRONE_LAYOUT_RADIUS`).
  */
 function ThroneRoom({
-  isSnowTheme,
   layout = 'prep',
-  thronePortalOffer,
-  campTypes = [],
-  coopClearedRoomColor = null,
-  thronePortalsLocked = false,
   equippedWeapon = WeaponType.NONE,
   selectedArchetype = 'NONE',
+  playerPositionRef,
   voidPortalOpen = false,
   voidPortalOpenProgress = 0,
 }: ThroneRoomProps) {
   /** All co-op boss tiers + post-boss intermission share the same purple shell (legacy Boss 2 / Archon look). */
   const usePurpleBossArenaShell = layout === 'bossArena';
   const isPrep = layout === 'prep';
-
-  const o = thronePortalOffer;
-  const leftCamp = o && o.length > 0 ? normalizeCoopPortalKind(o[0]) : 'purple';
-  const rightCamp = o && o.length >= 2 ? normalizeCoopPortalKind(o[1]) : 'red';
-
-  const borderTheme: RoomBorderTheme = useMemo(() => {
-    const candidates =
-      layout === 'bossArena' ? [coopClearedRoomColor, campTypes[0]] : [campTypes[0]];
-    for (const raw of candidates) {
-      if (raw == null || raw === '') continue;
-      const key = String(raw).toLowerCase();
-      if (key === 'blue' || key === 'green' || key === 'red' || key === 'purple') return key;
-    }
-    return 'red';
-  }, [layout, coopClearedRoomColor, campTypes]);
-
-  const simpleBorderColorTheme: SimpleBorderColorTheme =
-    borderTheme === 'red' ? 'gold' : borderTheme;
-
-  const groundRoomTheme: RoomBorderTheme = usePurpleBossArenaShell ? 'purple' : borderTheme;
-  const borderEffectsTheme: SimpleBorderColorTheme = usePurpleBossArenaShell ? 'red' : simpleBorderColorTheme;
 
   return (
     <group name="throne-room">
@@ -914,30 +1217,9 @@ function ThroneRoom({
         <CustomSky skyPreset="throneBlue" />
       )}
 
- 
+      <ThroneOuterFloor radius={COOP_THRONE_ROOM_RADIUS} />
+      <ThroneCenterSeal />
 
-      <StylizedGrass
-        radius={COOP_THRONE_ROOM_RADIUS}
-        count={usePurpleBossArenaShell ? THRONE_PURPLE_GRASS_COUNT : THRONE_GRASS_COUNT}
-        bladeHeight={0.55}
-        windStrength={0.2}
-        isSnowTheme={false}
-        roomTheme={usePurpleBossArenaShell ? 'purple' : undefined}
-      />
-      <StoneGround
-        variant="throne"
-        roomTheme={groundRoomTheme}
-        thronePerimeterRingRadius={THRONE_PERIMETER_RING_RADII}
-      />
-    
-
-      <SimpleBorderEffects
-        radius={COOP_THRONE_ROOM_RADIUS}
-        count={25}
-        enableParticles
-        particleCount={60}
-        borderTheme={borderEffectsTheme}
-      />
       {isPrep && (
         <>
           {THRONE_PILLAR_DEFS.map((def, i) => (
@@ -950,24 +1232,19 @@ function ThroneRoom({
               />
             </group>
           ))}
-          {COOP_DEV_LOCALHOST_FEATURES && (
-            <>
-
-            </>
-          )}
-          <ThroneWeaponPedestals equippedWeapon={equippedWeapon} />
-          <ThroneArchetypePedestals selectedArchetype={selectedArchetype} />
+          {playerPositionRef ? (
+            <ThronePrepSelectionPedestals
+              playerPositionRef={playerPositionRef}
+              equippedWeapon={equippedWeapon}
+              selectedArchetype={selectedArchetype}
+            />
+          ) : null}
           <VoidPortal
             position={[0, 0.05, 0]}
             open={voidPortalOpenProgress}
             visible={voidPortalOpen || voidPortalOpenProgress > 0.01}
             effectHeightOffset={0.3}
           />
-          {COOP_DEV_LOCALHOST_FEATURES && (
-            <>
-
-            </>
-          )}
         </>
       )}
     </group>

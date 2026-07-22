@@ -55,6 +55,7 @@ import {
   shouldApplyReaperTalent,
   shouldApplyMeteorTalent,
   shouldApplyFragmentationTalent,
+  shouldApplyBlitzCannonTalent,
   shouldApplyCrossentropyTempestTalent,
   shouldApplyCrossentropyPlagueTalent,
   shouldApplyWrathfulEntropicTalent,
@@ -84,6 +85,8 @@ import {
   shouldApplyBloodOrbsTalent,
   BLOOD_ORBS_DASH_HP_COST,
   shouldApplyBloodleechTalent,
+  shouldApplyDeathwishTalent,
+  DEATHWISH_HP_PER_SEC,
   GLACIAL_DASH_COOLDOWN_MS,
   MENDING_DASH_COOLDOWN_MS,
   STAGGERING_DASH_COOLDOWN_MS,
@@ -96,6 +99,7 @@ import {
   shouldApplyWindfuryTalent,
   shouldApplyCrusaderTalent,
   shouldApplyBlizzardTalent,
+  shouldApplyTitansGripTalent,
   FROSTPATH_PROC_CHANCE,
   SOLAR_RECHARGE_PROC_CHANCE,
   WINDFURY_PROC_CHANCE,
@@ -104,6 +108,9 @@ import {
   CRUSADER_LMB_FLAT_BONUS,
   BLIZZARD_PROC_CHANCE,
   BLIZZARD_DURATION_SEC,
+  TITANS_GRIP_STUN_PROC_CHANCE,
+  TITANS_GRIP_STUN_DURATION_MS,
+  getTitansGripLmbFlatBonus,
   FROST_SOLAR_PROC_EFFECT_ICD_MS,
   RUNEBLADE_FLURRY_ATTACK_SPEED_FACTOR,
   FLURRY_HEAL_VFX_MIN_INTERVAL_MS,
@@ -122,9 +129,13 @@ import {
   getEffectiveStrengthWithTalentBonuses,
   getExecutionerFlatDamageBonus,
   getCrossentropyBaseDamage,
+  getCrossentropyChargeDurationMs,
+  getCrossentropyMaxTravelDistance,
   CROSSENTROPY_REAPER_DAMAGE_PER_KILL,
-  CROSSENTROPY_MAX_TRAVEL_DISTANCE,
   CROSSENTROPY_COOLDOWN_SEC,
+  BLITZ_CANNON_ROCKET_SPEED,
+  BLITZ_CANNON_MAX_CHARGES,
+  BLITZ_CANNON_INTERNAL_COOLDOWN_SEC,
   ACCELERATOR_TOTEM_AURA_RADIUS_UNITS,
   shouldApplyAcceleratorTalent,
   shouldApplyHealingStreamTalent,
@@ -255,6 +266,11 @@ import {
   DEFLECT_SHIFT_ENERGY_COST,
   computeLocustMissileDamage,
   LOCUST_ENERGY_PER_VOLLEY,
+  PRIME_MATERIA_ENERGY_PER_SEC,
+  PRIME_MATERIA_MIN_ON_TIME_SEC,
+  INCINERATION_COOLDOWN_SEC,
+  INCINERATION_ENERGY_PER_SEC,
+  isPlasmaIncineration,
   LOCUST_MISSILE_INTERVAL_SEC,
   LOCUST_MISSILES_PER_VOLLEY,
   applyManaShieldRestoreForDashCharges,
@@ -263,6 +279,18 @@ import {
   BLOODMAGE_BYPASS_ICD_SEC,
   OVERRIDE_BYPASS_ICD_SEC,
 } from '@/utils/talents';
+import {
+  ARCHMAGE_COIL,
+  EXODIA_HELM,
+  EXODIA_PAULDRONS,
+  RAZED_DIAMOND,
+  ARCHMAGE_COIL_ENERGY_RESTORE,
+  SCORPION_LANCE_ICD_SEC,
+  SCORPION_LANCE_WINDOW_SEC,
+  SCORPION_SHARD_RANGE,
+  getBloodroseQDamageMultiplier,
+  getScorpionShardDamage,
+} from '@/utils/dreamLayerItems';
 import { DEFAULT_ENTROPIC_COLOR_VARIANT } from '@/utils/entropicColorThemes';
 import {
   type Archetype,
@@ -270,12 +298,15 @@ import {
   ARCHETYPE_ROGUE,
   ARCHETYPE_GLADIATOR,
   ARCHETYPE_ACOLYTE,
+  ARCHETYPE_ALCHEMIST,
+  ARCHETYPE_SORCERESS,
 } from '@/utils/archetypes';
 import type { AegisPaletteVariant } from '@/utils/aegisShieldPalette';
 import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
 import { triggerGlobalFireStorm } from '@/components/weapons/fireStormSpawnBridge';
 import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
 import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
+import { isImmuneToPlayerStunAndFreeze } from '@/utils/enemyStatusImmunity';
 import { triggerGlobalCobraShot } from '@/components/projectiles/CobraShotManager';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 import { triggerGlobalRejuvenatingShot } from '@/components/projectiles/RejuvenatingShotManager';
@@ -428,6 +459,15 @@ export class ControlSystem extends System {
     forward: Vector3;
     damage: number;
   }) => void;
+  private onPrimeMateriaStartCallback?: () => void;
+  private onPrimeMateriaStopCallback?: () => void;
+  private onIncinerationDetonateCallback?: (payload: {
+    origin: { x: number; y: number; z: number };
+    direction: { x: number; y: number; z: number };
+    charge: number;
+    isPlasma?: boolean;
+    shieldDrained?: number;
+  }) => void;
 
   /** Co-op throne archetype routing — when false, legacy tap-deflect / hold-sprint applies (PvP). */
   private useArchetypeShiftRouting = false;
@@ -437,7 +477,12 @@ export class ControlSystem extends System {
   private onDebuffCallback?: (targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', duration: number, position: Vector3) => void;
   
   // Callback for applying status effects to enemies in multiplayer (public so CombatSystem can access)
-  public onApplyEnemyStatusEffectCallback?: (enemyId: string, effectType: string, duration: number) => void;
+  public onApplyEnemyStatusEffectCallback?: (
+    enemyId: string,
+    effectType: string,
+    duration: number,
+    options?: { source?: 'titans_grip' },
+  ) => void;
   
   // Callback for Skyfall ability
   private onSkyfallCallback?: (position: Vector3, direction: Vector3) => void;
@@ -615,6 +660,11 @@ export class ControlSystem extends System {
   /** Recharge accumulator for Crossentropy (0 … full); Accelerator scales effective dt toward full. */
   private crossentropyRechargeAccumulator = CROSSENTROPY_COOLDOWN_SEC;
   private crossentropyCooldownReconcileWallSec: number | null = null;
+  /** Blitz Cannon — staggered Crossentropy charge recharge. */
+  private crossentropyBlitzActive = false;
+  private crossentropyCharges = 0;
+  private crossentropyNextChargeAt: number | null = null;
+  private lastCrossentropyBlitzChargeSpendTime = Number.NEGATIVE_INFINITY;
 
   // Summon Totem charging state
   private isSummonTotemCharging = false;
@@ -662,6 +712,16 @@ export class ControlSystem extends System {
   private locustNextMissileAt = 0;
   private locustVolleyId = 0;
   private locustVolleyEnergyPaid = false;
+  /** Alchemist Prime Materia — toggle Shift aura. */
+  private isChannelingPrimeMateria = false;
+  /** Timestamp (seconds) when Prime Materia was toggled on; used for min on-time gate. */
+  private primeMateriaStartedAt = 0;
+  /** Sorceress Incineration — hold Shift charge channel. */
+  private isChargingIncineration = false;
+  private incinerationCharge = 0;
+  private isIncinerationArmed = false;
+  private lastIncinerationTime = 0;
+  private leftMouseWasPressedLastFrame = false;
   /** Wraith Guard talent: barrier spawned without Aegis; separate from `isDeflecting` for UI/cooldown. */
   private wraithGuardShieldActive = false;
   private wraithGuardOwnsBarrier = false;
@@ -765,6 +825,8 @@ export class ControlSystem extends System {
   private lastFlurryHealNumberWallClockMs = 0;
   private healingStreamHealCarry = 0;
   private lastHealingStreamHealNumberWallClockMs = 0;
+  private deathwishHealCarry = 0;
+  private lastDeathwishHealNumberWallClockMs = 0;
 
   // Lightning Storm ability state (Spear)
   private lastLightningStormTime = 0;
@@ -877,6 +939,12 @@ export class ControlSystem extends System {
   private abilityLoadout: AbilityLoadout | null = null;
 
   private talentLoadout: TalentLoadout = createDefaultTalentLoadout();
+  private ownedItemTypes = new Set<string>();
+  private exodiaSetCount = 0;
+  private dreamLayerEffectiveStats: PlayerStats = { strength: 0, stamina: 0, agility: 0, intellect: 0 };
+  private exodiaSetMaxEnergyBonus = 0;
+  private scorpionLanceArmedUntilSec = 0;
+  private lastScorpionLanceIcdSec = 0;
   private lastGlacialDashRoomBoomMs = 0;
   private lastMendingDashRoomBoomMs = 0;
   private lastStaggeringDashRoomBoomMs = 0;
@@ -1028,6 +1096,7 @@ export class ControlSystem extends System {
     const playerWorldPos = playerTransform.getWorldPosition();
     this.reconcileCrossentropyCooldown(crossentropyWallNowSec, playerWorldPos);
     this.tickHealingStreamTalent(deltaTime, playerWorldPos);
+    this.tickDeathwishTalent(deltaTime, playerWorldPos, playerMovement);
 
     // If input is disabled (e.g., chat / modal open), skip input processing but clear locomotion so
     // stale moveDirection/inputStrength is not reapplied by PhysicsSystem.
@@ -1078,7 +1147,7 @@ export class ControlSystem extends System {
       return;
     }
 
-    if (playerMovement.isFrozen) {
+    if (playerMovement.isFrozen || playerMovement.isEntangled) {
       playerMovement.setMoveDirection(this.movementZeroDirection, 0);
       this.clearMovementControlState();
       if (playerMovement.isDashing) {
@@ -1098,7 +1167,7 @@ export class ControlSystem extends System {
 
     // Shift tap-vs-hold disambiguation — runs unconditionally every frame (not gated behind the
     // dash/charge/frozen skip below) so a quick Shift tap is never lost mid-dash/charge/etc.
-    this.updateShiftBehavior(playerTransform, crossentropyWallNowSec);
+    this.updateShiftBehavior(playerTransform, crossentropyWallNowSec, deltaTime);
 
     // Handle knockback movement first (overrides regular movement)
     this.handleKnockbackMovement(playerMovement, playerTransform);
@@ -1116,6 +1185,7 @@ export class ControlSystem extends System {
       !playerMovement.isDashing &&
       !playerMovement.isCharging &&
       !playerMovement.isFrozen &&
+      !playerMovement.isEntangled &&
       !playerMovement.isKnockbacked &&
       crossentropyWallNowSec >= playerMovement.movementLockUntil
     ) {
@@ -1163,7 +1233,10 @@ export class ControlSystem extends System {
       playerMovement.inputStrength > 0.05 &&
       movingForwardOrStrafe &&
       !(playerMovement.isAttackSlowed || playerMovement.isIcebeaming);
-    this.audioSystem?.setFootstepsPlaying(wantsFootsteps);
+    this.audioSystem?.setFootstepsPlaying(
+      wantsFootsteps,
+      playerMovement.isSprinting ? 1.4 : 1,
+    );
   }
 
   private updateAttackSlowState(movement: Movement): void {
@@ -2237,8 +2310,74 @@ export class ControlSystem extends System {
     }
   }
 
+  private tickDeathwishTalent(
+    deltaTime: number,
+    playerPos: Vector3,
+    movement: Movement,
+  ): void {
+    if (!shouldApplyDeathwishTalent(this.talentLoadout)) {
+      return;
+    }
+    if (this.isPlayerDead || !this.playerEntity) {
+      return;
+    }
+    const health = this.playerEntity.getComponent(Health);
+    if (!health || health.isDead) {
+      return;
+    }
+    if (health.currentHealth >= health.maxHealth) {
+      this.deathwishHealCarry = 0;
+      return;
+    }
+    if (movement.getAvailableDashCharges() > 0) {
+      this.deathwishHealCarry = 0;
+      return;
+    }
+    this.deathwishHealCarry += deltaTime * DEATHWISH_HP_PER_SEC;
+    let whole = Math.floor(this.deathwishHealCarry);
+    this.deathwishHealCarry -= whole;
+    if (whole <= 0) {
+      return;
+    }
+    const cap = Math.max(0, health.maxHealth - health.currentHealth);
+    whole = Math.min(whole, cap);
+    if (whole <= 0) {
+      return;
+    }
+    const didHeal = health.heal(whole);
+    if (!didHeal) {
+      return;
+    }
+    const healingPosition = playerPos.clone();
+    healingPosition.y += 1.5;
+    const wallNow = Date.now();
+    const showNumbers =
+      wallNow - this.lastDeathwishHealNumberWallClockMs >= FLURRY_HEAL_NUMBER_MIN_INTERVAL_MS;
+    if (showNumbers && this.onDamageNumbersUpdate) {
+      this.lastDeathwishHealNumberWallClockMs = wallNow;
+      this.onDamageNumbersUpdate([
+        {
+          id: this.nextDamageNumberId.toString(),
+          damage: whole,
+          position: healingPosition,
+          isCritical: false,
+          timestamp: wallNow,
+          damageType: 'room_boon_deathwish',
+        },
+      ]);
+      this.nextDamageNumberId++;
+    }
+    if (showNumbers && this.onBroadcastHealing) {
+      this.onBroadcastHealing(whole, 'room_boon_deathwish', healingPosition);
+    }
+  }
+
   /** Wall-clock reconcile; call from `update` / cooldown queries so Accelerator tracks time outside ECS gaps. */
   private reconcileCrossentropyCooldown(now: number, playerPos: Vector3): void {
+    if (this.syncCrossentropyBlitzChargeMode()) {
+      this.advanceCrossentropyChargeRecharges(now, playerPos);
+      return;
+    }
     if (this.crossentropyCooldownReconcileWallSec === null) {
       this.crossentropyCooldownReconcileWallSec = now;
       return;
@@ -2266,15 +2405,98 @@ export class ControlSystem extends System {
     );
   }
 
+  private getCrossentropyEffectiveRechargeSec(playerPos: Vector3): number {
+    let mult = 1;
+    if (shouldApplyAcceleratorTalent(this.talentLoadout, this.abilityLoadout)) {
+      mult = Math.pow(2, this.countAcceleratorTotemsInRangeXZ(playerPos.x, playerPos.z));
+    }
+    return CROSSENTROPY_COOLDOWN_SEC / mult;
+  }
+
+  /** Sync Blitz Cannon charge mode with talent + loadout; init or clear charge state on transitions. */
+  private syncCrossentropyBlitzChargeMode(): boolean {
+    const active = shouldApplyBlitzCannonTalent(this.talentLoadout, this.abilityLoadout);
+    if (!active) {
+      if (this.crossentropyBlitzActive) {
+        this.crossentropyBlitzActive = false;
+        this.crossentropyCharges = 0;
+        this.crossentropyNextChargeAt = null;
+        this.lastCrossentropyBlitzChargeSpendTime = Number.NEGATIVE_INFINITY;
+      }
+      return false;
+    }
+    if (!this.crossentropyBlitzActive) {
+      this.crossentropyBlitzActive = true;
+      this.crossentropyCharges = BLITZ_CANNON_MAX_CHARGES;
+      this.crossentropyNextChargeAt = null;
+      this.lastCrossentropyBlitzChargeSpendTime = Number.NEGATIVE_INFINITY;
+    }
+    return true;
+  }
+
+  /** Apply completed Crossentropy charge timers (Blitz Cannon only). */
+  private advanceCrossentropyChargeRecharges(now: number, playerPos?: Vector3): void {
+    const maxC = BLITZ_CANNON_MAX_CHARGES;
+    while (
+      this.crossentropyNextChargeAt !== null &&
+      now >= this.crossentropyNextChargeAt &&
+      this.crossentropyCharges < maxC
+    ) {
+      this.crossentropyCharges++;
+      if (this.crossentropyCharges < maxC) {
+        const rechargeSec = playerPos
+          ? this.getCrossentropyEffectiveRechargeSec(playerPos)
+          : CROSSENTROPY_COOLDOWN_SEC;
+        this.crossentropyNextChargeAt += rechargeSec;
+      } else {
+        this.crossentropyNextChargeAt = null;
+      }
+    }
+  }
+
   private getCrossentropyCooldownHud(currentTime: number): {
     current: number;
     max: number;
     isActive: boolean;
+    charges?: number;
+    maxCharges?: number;
   } {
     const pt = this.playerEntity?.getComponent(Transform);
     const p = pt?.getWorldPosition();
     if (p) {
       this.reconcileCrossentropyCooldown(currentTime, p);
+    }
+    if (this.syncCrossentropyBlitzChargeMode()) {
+      const maxC = BLITZ_CANNON_MAX_CHARGES;
+      const rechargeSec = p ? this.getCrossentropyEffectiveRechargeSec(p) : CROSSENTROPY_COOLDOWN_SEC;
+      if (this.crossentropyCharges > 0) {
+        const internalCooldownRemaining = Math.max(
+          0,
+          BLITZ_CANNON_INTERNAL_COOLDOWN_SEC -
+            (currentTime - this.lastCrossentropyBlitzChargeSpendTime),
+        );
+        return {
+          current: internalCooldownRemaining,
+          max:
+            internalCooldownRemaining > 0
+              ? BLITZ_CANNON_INTERNAL_COOLDOWN_SEC
+              : rechargeSec,
+          isActive: this.isCrossentropyCharging,
+          charges: this.crossentropyCharges,
+          maxCharges: maxC,
+        };
+      }
+      const until =
+        this.crossentropyNextChargeAt != null
+          ? Math.max(0, this.crossentropyNextChargeAt - currentTime)
+          : rechargeSec;
+      return {
+        current: until,
+        max: rechargeSec,
+        isActive: this.isCrossentropyCharging,
+        charges: 0,
+        maxCharges: maxC,
+      };
     }
     const maxSec = CROSSENTROPY_COOLDOWN_SEC;
     const remaining = Math.max(0, maxSec - this.crossentropyRechargeAccumulator);
@@ -2328,6 +2550,51 @@ export class ControlSystem extends System {
       return;
     }
 
+    const leftMousePressed = this.inputManager.isMouseButtonPressed(0);
+    const leftMouseJustPressed = leftMousePressed && !this.leftMouseWasPressedLastFrame;
+
+    if (
+      this.useArchetypeShiftRouting &&
+      this.playerArchetype === ARCHETYPE_SORCERESS &&
+      this.isIncinerationArmed &&
+      this.incinerationCharge > 0 &&
+      leftMouseJustPressed
+    ) {
+      const forward = new Vector3();
+      this.camera.getWorldDirection(forward);
+      forward.y = 0;
+      if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
+      forward.normalize();
+      const origin = playerTransform.position.clone();
+      origin.y += 1;
+      const charge = this.incinerationCharge;
+      const isPlasma = isPlasmaIncineration(charge);
+      let shieldDrained = 0;
+      if (isPlasma) {
+        const shield = this.playerEntity?.getComponent(Shield);
+        if (shield && shield.currentShield > 0) {
+          shieldDrained = shield.currentShield;
+          shield.setShield(0, shield.maxShield);
+        }
+      }
+      this.onIncinerationDetonateCallback?.({
+        origin: { x: origin.x, y: origin.y, z: origin.z },
+        direction: { x: forward.x, y: forward.y, z: forward.z },
+        charge,
+        isPlasma,
+        shieldDrained,
+      });
+      this.lastIncinerationTime = Date.now() / 1000;
+      this.incinerationCharge = 0;
+      this.isIncinerationArmed = false;
+      const detonateMovement = this.playerEntity?.getComponent(Movement);
+      if (detonateMovement) {
+        detonateMovement.isIncinerationArmed = false;
+      }
+      this.leftMouseWasPressedLastFrame = leftMousePressed;
+      return;
+    }
+
     const playerMovement = this.playerEntity?.getComponent(Movement);
     const isSprinting = playerMovement?.isSprinting ?? false;
 
@@ -2352,6 +2619,8 @@ export class ControlSystem extends System {
 
     // Update ongoing ability states regardless of current weapon
     this.updateCrossWeaponStates(playerTransform, Date.now() / 1000);
+
+    this.leftMouseWasPressedLastFrame = leftMousePressed;
   }
 
   private handleBowInput(playerTransform: Transform): void {
@@ -2668,26 +2937,58 @@ export class ControlSystem extends System {
 
     const currentTime = Date.now() / 1000;
     const ppos = playerTransform.getWorldPosition();
-    this.reconcileCrossentropyCooldown(currentTime, ppos);
-    const eps = 1e-6;
     let isBloodmageBypass = false;
-    if (this.crossentropyRechargeAccumulator + eps < CROSSENTROPY_COOLDOWN_SEC) {
-      if (!this.tryBloodmageDashBypass(currentTime)) return;
-      isBloodmageBypass = true;
+
+    if (this.syncCrossentropyBlitzChargeMode()) {
+      this.advanceCrossentropyChargeRecharges(currentTime, ppos);
+      if (this.crossentropyCharges <= 0) {
+        if (!this.tryBloodmageDashBypass(currentTime)) return;
+        isBloodmageBypass = true;
+      } else if (
+        currentTime - this.lastCrossentropyBlitzChargeSpendTime <
+        BLITZ_CANNON_INTERNAL_COOLDOWN_SEC
+      ) {
+        return;
+      }
+    } else {
+      this.reconcileCrossentropyCooldown(currentTime, ppos);
+      const eps = 1e-6;
+      if (this.crossentropyRechargeAccumulator + eps < CROSSENTROPY_COOLDOWN_SEC) {
+        if (!this.tryBloodmageDashBypass(currentTime)) return;
+        isBloodmageBypass = true;
+      }
     }
 
     this.isCrossentropyCharging = true;
     this.crossentropyChargeProgress = 0;
     if (!isBloodmageBypass) {
-      this.crossentropyRechargeAccumulator = 0;
+      if (this.syncCrossentropyBlitzChargeMode()) {
+        this.crossentropyCharges--;
+        this.lastCrossentropyBlitzChargeSpendTime = currentTime;
+        if (
+          this.crossentropyCharges < BLITZ_CANNON_MAX_CHARGES &&
+          this.crossentropyNextChargeAt === null
+        ) {
+          this.crossentropyNextChargeAt = currentTime + this.getCrossentropyEffectiveRechargeSec(ppos);
+        }
+      } else {
+        this.crossentropyRechargeAccumulator = 0;
+      }
     }
 
-    // Play crossentropy sound at the start of the ability
-    this.audioSystem?.playCrossentropySound(playerTransform.position);
+    // Play cast sound at the start of the ability
+    if (shouldApplyBlitzCannonTalent(this.talentLoadout, this.abilityLoadout)) {
+      this.audioSystem?.playBlitzCannonSound(playerTransform.position);
+    } else {
+      this.audioSystem?.playCrossentropySound(playerTransform.position);
+    }
 
     // Start charging animation
     const chargeStartTime = Date.now();
-    const chargeDuration = 1000; // 1 second charge time
+    const chargeDuration = getCrossentropyChargeDurationMs(
+      this.talentLoadout,
+      this.abilityLoadout,
+    );
 
     const chargeInterval = setInterval(() => {
       const elapsed = Date.now() - chargeStartTime;
@@ -2805,6 +3106,7 @@ export class ControlSystem extends System {
   }
 
   private createProjectile(position: Vector3, direction: Vector3): void {
+    this.tryFireScorpionLanceShardIfArmed(position, direction);
     if (!this.playerEntity) return;
     
     // Check if there are any valid targets in the world before creating projectiles
@@ -2879,6 +3181,7 @@ export class ControlSystem extends System {
   }
 
   private createBurstProjectile(position: Vector3, direction: Vector3): void {
+    this.tryFireScorpionLanceShardIfArmed(position, direction);
     if (!this.playerEntity) return;
 
     // Bump before target/broadcast gating so EtherBow muzzle VFX & getTempestBurstShotSeq() still advance
@@ -2971,6 +3274,7 @@ export class ControlSystem extends System {
   }
 
   private createEntropicBoltProjectile(position: Vector3, direction: Vector3): void {
+    this.tryFireScorpionLanceShardIfArmed(position, direction);
     if (!this.playerEntity) return;
 
     // Check if there are any valid targets in the world before creating projectiles
@@ -3064,8 +3368,14 @@ export class ControlSystem extends System {
     spawnPosition.y += 1; // Slightly higher
     
     const reaper = shouldApplyReaperTalent(this.talentLoadout, this.abilityLoadout);
-    const speed = 25;
-    const lifetime = 2.5;
+    const blitzCannon = shouldApplyBlitzCannonTalent(this.talentLoadout, this.abilityLoadout);
+    const speed = blitzCannon ? BLITZ_CANNON_ROCKET_SPEED : 25;
+    const lifetime = blitzCannon ? 1.5 : 2.5;
+    const maxDistance = getCrossentropyMaxTravelDistance(
+      this.talentLoadout,
+      this.abilityLoadout,
+      reaper,
+    );
     const stackBonus = reaper ? this.reaperCrossentropyStack * CROSSENTROPY_REAPER_DAMAGE_PER_KILL : 0;
     const baseDamage = getCrossentropyBaseDamage(this.talentLoadout, this.abilityLoadout);
     const crossentropyTempest = shouldApplyCrossentropyTempestTalent(this.talentLoadout, this.abilityLoadout);
@@ -3082,9 +3392,11 @@ export class ControlSystem extends System {
       speed,
       damage: baseDamage + stackBonus,
       lifetime,
+      maxDistance,
       ...(reaper
-        ? { maxDistance: CROSSENTROPY_MAX_TRAVEL_DISTANCE, reaperCrossentropy: true, piercing: true }
+        ? { reaperCrossentropy: true, piercing: true }
         : { piercing: false }),
+      ...(blitzCannon ? { blitzCannon: true } : {}),
       explosive: false, // Disabled explosion effect for performance
       explosionRadius: 0, // No explosion radius
       subclass: this.currentSubclass,
@@ -3507,6 +3819,9 @@ export class ControlSystem extends System {
             return;
           }
           const sk = entity.userData?.coopServerEnemyType as string | undefined;
+          if (isImmuneToPlayerStunAndFreeze(sk)) {
+            return;
+          }
           // This is an enemy - freeze it (single player mode)
           enemy.freeze(freezeDurationSec, currentTime, sk);
           frozenCount++;
@@ -3560,6 +3875,7 @@ export class ControlSystem extends System {
   }
 
   private createChargedArrowProjectile(position: Vector3, direction: Vector3): void {
+    this.tryFireScorpionLanceShardIfArmed(position, direction);
     if (!this.playerEntity) return;
     
     const baseSpawn = position.clone();
@@ -3604,6 +3920,7 @@ export class ControlSystem extends System {
   }
 
   private createPerfectShotProjectile(position: Vector3, direction: Vector3): void {
+    this.tryFireScorpionLanceShardIfArmed(position, direction);
     if (!this.playerEntity) return;
     
     const baseSpawn = position.clone();
@@ -3926,7 +4243,14 @@ export class ControlSystem extends System {
     };
   }
 
-  public setApplyEnemyStatusEffectCallback(callback: (enemyId: string, effectType: string, duration: number) => void): void {
+  public setApplyEnemyStatusEffectCallback(
+    callback: (
+      enemyId: string,
+      effectType: string,
+      duration: number,
+      options?: { source?: 'titans_grip' },
+    ) => void,
+  ): void {
     this.onApplyEnemyStatusEffectCallback = callback;
   }
 
@@ -4093,6 +4417,52 @@ export class ControlSystem extends System {
   public getRunebladeCrusaderLmbFlatBonus(): number {
     if (!this.isRunebladeCrusaderBuffActive()) return 0;
     return CRUSADER_LMB_FLAT_BONUS;
+  }
+
+  /** Titan's Grip — +2 base damage per effective Strength on each Runeblade combo strike. */
+  public getRunebladeTitansGripLmbFlatBonus(): number {
+    if (!shouldApplyTitansGripTalent(this.talentLoadout)) return 0;
+    return getTitansGripLmbFlatBonus(
+      getEffectiveStrengthWithTalentBonuses(
+        this.allocatedPlayerStats,
+        this.talentLoadout,
+        this.abilityLoadout,
+      ),
+    );
+  }
+
+  /** Titan's Grip — 25% per-hit stun on Runeblade LMB (non-Blizzard) hits. Returns stun position when applied. */
+  public tryTitansGripStunProcFromRunebladeHit(targetId: string): Vector3 | null {
+    if (!shouldApplyTitansGripTalent(this.talentLoadout)) return null;
+    if (this.currentWeapon !== WeaponType.RUNEBLADE) return null;
+    if (Math.random() >= TITANS_GRIP_STUN_PROC_CHANCE) return null;
+
+    const entity = this.world.getEntity(parseInt(targetId, 10));
+    if (!entity) return null;
+
+    const enemy = entity.getComponent(Enemy);
+    const targetTransform = entity.getComponent(Transform);
+    if (!enemy || !targetTransform || enemy.isDead) return null;
+
+    const sk = entity.userData?.coopServerEnemyType as string | undefined;
+    if (isImmuneToPlayerStunAndFreeze(sk)) return null;
+
+    const stunPosition = targetTransform.position.clone();
+    const currentTime = Date.now() / 1000;
+    const stunDurationSec = TITANS_GRIP_STUN_DURATION_MS / 1000;
+    enemy.stun(stunDurationSec, currentTime, sk);
+    addGlobalStunnedEnemy(entity.id.toString(), stunPosition, TITANS_GRIP_STUN_DURATION_MS);
+
+    if (this.onApplyEnemyStatusEffectCallback && entity.userData?.serverEnemyId) {
+      this.onApplyEnemyStatusEffectCallback(
+        entity.userData.serverEnemyId,
+        'stun',
+        TITANS_GRIP_STUN_DURATION_MS,
+        { source: 'titans_grip' },
+      );
+    }
+
+    return stunPosition;
   }
 
   public isChargeActive(): boolean {
@@ -4902,8 +5272,10 @@ export class ControlSystem extends System {
             critChanceAdd: WRATH_STRIKE_CRIT_CHANCE_ADD,
             critDamageMultAdd: WRATH_STRIKE_CRIT_DAMAGE_MULT_ADD,
           });
-          dmg = r.damage;
+          dmg = this.applyBloodroseToDamage(r.damage);
           critPreset = r.isCritical;
+        } else {
+          dmg = this.applyBloodroseToDamage(wraithStrikeBaseDamage);
         }
         combatSystem.queueDamage(
           entity,
@@ -5934,6 +6306,13 @@ export class ControlSystem extends System {
   }
 
   private performSabresMeleeDamage(playerTransform: Transform): number {
+    const forward = new Vector3();
+    this.camera.getWorldDirection(forward);
+    forward.y = 0;
+    if (forward.lengthSq() > 0.0001) {
+      forward.normalize();
+      this.tryFireScorpionLanceShardIfArmed(playerTransform.position, forward);
+    }
     const currentTime = Date.now() / 1000;
 
     // SABRES DAMAGE
@@ -6196,8 +6575,10 @@ export class ControlSystem extends System {
           // Apply stun effect (2 seconds) to enemies hit by Skyfall
           const enemy = entity.getComponent(Enemy);
           if (enemy) {
+            const sk = entity.userData?.coopServerEnemyType as string | undefined;
+            if (!isImmuneToPlayerStunAndFreeze(sk)) {
             // Apply stun to enemy component for immediate movement and rotation stop
-            enemy.stun(2.0, currentTime); // 2 second stun using stun mechanics
+            enemy.stun(2.0, currentTime, sk); // 2 second stun using stun mechanics
 
             // Add visual stun effect (different from freeze) - 2 second duration for Skyfall
             addGlobalStunnedEnemy(entity.id.toString(), targetTransform.position, 2000);
@@ -6205,7 +6586,8 @@ export class ControlSystem extends System {
             // Send stun status to server for multiplayer enemies (co-op mode)
             if (this.onApplyEnemyStatusEffectCallback && entity.userData?.serverEnemyId) {
               this.onApplyEnemyStatusEffectCallback(entity.userData.serverEnemyId, 'stun', 2000); // 2 seconds
-            } 
+            }
+            }
           } else {
             // apply stun debuff
             const localSocketId = (window as any).localSocketId;
@@ -6492,8 +6874,10 @@ export class ControlSystem extends System {
         if (isStunned) {
           const enemy = entity.getComponent(Enemy);
           if (enemy) {
+            const sk = entity.userData?.coopServerEnemyType as string | undefined;
+            if (!isImmuneToPlayerStunAndFreeze(sk)) {
             // Apply stun to enemy component for immediate movement and rotation stop
-            enemy.stun(3.5, currentTime); // 4 second stun (using stun mechanics for movement and rotation)
+            enemy.stun(3.5, currentTime, sk); // 4 second stun (using stun mechanics for movement and rotation)
 
             // Add visual stun effect (different from freeze) - 4 second duration for Sunder
             addGlobalStunnedEnemy(entity.id.toString(), targetTransform.position, 4000);
@@ -6505,6 +6889,7 @@ export class ControlSystem extends System {
               console.log(`⚔️ Sunder: Broadcasted stun to server for enemy ${entity.userData.serverEnemyId}`);
             } else {
               console.warn(`⚔️ Sunder: Could not broadcast stun - callback: ${!!this.onApplyEnemyStatusEffectCallback}, serverEnemyId: ${entity.userData?.serverEnemyId}`);
+            }
             }
           }
           
@@ -6767,6 +7152,10 @@ export class ControlSystem extends System {
     this.crossentropyChargeProgress = 0;
     this.crossentropyRechargeAccumulator = CROSSENTROPY_COOLDOWN_SEC;
     this.crossentropyCooldownReconcileWallSec = null;
+    this.crossentropyBlitzActive = false;
+    this.crossentropyCharges = 0;
+    this.crossentropyNextChargeAt = null;
+    this.lastCrossentropyBlitzChargeSpendTime = Number.NEGATIVE_INFINITY;
     this.isSummonTotemCharging = false; // Reset summon totem charging
     this.summonTotemChargeProgress = 0;
     this.isWindShearCharging = false; // Reset wind shear charging
@@ -6786,6 +7175,8 @@ export class ControlSystem extends System {
     this.lastFlurryHealNumberWallClockMs = 0;
     this.healingStreamHealCarry = 0;
     this.lastHealingStreamHealNumberWallClockMs = 0;
+    this.deathwishHealCarry = 0;
+    this.lastDeathwishHealNumberWallClockMs = 0;
     const playerHealth = this.playerEntity?.getComponent(Health);
     if (playerHealth?.isDodgeInvulnerable()) {
       playerHealth.removeInvulnerability();
@@ -6982,6 +7373,103 @@ export class ControlSystem extends System {
       this.allocatedPlayerStats,
       consumed,
     );
+    this.tryArchmageCoilOnDashChargeExpended(consumed);
+    this.tryScorpionLanceArmOnDashChargeExpended(consumed);
+  }
+
+  public setOwnedDreamLayerItems(
+    types: Set<string> | string[],
+    exodiaCount: number,
+    effectiveStats: PlayerStats,
+    exodiaSetMaxEnergy: number,
+  ): void {
+    this.ownedItemTypes = types instanceof Set ? types : new Set(types);
+    this.exodiaSetCount = exodiaCount;
+    this.dreamLayerEffectiveStats = { ...effectiveStats };
+    this.exodiaSetMaxEnergyBonus = exodiaSetMaxEnergy;
+  }
+
+  public hasOwnedItem(type: string): boolean {
+    return this.ownedItemTypes.has(type);
+  }
+
+  public getExodiaSetCount(): number {
+    return this.exodiaSetCount;
+  }
+
+  public getDreamLayerEffectiveStats(): PlayerStats {
+    return this.dreamLayerEffectiveStats;
+  }
+
+  public getExodiaSetMaxEnergyBonus(): number {
+    return this.exodiaSetMaxEnergyBonus;
+  }
+
+  private tryArchmageCoilOnDashChargeExpended(consumed: number): void {
+    if (consumed <= 0 || !this.playerEntity) return;
+    if (!this.hasOwnedItem(ARCHMAGE_COIL) || this.hasOwnedItem(EXODIA_HELM)) return;
+    const energy = this.playerEntity.getComponent(Energy);
+    if (!energy) return;
+    energy.currentEnergy = Math.min(
+      energy.maxEnergy,
+      energy.currentEnergy + ARCHMAGE_COIL_ENERGY_RESTORE * consumed,
+    );
+  }
+
+  private tryScorpionLanceArmOnDashChargeExpended(consumed: number): void {
+    if (consumed <= 0 || !this.hasOwnedItem(EXODIA_PAULDRONS)) return;
+    const nowSec = Date.now() / 1000;
+    if (nowSec - this.lastScorpionLanceIcdSec < SCORPION_LANCE_ICD_SEC) return;
+    this.scorpionLanceArmedUntilSec = nowSec + SCORPION_LANCE_WINDOW_SEC;
+  }
+
+  public tryFireScorpionLanceShardIfArmed(position: Vector3, direction: Vector3): void {
+    if (!this.playerEntity || !this.hasOwnedItem(EXODIA_PAULDRONS)) return;
+    const nowSec = Date.now() / 1000;
+    if (nowSec > this.scorpionLanceArmedUntilSec) return;
+    if (nowSec - this.lastScorpionLanceIcdSec < SCORPION_LANCE_ICD_SEC) return;
+
+    this.scorpionLanceArmedUntilSec = 0;
+    this.lastScorpionLanceIcdSec = nowSec;
+
+    const shardDamage = getScorpionShardDamage(this.dreamLayerEffectiveStats.agility);
+    const spawnPosition = position.clone();
+    spawnPosition.add(direction.clone().multiplyScalar(0.8));
+    spawnPosition.y += 1;
+
+    this.projectileSystem.createProjectile(
+      this.world,
+      spawnPosition,
+      direction.clone().normalize(),
+      this.playerEntity.id,
+      {
+        speed: 28,
+        damage: shardDamage,
+        lifetime: 1.5,
+        maxDistance: SCORPION_SHARD_RANGE,
+        piercing: true,
+        projectileType: 'scorpion_shard',
+        subclass: this.currentSubclass,
+        level: this.currentLevel,
+        opacity: 1,
+        sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown',
+      },
+    );
+  }
+
+  private applyBloodroseToDamage(baseDamage: number): number {
+    if (!this.hasOwnedItem(RAZED_DIAMOND) || !this.playerEntity) return baseDamage;
+    const health = this.playerEntity.getComponent(Health);
+    if (!health) return baseDamage;
+    const mult = getBloodroseQDamageMultiplier(health.currentHealth, health.maxHealth);
+    return Math.max(0, Math.floor(baseDamage * mult));
+  }
+
+  public getBloodroseDamageMultiplier(): number {
+    if (!this.hasOwnedItem(RAZED_DIAMOND) || !this.playerEntity) return 1;
+    const health = this.playerEntity.getComponent(Health);
+    if (!health) return 1;
+    return getBloodroseQDamageMultiplier(health.currentHealth, health.maxHealth);
   }
 
   /** Bloodmage room boon: consume a dash charge to bypass an E-ability's cooldown. Max once per BLOODMAGE_BYPASS_ICD_SEC. */
@@ -7544,7 +8032,7 @@ export class ControlSystem extends System {
           critDamageMultAdd: WRATHFUL_STAB_CRIT_DAMAGE_MULT_ADD,
         })
       : calculateDamage(baseDamage, WeaponType.SABRES);
-    const damage = damageResult.damage;
+    const damage = this.applyBloodroseToDamage(damageResult.damage);
 
     const combatSystem = this.world.getSystem(CombatSystem);
     if (combatSystem) {
@@ -8253,7 +8741,7 @@ export class ControlSystem extends System {
   /**
    * Routes Shift by game mode + archetype. PvP keeps legacy tap-deflect / hold-sprint.
    */
-  private updateShiftBehavior(playerTransform: Transform, currentTime: number): void {
+  private updateShiftBehavior(playerTransform: Transform, currentTime: number, deltaTime: number): void {
     if (!this.useArchetypeShiftRouting) {
       this.updateShiftTapHoldTracking(playerTransform, currentTime);
       return;
@@ -8264,16 +8752,22 @@ export class ControlSystem extends System {
     switch (this.playerArchetype) {
       case ARCHETYPE_NONE:
         this.resetLocustChannelState();
+        this.resetPrimeMateriaChannelState();
+        this.resetIncinerationChannelState();
         this.shiftPressStartTime = null;
         this.shiftHeldPastTapWindow = false;
         break;
       case ARCHETYPE_ROGUE:
         this.resetLocustChannelState();
+        this.resetPrimeMateriaChannelState();
+        this.resetIncinerationChannelState();
         this.shiftPressStartTime = null;
         this.shiftHeldPastTapWindow = false;
         break;
       case ARCHETYPE_GLADIATOR:
         this.resetLocustChannelState();
+        this.resetPrimeMateriaChannelState();
+        this.resetIncinerationChannelState();
         if (shiftPressed && !this.shiftWasPressedLastFrame) {
           this.tryPerformDeflectBlock(playerTransform, currentTime, { ignoreFreeLookGuard: true });
         }
@@ -8281,6 +8775,8 @@ export class ControlSystem extends System {
         this.shiftHeldPastTapWindow = false;
         break;
       case ARCHETYPE_ACOLYTE:
+        this.resetPrimeMateriaChannelState();
+        this.resetIncinerationChannelState();
         this.shiftPressStartTime = null;
         this.shiftHeldPastTapWindow = false;
         if (shiftPressed) {
@@ -8289,8 +8785,33 @@ export class ControlSystem extends System {
           this.resetLocustChannelState();
         }
         break;
+      case ARCHETYPE_ALCHEMIST:
+        this.resetLocustChannelState();
+        this.resetIncinerationChannelState();
+        this.shiftPressStartTime = null;
+        this.shiftHeldPastTapWindow = false;
+        if (shiftPressed && !this.shiftWasPressedLastFrame) {
+          this.tryTogglePrimeMateria(playerTransform, currentTime);
+        }
+        if (this.isChannelingPrimeMateria) {
+          this.updatePrimeMateriaChannel(playerTransform, deltaTime);
+        }
+        break;
+      case ARCHETYPE_SORCERESS:
+        this.resetLocustChannelState();
+        this.resetPrimeMateriaChannelState();
+        this.shiftPressStartTime = null;
+        this.shiftHeldPastTapWindow = false;
+        if (shiftPressed) {
+          this.updateIncinerationChannel(playerTransform, deltaTime);
+        } else if (this.isChargingIncineration) {
+          this.armIncineration();
+        }
+        break;
       default:
         this.resetLocustChannelState();
+        this.resetPrimeMateriaChannelState();
+        this.resetIncinerationChannelState();
         this.shiftPressStartTime = null;
         this.shiftHeldPastTapWindow = false;
         break;
@@ -8299,7 +8820,192 @@ export class ControlSystem extends System {
     this.shiftWasPressedLastFrame = shiftPressed;
   }
 
+  private resetPrimeMateriaChannelState(): void {
+    if (this.playerEntity) {
+      const playerMovement = this.playerEntity.getComponent(Movement);
+      if (playerMovement) {
+        playerMovement.isPrimeMateriaActive = false;
+      }
+    }
+    this.primeMateriaStartedAt = 0;
+    if (this.isChannelingPrimeMateria) {
+      this.isChannelingPrimeMateria = false;
+      this.audioSystem?.playPrimeMateriaSound();
+      this.onPrimeMateriaStopCallback?.();
+    }
+  }
+
+  private tryTogglePrimeMateria(playerTransform: Transform, currentTime: number): void {
+    if (this.isChannelingPrimeMateria) {
+      if (currentTime - this.primeMateriaStartedAt < PRIME_MATERIA_MIN_ON_TIME_SEC) {
+        return;
+      }
+      this.resetPrimeMateriaChannelState();
+      return;
+    }
+
+    if (!this.playerEntity) return;
+
+    const playerMovement = this.playerEntity.getComponent(Movement);
+    if (!playerMovement) return;
+
+    if (
+      playerMovement.isDashing ||
+      playerMovement.isCharging ||
+      playerMovement.isFrozen ||
+      playerMovement.isKnockbacked ||
+      this.isPlayerDead ||
+      this.isDeflecting ||
+      this.isBlockingDeflect
+    ) {
+      return;
+    }
+
+    const energy = this.playerEntity.getComponent(Energy);
+    if (!energy || energy.currentEnergy <= 0) return;
+
+    this.isChannelingPrimeMateria = true;
+    this.primeMateriaStartedAt = currentTime;
+    playerMovement.isPrimeMateriaActive = true;
+    this.onPrimeMateriaStartCallback?.();
+    this.audioSystem?.playDevouringCircleSound();
+  }
+
+  private updatePrimeMateriaChannel(playerTransform: Transform, deltaTime: number): void {
+    if (!this.playerEntity) return;
+
+    const playerMovement = this.playerEntity.getComponent(Movement);
+    if (!playerMovement) return;
+
+    if (
+      playerMovement.isDashing ||
+      playerMovement.isCharging ||
+      playerMovement.isFrozen ||
+      playerMovement.isKnockbacked ||
+      this.isPlayerDead ||
+      this.isDeflecting ||
+      this.isBlockingDeflect
+    ) {
+      this.resetPrimeMateriaChannelState();
+      return;
+    }
+
+    const energy = this.playerEntity.getComponent(Energy);
+    if (!energy) return;
+
+    const drainAmount = PRIME_MATERIA_ENERGY_PER_SEC * deltaTime;
+    if (energy.currentEnergy < drainAmount) {
+      energy.spend(energy.currentEnergy);
+      this.resetPrimeMateriaChannelState();
+      return;
+    }
+
+    energy.spend(drainAmount);
+  }
+
+  private resetIncinerationChannelState(): void {
+    if (this.isChargingIncineration) {
+      this.audioSystem?.stopIncinerateChargeSound();
+    }
+    if (this.playerEntity) {
+      const playerMovement = this.playerEntity.getComponent(Movement);
+      if (playerMovement) {
+        playerMovement.isIncinerationCharging = false;
+      }
+    }
+    this.isChargingIncineration = false;
+  }
+
+  private resetIncinerationState(): void {
+    this.resetIncinerationChannelState();
+    this.incinerationCharge = 0;
+    this.isIncinerationArmed = false;
+    if (this.playerEntity) {
+      const playerMovement = this.playerEntity.getComponent(Movement);
+      if (playerMovement) {
+        playerMovement.isIncinerationArmed = false;
+      }
+    }
+  }
+
+  private armIncineration(): void {
+    this.resetIncinerationChannelState();
+    this.isIncinerationArmed = this.incinerationCharge > 0;
+    if (this.playerEntity) {
+      const playerMovement = this.playerEntity.getComponent(Movement);
+      if (playerMovement) {
+        playerMovement.isIncinerationArmed = this.isIncinerationArmed;
+      }
+      if (this.isIncinerationArmed) {
+        const playerTransform = this.playerEntity.getComponent(Transform);
+        if (playerTransform) {
+          this.audioSystem?.playIncinerateArmedSound(playerTransform.position);
+        }
+      }
+    }
+  }
+
+  private updateIncinerationChannel(playerTransform: Transform, deltaTime: number): void {
+    if (!this.playerEntity) return;
+
+    const playerMovement = this.playerEntity.getComponent(Movement);
+    if (!playerMovement) return;
+
+    const currentTime = Date.now() / 1000;
+    if (currentTime - this.lastIncinerationTime < INCINERATION_COOLDOWN_SEC) {
+      if (this.isChargingIncineration) {
+        this.armIncineration();
+      }
+      return;
+    }
+
+    if (
+      playerMovement.isDashing ||
+      playerMovement.isCharging ||
+      playerMovement.isFrozen ||
+      playerMovement.isKnockbacked ||
+      this.isPlayerDead ||
+      this.isDeflecting ||
+      this.isBlockingDeflect
+    ) {
+      if (this.isChargingIncineration) {
+        this.armIncineration();
+      } else {
+        this.resetIncinerationChannelState();
+      }
+      return;
+    }
+
+    const energy = this.playerEntity.getComponent(Energy);
+    if (!energy) return;
+
+    if (!this.isChargingIncineration) {
+      if (energy.currentEnergy <= 0) return;
+      this.isChargingIncineration = true;
+      playerMovement.isIncinerationCharging = true;
+      this.audioSystem?.playIncinerateChargeSound(playerTransform.position);
+    }
+
+    const drainAmount = INCINERATION_ENERGY_PER_SEC * deltaTime;
+    if (energy.currentEnergy < drainAmount) {
+      const remaining = energy.currentEnergy;
+      energy.spend(remaining);
+      this.incinerationCharge += remaining;
+      this.armIncineration();
+      return;
+    }
+
+    energy.spend(drainAmount);
+    this.incinerationCharge += drainAmount;
+  }
+
   private resetLocustChannelState(): void {
+    if (this.playerEntity) {
+      const playerMovement = this.playerEntity.getComponent(Movement);
+      if (playerMovement) {
+        playerMovement.isLocustChanneling = false;
+      }
+    }
     this.isChannelingLocusts = false;
     this.locustMissilesFiredInVolley = 0;
     this.locustNextMissileAt = 0;
@@ -8330,6 +9036,7 @@ export class ControlSystem extends System {
 
     if (!this.isChannelingLocusts) {
       this.isChannelingLocusts = true;
+      playerMovement.isLocustChanneling = true;
       this.locustMissilesFiredInVolley = 0;
       this.locustNextMissileAt = currentTime;
       this.locustVolleyEnergyPaid = false;
@@ -8450,6 +9157,8 @@ export class ControlSystem extends System {
       window.dispatchEvent(new CustomEvent('character-block-cast'));
     }
 
+    this.audioSystem?.playDeflectCastSound();
+
     playerHealth.setInvulnerable(DEFLECT_SHIFT_DURATION_SEC, 'deflect');
 
     if (this.onDeflectShiftCallback) {
@@ -8469,6 +9178,14 @@ export class ControlSystem extends System {
     this.onDeflectShiftCallback = callback;
   }
 
+  public isPrimeMateriaChannelingActive(): boolean {
+    return this.isChannelingPrimeMateria;
+  }
+
+  public isLocustChannelingActive(): boolean {
+    return this.isChannelingLocusts;
+  }
+
   public setLocustSpawnCallback(
     callback: (payload: {
       startPosition: Vector3;
@@ -8481,10 +9198,44 @@ export class ControlSystem extends System {
     this.onLocustSpawnCallback = callback;
   }
 
+  public setPrimeMateriaStartCallback(callback: () => void): void {
+    this.onPrimeMateriaStartCallback = callback;
+  }
+
+  public setPrimeMateriaStopCallback(callback: () => void): void {
+    this.onPrimeMateriaStopCallback = callback;
+  }
+
+  public setIncinerationDetonateCallback(
+    callback: (payload: {
+      origin: { x: number; y: number; z: number };
+      direction: { x: number; y: number; z: number };
+      charge: number;
+      isPlasma?: boolean;
+      shieldDrained?: number;
+    }) => void,
+  ): void {
+    this.onIncinerationDetonateCallback = callback;
+  }
+
+  public isIncinerationChannelingActive(): boolean {
+    return this.isChargingIncineration;
+  }
+
+  public isIncinerationArmedActive(): boolean {
+    return this.isIncinerationArmed;
+  }
+
+  public getIncinerationCharge(): number {
+    return this.incinerationCharge;
+  }
+
   public setUseArchetypeShiftRouting(enabled: boolean): void {
     this.useArchetypeShiftRouting = enabled;
     if (!enabled) {
       this.resetLocustChannelState();
+      this.resetPrimeMateriaChannelState();
+      this.resetIncinerationState();
       this.shiftWasPressedLastFrame = false;
     }
   }
@@ -8493,6 +9244,8 @@ export class ControlSystem extends System {
     if (this.playerArchetype === archetype) return;
     this.playerArchetype = archetype;
     this.resetLocustChannelState();
+    this.resetPrimeMateriaChannelState();
+    this.resetIncinerationState();
     this.shiftPressStartTime = null;
     this.shiftHeldPastTapWindow = false;
     this.shiftWasPressedLastFrame = false;
@@ -8857,7 +9610,7 @@ export class ControlSystem extends System {
 
         const projectileConfig = {
           speed: 30, // Slightly faster than regular arrows (20)
-          damage: 79, // High damage for barrage arrows
+          damage: this.applyBloodroseToDamage(79), // High damage for barrage arrows
           lifetime: 8,
           maxDistance: 16,
           piercing: false,
@@ -9501,6 +10254,12 @@ export class ControlSystem extends System {
       current: Math.max(0, DEFLECT_SHIFT_COOLDOWN_SEC - (currentTime - this.lastDeflectShiftTime)),
       max: DEFLECT_SHIFT_COOLDOWN_SEC,
       isActive: this.isBlockingDeflect,
+    };
+
+    cooldowns['INCINERATION_SHIFT'] = {
+      current: Math.max(0, INCINERATION_COOLDOWN_SEC - (currentTime - this.lastIncinerationTime)),
+      max: INCINERATION_COOLDOWN_SEC,
+      isActive: this.isChargingIncineration || this.isIncinerationArmed,
     };
 
     // If a loadout is assigned, return per-slot cooldowns based on it

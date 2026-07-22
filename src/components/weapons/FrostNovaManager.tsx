@@ -8,6 +8,7 @@ import { Enemy } from '@/ecs/components/Enemy';
 import { Transform } from '@/ecs/components/Transform';
 import { Health } from '@/ecs/components/Health';
 import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
+import { isImmuneToPlayerStunAndFreeze } from '@/utils/enemyStatusImmunity';
 
 interface FrostNovaData {
   id: number;
@@ -106,6 +107,7 @@ export default function FrostNovaManager({ world }: FrostNovaManagerProps) {
       if (world) {
         const entity = world.getAllEntities().find(e => e.id.toString() === enemyId);
         if (entity && isCoopPlayerAllyEntity(entity)) return;
+        if (entity && isImmuneToPlayerStunAndFreeze(entity.userData?.coopServerEnemyType as string | undefined)) return;
       }
       (window as any).audioSystem?.playFrozenStatusSound?.(position);
       setFrozenEnemies(prev => {

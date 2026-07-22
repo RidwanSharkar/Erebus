@@ -7,7 +7,9 @@ export interface MerchantShopTooltipSnapshot {
   x: number;
   y: number;
   name: string;
-  cost: number;
+  /** Omitted for non-merchant pedestals (e.g. throne weapon/archetype picks). */
+  cost?: number;
+  costSuffix?: string;
   description: string;
   limitLabel?: string;
 }

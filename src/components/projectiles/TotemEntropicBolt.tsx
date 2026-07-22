@@ -91,7 +91,7 @@ export default function TotemEntropicBolt({
   const flightDir = useRef(new Vector3(0, 1, 0));
   const elapsed = useRef(0);
   const doneRef = useRef(false);
-  const flightVisibleRef = useRef(true);
+  const flightVisibleRef = useRef(!poolSlot);
   const launchGenSeen = useRef(0);
   const durationRef = useRef(0.2);
   const [flightActive, setFlightActive] = useState(!poolSlot);
@@ -126,6 +126,7 @@ export default function TotemEntropicBolt({
     }
     if (rootRef.current) rootRef.current.visible = true;
     alignBoltToDirection(orientRef.current, flightDir.current);
+    setFlightActive(true);
     setTrailSession((n) => n + 1);
   };
 
@@ -145,7 +146,13 @@ export default function TotemEntropicBolt({
   const secondaryColor = useMemo(() => new Color(theme.secondary), [theme.secondary]);
 
   // Pooled point light follows the bolt body (replaces the per-bolt <pointLight>).
-  const boltLight = useDynamicLight({ color: theme.light, distance: 6, decay: 2, priority: 2 });
+  const boltLight = useDynamicLight({
+    color: theme.light,
+    distance: 6,
+    decay: 2,
+    priority: 2,
+    intensity: 0,
+  });
 
   useEffect(() => {
     if (poolSlot || !from || !to) return;
@@ -156,6 +163,11 @@ export default function TotemEntropicBolt({
     if (poolSlot) {
       if (!poolSlot.active) {
         if (rootRef.current) rootRef.current.visible = false;
+        boltLight.current?.setIntensity(0);
+        if (flightVisibleRef.current) {
+          flightVisibleRef.current = false;
+          setFlightActive(false);
+        }
         return;
       }
       if (poolSlot.launchGen !== launchGenSeen.current) {
@@ -192,6 +204,7 @@ export default function TotemEntropicBolt({
       boltLight.current?.setIntensity(0);
       if (poolSlot) {
         poolSlot.active = false;
+        setFlightActive(false);
         onPoolImpact?.(poolSlot.id, poolSlot.targetId);
       } else {
         setFlightActive(false);
@@ -200,10 +213,10 @@ export default function TotemEntropicBolt({
     }
   });
 
-  const showFlight = poolSlot ? true : flightActive;
+  const showFlight = flightActive;
 
   return (
-    <group ref={rootRef}>
+    <group ref={rootRef} visible={showFlight}>
       {showFlight && (
         <>
           <EntropicBoltTrail

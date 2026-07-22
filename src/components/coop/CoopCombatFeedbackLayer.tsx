@@ -146,6 +146,23 @@ const CoopCombatFeedbackLayer = memo(forwardRef<CoopCombatFeedbackLayerHandle, C
               />
             );
           }
+          if (e.type === 'spectre-spin-land-effect') {
+            return (
+              <CrescentSlashEffect
+                key={e.id}
+                position={e.position}
+                direction={e.direction}
+                scale={0.55}
+                palette={{
+                  core: '#a8d4ff',
+                  edge: '#4da6ff',
+                  flash: '#d4ecff',
+                  ring: '#b55cff',
+                }}
+                onComplete={onImpactDone}
+              />
+            );
+          }
           if (e.type === 'mortal-strike-effect') {
             return (
               <MortalStrikeEffect

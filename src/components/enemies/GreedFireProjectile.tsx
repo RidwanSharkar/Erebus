@@ -29,7 +29,7 @@ export default function GreedFireProjectile({
   const doneRef = useRef(false);
   const dirRef = useRef(new Vector3(0, 0, -1));
 
-  const fireLight = useDynamicLight({ color: '#ff6a00', distance: 6.5, priority: 1 });
+  const fireLight = useDynamicLight({ color: '#ff6a00', distance: 6.5, priority: 1, intensity: 0 });
 
   const maxLifetimeRef = useRef(1);
 
@@ -68,7 +68,6 @@ export default function GreedFireProjectile({
 
   useEffect(() => {
     if (!groupRef.current) return;
-    groupRef.current.position.copy(startPosition);
     groupRef.current.rotation.y = Math.atan2(dirRef.current.x, dirRef.current.z);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -102,12 +101,12 @@ export default function GreedFireProjectile({
       <EntropicBoltTrail
         color={trailColor}
         accentColor={trailAccent}
-        size={0.075}
+        size={0.0675}
         meshRef={groupRef}
         opacity={0.95}
         flightDirectionRef={dirRef}
       />
-      <group ref={groupRef}>
+      <group ref={groupRef} position={startPosition.clone()}>
         <group ref={spinRef}>
           <mesh ref={coreRef} material={coreMat}>
             <sphereGeometry args={[0.24, 10, 10]} />

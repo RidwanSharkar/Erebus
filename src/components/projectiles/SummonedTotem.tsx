@@ -348,9 +348,12 @@ export default function SummonedTotem({
     }
 
     const base = totemBoltBaseDamage(totemBoltVariant);
+    const cs = (window as any).controlSystemRef?.current;
+    const bloodroseMult = cs?.getBloodroseDamageMultiplier?.() ?? 1;
+    const scaledBase = Math.max(0, Math.floor(base * bloodroseMult));
     const dmgOpts =
       totemBoltVariant === 'wrathful' ? { critChanceAdd: WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD } : undefined;
-    const damageResult = calculateDamage(base, WeaponType.SCYTHE, dmgOpts);
+    const damageResult = calculateDamage(scaledBase, WeaponType.SCYTHE, dmgOpts);
 
     const coopEnemyDamageMeta = coopEnemyMetaForTotemBolt(totemBoltVariant);
     const baseDamage = damageResult.damage;

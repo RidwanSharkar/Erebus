@@ -73,8 +73,8 @@ const DEBRIS_FRAG = `
   }
 `;
 
-const ROCK_COUNT    = 160;
-const ARENA_RADIUS  = 20;
+const ROCK_COUNT    = 100;
+const ARENA_RADIUS  = 16;
 
 const InstancedDebris: React.FC = () => {
   const meshRef = useRef<InstancedMesh>(null);

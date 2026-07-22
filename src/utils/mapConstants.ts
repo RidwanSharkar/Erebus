@@ -3,14 +3,20 @@
  * Colored enemy rooms use a circular footprint at this radius; stat/trial
  * HexCombatArena stays hex at `HEX_ARENA_RADIUS`.
  */
-export const MAIN_ARENA_HEX_RADIUS = 24;
+export const MAIN_ARENA_HEX_RADIUS = 20;
 /** Stat/trial hex combat arena — must match `HexCombatArena.tsx`. */
-export const HEX_ARENA_RADIUS = 22;
+export const HEX_ARENA_RADIUS = 20;
 /** Intro castle rooms — must match `backend/coopArenaLayout.js` CASTLE_ROOM_HALF_SIZE. */
 export const CASTLE_ROOM_HALF_SIZE = 14;
 export const CASTLE_ROOM_BOUNDS: MainArenaBounds = {
   halfX: CASTLE_ROOM_HALF_SIZE,
   halfZ: CASTLE_ROOM_HALF_SIZE,
+};
+/** Sunken temple pentagon rooms — same playable scale as castle intro rooms. */
+export const PENTAGON_ARENA_RADIUS = CASTLE_ROOM_HALF_SIZE;
+export const SUNKEN_TEMPLE_BOUNDS: MainArenaBounds = {
+  halfX: PENTAGON_ARENA_RADIUS,
+  halfZ: PENTAGON_ARENA_RADIUS,
 };
 export const MAIN_ARENA_HEX_FLOOR_MARGIN = 1.4;
 export const MAIN_ARENA_HEX_INNER_APOTHEM =
@@ -113,6 +119,46 @@ export function clampToHexArenaXZ(
   return { x: cx, z: cz };
 }
 
+/** True if (x, z) lies inside a regular pentagon with flat edge forward (-Z). */
+export function isInsidePentagonArenaXZ(
+  x: number,
+  z: number,
+  radius: number = PENTAGON_ARENA_RADIUS,
+  inset: number = 0,
+): boolean {
+  const apothem = radius * Math.cos(Math.PI / 5) - inset;
+  for (let i = 0; i < 5; i++) {
+    const a = (2 * Math.PI / 5) * i - Math.PI / 2;
+    if (x * Math.cos(a) + z * Math.sin(a) > apothem) return false;
+  }
+  return true;
+}
+
+/** Clamp XZ to the nearest point inside the regular pentagon footprint. */
+export function clampToPentagonArenaXZ(
+  x: number,
+  z: number,
+  radius: number = PENTAGON_ARENA_RADIUS,
+  inset: number = MAIN_ARENA_SPAWN_INSET,
+): { x: number; z: number } {
+  const apothem = radius * Math.cos(Math.PI / 5) - inset;
+  let cx = x;
+  let cz = z;
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < 5; i++) {
+      const a = (2 * Math.PI / 5) * i - Math.PI / 2;
+      const nx = Math.cos(a);
+      const nz = Math.sin(a);
+      const excess = cx * nx + cz * nz - apothem;
+      if (excess > 0) {
+        cx -= nx * excess;
+        cz -= nz * excess;
+      }
+    }
+  }
+  return { x: cx, z: cz };
+}
+
 function isStatTrialArenaRadius(radius: number): boolean {
   return radius === HEX_ARENA_RADIUS;
 }
@@ -130,6 +176,9 @@ export function isInsideMainArenaXZ(
   if (typeof boundsOrHalfX === 'number' && halfZ === undefined) {
     if (isStatTrialArenaRadius(boundsOrHalfX)) {
       return isInsideHexArenaXZ(x, z, boundsOrHalfX);
+    }
+    if (boundsOrHalfX === PENTAGON_ARENA_RADIUS) {
+      return isInsidePentagonArenaXZ(x, z, boundsOrHalfX);
     }
     return isInsideCircleArenaXZ(x, z, boundsOrHalfX);
   }
@@ -150,6 +199,9 @@ export function clampToMainArenaXZ(
   if (typeof boundsOrHalfX === 'number') {
     if (isStatTrialArenaRadius(boundsOrHalfX)) {
       return clampToHexArenaXZ(x, z, boundsOrHalfX, inset);
+    }
+    if (boundsOrHalfX === PENTAGON_ARENA_RADIUS) {
+      return clampToPentagonArenaXZ(x, z, boundsOrHalfX, inset);
     }
     return clampToCircleArenaXZ(x, z, boundsOrHalfX, inset);
   }

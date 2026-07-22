@@ -7,7 +7,7 @@ import { GLTFLoader } from 'three-stdlib';
 import { peek as suspendPeek } from 'suspend-react';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadGltfAnimationClips, preloadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
-import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
 type AlliedHealerClip = 'Idle' | 'Walk' | 'Death' | 'Cast' | 'HealCast' | 'Launch';
 
@@ -118,6 +118,7 @@ export default function AlliedHealerModel({ isWalking, isDying, abilityClip }: A
           : child.material.clone();
       }
     });
+    applySelfIllumination(clone, { intensity: UNIT_SELF_ILLUMINATION_INTENSITY });
     return clone;
   }, [scene]);
 

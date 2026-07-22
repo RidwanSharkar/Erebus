@@ -10,26 +10,53 @@ const CAMP_ORB_COLOR: Record<CoopPortalKind, string> = {
   blue:   '#3b82f6',
   red:    '#ef4444',
   green:  '#22c55e',
-  stat: '#eab308',
-  trial: '#f97316',
+  stat: '#f97316',
+  trial: '#eab308',
   merchant: '#ec4899',
   boss: '#8b5cf6',
 };
 
+/** Shared stone cylinder + cap used by combat boon pedestals and throne archetype pedestals. */
+export function ArenaRewardPedestalBase({
+  position = [0, 0, 0],
+}: {
+  position?: [number, number, number];
+}) {
+  return (
+    <group position={position}>
+      <mesh castShadow receiveShadow>
+        <cylinderGeometry args={[0.45, 0.65, 1.75, 12]} />
+        <meshStandardMaterial color="#c8c0b4" roughness={0.75} metalness={0.15} />
+      </mesh>
+      <mesh position={[0, 0.99, 0]} castShadow receiveShadow>
+        <cylinderGeometry args={[0.55, 0.45, 0.24, 12]} />
+        <meshStandardMaterial color="#b8b0a4" roughness={0.7} metalness={0.2} />
+      </mesh>
+    </group>
+  );
+}
+
 interface CombatArenaPedestalProps {
   campType: CoopPortalKind;
   showAura: boolean;
+  position?: [number, number, number];
 }
 
-export default function CombatArenaPedestal({ campType, showAura }: CombatArenaPedestalProps) {
+export default function CombatArenaPedestal({
+  campType,
+  showAura,
+  position = [
+    MAIN_COMBAT_PEDESTAL_POSITION.x,
+    MAIN_COMBAT_PEDESTAL_POSITION.y,
+    MAIN_COMBAT_PEDESTAL_POSITION.z,
+  ],
+}: CombatArenaPedestalProps) {
   const orbRef       = useRef<any>(null);
   const aura1Ref     = useRef<any>(null);
   const aura2Ref     = useRef<any>(null);
 
   const color = CAMP_ORB_COLOR[campType];
-  const px = MAIN_COMBAT_PEDESTAL_POSITION.x;
-  const py = MAIN_COMBAT_PEDESTAL_POSITION.y;
-  const pz = MAIN_COMBAT_PEDESTAL_POSITION.z;
+  const [px, py, pz] = position;
   const auraLight = useDynamicLight({ color, distance: 12, priority: 1 });
 
   useFrame((state) => {
@@ -73,18 +100,8 @@ export default function CombatArenaPedestal({ campType, showAura }: CombatArenaP
   });
 
   return (
-    <group position={[px, py, pz]}>
-      {/* --- Base column --- */}
-      <mesh castShadow receiveShadow>
-        <cylinderGeometry args={[0.45, 0.6, 1.3, 12]} />
-        <meshStandardMaterial color="#c8c0b4" roughness={0.75} metalness={0.15} />
-      </mesh>
-
-      {/* Top cap */}
-      <mesh position={[0, 0.72, 0]} castShadow receiveShadow>
-        <cylinderGeometry args={[0.55, 0.45, 0.14, 12]} />
-        <meshStandardMaterial color="#b8b0a4" roughness={0.7} metalness={0.2} />
-      </mesh>
+    <group position={position}>
+      <ArenaRewardPedestalBase />
 
       {/* --- Colored orb --- */}
       <group ref={orbRef} position={[0, 1.85, 0]}>

@@ -9,6 +9,10 @@ function handlePlayerEvents(socket, gameRooms) {
     dashDirection: { x: 0, y: 0, z: 0 },
     isAttackSlowed: false,
     isIcebeaming: false,
+    isPrimeMateriaActive: false,
+    isIncinerationCharging: false,
+    isIncinerationArmed: false,
+    isLocustChanneling: false,
     isSprinting: false,
   };
 
@@ -181,6 +185,7 @@ function handlePlayerEvents(socket, gameRooms) {
       agility: typeof raw.agility === 'number' ? raw.agility : 0,
       strength: typeof raw.strength === 'number' ? raw.strength : 0,
       stamina: typeof raw.stamina === 'number' ? raw.stamina : 0,
+      intellect: typeof raw.intellect === 'number' ? raw.intellect : 0,
     };
   });
 
@@ -207,6 +212,40 @@ function handlePlayerEvents(socket, gameRooms) {
       x: position?.x ?? 0,
       y: position?.y ?? 0,
       z: position?.z ?? 0,
+    });
+  });
+
+  /** Co-op: Alchemist Prime Materia — start server-authoritative aura tick. */
+  socket.on('prime-materia-start', (data) => {
+    const { roomId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.startPrimeMateriaAura !== 'function') return;
+    room.startPrimeMateriaAura(socket.id);
+  });
+
+  /** Co-op: Alchemist Prime Materia — stop aura tick. */
+  socket.on('prime-materia-stop', (data) => {
+    const { roomId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.stopPrimeMateriaAura !== 'function') return;
+    room.stopPrimeMateriaAura(socket.id);
+  });
+
+  /** Co-op: Sorceress Incineration — broadcast beam VFX to allies. */
+  socket.on('incineration-beam', (data) => {
+    const { roomId, origin, direction, charge, isPlasma, shieldDrained } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    if (!origin || !direction || typeof charge !== 'number') return;
+    socket.to(roomId).emit('incineration-beam', {
+      playerId: socket.id,
+      origin,
+      direction,
+      charge,
+      isPlasma: !!isPlasma,
+      shieldDrained: typeof shieldDrained === 'number' ? shieldDrained : 0,
+      timestamp: Date.now(),
     });
   });
 
@@ -293,6 +332,11 @@ function handlePlayerEvents(socket, gameRooms) {
 
     const room = gameRooms.get(roomId);
     const player = room.getPlayer(socket.id);
+
+    // Sentinel dodge: record incoming shot threat toward sentinels
+    if (room.enemyAI && position && direction) {
+      room.enemyAI.notifyPlayerAttackThreat(socket.id, position, direction);
+    }
 
     // Broadcast attack animation to other players with weapon info
     socket.to(roomId).emit('player-attacked', {
@@ -1133,6 +1177,26 @@ function handlePlayerEvents(socket, gameRooms) {
     }
   });
 
+  socket.on('coop-dream-layer-buy-item', (data) => {
+    const { roomId, stockId } = data || {};
+    if (!gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    if (typeof room.purchaseDreamLayerItem === 'function') {
+      room.purchaseDreamLayerItem(socket.id, stockId);
+    }
+  });
+
+  socket.on('coop-dream-layer-buy-heal', (data) => {
+    const { roomId } = data || {};
+    if (!gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    if (typeof room.purchaseDreamLayerHeal === 'function') {
+      room.purchaseDreamLayerHeal(socket.id);
+    }
+  });
+
   // Handle player gold changes
   socket.on('player-gold-changed', (data) => {
     const { roomId, playerId, gold } = data;
@@ -1152,6 +1216,54 @@ function handlePlayerEvents(socket, gameRooms) {
       room.io.to(roomId).emit('player-gold-changed', {
         playerId: playerId || socket.id,
         gold: player.gold,
+        timestamp: Date.now()
+      });
+    }
+  });
+
+  // Handle player flow changes
+  socket.on('player-flow-changed', (data) => {
+    const { roomId, playerId, flow } = data;
+
+    if (!gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    const player = room.getPlayer(playerId || socket.id);
+
+    if (player) {
+      const currentFlow = player.flow || 0;
+      const nextFlow = currentFlow + flow;
+      if (nextFlow < 0) return;
+
+      player.flow = nextFlow;
+
+      room.io.to(roomId).emit('player-flow-changed', {
+        playerId: playerId || socket.id,
+        flow: player.flow,
+        timestamp: Date.now()
+      });
+    }
+  });
+
+  // Handle player fate changes
+  socket.on('player-fate-changed', (data) => {
+    const { roomId, playerId, fate } = data;
+
+    if (!gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    const player = room.getPlayer(playerId || socket.id);
+
+    if (player) {
+      const currentFate = player.fate || 0;
+      const nextFate = currentFate + fate;
+      if (nextFate < 0) return;
+
+      player.fate = nextFate;
+
+      room.io.to(roomId).emit('player-fate-changed', {
+        playerId: playerId || socket.id,
+        fate: player.fate,
         timestamp: Date.now()
       });
     }

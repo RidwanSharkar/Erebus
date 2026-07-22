@@ -1,16 +1,20 @@
 /** Player archetype — determines what the Shift key does in co-op. */
-export type Archetype = 'NONE' | 'ROGUE' | 'GLADIATOR' | 'ACOLYTE';
+export type Archetype = 'NONE' | 'ROGUE' | 'GLADIATOR' | 'ACOLYTE' | 'ALCHEMIST' | 'SORCERESS';
 
 export const ARCHETYPE_NONE: Archetype = 'NONE';
 export const ARCHETYPE_ROGUE: Archetype = 'ROGUE';
 export const ARCHETYPE_GLADIATOR: Archetype = 'GLADIATOR';
 export const ARCHETYPE_ACOLYTE: Archetype = 'ACOLYTE';
+export const ARCHETYPE_ALCHEMIST: Archetype = 'ALCHEMIST';
+export const ARCHETYPE_SORCERESS: Archetype = 'SORCERESS';
 
 /** Selectable throne-room archetypes (excludes NONE). */
 export const THRONE_ARCHETYPES = [
   ARCHETYPE_ROGUE,
   ARCHETYPE_GLADIATOR,
   ARCHETYPE_ACOLYTE,
+  ARCHETYPE_ALCHEMIST,
+  ARCHETYPE_SORCERESS,
 ] as const;
 
 export type ThroneArchetype = (typeof THRONE_ARCHETYPES)[number];
@@ -53,6 +57,24 @@ export const ARCHETYPE_DISPLAY: Record<ThroneArchetype, ArchetypeDisplayMeta> = 
     secondaryColor: '#6b21a8',
     accentColor: '#d8b4fe',
   },
+  ALCHEMIST: {
+    id: 'ALCHEMIST',
+    label: 'Alchemist',
+    shortLabel: 'Alchemist',
+    description: 'Toggle Shift to activate Prime Materia.',
+    primaryColor: '#22c55e',
+    secondaryColor: '#166534',
+    accentColor: '#86efac',
+  },
+  SORCERESS: {
+    id: 'SORCERESS',
+    label: 'Sorceress',
+    shortLabel: 'Sorceress',
+    description: 'Hold Shift to charge Incineration. Left-click to fire. Over 90 charge becomes Plasma, draining shield for bonus damage and forward lightning bolts. 2s cooldown after firing.',
+    primaryColor: '#f97316',
+    secondaryColor: '#b91c1c',
+    accentColor: '#fde047',
+  },
 };
 
 export function isArchetype(value: unknown): value is Archetype {
@@ -60,7 +82,9 @@ export function isArchetype(value: unknown): value is Archetype {
     value === 'NONE' ||
     value === 'ROGUE' ||
     value === 'GLADIATOR' ||
-    value === 'ACOLYTE'
+    value === 'ACOLYTE' ||
+    value === 'ALCHEMIST' ||
+    value === 'SORCERESS'
   );
 }
 
@@ -72,16 +96,38 @@ export function normalizeArchetype(value: unknown): Archetype {
 }
 
 export function isSelectableArchetype(value: Archetype): value is ThroneArchetype {
-  return value === 'ROGUE' || value === 'GLADIATOR' || value === 'ACOLYTE';
+  return (
+    value === 'ROGUE' ||
+    value === 'GLADIATOR' ||
+    value === 'ACOLYTE' ||
+    value === 'ALCHEMIST' ||
+    value === 'SORCERESS'
+  );
 }
 
 export const ARCHETYPE_ICON_SRC: Record<ThroneArchetype, string> = {
+  ROGUE: '/icons/rogue.webp',
+  GLADIATOR: '/icons/gladiator.webp',
+  ACOLYTE: '/icons/acolyte.webp',
+  ALCHEMIST: '/icons/achemist.webp',
+  SORCERESS: '/icons/sorceress.webp',
+};
+
+/** SVG variants for crisp rendering in the level badge. */
+export const ARCHETYPE_ICON_SVG_SRC: Record<ThroneArchetype, string> = {
   ROGUE: '/icons/rogue.svg',
   GLADIATOR: '/icons/gladiator.svg',
   ACOLYTE: '/icons/acolyte.svg',
+  ALCHEMIST: '/icons/alchemist.svg',
+  SORCERESS: '/icons/sorceress.svg',
 };
 
 export function getArchetypeIconSrc(archetype: Archetype): string | null {
   if (!isSelectableArchetype(archetype)) return null;
   return ARCHETYPE_ICON_SRC[archetype];
+}
+
+export function getArchetypeIconSvgSrc(archetype: Archetype): string | null {
+  if (!isSelectableArchetype(archetype)) return null;
+  return ARCHETYPE_ICON_SVG_SRC[archetype];
 }

@@ -50,13 +50,49 @@ const PURPLE_FIELD_COLORS: TerrainPalette = {
   groundLightIntensity: 0.22,
 };
 
-/** Hex stat/trial/merchant arenas — deep crimson, distinct from arid `roomTheme="red"`. */
+/** Hex stat/trial arenas — deep ocean blue blades. */
+const OCEAN_FIELD_COLORS: TerrainPalette = {
+  baseColor: '#0a1f33',
+  tipColor: '#1e4d6b',
+  groundColor: '#061018',
+  groundLightColor: '#0d3a5c',
+  groundLightIntensity: 0.28,
+};
+
+/** Hex stat/trial arenas — ash/stone grey blades. */
+const GREY_FIELD_COLORS: TerrainPalette = {
+  baseColor: '#3a3a3a',
+  tipColor: '#6b6b6b',
+  groundColor: '#2a2a2a',
+  groundLightColor: '#505050',
+  groundLightIntensity: 0.24,
+};
+
+/** Hex fallback / legacy crimson — distinct from arid `roomTheme="red"`. */
 const DEEP_CRIMSON_COLORS: TerrainPalette = {
   baseColor: '#2a0808',
   tipColor: '#991b1b',
   groundColor: '#120508',
   groundLightColor: '#5c1010',
   groundLightIntensity: 0.32,
+};
+
+/** Delirium Gate — warm yellow-red grass on the main disc arena. */
+const DELIRIUM_COLORS: TerrainPalette = {
+  baseColor: '#3a2a08',
+  tipColor: '#d4a017',
+  groundColor: '#2e0f08',
+  groundLightColor: '#7c2d12',
+  groundLightIntensity: 0.42,
+};
+
+/** Dream Layer secret shop — lighter ethereal blue than Act 2 grass. */
+const DREAM_LAYER_COLORS: TerrainPalette = {
+  baseColor: '#2f5bb0',
+  tipColor: '#9ad8ff',
+  groundColor: '#20406e',
+  groundLightColor: '#5b9dff',
+  groundLightIntensity: 0.3,
 };
 
 const THEME_COUNTS: Record<RoomBorderTheme, number> = {
@@ -92,8 +128,8 @@ interface StylizedGrassProps {
   windStrength?: number;
   /** Coop room archetype — drives default palette, density (purple), and wind. */
   roomTheme?: RoomBorderTheme;
-  /** Override palette; `crimson` uses deep-red hex-arena colors instead of theme defaults. */
-  grassPalette?: 'theme' | 'crimson';
+  /** Override palette; fixed palettes instead of theme defaults. */
+  grassPalette?: 'theme' | 'crimson' | 'delirium' | 'dream' | 'purple' | 'grey' | 'ocean';
   /** Legacy: when true, same as `roomTheme="blue"`. Ignored if `roomTheme` is set. */
   isSnowTheme?: boolean;
   baseColor?: string;
@@ -101,6 +137,8 @@ interface StylizedGrassProps {
   groundColor?: string;
   groundLightColor?: string;
   groundLightIntensity?: number;
+  /** When set on disc fields, blades are omitted inside this XZ radius (e.g. throne center seal). */
+  excludeInnerRadius?: number;
 }
 
 const GRASS_VERTEX = `
@@ -227,6 +265,7 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
   groundColor,
   groundLightColor,
   groundLightIntensity,
+  excludeInnerRadius = 0,
 }) => {
   const meshRef = useRef<InstancedMesh>(null);
   const [matricesReady, setMatricesReady] = useState(false);
@@ -235,7 +274,19 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
   const defaultCount = THEME_COUNTS[effectiveTheme];
   const count = countOverride ?? defaultCount;
   const palette =
-    grassPalette === 'crimson' ? DEEP_CRIMSON_COLORS : paletteForTheme(effectiveTheme);
+    grassPalette === 'crimson'
+      ? DEEP_CRIMSON_COLORS
+      : grassPalette === 'delirium'
+        ? DELIRIUM_COLORS
+        : grassPalette === 'dream'
+          ? DREAM_LAYER_COLORS
+          : grassPalette === 'purple'
+            ? PURPLE_FIELD_COLORS
+            : grassPalette === 'grey'
+              ? GREY_FIELD_COLORS
+              : grassPalette === 'ocean'
+                ? OCEAN_FIELD_COLORS
+                : paletteForTheme(effectiveTheme);
 
   const resolvedBaseColor        = baseColor        ?? palette.baseColor;
   const resolvedTipColor         = tipColor         ?? palette.tipColor;
@@ -368,7 +419,9 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
         } while (!isInsideHexArenaXZ(x, z, radius, 0.2));
       } else {
         const angle = Math.random() * Math.PI * 2;
-        const r = Math.sqrt(Math.random()) * radius;
+        const inner = Math.max(0, excludeInnerRadius);
+        const span = Math.max(0.001, radius - inner);
+        const r = inner + Math.sqrt(Math.random()) * span;
         x = Math.cos(angle) * r;
         z = Math.sin(angle) * r;
       }
@@ -402,7 +455,7 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
     }
     setMatricesReady(true);
     return true;
-  }, [count, radius, halfX, halfZ, bladeHeight, useHexField, useSquareEdge]);
+  }, [count, radius, halfX, halfZ, bladeHeight, useHexField, useSquareEdge, excludeInnerRadius]);
 
   useLayoutEffect(() => {
     setMatricesReady(false);

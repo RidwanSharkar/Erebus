@@ -46,6 +46,8 @@ export class Projectile extends Component {
   public crossentropyFragmentation?: boolean;
   /** Secondary fragmentation bolt cannot chain further. */
   public crossentropySuppressFragmentation?: boolean;
+  /** Blitz Cannon — fast rocket Crossentropy (distinct VFX; explode on first hit unless Reaper). */
+  public blitzCannon?: boolean;
   /** Dual Coil: which parallel lane (0/1) for damage number lateral offset. */
   public dualCoilLane?: 0 | 1;
   /** Scythe Wrathful / Staggering / Infesting Entropic boons — bolt hit rules in CombatSystem. */
@@ -233,6 +235,7 @@ export class Projectile extends Component {
     this.crossentropyMeteor = undefined;
     this.crossentropyFragmentation = undefined;
     this.crossentropySuppressFragmentation = undefined;
+    this.blitzCannon = undefined;
     this.dualCoilLane = undefined;
     this.entropicBoltTalent = undefined;
     this.entropicFragmentation = undefined;
@@ -275,6 +278,7 @@ export class Projectile extends Component {
     clone.crossentropyMeteor = this.crossentropyMeteor;
     clone.crossentropyFragmentation = this.crossentropyFragmentation;
     clone.crossentropySuppressFragmentation = this.crossentropySuppressFragmentation;
+    clone.blitzCannon = this.blitzCannon;
     clone.dualCoilLane = this.dualCoilLane;
     clone.entropicBoltTalent = this.entropicBoltTalent;
     clone.entropicFragmentation = this.entropicFragmentation;

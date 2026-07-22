@@ -9,7 +9,9 @@ export interface MerchantShopTooltipProps {
   x: number;
   y: number;
   name: string;
-  cost: number;
+  /** Omitted for non-merchant pedestals (e.g. throne weapon/archetype picks). */
+  cost?: number;
+  costSuffix?: string;
   description: string;
   limitLabel?: string;
 }
@@ -20,6 +22,7 @@ export default function MerchantShopTooltip({
   y,
   name,
   cost,
+  costSuffix = 'g',
   description,
   limitLabel,
 }: MerchantShopTooltipProps) {
@@ -79,7 +82,7 @@ export default function MerchantShopTooltip({
       }}
     >
       <div className="font-semibold text-blue-300 mb-1 text-[13px]">
-        {name} — {cost}g
+        {cost != null ? `${name} — ${cost}${costSuffix}` : name}
       </div>
       <div className="text-gray-400 text-xs leading-relaxed">{description}</div>
       {limitLabel ? (

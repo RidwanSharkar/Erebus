@@ -116,6 +116,7 @@ const CoopSummonRitualLayer = memo(forwardRef<CoopSummonRitualLayerHandle, objec
           <GhoulSummonRitual
             key={ritual.id}
             position={ritual.position}
+            duration={ritual.duration}
             onComplete={() => setGhoulSummonRituals(prev => prev.filter(r => r.id !== ritual.id))}
           />
         ))}

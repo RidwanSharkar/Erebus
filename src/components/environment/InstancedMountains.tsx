@@ -69,7 +69,7 @@ const InstancedMountains: React.FC<InstancedMountainsProps> = ({ mountains }) =>
         euler.set(0, mountain.rotationY ?? 0, 0);
         quat.setFromEuler(euler);
         const h = mountain.heightScale ?? 1;
-        scl.set(mountain.scale, mountain.scale * h, mountain.scale);
+        scl.set(mountain.scale * 0.8, mountain.scale * h, mountain.scale * 0.8);
         matrix.compose(pos, quat, scl);
         mesh.setMatrixAt(instanceIndex, matrix);
       });

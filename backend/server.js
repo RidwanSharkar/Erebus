@@ -161,6 +161,7 @@ io.on('connection', (socket) => {
         return { weapon: p.weapon, subclass: p.subclass };
       })(),
       ...(typeof room._getDeepSanctumPayloadFields === 'function' ? room._getDeepSanctumPayloadFields() : {}),
+      ...(typeof room._getEdenPayloadFields === 'function' ? room._getEdenPayloadFields() : {}),
     });
 
     if (typeof room.isInCoopThronePrep === 'function' && room.isInCoopThronePrep()) {
@@ -277,6 +278,10 @@ io.on('connection', (socket) => {
       ok = room.activateDevBoss3Arena();
     } else if (room.isInCoopThronePrep()) {
       ok = room.beginIntroRoom(1);
+    } else if (room.coopSunkenPortalOpen && room.coopSunkenActive) {
+      ok = room.beginSunkenRoom(room.coopSunkenRoomIndex + 1);
+    } else if (room.coopSunkenFountainPhase && room.coopSunkenFountainUsed && room.coopSunkenLootPhaseComplete) {
+      ok = room.enterMainLoopAfterSunken(chosenCampType);
     } else if (room.coopIntroPortalOpen && room.coopIntroActive) {
       ok = room.beginIntroRoom(room.coopIntroRoomIndex + 1);
     } else if (room.coopIntroFountainPhase && room.coopIntroFountainUsed && room.coopIntroAllyChoiceMade) {
@@ -316,6 +321,20 @@ io.on('connection', (socket) => {
     const ok = room.chooseCoopAlly(socket.id, allyKind);
     if (ok) {
       socket.emit('coop-choose-ally-success', { roomId, allyKind: room.coopAllyKind, timestamp: Date.now() });
+    }
+  });
+
+  socket.on('coop-choose-sunken-loot', (data) => {
+    const { roomId, stockId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    if (!room.getPlayer(socket.id)) return;
+    if (typeof room.chooseSunkenTempleLoot !== 'function') return;
+
+    const ok = room.chooseSunkenTempleLoot(socket.id, stockId);
+    if (ok) {
+      socket.emit('coop-choose-sunken-loot-success', { roomId, stockId, timestamp: Date.now() });
     }
   });
 

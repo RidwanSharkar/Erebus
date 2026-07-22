@@ -21,6 +21,8 @@ interface RunebladeProps {
   isCorruptedAuraActive?: boolean;
   /** Crusader talent — use corrupted-aura palette on blade only (F aura / CorruptedAura VFX unchanged). */
   crusaderBladeThemeActive?: boolean;
+  /** Titan's Grip — permanent red blade palette (Crusader/Corrupted Aura override). */
+  titansGripBladeThemeActive?: boolean;
   chargeDirectionProp?: Vector3;
   onSwingComplete?: () => void;
   onSmiteComplete?: () => void;
@@ -98,8 +100,12 @@ interface RunebladeProps {
   getExecutionerFlatBonus?: () => number;
   /** Local: Crusader talent — additive base damage while buff is active (not consumed per swing). */
   getCrusaderLmbFlatBonus?: () => number;
+  /** Local: Titan's Grip — +2 base damage per Strength on each combo strike. */
+  getTitansGripLmbFlatBonus?: () => number;
   /** Local: Blizzard class talent — storm active while ControlSystem window is up. */
   getBlizzardTalentActive?: () => boolean;
+  /** Local: Runeblade Blizzard — stat-scaled tick damage (42 + 1 per STR/STA/INT/AGI). */
+  getBlizzardDamagePerTick?: () => number;
   /** Local: Awakened Eye — scaled storm hit radius. */
   getBlizzardStormHitRadius?: () => number;
   /** Local: Awakened Eye — denser frost particles. */
@@ -116,6 +122,7 @@ export default function Runeblade({
   isDeflecting = false,
   isCorruptedAuraActive = false,
   crusaderBladeThemeActive = false,
+  titansGripBladeThemeActive = false,
   chargeDirectionProp,
   onSwingComplete,
   onSmiteComplete,
@@ -146,7 +153,9 @@ export default function Runeblade({
   onMushroomHit,
   getExecutionerFlatBonus,
   getCrusaderLmbFlatBonus,
+  getTitansGripLmbFlatBonus,
   getBlizzardTalentActive,
+  getBlizzardDamagePerTick,
   getBlizzardStormHitRadius,
   getBlizzardParticleSpawnMultiplier,
 }: RunebladeProps) {
@@ -154,18 +163,35 @@ export default function Runeblade({
   const [blizzardMountKey, setBlizzardMountKey] = useState(0);
   const blizzardEdgeRef = useRef(false);
 
-  const useCorruptedPalette = isCorruptedAuraActive || crusaderBladeThemeActive;
-  // Color scheme: F-key Corrupted Aura or Crusader talent blade theme.
-  // Memoized so that frequent re-renders driven by enemyData prop updates
-  // don't allocate four new Color objects on every render cycle.
+  const useCrusaderOrCorruptedPalette = isCorruptedAuraActive || crusaderBladeThemeActive;
+  const useTitansGripPalette = titansGripBladeThemeActive && !useCrusaderOrCorruptedPalette;
+  // Color scheme: F-key Corrupted Aura or Crusader talent blade theme; Titan's Grip red when neither.
   const { primaryColor, primaryEmissive, secondaryColor, secondaryEmissive } = useMemo(
-    () => ({
-      primaryColor:    useCorruptedPalette ? new Color('#ffaa00') : new Color(0x1097B5),
-      primaryEmissive: useCorruptedPalette ? new Color('#ff8800') : new Color(0x1097B5),
-      secondaryColor:  useCorruptedPalette ? new Color('#ff8800') : new Color(0x87CEEB),
-      secondaryEmissive: useCorruptedPalette ? new Color('#ff6600') : new Color(0x4682B4),
-    }),
-    [useCorruptedPalette],
+    () => {
+      if (useCrusaderOrCorruptedPalette) {
+        return {
+          primaryColor: new Color('#ffaa00'),
+          primaryEmissive: new Color('#ff8800'),
+          secondaryColor: new Color('#ff8800'),
+          secondaryEmissive: new Color('#ff6600'),
+        };
+      }
+      if (useTitansGripPalette) {
+        return {
+          primaryColor: new Color('#B51010'),
+          primaryEmissive: new Color('#cc2222'),
+          secondaryColor: new Color('#EE6666'),
+          secondaryEmissive: new Color('#aa3333'),
+        };
+      }
+      return {
+        primaryColor: new Color(0x1097B5),
+        primaryEmissive: new Color(0x1097B5),
+        secondaryColor: new Color(0x87CEEB),
+        secondaryEmissive: new Color(0x4682B4),
+      };
+    },
+    [useCrusaderOrCorruptedPalette, useTitansGripPalette],
   );
 
   const runebladeRef = useRef<Group>(null);
@@ -1028,8 +1054,16 @@ export default function Runeblade({
   const performSwingDamage = (comboStep: 1 | 2 | 3) => {
     const execBonus = getExecutionerFlatBonus?.() ?? 0;
     const crusaderBonus = getCrusaderLmbFlatBonus?.() ?? 0;
+    const titansGripBonus = getTitansGripLmbFlatBonus?.() ?? 0;
     if (!playerPosition) return;
     if (!enemyData.length && !mushroomTargets?.length) return;
+
+    const cs = (window as any).controlSystemRef?.current;
+    if (cs?.tryFireScorpionLanceShardIfArmed && playerPosition) {
+      const yaw = playerRotation?.y ?? 0;
+      const forward = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+      cs.tryFireScorpionLanceShardIfArmed(playerPosition, forward);
+    }
 
     const now = Date.now();
 
@@ -1039,7 +1073,7 @@ export default function Runeblade({
       3: 70,
     };
 
-    const baseDamage = damageValues[comboStep] + execBonus + crusaderBonus;
+    const baseDamage = damageValues[comboStep] + execBonus + crusaderBonus + titansGripBonus;
 
     let enemiesHitThisSwing = 0;
     let mushroomsHitThisSwing = 0;
@@ -1315,7 +1349,7 @@ export default function Runeblade({
         key={blizzardMountKey}
         position={new Vector3(0, 0, 0)}
         durationSeconds={BLIZZARD_DURATION_SEC}
-        flatDamagePerTick={BLIZZARD_DPS_PER_TICK}
+        flatDamagePerTick={getBlizzardDamagePerTick?.() ?? BLIZZARD_DPS_PER_TICK}
         hitRadius={getBlizzardStormHitRadius?.() ?? BLIZZARD_STORM_HIT_RADIUS}
         particleSpawnMultiplier={getBlizzardParticleSpawnMultiplier?.() ?? 1}
         onComplete={() => {}}

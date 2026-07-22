@@ -3,6 +3,7 @@ import { Component } from '../Entity';
 import { Vector3 } from '@/utils/three-exports';
 import { addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
 import { addGlobalIgnitedEnemy } from '@/components/weapons/IgniteEffectManager';
+import { isImmuneToPlayerStunAndFreeze } from '@/utils/enemyStatusImmunity';
 import {
   WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK,
   WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC,
@@ -95,6 +96,9 @@ export class Enemy extends Component {
   public concentratedVenomStacks: number;
   public concentratedVenomEndTime: number;
   public lastConcentratedVenomTickTime: number;
+
+  /** Wyvern Amethyst — Needler stacks (max 4, burst at cap). */
+  public needlerStacks: number;
   
   // Sunder stacks effect
   public sunderStacks: number;
@@ -163,6 +167,8 @@ export class Enemy extends Component {
     this.concentratedVenomStacks = 0;
     this.concentratedVenomEndTime = 0;
     this.lastConcentratedVenomTickTime = 0;
+
+    this.needlerStacks = 0;
     
     // Initialize sunder stacks
     this.sunderStacks = 0;
@@ -292,6 +298,7 @@ export class Enemy extends Component {
   
   public freeze(duration: number, currentTime: number, coopServerEnemyType?: string | null): void {
     if (this.isDead) return; // Can't freeze dead enemies
+    if (isImmuneToPlayerStunAndFreeze(coopServerEnemyType)) return;
 
     const effective = capFreezeSecForEnemy(this, duration, coopServerEnemyType);
     this.isFrozen = true;
@@ -309,8 +316,9 @@ export class Enemy extends Component {
     this.movementSpeed = this.originalMovementSpeed;
   }
 
-  public stun(duration: number, currentTime: number): void {
+  public stun(duration: number, currentTime: number, coopServerEnemyType?: string | null): void {
     if (this.isDead) return; // Can't stun dead enemies
+    if (isImmuneToPlayerStunAndFreeze(coopServerEnemyType)) return;
 
     this.isStunned = true;
     this.stunStartTime = currentTime;
@@ -404,9 +412,11 @@ export class Enemy extends Component {
     if (this.chillStacks >= CHILL_STACKS_TO_FREEZE) {
       this.chillStacks = 0;
       this.chillExpiresAtSec = 0;
-      this.freeze(freezeDurationSec, currentTime, coopServerEnemyType);
-      const vfxMs = capFreezeMsForEnemy(this, freezeDurationSec * 1000, coopServerEnemyType);
-      addGlobalFrozenEnemy(ecsEntityIdForVfx, position.clone(), vfxMs);
+      if (!isImmuneToPlayerStunAndFreeze(coopServerEnemyType)) {
+        this.freeze(freezeDurationSec, currentTime, coopServerEnemyType);
+        const vfxMs = capFreezeMsForEnemy(this, freezeDurationSec * 1000, coopServerEnemyType);
+        addGlobalFrozenEnemy(ecsEntityIdForVfx, position.clone(), vfxMs);
+      }
     }
   }
 
@@ -595,6 +605,16 @@ export class Enemy extends Component {
     const remainingSec = this.concentratedVenomEndTime - currentTime;
     const dps = this.concentratedVenomStacks * WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK;
     return Math.max(0, Math.floor(remainingSec * dps));
+  }
+
+  public applyNeedlerStack(maxStacks: number = 4): number {
+    if (this.isDead) return this.needlerStacks;
+    this.needlerStacks = Math.min(maxStacks, this.needlerStacks + 1);
+    return this.needlerStacks;
+  }
+
+  public clearNeedlerStacks(): void {
+    this.needlerStacks = 0;
   }
   
   public applySunderStack(currentTime: number): void {
