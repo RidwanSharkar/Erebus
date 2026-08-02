@@ -17,6 +17,7 @@ export type CoopLightningBurstLayerHandle = {
   addBoss2ArchonLightning: (bolt: Boss2ArchonLightningState) => void;
   addWarlockArchonShock: (bolt: Boss2ArchonLightningState) => void;
   addKnightStormLashZap: (bolt: Boss2ArchonLightningState) => void;
+  addShamanStormShockZap: (bolt: Boss2ArchonLightningState) => void;
   addKnightSmiteLightning: (fx: KnightSmiteLightningState) => void;
   addStaggerProcEffect: (fx: StaggerProcEffectState) => void;
   addRoomBoomLightningEffect: (effect: RoomBoomLightningEffectState) => void;
@@ -27,6 +28,7 @@ const CoopLightningBurstLayer = memo(forwardRef<CoopLightningBurstLayerHandle, o
     const [boss2ArchonLightnings, setBoss2ArchonLightnings] = useState<Boss2ArchonLightningState[]>([]);
     const [warlockArchonShocks, setWarlockArchonShocks] = useState<Boss2ArchonLightningState[]>([]);
     const [knightStormLashZaps, setKnightStormLashZaps] = useState<Boss2ArchonLightningState[]>([]);
+    const [shamanStormShockZaps, setShamanStormShockZaps] = useState<Boss2ArchonLightningState[]>([]);
     const [knightSmiteLightnings, setKnightSmiteLightnings] = useState<KnightSmiteLightningState[]>([]);
     const [staggerProcEffects, setStaggerProcEffects] = useState<StaggerProcEffectState[]>([]);
     const [roomBoomLightningEffects, setRoomBoomLightningEffects] = useState<RoomBoomLightningEffectState[]>([]);
@@ -35,6 +37,7 @@ const CoopLightningBurstLayer = memo(forwardRef<CoopLightningBurstLayerHandle, o
       setBoss2ArchonLightnings([]);
       setWarlockArchonShocks([]);
       setKnightStormLashZaps([]);
+      setShamanStormShockZaps([]);
       setKnightSmiteLightnings([]);
       setStaggerProcEffects([]);
       setRoomBoomLightningEffects([]);
@@ -50,6 +53,10 @@ const CoopLightningBurstLayer = memo(forwardRef<CoopLightningBurstLayerHandle, o
 
     const addKnightStormLashZap = useCallback((bolt: Boss2ArchonLightningState) => {
       setKnightStormLashZaps((prev) => [...prev, bolt]);
+    }, []);
+
+    const addShamanStormShockZap = useCallback((bolt: Boss2ArchonLightningState) => {
+      setShamanStormShockZaps((prev) => [...prev, bolt]);
     }, []);
 
     const addKnightSmiteLightning = useCallback((fx: KnightSmiteLightningState) => {
@@ -69,6 +76,7 @@ const CoopLightningBurstLayer = memo(forwardRef<CoopLightningBurstLayerHandle, o
       addBoss2ArchonLightning,
       addWarlockArchonShock,
       addKnightStormLashZap,
+      addShamanStormShockZap,
       addKnightSmiteLightning,
       addStaggerProcEffect,
       addRoomBoomLightningEffect,
@@ -77,6 +85,7 @@ const CoopLightningBurstLayer = memo(forwardRef<CoopLightningBurstLayerHandle, o
       addBoss2ArchonLightning,
       addWarlockArchonShock,
       addKnightStormLashZap,
+      addShamanStormShockZap,
       addKnightSmiteLightning,
       addStaggerProcEffect,
       addRoomBoomLightningEffect,
@@ -114,6 +123,18 @@ const CoopLightningBurstLayer = memo(forwardRef<CoopLightningBurstLayerHandle, o
             vfxScale={bolt.vfxScale ?? 1}
             theme="knight-storm-blue"
             onComplete={() => setKnightStormLashZaps(prev => prev.filter(x => x.id !== bolt.id))}
+          />
+        ))}
+
+        {shamanStormShockZaps.map((bolt) => (
+          <Boss2ArchonLightning
+            key={bolt.id}
+            beams={bolt.beams}
+            strikeAt={bolt.strikeAt}
+            halfWidth={bolt.halfWidth}
+            vfxScale={bolt.vfxScale ?? 1}
+            theme="knight-storm-blue"
+            onComplete={() => setShamanStormShockZaps(prev => prev.filter(x => x.id !== bolt.id))}
           />
         ))}
 

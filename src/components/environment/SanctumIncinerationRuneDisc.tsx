@@ -25,11 +25,23 @@ const REF_BAND_MID = ((20 + 24.7) / 2) * LIKED_FLOOR_SCALE;
 const REF_GLYPH_COUNT = 30;
 
 /** Outer rim slightly inset from the castle floor edge. */
-const BAND_OUTER = CASTLE_ROOM_HALF_SIZE + 0.5;
-const BAND_INNER = BAND_OUTER - BAND_THICKNESS;
+export const SANCTUM_RUNE_BAND_OUTER = CASTLE_ROOM_HALF_SIZE + 0.5;
+export const SANCTUM_RUNE_BAND_INNER = SANCTUM_RUNE_BAND_OUTER - BAND_THICKNESS;
+const BAND_OUTER = SANCTUM_RUNE_BAND_OUTER;
+const BAND_INNER = SANCTUM_RUNE_BAND_INNER;
 const BAND_MID = (BAND_INNER + BAND_OUTER) / 2;
 const SANCTUM_GLYPH_COUNT = Math.round(REF_GLYPH_COUNT * (BAND_MID / REF_BAND_MID));
 const FLOOR_Y = 0.0175;
+
+/** Scale so the outer band edge meets `outerRadius` (Inner Sanctum / main arena convention). */
+export function sanctumRuneDiscScaleForBandOuter(outerRadius: number): number {
+  return outerRadius / (CASTLE_ROOM_HALF_SIZE + 0.55);
+}
+
+/** Scale so the inner band edge meets `innerRadius` (e.g. grass disc perimeter). */
+export function sanctumRuneDiscScaleForBandInner(innerRadius: number): number {
+  return innerRadius / SANCTUM_RUNE_BAND_INNER;
+}
 
 const RING_SEGMENTS = 64;
 const SANCTUM_INNER_RUNE_SPIN = 0.00004;
@@ -111,7 +123,23 @@ function getSharedResources() {
  * Uses a sanctum-specific rune texture (more glyphs, same band thickness);
  * keeps module-level geometries/materials so remounts don't allocate or leak.
  */
-function SanctumIncinerationRuneDisc() {
+interface SanctumIncinerationRuneDiscProps {
+  /** Uniform scale — default matches Inner Sanctum sizing. */
+  scale?: number;
+  /** Multiplier on default inner rune rotation speed. */
+  innerSpinScale?: number;
+  /** Multiplier on default outer rune rotation speed. */
+  outerSpinScale?: number;
+  /** World offset — default sits flush on the sanctum floor. */
+  position?: [number, number, number];
+}
+
+function SanctumIncinerationRuneDisc({
+  scale = 1,
+  innerSpinScale = 1,
+  outerSpinScale = 1,
+  position = [0, FLOOR_Y, 0],
+}: SanctumIncinerationRuneDiscProps = {}) {
   const innerRunesRef = useRef<Group>(null);
   const outerRunesRef = useRef<Group>(null);
   const resources = getSharedResources();
@@ -120,17 +148,17 @@ function SanctumIncinerationRuneDisc() {
     const t = clock.elapsedTime * 1000;
 
     if (innerRunesRef.current) {
-      innerRunesRef.current.rotation.y = t * SANCTUM_INNER_RUNE_SPIN;
+      innerRunesRef.current.rotation.y = t * SANCTUM_INNER_RUNE_SPIN * innerSpinScale;
     }
     if (outerRunesRef.current) {
-      outerRunesRef.current.rotation.y = t * SANCTUM_OUTER_RUNE_SPIN;
+      outerRunesRef.current.rotation.y = t * SANCTUM_OUTER_RUNE_SPIN * outerSpinScale;
     }
     resources.outerGlowMat.emissiveIntensity = 2.2 + Math.sin(t * 0.004) * 0.5;
     resources.innerGlowMat.emissiveIntensity = 2.8 + Math.cos(t * 0.005) * 0.4;
   });
 
   return (
-    <group name="sanctum-incineration-rune-disc" position={[0, FLOOR_Y, 0]}>
+    <group name="sanctum-incineration-rune-disc" position={position} scale={scale}>
       <group ref={innerRunesRef} position={[0, 0.002, 0]}>
         <mesh
           rotation={[-Math.PI / 2, 0, 0]}

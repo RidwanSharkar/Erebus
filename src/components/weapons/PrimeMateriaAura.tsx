@@ -15,6 +15,12 @@ import {
 } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { CompactPurpleBorderEffects } from '@/components/environment/SimpleBorderEffects';
+import {
+  createVoidDragSystem,
+  createVoidMawMaterial,
+  createVoidRimGlowMaterial,
+  type VoidEffectPalette,
+} from '@/utils/voidMawEffects';
 
 interface PrimeMateriaAuraProps {
   parentRef: React.RefObject<Group>;
@@ -26,11 +32,21 @@ const PARTICLE_ANGLES = [
   Math.PI, (Math.PI * 5) / 4, (Math.PI * 3) / 2, (Math.PI * 7) / 4,
 ] as const;
 
+/** Rotating triangle rings — larger red remake of SpellCastingAura outer triangles. */
+const TRIANGLE_ROTATIONS = [0, Math.PI / 2, Math.PI, Math.PI * 1.5] as const;
+/** Spell circle uses 0.85–1.0; ~3.2× radius, thinner band than a straight scale. */
+const TRI_INNER = 2.5;
+const TRI_OUTER = 2.85;
+const TRIANGLE_BASE_OPACITY = 0.6;
+
 /** Inscribed rune band radii — sits within the 3.0–4.5m aura footprint. */
 const BAND_INNER = 3.18;
 const BAND_OUTER = 3.58;
 const BAND_MID = (BAND_INNER + BAND_OUTER) / 2;
 const RIM_LINE_WIDTH = 0.045;
+/** Dark maw fills the empty center up to the annular glow inner edge. */
+const AURA_MAW_RADIUS = 3.0;
+const AURA_MAW_Y = -0.37;
 
 const SPIKE_ANGLES = Array.from({ length: 6 }, (_, i) => (i / 6) * Math.PI * 2) as number[];
 
@@ -43,6 +59,13 @@ const RED_DEEP = '#991b1b';
 const RED_GLOW = '#f74f4f';
 const RED_ACCENT = '#fca5a5';
 
+/** Void maw / drag particle colors — matches VoidPortal boss (red) scheme. */
+const PRIME_MATERIA_VOID_PALETTE: VoidEffectPalette = {
+  energyDim: [0.18, 0.0, 0.02],
+  energyBright: [1.0, 0.16, 0.16],
+  particleDim: [0.15, 0.0, 0.02],
+  particleBright: [1.0, 0.1, 0.1],
+};
 const sharedSpikeGeo = new OctahedronGeometry(1, 0);
 
 /** Spinning bone ring — instanced shafts + joint caps (shared geo/mat, not disposed on unmount). */
@@ -53,7 +76,7 @@ const sharedJointGeo = new SphereGeometry(0.065, 5, 5);
 const sharedBoneMat = new MeshStandardMaterial({
   color: '#f5f0e8',
   emissive: RED_ACCENT,
-  emissiveIntensity: 1.6,
+  emissiveIntensity: 0.6,
   roughness: 0.38,
   metalness: 0.15,
   transparent: true,
@@ -210,6 +233,7 @@ const PrimeMateriaAura = forwardRef<{ isActive: boolean }, PrimeMateriaAuraProps
   const midRunesRef = useRef<Group>(null);
   const outerRunesRef = useRef<Group>(null);
   const halfRimsRef = useRef<Group>(null);
+  const triangleSpinRef = useRef<Group>(null);
   const borderSpinRef = useRef<Group>(null);
   const particleGroupRefs = useRef<(Group | null)[]>([]);
   const outerDiscMatRef = useRef<MeshStandardMaterial>(null);
@@ -235,6 +259,19 @@ const PrimeMateriaAura = forwardRef<{ isActive: boolean }, PrimeMateriaAuraProps
   );
   const boneMat = useMemo(() => sharedBoneMat.clone(), []);
 
+  const mawMaterial = useMemo(
+    () => createVoidMawMaterial(PRIME_MATERIA_VOID_PALETTE),
+    [],
+  );
+  const rimGlowMaterial = useMemo(
+    () => createVoidRimGlowMaterial(PRIME_MATERIA_VOID_PALETTE),
+    [],
+  );
+  const { dragGeo, dragMat } = useMemo(
+    () => createVoidDragSystem(AURA_MAW_RADIUS, PRIME_MATERIA_VOID_PALETTE),
+    [],
+  );
+
   isActiveRef.current = isActive;
   shouldRenderRef.current = shouldRender;
 
@@ -257,6 +294,15 @@ const PrimeMateriaAura = forwardRef<{ isActive: boolean }, PrimeMateriaAuraProps
     updateBoneRingInstances(bonesMesh, boneJointsInstRef.current, 0, 0);
   }, [shouldRender]);
 
+  useEffect(() => {
+    return () => {
+      mawMaterial.dispose();
+      rimGlowMaterial.dispose();
+      dragGeo.dispose();
+      dragMat.dispose();
+    };
+  }, [mawMaterial, rimGlowMaterial, dragGeo, dragMat]);
+
   useFrame((_, delta) => {
     if (!auraRef.current || !parentRef.current) return;
 
@@ -275,7 +321,7 @@ const PrimeMateriaAura = forwardRef<{ isActive: boolean }, PrimeMateriaAuraProps
     }
 
     auraRef.current.traverse((child: any) => {
-      if (child.isMesh && child.material?.transparent) {
+      if (child.isMesh && child.material?.transparent && !child.material.isShaderMaterial) {
         const base: number = child.userData.baseOpacity ?? child.material.opacity;
         if (child.userData.baseOpacity === undefined) {
           child.userData.baseOpacity = child.material.opacity;
@@ -291,6 +337,16 @@ const PrimeMateriaAura = forwardRef<{ isActive: boolean }, PrimeMateriaAuraProps
     }
 
     const t = timeRef.current * 1000;
+    const open = opacityRef.current;
+
+    mawMaterial.uniforms.uTime.value = timeRef.current;
+    mawMaterial.uniforms.uOpen.value = open;
+    rimGlowMaterial.uniforms.uTime.value = timeRef.current;
+    rimGlowMaterial.uniforms.uOpen.value = open;
+    dragMat.uniforms.uTime.value = timeRef.current;
+    dragMat.uniforms.uOpen.value = open;
+    dragMat.uniforms.uPortalRadius.value = AURA_MAW_RADIUS;
+    dragMat.uniforms.uEffectHeightOffset.value = 0;
 
     if (innerRunesRef.current) {
       innerRunesRef.current.rotation.y = t * 0.0005;
@@ -307,15 +363,18 @@ const PrimeMateriaAura = forwardRef<{ isActive: boolean }, PrimeMateriaAuraProps
     if (halfRimsRef.current) {
       halfRimsRef.current.rotation.y = -t * 0.0006;
     }
+    if (triangleSpinRef.current) {
+      triangleSpinRef.current.rotation.y = t * 0.0008;
+    }
     if (borderSpinRef.current) {
       borderSpinRef.current.rotation.y = -t * 0.00045;
     }
 
     if (outerDiscMatRef.current) {
-      outerDiscMatRef.current.emissiveIntensity = 2.0 + Math.sin(t * 0.003) * 0.4;
+      outerDiscMatRef.current.emissiveIntensity = 0.5;
     }
     if (innerDiscMatRef.current) {
-      innerDiscMatRef.current.emissiveIntensity = 2.5 + Math.cos(t * 0.004) * 0.3;
+      innerDiscMatRef.current.emissiveIntensity = 0.5;
     }
 
     for (let i = 0; i < PARTICLE_ANGLES.length; i++) {
@@ -359,16 +418,41 @@ const PrimeMateriaAura = forwardRef<{ isActive: boolean }, PrimeMateriaAuraProps
 
   return (
     <group ref={auraRef}>
-      {/* Glyph-inscribed rune band — slow spin */}
-      <group ref={innerRunesRef} position={[0, -0.4, 0]}>
-        <mesh
-          rotation={[-Math.PI / 2, 0, 0]}
-          material={runeBandMaterial}
-          userData={{ baseOpacity: RUNE_BAND_BASE_OPACITY }}
-        >
-          <ringGeometry args={[BAND_INNER, BAND_OUTER, 64]} />
+      {/* Dark void maw + red rim energy + inward void-drag particles */}
+      <group position={[0, AURA_MAW_Y, 0]} scale={[0.825, 0.825, 0.825]}>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
+          <circleGeometry args={[AURA_MAW_RADIUS, 48]} />
+          <primitive object={mawMaterial} attach="material" />
         </mesh>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]} renderOrder={2}>
+          <circleGeometry args={[AURA_MAW_RADIUS, 48]} />
+          <primitive object={rimGlowMaterial} attach="material" />
+        </mesh>
+        <points geometry={dragGeo} material={dragMat} frustumCulled={false} renderOrder={4} />
       </group>
+
+      {/* Large rotating triangle rings — scaled SpellCastingAura outer triangles, red */}
+      <group ref={triangleSpinRef} position={[0, -0.43, 0]}>
+        {TRIANGLE_ROTATIONS.map((rotation, i) => (
+          <mesh
+            key={`triangle-${i}`}
+            rotation={[-Math.PI / 2, 0, rotation]}
+            userData={{ baseOpacity: TRIANGLE_BASE_OPACITY }}
+          >
+            <ringGeometry args={[TRI_INNER, TRI_OUTER, 3]} />
+            <meshStandardMaterial
+              color={RED_GLOW}
+              emissive={RED_CORE}
+              emissiveIntensity={1}
+              transparent
+              opacity={TRIANGLE_BASE_OPACITY}
+              depthWrite={false}
+            />
+          </mesh>
+        ))}
+      </group>
+
+
 
       {/* Half-scale glyph band — counter-rotate */}
       <group ref={halfRunesRef} position={[0, -0.39, 0]} scale={[0.5, 0.5, 0.5]}>
@@ -381,127 +465,35 @@ const PrimeMateriaAura = forwardRef<{ isActive: boolean }, PrimeMateriaAuraProps
         </mesh>
       </group>
 
-      {/* Diamond rune-stone spikes — counter-rotate */}
-      <group ref={midRunesRef} position={[0, -0.38, 0]} scale={[0.65, 0.65, 0.65]}>
-        {SPIKE_ANGLES.map((angle, i) => (
-          <group
-            key={`spike-${i}`}
-            position={[Math.cos(angle) * BAND_MID, 0, Math.sin(angle) * BAND_MID]}
-            rotation={[0, Math.PI / 2 - angle, 0]}
-          >
-            <mesh
-              rotation={[Math.PI / 2, 0, 0]}
-              scale={[0.42, 0.14, 0.05]}
-              geometry={sharedSpikeGeo}
-              userData={{ baseOpacity: 0.55 }}
-            >
-              <meshStandardMaterial
-                color={RED_DEEP}
-                emissive={RED_CORE}
-                emissiveIntensity={1.4}
-                transparent
-                opacity={0.55}
-                depthWrite={false}
-              />
-            </mesh>
-
-          </group>
-        ))}
-      </group>
-
-      {/* Crisp bright rim lines at band edges */}
-      <group ref={outerRunesRef} position={[0, -0.42, 0]}>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} userData={{ baseOpacity: 0.9 }}>
-          <ringGeometry args={[BAND_INNER - RIM_LINE_WIDTH, BAND_INNER, 64]} />
-          <meshStandardMaterial
-            color={RED_CORE}
-            emissive={RED_GLOW}
-            emissiveIntensity={2.4}
-            transparent
-            opacity={0.9}
-            depthWrite={false}
-          />
-        </mesh>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} userData={{ baseOpacity: 0.95 }}>
-          <ringGeometry args={[BAND_OUTER, BAND_OUTER + RIM_LINE_WIDTH, 64]} />
-          <meshStandardMaterial
-            color={RED_GLOW}
-            emissive={RED_ACCENT}
-            emissiveIntensity={2.6}
-            transparent
-            opacity={0.95}
-            depthWrite={false}
-          />
-        </mesh>
-      </group>
 
       {/* Half-scale rim lines — counter-rotate */}
-      <group ref={halfRimsRef} position={[0, -0.41, 0]} scale={[0.5, 0.5, 0.5]}>
+      <group ref={halfRimsRef} position={[0, -0.41, 0]} scale={[0.625, 0.625, 0.625]}>
         <mesh rotation={[-Math.PI / 2, 0, 0]} userData={{ baseOpacity: 0.9 }}>
           <ringGeometry args={[BAND_INNER - RIM_LINE_WIDTH, BAND_INNER, 64]} />
           <meshStandardMaterial
             color={RED_CORE}
             emissive={RED_GLOW}
-            emissiveIntensity={2.4}
-            transparent
-            opacity={0.9}
-            depthWrite={false}
-          />
-        </mesh>
-        <mesh rotation={[-Math.PI / 2, 0, 0]} userData={{ baseOpacity: 0.95 }}>
-          <ringGeometry args={[BAND_OUTER, BAND_OUTER + RIM_LINE_WIDTH, 64]} />
-          <meshStandardMaterial
-            color={RED_GLOW}
-            emissive={RED_ACCENT}
-            emissiveIntensity={2.6}
-            transparent
-            opacity={0.95}
-            depthWrite={false}
-          />
-        </mesh>
-      </group>
-
-      {/* Thin annular glow discs — donut fill, no solid center */}
-      <group position={[0, -0.36, 0]}>
-        <mesh scale={[1, 0.08, 1]} userData={{ baseOpacity: 0.35 }}>
-          <ringGeometry args={[3.0, 4.5, 48]} />
-          <meshStandardMaterial
-            ref={outerDiscMatRef}
-            color={RED_DEEP}
-            emissive={RED_CORE}
-            emissiveIntensity={2.0}
-            transparent
-            opacity={0.35}
-            depthWrite={false}
-          />
-        </mesh>
-        <mesh scale={[1, 0.06, 1]} userData={{ baseOpacity: 0.4 }}>
-          <ringGeometry args={[3.4, 4.2, 32]} />
-          <meshStandardMaterial
-            ref={innerDiscMatRef}
-            color={RED_GLOW}
-            emissive={RED_ACCENT}
-            emissiveIntensity={2.5}
+            emissiveIntensity={0.4}
             transparent
             opacity={0.4}
             depthWrite={false}
           />
         </mesh>
+        <mesh rotation={[-Math.PI / 2, 0, 0]} userData={{ baseOpacity: 0.95 }}>
+          <ringGeometry args={[BAND_OUTER, BAND_OUTER + RIM_LINE_WIDTH, 64]} />
+          <meshStandardMaterial
+            color={RED_GLOW}
+            emissive={RED_ACCENT}
+            emissiveIntensity={0.6}
+            transparent
+            opacity={0.95}
+            depthWrite={false}
+          />
+        </mesh>
       </group>
 
 
-      {/* Miniature moving border effects at the 4.5m rim */}
-      <group ref={borderSpinRef} position={[0, -0.4, 0]}>
-        <CompactPurpleBorderEffects
-          radius={2.7}
-          count={16}
-          enableParticles
-          particleCount={16}
-          borderTheme="red"
-          variant="minimal"
-        />
-      </group>
-      
+
 
 
 

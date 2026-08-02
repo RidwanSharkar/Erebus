@@ -31,11 +31,14 @@ function handleEnemyEvents(socket, gameRooms) {
       glacialTalons,
       icebeamArcticChill,
       entanglementBarrage,
+      rejuvenatingShotEntangle,
       rebukeRoom,
       cloudkill,
       tempestBurstArcticChill,
       tempestBurstWyvernZombie,
       explosiveTalonsDetonation,
+      tempestSweepIgnite,
+      archmageEntropicIgnite,
     } = data;
 
     if (process.env.NODE_ENV !== 'production') {
@@ -101,6 +104,9 @@ function handleEnemyEvents(socket, gameRooms) {
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
         hitMeta.staggerToAdd = staggerToAdd;
       }
+    } else if (damageType === 'rejuvenating_shot') {
+      hitMeta = { damageType: 'rejuvenating_shot' };
+      if (rejuvenatingShotEntangle) hitMeta.rejuvenatingShotEntangle = true;
     } else if (damageType === 'venom') {
       hitMeta = {
         damageType: 'venom',
@@ -139,6 +145,11 @@ function handleEnemyEvents(socket, gameRooms) {
       if (infestedFlourish) hitMeta.infestedFlourish = true;
     } else if (damageType === 'fire_affinity_storm') {
       hitMeta = { damageType: 'fire_affinity_storm' };
+    } else if (damageType === 'fire_affinity_skyfall') {
+      hitMeta = { damageType: 'fire_affinity_skyfall' };
+    } else if (damageType === 'whirlwind') {
+      hitMeta = { damageType: 'whirlwind' };
+      if (tempestSweepIgnite) hitMeta.tempestSweepIgnite = true;
     } else if (damageType === 'fan_of_knives') {
       hitMeta = { damageType: 'fan_of_knives' };
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
@@ -181,6 +192,7 @@ function handleEnemyEvents(socket, gameRooms) {
       if (data.entropicWrathful) hitMeta.entropicWrathful = true;
       if (data.entropicInfesting) hitMeta.entropicInfesting = true;
       if (frostTotemChill) hitMeta.frostTotemChill = true;
+      if (archmageEntropicIgnite) hitMeta.archmageEntropicIgnite = true;
     } else if (damageType === 'icebeam') {
       hitMeta = { damageType: 'icebeam' };
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
@@ -195,6 +207,8 @@ function handleEnemyEvents(socket, gameRooms) {
       hitMeta = { damageType: 'locust' };
     } else if (damageType === 'deflect_smite') {
       hitMeta = { damageType: 'deflect_smite' };
+    } else if (damageType === 'hatemail') {
+      hitMeta = { damageType: 'hatemail' };
     }
     room.damageEnemy(enemyId, damage, actualSourcePlayerId, player, hitMeta);
   });
@@ -218,6 +232,18 @@ function handleEnemyEvents(socket, gameRooms) {
     const room = gameRooms.get(roomId);
     const player = room.players?.get(socket.id);
     if (!player?.coopStaggerRoomBoons?.tyrantsCloak) return;
+    if (typeof room._triggerStaggerLightningProc !== 'function') return;
+    room._triggerStaggerLightningProc(enemyId, socket.id, player);
+  });
+
+  /** Deathdealer warhammer — third combo hit 25% chance stagger lightning bolt. */
+  socket.on('deathdealer-stagger-proc', (data) => {
+    const { roomId, enemyId } = data || {};
+    if (!roomId || !enemyId) return;
+    if (!gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    const player = room.players?.get(socket.id);
+    if (!player || player.weaponAspect !== 'DEATHDEALER') return;
     if (typeof room._triggerStaggerLightningProc !== 'function') return;
     room._triggerStaggerLightningProc(enemyId, socket.id, player);
   });
@@ -258,7 +284,7 @@ function handleEnemyEvents(socket, gameRooms) {
     const targetEnemy = room.getEnemy?.(enemyId);
     if (
       targetEnemy &&
-      (targetEnemy.alliedUnit === true || targetEnemy.type === 'player-zombie') &&
+      (targetEnemy.alliedUnit === true || targetEnemy.type === 'player-zombie' || targetEnemy.type === 'vengeful-spirit') &&
       ['freeze', 'stun', 'corrupted', 'entangle', 'ignite'].includes(effectType)
     ) {
       return;
@@ -270,7 +296,10 @@ function handleEnemyEvents(socket, gameRooms) {
     ) {
       return;
     }
-    const success = room.applyStatusEffect(enemyId, effectType, duration, { source });
+    const success = room.applyStatusEffect(enemyId, effectType, duration, {
+      source,
+      fromPlayerId: socket.id,
+    });
     
     if (success) {
       // console.log(`🎯 Applied ${effectType} to enemy ${enemyId} for ${duration}ms by player ${socket.id}`);

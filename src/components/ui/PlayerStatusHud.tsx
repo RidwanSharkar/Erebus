@@ -3,10 +3,8 @@ import type { Archetype } from '@/utils/archetypes';
 import LevelBadge from './LevelBadge';
 import ResourceBar from './ResourceBar';
 import {
-  HUD_PANEL_BG,
-  HUD_PANEL_BORDER,
-  HUD_PANEL_CLIP,
-  HUD_PANEL_SHADOW,
+  RESOURCE_BARS_COLUMN_MARGIN_LEFT,
+  RESOURCE_BARS_COLUMN_PAD_LEFT,
 } from './hudChrome';
 
 interface PlayerStatusHudProps {
@@ -39,29 +37,7 @@ export default function PlayerStatusHud({
       className="flex flex-col items-stretch"
       style={{ position: 'relative', minWidth: showLevelBadge ? 454 : 380, gap: 8 }}
     >
-      <div
-        className="backdrop-blur-md flex items-center gap-0"
-        style={{
-          background: HUD_PANEL_BG,
-          border: HUD_PANEL_BORDER,
-          clipPath: HUD_PANEL_CLIP,
-          boxShadow: HUD_PANEL_SHADOW,
-          padding: showLevelBadge ? '12px 16px 12px 8px' : '16px 20px',
-        }}
-      >
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: '16px',
-            right: '16px',
-            height: '1px',
-            background:
-              'linear-gradient(90deg, transparent, rgba(100,160,255,0.5) 25%, rgba(180,220,255,0.85) 50%, rgba(100,160,255,0.5) 75%, transparent)',
-            pointerEvents: 'none',
-          }}
-        />
-
+      <div className="flex items-center gap-0">
         {showLevelBadge && (
           <LevelBadge
             experience={playerExperience}
@@ -69,21 +45,40 @@ export default function PlayerStatusHud({
             isLocalPlayer
             selectedArchetype={selectedArchetype}
             variant="integrated"
-            className="-mr-5"
+            className="-mr-5 relative z-[2]"
           />
         )}
 
         <div
           className="flex flex-col gap-1 flex-1 min-w-0"
-          style={{ paddingLeft: showLevelBadge ? 24 : 0 }}
+          style={{
+            paddingLeft: showLevelBadge ? RESOURCE_BARS_COLUMN_PAD_LEFT : 0,
+            marginLeft: showLevelBadge ? RESOURCE_BARS_COLUMN_MARGIN_LEFT : 0,
+            position: 'relative',
+            zIndex: 1,
+          }}
         >
-          <ResourceBar current={playerShield} max={maxShield} kind="shield" />
-          <ResourceBar current={playerHealth} max={maxHealth} kind="health" />
+          <ResourceBar
+            current={playerShield}
+            max={maxShield}
+            kind="shield"
+            barSlot={showLevelBadge ? 0 : undefined}
+            integrated={showLevelBadge}
+          />
+          <ResourceBar
+            current={playerHealth}
+            max={maxHealth}
+            kind="health"
+            barSlot={showLevelBadge ? 1 : undefined}
+            integrated={showLevelBadge}
+          />
           <ResourceBar
             current={playerEnergy}
             max={maxEnergy}
             kind="energy"
             archetype={selectedArchetype}
+            barSlot={showLevelBadge ? 2 : undefined}
+            integrated={showLevelBadge}
           />
         </div>
       </div>

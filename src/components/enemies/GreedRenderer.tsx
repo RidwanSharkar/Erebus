@@ -19,7 +19,7 @@ import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import GreedModel, { GreedAbilityClip } from './GreedModel';
 import KnightSoulEffect from './KnightSoulEffect';
 
-export type GreedSoulType = 'green' | 'red' | 'blue' | 'purple';
+export type GreedSoulType = 'green' | 'red' | 'blue' | 'purple' | 'yellow';
 
 interface GreedRendererProps {
   id: string;

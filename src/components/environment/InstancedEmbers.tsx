@@ -7,8 +7,9 @@ import {
   AdditiveBlending,
   Points,
   Vector3,
+  RingGeometry,
 } from '@/utils/three-exports';
-import { MAIN_ARENA_HEX_RADIUS } from '@/utils/mapConstants';
+import { MAIN_ARENA_FLOOR_RADIUS, MAIN_ARENA_HEX_RADIUS } from '@/utils/mapConstants';
 
 // ---------------------------------------------------------------------------
 // Fire embers — GPU-animated floating sparks near camps and torch areas
@@ -78,13 +79,85 @@ const EMBER_FRAG = `
 `;
 
 // ---------------------------------------------------------------------------
+// Perimeter flow ring — CCW energy trails connecting ember camp nodes.
+// One RingGeometry draw call; all motion in fragment shader via uTime.
+// RingGeometry UVs are planar (not angular), so we use world-space XZ polar math.
+// ---------------------------------------------------------------------------
+
+const FLOW_RING_VERT = `
+  varying vec3 vWorldPos;
+
+  void main() {
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vWorldPos = world.xyz;
+    gl_Position = projectionMatrix * viewMatrix * world;
+  }
+`;
+
+const FLOW_RING_FRAG = `
+  uniform float uTime;
+  uniform vec3  uColorDim;
+  uniform vec3  uColorBright;
+  uniform float uNodeCount;
+  uniform float uFlowSpeed;
+  uniform float uInnerRadius;
+  uniform float uOuterRadius;
+
+  varying vec3 vWorldPos;
+
+  void main() {
+    // World-space polar coords — RingGeometry UVs are planar projection, not usable here
+    float angle = atan(vWorldPos.z, vWorldPos.x);          // -PI..PI
+    float along = fract(angle / 6.2831853 + 0.5);          // 0..1 CCW wrap
+    float dist  = length(vWorldPos.xz);
+
+    // Soft band edges matching geometry radii
+    float radialMask = smoothstep(uInnerRadius, uInnerRadius + 0.25, dist)
+                     * (1.0 - smoothstep(uOuterRadius - 0.25, uOuterRadius, dist));
+
+    // Brighten at each of the 12 ember camp angular nodes
+    float nodePhase = fract(along * uNodeCount);
+    float nodeDist  = min(nodePhase, 1.0 - nodePhase);
+    float nodeGlow  = exp(-nodeDist * nodeDist * 85.0);
+
+    // 3 staggered CCW traveling pulses (subtract time so flow is counter-clockwise)
+    float trail = 0.0;
+    for (int i = 0; i < 3; i++) {
+      float phase  = float(i) / 3.0;
+      float head   = fract(along - uTime * uFlowSpeed + phase);
+      // Soft head with a longer fading tail behind it
+      float pulse  = smoothstep(0.0, 0.04, head) * (1.0 - smoothstep(0.04, 0.22, head));
+      trail += pulse;
+    }
+    trail = clamp(trail, 0.0, 1.0);
+
+    // Organic wisp variation — cheap, no texture
+    float wisp = 0.55 + 0.45 * sin(along * 18.2832 - uTime * 2.4);
+
+    float intensity = (trail * 0.78 + nodeGlow * 0.65) * radialMask * wisp;
+    vec3  color     = mix(uColorDim, uColorBright, trail * 0.65 + nodeGlow * 0.85);
+
+    float alpha = intensity * 0.60;
+    if (alpha < 0.01) discard;
+    gl_FragColor = vec4(color, alpha);
+  }
+`;
+
+// ---------------------------------------------------------------------------
 // Perimeter fire ring — evenly-spaced clusters around the arena boundary.
 // All clusters share aCampIdx=0 so they inherit the single room theme color.
 // ---------------------------------------------------------------------------
-const PERIMETER_COUNT  = 12;
-const PERIMETER_RADIUS = MAIN_ARENA_HEX_RADIUS - 1.5;
+const PERIMETER_COUNT  = 9;
+const PERIMETER_RADIUS = MAIN_ARENA_HEX_RADIUS + 1.5;
 
-const CAMP_ORIGINS: [number, number, number][] = Array.from(
+/** Match ThroneOuterFloor radius in Environment.tsx — trail sits on visible rune edge. */
+const FLOOR_OUTER_RADIUS = MAIN_ARENA_FLOOR_RADIUS;
+const FLOW_INNER = FLOOR_OUTER_RADIUS - 0.45;
+const FLOW_OUTER = FLOOR_OUTER_RADIUS + 0.15;
+/** Module-level singleton — never dispose on remount. */
+const sharedFlowRingGeo = new RingGeometry(FLOW_INNER, FLOW_OUTER, 96);
+
+const DEFAULT_CAMP_ORIGINS: [number, number, number][] = Array.from(
   { length: PERIMETER_COUNT },
   (_, i) => {
     const angle = (i / PERIMETER_COUNT) * Math.PI * 2;
@@ -103,44 +176,66 @@ const FLAME_PALETTES: Record<string, [[number,number,number],[number,number,numb
   green:  [[0.01, 0.18, 0.00], [0.08, 1.00, 0.04]],  // neon green
   blue:   [[0.00, 0.04, 0.22], [0.03, 0.75, 1.00]],  // frost / ice-blue
   purple: [[0.12, 0.00, 0.18], [0.72, 0.04, 1.00]],  // void purple
+  pink:   [[0.22, 0.00, 0.14], [1.00, 0.38, 0.78]],  // fae realm magenta flames
 };
 const DEFAULT_PALETTE = FLAME_PALETTES.red;
 
 const EMBERS_PER_CAMP = 15;
-const TOTAL = EMBERS_PER_CAMP * CAMP_ORIGINS.length;
+
+type CampOrigin = readonly [number, number, number];
+
+const resolvePalette = (campTypes: string[], index: number) => {
+  const key = (campTypes[index] ?? campTypes[0] ?? 'red').toLowerCase();
+  return FLAME_PALETTES[key] ?? DEFAULT_PALETTE;
+};
 
 // Build the two uniform Vector3[] arrays for a given campTypes list.
-const buildColorUniforms = (campTypes: string[]) => ({
-  dim:    CAMP_ORIGINS.map((_, i) => {
-    const [d] = FLAME_PALETTES[campTypes[i]] ?? DEFAULT_PALETTE;
+const buildColorUniforms = (campTypes: string[], campCount: number) => ({
+  dim: Array.from({ length: campCount }, (_, i) => {
+    const [d] = resolvePalette(campTypes, i);
     return new Vector3(d[0], d[1], d[2]);
   }),
-  bright: CAMP_ORIGINS.map((_, i) => {
-    const [, b] = FLAME_PALETTES[campTypes[i]] ?? DEFAULT_PALETTE;
+  bright: Array.from({ length: campCount }, (_, i) => {
+    const [, b] = resolvePalette(campTypes, i);
     return new Vector3(b[0], b[1], b[2]);
   }),
 });
+
+/** Room theme palette from campTypes[0] — used by the perimeter flow ring. */
+const resolveRoomPalette = (campTypes: string[]) => {
+  const key = campTypes[0]?.toLowerCase();
+  return FLAME_PALETTES[key ?? ''] ?? DEFAULT_PALETTE;
+};
 
 // ---------------------------------------------------------------------------
 
 interface InstancedEmbersProps {
   campTypes?: string[]; // e.g. ['red','green','blue'] — arrives from socket
+  /** Override default circular perimeter camps (e.g. Fae Realm triangle edges). */
+  campOrigins?: ReadonlyArray<CampOrigin>;
+  /** Full perimeter flow ring — off for sparse custom camp layouts. */
+  showFlowRing?: boolean;
 }
 
-const InstancedEmbers: React.FC<InstancedEmbersProps> = ({ campTypes = [] }) => {
+const EmberRisingPoints: React.FC<InstancedEmbersProps> = React.memo(({
+  campTypes = [],
+  campOrigins,
+}) => {
   const pointsRef = useRef<Points>(null);
+  const resolvedCampOrigins = campOrigins ?? DEFAULT_CAMP_ORIGINS;
 
-  // Geometry and material are built ONCE — colors live in uniforms, not buffers.
   const { geo, mat } = useMemo(() => {
-    const indices  = new Float32Array(TOTAL);
-    const origins  = new Float32Array(TOTAL * 3);
-    const speeds   = new Float32Array(TOTAL);
-    const sizes    = new Float32Array(TOTAL);
-    const campIdxs = new Float32Array(TOTAL);
-    const positions = new Float32Array(TOTAL * 3); // placeholder; shader ignores it
+    const campCount = resolvedCampOrigins.length;
+    const total = EMBERS_PER_CAMP * campCount;
+    const indices  = new Float32Array(total);
+    const origins  = new Float32Array(total * 3);
+    const speeds   = new Float32Array(total);
+    const sizes    = new Float32Array(total);
+    const campIdxs = new Float32Array(total);
+    const positions = new Float32Array(total * 3); // placeholder; shader ignores it
 
     let ptr = 0;
-    CAMP_ORIGINS.forEach(([cx, cy, cz], campIdx) => {
+    resolvedCampOrigins.forEach(([cx, cy, cz], campIdx) => {
       for (let i = 0; i < EMBERS_PER_CAMP; i++) {
         const idx = ptr;
         indices[idx]  = idx;
@@ -166,8 +261,7 @@ const InstancedEmbers: React.FC<InstancedEmbersProps> = ({ campTypes = [] }) => 
     geometry.setAttribute('aSize',    new Float32BufferAttribute(sizes,     1));
     geometry.setAttribute('aCampIdx', new Float32BufferAttribute(campIdxs,  1));
 
-    // Defaults to 'red' for all camps until campTypes arrives via socket.
-    const { dim, bright } = buildColorUniforms([]);
+    const { dim, bright } = buildColorUniforms(campTypes, campCount);
     const material = new ShaderMaterial({
       uniforms: {
         uTime:        { value: 0 },
@@ -182,18 +276,13 @@ const InstancedEmbers: React.FC<InstancedEmbersProps> = ({ campTypes = [] }) => 
     });
 
     return { geo: geometry, mat: material };
-  }, []); // geometry/material never rebuilt — only uniforms change
+  }, [resolvedCampOrigins, campTypes]);
 
-  // When campTypes arrives (or changes), patch the color uniforms in-place.
-  // This is instant — no geometry rebuild, no R3F prop dance needed.
   useEffect(() => {
-    if (!campTypes.length) return;
-    const { dim, bright } = buildColorUniforms(campTypes);
+    const { dim, bright } = buildColorUniforms(campTypes, resolvedCampOrigins.length);
     mat.uniforms.uColorDim.value    = dim;
     mat.uniforms.uColorBright.value = bright;
-    // Three.js ShaderMaterial re-uploads all uniforms on the next draw call,
-    // so no needsUpdate flag is required.
-  }, [campTypes, mat]);
+  }, [campTypes, mat, resolvedCampOrigins.length]);
 
   useFrame((_, delta) => {
     mat.uniforms.uTime.value += delta;
@@ -209,6 +298,79 @@ const InstancedEmbers: React.FC<InstancedEmbersProps> = ({ campTypes = [] }) => 
   return (
     <points ref={pointsRef} geometry={geo} material={mat} frustumCulled={false} />
   );
-};
+});
+
+const EmberPerimeterFlow: React.FC<InstancedEmbersProps> = React.memo(({ campTypes = [] }) => {
+  const flowMat = useMemo(() => {
+    const [dim, bright] = DEFAULT_PALETTE;
+    return new ShaderMaterial({
+      uniforms: {
+        uTime:         { value: 0 },
+        uColorDim:     { value: new Vector3(dim[0], dim[1], dim[2]) },
+        uColorBright:  { value: new Vector3(bright[0], bright[1], bright[2]) },
+        uNodeCount:    { value: PERIMETER_COUNT },
+        uFlowSpeed:    { value: 0.065 },
+        uInnerRadius:  { value: FLOW_INNER },
+        uOuterRadius:  { value: FLOW_OUTER },
+      },
+      vertexShader:   FLOW_RING_VERT,
+      fragmentShader: FLOW_RING_FRAG,
+      transparent:    true,
+      depthWrite:     false,
+      depthTest:      false,
+      blending:       AdditiveBlending,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!campTypes.length) return;
+    const [dim, bright] = resolveRoomPalette(campTypes);
+    flowMat.uniforms.uColorDim.value.set(dim[0], dim[1], dim[2]);
+    flowMat.uniforms.uColorBright.value.set(bright[0], bright[1], bright[2]);
+  }, [campTypes, flowMat]);
+
+  useFrame((_, delta) => {
+    flowMat.uniforms.uTime.value += delta;
+  });
+
+  useEffect(() => {
+    return () => {
+      flowMat.dispose();
+    };
+  }, [flowMat]);
+
+  return (
+    <mesh
+      rotation={[-Math.PI / 2, 0, 0]}
+      position={[0, 0.14, 0]}
+      geometry={sharedFlowRingGeo}
+      material={flowMat}
+      frustumCulled={false}
+      renderOrder={2}
+    />
+  );
+});
+
+const InstancedEmbers: React.FC<InstancedEmbersProps> = ({
+  campTypes = [],
+  campOrigins,
+  showFlowRing = true,
+}) => (
+  <>
+    <EmberRisingPoints campTypes={campTypes} campOrigins={campOrigins} />
+    {showFlowRing ? <EmberPerimeterFlow campTypes={campTypes} /> : null}
+  </>
+);
+
+/** Three hex-edge camp positions (triangle formation) for Fae Realm rooms. */
+export function buildFaeRealmEmberCampOrigins(hexRadius: number, edgeInset = -2.2): CampOrigin[] {
+  const edgeDistance = hexRadius * Math.cos(Math.PI / 6) - edgeInset;
+  const edgeAngles = [Math.PI / 6, (5 * Math.PI) / 6, (3 * Math.PI) / 2];
+  return edgeAngles.map((angle) => [
+    Math.cos(angle) * edgeDistance,
+    0,
+    Math.sin(angle) * edgeDistance,
+  ] as CampOrigin);
+}
 
 export default React.memo(InstancedEmbers);

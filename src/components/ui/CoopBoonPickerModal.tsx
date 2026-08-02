@@ -107,6 +107,7 @@ const WEAPON_EMBLEMS: Record<WeaponType, string> = {
 };
 
 const ABILITY_LABELS: Record<string, string> = {
+  DEATH_GRASP:     'Death Grasp',
   RUNEBLADE_E:     'Wraith Strike',
   RUNEBLADE_R:     'Colossus Smite',
   RUNEBLADE_BASIC: 'Combo Attacks',

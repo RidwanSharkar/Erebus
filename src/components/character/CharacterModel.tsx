@@ -22,6 +22,8 @@ interface CharacterModelProps {
   animState: AnimState;
   isDead?: boolean;
   portalFallRef?: React.MutableRefObject<{ active: boolean; phase: 'rise' | 'fall'; progress: number }>;
+  /** Slight Run playback boost (Persistence Hunter). Sprint unchanged. */
+  runAnimTimeScale?: number;
 }
 
 type CharacterDeferredAnimState = keyof typeof CHARACTER_DEFERRED_MODEL_PATHS;
@@ -192,6 +194,7 @@ export default function CharacterModel({
   animState,
   isDead = false,
   portalFallRef,
+  runAnimTimeScale = 1,
 }: CharacterModelProps) {
   const [deferredAnimationClips, setDeferredAnimationClips] = useState<CharacterDeferredClips | null>(null);
 
@@ -216,6 +219,7 @@ export default function CharacterModel({
       animState={animState}
       isDead={isDead}
       portalFallRef={portalFallRef}
+      runAnimTimeScale={runAnimTimeScale}
       deferredAnimationClips={deferredAnimationClips}
     />
   );
@@ -229,6 +233,7 @@ function CharacterModelRig({
   animState,
   isDead = false,
   portalFallRef,
+  runAnimTimeScale = 1,
   deferredAnimationClips,
 }: CharacterModelRigProps) {
   const sceneGroupRef   = useRef<Group>(null);
@@ -385,7 +390,9 @@ function CharacterModelRig({
       }
 
       const sprintTimeScale =
-        playAnim === 'Sprint' && sprintUsesFallback ? SPRINT_FALLBACK_TIME_SCALE : 1;
+        playAnim === 'Sprint' && sprintUsesFallback
+          ? SPRINT_FALLBACK_TIME_SCALE
+          : (playAnim === 'Run' ? runAnimTimeScale : 1);
 
       if (nextAction === currentActionRef.current) {
         if (nextAction.timeScale !== sprintTimeScale) {
@@ -467,7 +474,7 @@ function CharacterModelRig({
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
     };
-  }, [animState, isDead, actions, mixer, animations, sprintUsesFallback]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [animState, isDead, actions, mixer, animations, sprintUsesFallback, runAnimTimeScale]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useFrame(() => {
     if (!portalFallRef?.current.active) return;

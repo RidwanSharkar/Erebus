@@ -70,11 +70,35 @@ export function syncEnemyTransformFromRef(
   return dist;
 }
 
+/** Pull only server rotation while position stays locked (e.g. breath/roar cast). */
+export function syncEnemyRotationFromRef(
+  enemyId: string,
+  transformsRef: EnemyTransformsRef,
+  targetRotation: MutableRefObject<number>,
+): void {
+  const live = transformsRef.current.get(enemyId);
+  if (!live) return;
+  targetRotation.current = live.rotation;
+}
+
 /** Apply batched server moves to the ref store (no React setState). */
 export function applyEnemyMoveBatch(
   transformsRef: EnemyTransformsRef,
-  enemiesRef: MutableRefObject<Map<string, { position: { x: number; y: number; z: number }; rotation: number }>>,
-  moves: Array<{ enemyId: string; position: { x: number; y: number; z: number }; rotation: number }>,
+  enemiesRef: MutableRefObject<Map<string, {
+    position: { x: number; y: number; z: number };
+    rotation: number;
+    tigerLocomotion?: 'walk' | 'run';
+    terrorhawkPhase?: 'takeoff' | 'hover' | 'approach' | 'dive' | 'land' | 'ground_melee';
+    destinyPhase?: 'ground' | 'takeoff' | 'fly_idle' | 'fly_approach' | 'fly_attack' | 'fly_return' | 'land';
+  }>>,
+  moves: Array<{
+    enemyId: string;
+    position: { x: number; y: number; z: number };
+    rotation: number;
+    tigerLocomotion?: 'walk' | 'run';
+    terrorhawkPhase?: 'takeoff' | 'hover' | 'approach' | 'dive' | 'land' | 'ground_melee';
+    destinyPhase?: 'ground' | 'takeoff' | 'fly_idle' | 'fly_approach' | 'fly_attack' | 'fly_return' | 'land';
+  }>,
 ): void {
   for (const move of moves) {
     const existing = transformsRef.current.get(move.enemyId);
@@ -92,6 +116,15 @@ export function applyEnemyMoveBatch(
     if (enemy) {
       enemy.position = move.position;
       enemy.rotation = move.rotation;
+      if (move.tigerLocomotion) {
+        enemy.tigerLocomotion = move.tigerLocomotion;
+      }
+      if (move.terrorhawkPhase) {
+        enemy.terrorhawkPhase = move.terrorhawkPhase;
+      }
+      if (move.destinyPhase) {
+        enemy.destinyPhase = move.destinyPhase;
+      }
     }
   }
 }
@@ -129,7 +162,13 @@ function isTotemValidEnemy(enemy: TotemTargetEnemy): boolean {
     enemy.type !== 'allied-demon' &&
     enemy.type !== 'allied-enchantress' &&
     enemy.type !== 'allied-healer' &&
-    enemy.type !== 'player-zombie'
+    enemy.type !== 'allied-tiger' &&
+    enemy.type !== 'allied-wolf' &&
+    enemy.type !== 'allied-bear' &&
+    enemy.type !== 'allied-serpent' &&
+    enemy.type !== 'allied-spider' &&
+    enemy.type !== 'player-zombie' &&
+    enemy.type !== 'vengeful-spirit'
   );
 }
 

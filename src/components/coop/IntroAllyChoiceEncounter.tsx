@@ -24,6 +24,7 @@ import GhoulModel from '@/components/enemies/GhoulModel';
 import ShadeModel from '@/components/enemies/ShadeModel';
 import GreedModel from '@/components/enemies/GreedModel';
 import ViperModel from '@/components/enemies/ViperModel';
+import SoulGroundRing from '@/components/enemies/SoulGroundRing';
 
 const TOOLTIP_WORLD_OFFSET = new Vector3(0, 1.35, 0);
 const _projectScratch = new Vector3();
@@ -241,6 +242,7 @@ function IntroAllyChoiceCandidate({
       <Suspense fallback={null}>
         <AllyChoicePreviewModel kind={kind} isWalking={isWalking} />
       </Suspense>
+      {!allyChoiceMade ? <SoulGroundRing soulType="yellow" /> : null}
       {!allyChoiceMade ? (
         <mesh
           position={[0, 1.2, 0]}

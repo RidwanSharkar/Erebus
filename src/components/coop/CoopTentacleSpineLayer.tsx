@@ -1,7 +1,6 @@
 'use client';
 
 import React, { forwardRef, memo, useCallback, useImperativeHandle, useState } from 'react';
-import { Vector3 } from '@/utils/three-exports';
 import TentacleSpineRenderer from '@/components/enemies/TentacleSpineRenderer';
 import type { TentacleSpineFxState } from '@/components/coop/coopVfxLayerTypes';
 
@@ -59,19 +58,24 @@ const CoopTentacleSpineLayer = memo(forwardRef<CoopTentacleSpineLayerHandle, Coo
     return (
       <>
         {enemies.map((enemy) => {
-          if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+          // Keep mounted so windSeq / attack timeline survive frustum culling.
+          // Hiding via `visible` avoids remount scrub into Custom1 tip-over (looks like Death).
+          const visible = isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z);
           const fx = tentacleSpineFxById.get(enemy.id);
           return (
-            <TentacleSpineRenderer
-              key={enemy.id}
-              id={enemy.id}
-              position={enemy.position}
-              rotation={enemy.rotation || 0}
-              isDying={!!enemy.isDying}
-              windSeq={fx?.windSeq ?? 0}
-              slamSeq={fx?.slamSeq ?? 0}
-              windDirXZ={fx?.dir ?? { x: 0, z: 1 }}
-            />
+            <group key={enemy.id} visible={visible}>
+              <TentacleSpineRenderer
+                id={enemy.id}
+                position={enemy.position}
+                rotation={enemy.rotation || 0}
+                isDying={!!enemy.isDying}
+                windSeq={fx?.windSeq ?? 0}
+                slamSeq={fx?.slamSeq ?? 0}
+                windDirXZ={fx?.dir ?? { x: 0, z: 1 }}
+                windupAt={fx?.windupAt}
+                slamAt={fx?.slamAt}
+              />
+            </group>
           );
         })}
       </>

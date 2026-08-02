@@ -3,7 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import { Vector3, Color, SphereGeometry, MeshStandardMaterial, Mesh } from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
-const SABRE_MIST_LIGHT_COLOR = new Color('#FF544E');
+const DEFAULT_MIST_COLOR = '#FF544E';
 
 interface ParticleData {
   initialAngle: number;
@@ -14,21 +14,25 @@ interface ParticleData {
 interface SabreReaperMistEffectProps {
   position: Vector3;
   duration?: number;
+  /** Particle / light tint. Defaults to sabre red mist. */
+  color?: string;
   onComplete?: () => void;
 }
 
 export default function SabreReaperMistEffect({
   position,
   duration = 1000, // 1 second animation like stealth mist
+  color = DEFAULT_MIST_COLOR,
   onComplete
 }: SabreReaperMistEffectProps) {
   const startTime = useRef(Date.now());
   const isCompleted = useRef(false);
   const progressRef = useRef(0);
   const particleMeshes = useRef<(Mesh | null)[]>([]);
+  const mistColor = useMemo(() => new Color(color), [color]);
 
   // Borrow a pooled point light for the central glow instead of mounting a <pointLight>.
-  const mistLight = useDynamicLight({ color: SABRE_MIST_LIGHT_COLOR, distance: 5, decay: 1, priority: 1 });
+  const mistLight = useDynamicLight({ color: mistColor, distance: 5, decay: 1, priority: 1 });
 
   // Initialize particle data once
   const [particleData] = useState<ParticleData[]>(() =>
@@ -42,12 +46,12 @@ export default function SabreReaperMistEffect({
   // Create simple geometries and materials for the particles (no pooling for now)
   const particleGeometry = useMemo(() => new SphereGeometry(0.125, 8, 8), []);
   const particleMaterial = useMemo(() => new MeshStandardMaterial({
-    color: '#FF544E',
-    emissive: '#FF544E',
+    color,
+    emissive: color,
     emissiveIntensity: 2,
     transparent: true,
     opacity: 0.6
-  }), []);
+  }), [color]);
 
   useFrame(() => {
     if (isCompleted.current) return;

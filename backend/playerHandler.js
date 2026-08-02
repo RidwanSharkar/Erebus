@@ -21,6 +21,70 @@ function handlePlayerEvents(socket, gameRooms) {
   /** playerId -> { lastBroadcastAt, lastPosition, lastRotation } */
   const playerMoveRebroadcastState = new Map();
 
+  /** Death Grasp combat constants (keep in sync with src/utils/weaponAbilities.ts). */
+  const DEATH_GRASP_DAMAGE = 80;
+  const DEATH_GRASP_COOLDOWN_MS = 5000;
+  const DEATH_GRASP_RANGE = 18;
+  const DEATH_GRASP_HIT_RADIUS = 2.5;
+  const DEATH_GRASP_STANDOFF = 1.2;
+  const DEATH_GRASP_TAUNT_MS = 10000;
+  const DEATH_GRASP_PULL_DURATION_MS = 600;
+  const DEATH_GRASP_PULL_IMMUNE_TYPES = new Set([
+    'boss',
+    'boss2',
+    'boss3',
+    'destiny',
+    'titan',
+    'valkyrie',
+    'nemesis',
+    'medusa',
+    'training-dummy',
+  ]);
+  /** playerId -> last validated deathgrasp hit timestamp */
+  const playerDeathGraspHitAt = new Map();
+
+  function isDeathGraspPullImmune(enemy) {
+    if (!enemy || !enemy.type) return false;
+    if (DEATH_GRASP_PULL_IMMUNE_TYPES.has(enemy.type)) return true;
+    return enemy.type === 'knight' && enemy.isBoss1EliteKnight === true;
+  }
+
+  function isDeathGraspHostileEnemy(enemy) {
+    if (!enemy || enemy.isDying || (enemy.health ?? 0) <= 0) return false;
+    if (enemy.alliedUnit === true) return false;
+    const alliedTypes = new Set([
+      'allied-knight',
+      'allied-huntress',
+      'allied-phantom',
+      'allied-demon',
+      'allied-enchantress',
+      'allied-healer',
+      'allied-tiger',
+      'allied-wolf',
+      'allied-bear',
+      'allied-serpent',
+      'allied-spider',
+      'player-zombie',
+      'vengeful-spirit',
+    ]);
+    return !alliedTypes.has(enemy.type);
+  }
+
+  /** Closest-point distance from enemy XZ to cast→direction segment of length DEATH_GRASP_RANGE. */
+  function deathGraspHitDistanceXZ(castPos, direction, enemyPos) {
+    const dx = direction?.x ?? 0;
+    const dz = direction?.z ?? 0;
+    const len = Math.hypot(dx, dz) || 1;
+    const nx = dx / len;
+    const nz = dz / len;
+    const ox = (enemyPos.x ?? 0) - (castPos.x ?? 0);
+    const oz = (enemyPos.z ?? 0) - (castPos.z ?? 0);
+    const along = Math.max(0, Math.min(DEATH_GRASP_RANGE, ox * nx + oz * nz));
+    const closestX = (castPos.x ?? 0) + nx * along;
+    const closestZ = (castPos.z ?? 0) + nz * along;
+    return Math.hypot((enemyPos.x ?? 0) - closestX, (enemyPos.z ?? 0) - closestZ);
+  }
+
   function positionDeltaExceedsEpsilon(a, b) {
     if (!a || !b) return true;
     const dx = (a.x ?? 0) - (b.x ?? 0);
@@ -299,12 +363,14 @@ function handlePlayerEvents(socket, gameRooms) {
     
     const room = gameRooms.get(roomId);
     room.updatePlayerWeapon(socket.id, weapon, subclass);
+    const player = room.getPlayer?.(socket.id) ?? room.players?.get(socket.id);
     
-    // Broadcast weapon change to other players
+    // Broadcast weapon change to other players (aspect resets with weapon)
     socket.to(roomId).emit('player-weapon-changed', {
       playerId: socket.id,
       weapon,
-      subclass
+      subclass,
+      weaponAspect: player?.weaponAspect,
     });
   });
 
@@ -324,6 +390,22 @@ function handlePlayerEvents(socket, gameRooms) {
     });
   });
 
+  // Handle weapon aspect selection changes (co-op throne prep)
+  socket.on('weapon-aspect-changed', (data) => {
+    const { roomId, aspect } = data || {};
+
+    if (!roomId || !gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    const normalized = room.updatePlayerWeaponAspect(socket.id, aspect);
+    if (!normalized) return;
+
+    socket.to(roomId).emit('player-weapon-aspect-changed', {
+      playerId: socket.id,
+      aspect: normalized,
+    });
+  });
+
   // Handle attack animations (visual only)
   socket.on('player-attack', (data) => {
     const { roomId, attackType, position, direction, animationData } = data;
@@ -332,11 +414,6 @@ function handlePlayerEvents(socket, gameRooms) {
 
     const room = gameRooms.get(roomId);
     const player = room.getPlayer(socket.id);
-
-    // Sentinel dodge: record incoming shot threat toward sentinels
-    if (room.enemyAI && position && direction) {
-      room.enemyAI.notifyPlayerAttackThreat(socket.id, position, direction);
-    }
 
     // Broadcast attack animation to other players with weapon info
     socket.to(roomId).emit('player-attacked', {
@@ -359,28 +436,7 @@ function handlePlayerEvents(socket, gameRooms) {
 
     const gameRoom = gameRooms.get(roomId);
 
-    // Special handling for Deathgrasp ability - apply taunt effect to nearby enemies
-    if (abilityType === 'deathgrasp') {
-      // Find enemies within range of the deathgrasp position
-      const tauntRange = 15; // Range to taunt enemies
-      const tauntDuration = 10000; // 10 seconds
-
-      for (const [enemyId, enemy] of gameRoom.enemies) {
-        // Only taunt boss enemies for now
-        if (enemy.type === 'boss' || enemy.type === 'boss2' || enemy.type === 'boss3') {
-          const distance = Math.sqrt(
-            Math.pow(enemy.position.x - position.x, 2) +
-            Math.pow(enemy.position.z - position.z, 2)
-          );
-
-          if (distance <= tauntRange) {
-            // Apply taunt effect to this enemy
-            gameRoom.enemyAI.tauntEnemy(enemyId, socket.id, tauntDuration);
-            console.log(`🎯 Deathgrasp: Player ${socket.id} taunted boss ${enemyId} for ${tauntDuration/1000} seconds`);
-          }
-        }
-      }
-    }
+    // Death Grasp cast: VFX broadcast only — taunt/damage/pull happen on player-deathgrasp-hit
 
     // Special handling for Wraith Strike ability - apply taunt effect to enemies hit
     if (abilityType === 'wraith_strike') {
@@ -418,6 +474,81 @@ function handlePlayerEvents(socket, gameRooms) {
       extraData,
       timestamp: Date.now()
     });
+  });
+
+  // Legionnaire Death Grasp hit: damage + taunt; pull non-immune units in front of caster
+  socket.on('player-deathgrasp-hit', (data) => {
+    const { roomId, enemyId, castPosition, direction, hitPosition } = data || {};
+    if (!roomId || !enemyId || !gameRooms.has(roomId)) return;
+
+    const gameRoom = gameRooms.get(roomId);
+    const player = gameRoom.players.get(socket.id);
+    if (!player || (player.health ?? 0) <= 0) return;
+
+    const now = Date.now();
+    const lastHitAt = playerDeathGraspHitAt.get(socket.id) || 0;
+    if (now - lastHitAt < DEATH_GRASP_COOLDOWN_MS - 250) {
+      // Small slack for network latency vs client cooldown
+      return;
+    }
+
+    const enemy = gameRoom.enemies.get(enemyId);
+    if (!isDeathGraspHostileEnemy(enemy)) return;
+
+    const castPos = castPosition || player.position;
+    const dir = direction || { x: 0, y: 0, z: 1 };
+    const hitDist = deathGraspHitDistanceXZ(castPos, dir, enemy.position);
+    // Allow slight slack vs client hit sphere
+    if (hitDist > DEATH_GRASP_HIT_RADIUS + 1.5) return;
+
+    playerDeathGraspHitAt.set(socket.id, now);
+
+    gameRoom.damageEnemy(enemyId, DEATH_GRASP_DAMAGE, socket.id, player, {
+      damageType: 'deathgrasp',
+    });
+
+    if (gameRoom.enemyAI) {
+      gameRoom.enemyAI.tauntEnemy(enemyId, socket.id, DEATH_GRASP_TAUNT_MS);
+    }
+
+    const pulled = !isDeathGraspPullImmune(enemy);
+    let pullPosition = null;
+    if (pulled && gameRoom.enemyAI) {
+      const liveEnemy = gameRoom.enemies.get(enemyId);
+      if (liveEnemy && !liveEnemy.isDying && (liveEnemy.health ?? 0) > 0) {
+        const pdx = (liveEnemy.position.x ?? 0) - (player.position.x ?? 0);
+        const pdz = (liveEnemy.position.z ?? 0) - (player.position.z ?? 0);
+        const pLen = Math.sqrt(pdx * pdx + pdz * pdz) || 1;
+        const nx = pdx / pLen;
+        const nz = pdz / pLen;
+        pullPosition = {
+          x: (player.position.x ?? 0) + nx * DEATH_GRASP_STANDOFF,
+          y: liveEnemy.position.y ?? player.position.y ?? 0,
+          z: (player.position.z ?? 0) + nz * DEATH_GRASP_STANDOFF,
+        };
+        gameRoom.enemyAI.playerDeathGraspPull(
+          enemyId,
+          socket.id,
+          pullPosition,
+          DEATH_GRASP_PULL_DURATION_MS,
+        );
+      }
+    }
+
+    const payload = {
+      playerId: socket.id,
+      enemyId,
+      hitPosition: hitPosition || {
+        x: enemy.position.x,
+        y: enemy.position.y,
+        z: enemy.position.z,
+      },
+      pulled: !!pullPosition,
+      pullPosition,
+      timestamp: now,
+    };
+    // Include caster so they get taunt VFX / pull lerp confirmation
+    gameRoom.io?.to(roomId).emit('player-deathgrasp-hit', payload);
   });
 
   // Handle player animation state updates (for backstab, charging, swinging, etc.)
@@ -553,6 +684,18 @@ function handlePlayerEvents(socket, gameRooms) {
       playerId: socket.id,
       health,
       maxHealth
+    });
+  });
+
+  // Client-authoritative Persephone lethal-save: consume ring + sync saved HP
+  socket.on('persephone-consumed', (data) => {
+    const roomId = data?.roomId;
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.consumePersephone !== 'function') return;
+    room.consumePersephone(socket.id, {
+      newHealth: data?.newHealth,
+      maxHealth: data?.maxHealth,
     });
   });
 

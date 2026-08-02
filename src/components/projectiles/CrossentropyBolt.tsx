@@ -296,7 +296,7 @@ export default function CrossentropyBolt({
       <CrossentropyBoltTrail
         color={trailColor}
         reaperPurple={reaperEcsDriven}
-        size={size * 0.875}
+        size={size * 0.725}
         mesh1Ref={fireball1Ref}
         mesh2Ref={fireball2Ref}
         mesh3Ref={fireball3Ref}

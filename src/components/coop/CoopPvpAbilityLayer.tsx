@@ -38,6 +38,7 @@ import {
   type TalentLoadout,
 } from '@/utils/talents';
 import type { AbilityLoadout } from '@/utils/weaponAbilities';
+import type { WeaponAspect } from '@/utils/weaponAspects';
 import type {
   LocalPlayerStatusEffectState,
   RoomBoomMendingEffectState,
@@ -58,6 +59,8 @@ export type PvpSmiteEffectState = {
   staggeringSmite?: boolean;
   infernalSmite?: boolean;
   vengeanceSmite?: boolean;
+  /** Caster's Runeblade aspect — default beam colors when no talent theme. */
+  weaponAspect?: WeaponAspect;
 };
 
 export type LightningStormEffectState = {
@@ -170,15 +173,28 @@ type CoopPvpAbilityLayerProps = {
   abilityLoadout: AbilityLoadout | null;
   world: World | null;
   playerEntity: { getComponent: (type: typeof Transform) => Transform | null } | null;
-  players: Map<string, { id: string; position: PlayerPosition }>;
+  players: Map<string, { id: string; position: PlayerPosition; weaponAspect?: WeaponAspect }>;
+  /** Local player's current weapon aspect — used for local smite beam defaults. */
+  weaponAspect?: WeaponAspect | null;
   realTimePlayerPositionRef: React.MutableRefObject<Vector3>;
-  getLiveCoopEnemyData: () => Array<{ id: string; position: Vector3; health: number }>;
+  getLiveCoopEnemyData: () => Array<{
+    id: string;
+    position: Vector3;
+    health: number;
+    type?: string;
+    isBoss1EliteKnight?: boolean;
+  }>;
   getEnemyType: (enemyId: string) => string | undefined;
+  isDeathGraspPullImmuneEnemy?: (enemyId: string) => boolean;
+  getDeathGraspPulledEnemyPosition?: (enemyId: string) => Vector3 | null;
+  onDeathGraspEnemyPullFrame?: (enemyId: string, position: Vector3) => void;
   onSmiteHitEnemy: (enemyId: string, damage: number) => void;
   onDeathGraspHitEnemy: (
     enemyId: string,
     hitPosition: Vector3,
     attackerId: string,
+    castPosition: Vector3,
+    direction: Vector3,
   ) => void;
   onLightningStormHitEnemy: (enemyId: string, damage: number) => void;
   onLocustHitEnemy: (enemyId: string, damage: number) => void;
@@ -318,9 +334,13 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
     world,
     playerEntity,
     players,
+    weaponAspect,
     realTimePlayerPositionRef,
     getLiveCoopEnemyData,
     getEnemyType,
+    isDeathGraspPullImmuneEnemy,
+    getDeathGraspPulledEnemyPosition,
+    onDeathGraspEnemyPullFrame,
     onSmiteHitEnemy,
     onDeathGraspHitEnemy,
     onLightningStormHitEnemy,
@@ -534,10 +554,13 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
           const infernalSmiteVisual = isLocalPlayerSmite
             ? shouldApplyInfernalSmiteTalent(loadoutForSmite, abilityForSmite)
             : !!effect.infernalSmite;
+          const resolvedSmiteAspect = isLocalPlayerSmite
+            ? (weaponAspect ?? effect.weaponAspect)
+            : (effect.weaponAspect ?? players.get(effect.playerId)?.weaponAspect);
 
           return (
             <SmiteComponent
-              key={`smite-${effect.id}-${infernalSmiteVisual ? 'I' : 'i'}${infestedSmiteVisual ? 'N' : 'n'}${staggeringSmiteVisual ? 'S' : 's'}`}
+              key={`smite-${effect.id}-${infernalSmiteVisual ? 'I' : 'i'}${infestedSmiteVisual ? 'N' : 'n'}${staggeringSmiteVisual ? 'S' : 's'}-${resolvedSmiteAspect ?? 'default'}`}
               weaponType={WeaponType.RUNEBLADE}
               position={effect.position}
               sequenceDelaySec={effect.sequenceDelaySec ?? 0}
@@ -558,6 +581,7 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
               infestedSmiteVisual={infestedSmiteVisual}
               staggeringSmiteVisual={staggeringSmiteVisual}
               infernalSmiteVisual={infernalSmiteVisual}
+              weaponAspect={resolvedSmiteAspect}
               onBeamEnemyHit={isLocalPlayerSmite ? onSmiteBeamEnemyHitColossusGuard : undefined}
               getVengeanceSmiteDamageMultiplier={
                 isLocalPlayerSmite ? getVengeanceSmiteDamageMultiplier : undefined
@@ -580,7 +604,7 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
                 id: enemy.id,
                 position: enemy.position,
                 health: enemy.health,
-                isBoss: enemyType === 'boss' || enemyType === 'boss2' || enemyType === 'boss3',
+                isBoss: enemyType === 'boss' || enemyType === 'boss2' || enemyType === 'boss3' || enemyType === 'destiny',
                 isSkeletonMinion: enemyType === 'bossSkeleton',
               };
             });
@@ -669,6 +693,10 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
               getTargetPosition={getTargetPosition}
               damage={effect.damage}
               onHitEnemy={() => {
+                const hitPos = getTargetPosition();
+                if (hitPos) {
+                  window.audioSystem?.playLocustImpactSound?.(hitPos);
+                }
                 if (isLocalPlayerLocust && lockedTargetId) {
                   onLocustHitEnemy(lockedTargetId, effect.damage);
                 }
@@ -730,8 +758,17 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
               direction={effect.direction}
               casterId={effect.playerId}
               enemyData={nearbyEnemies}
+              isEnemyPullImmune={isDeathGraspPullImmuneEnemy}
+              getPulledEnemyPosition={getDeathGraspPulledEnemyPosition}
+              onEnemyPullFrame={onDeathGraspEnemyPullFrame}
               onHit={(targetId, hitPosition) => {
-                onDeathGraspHitEnemy(targetId, hitPosition, effect.playerId);
+                onDeathGraspHitEnemy(
+                  targetId,
+                  hitPosition,
+                  effect.playerId,
+                  effect.startPosition,
+                  effect.direction,
+                );
               }}
               onComplete={() => {
                 removeDeathGrasp(effect.id);

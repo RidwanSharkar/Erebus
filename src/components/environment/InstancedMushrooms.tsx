@@ -10,6 +10,7 @@ import {
   DoubleSide,
 } from '@/utils/three-exports';
 import { MUSHROOM_COUNT, buildMushroomInstances } from '@/utils/mushroomLayout';
+import { isInsideHexArenaXZ } from '@/utils/mapConstants';
 
 const STEM_VERT = `
   varying vec3 vWorldPos;
@@ -81,9 +82,14 @@ const _zero = new Matrix4().makeScale(0, 0, 0);
 export interface InstancedMushroomsProps {
   /** Indices to hide (server-destroyed). */
   hiddenIndices?: ReadonlySet<number>;
+  /** When set, hide mushrooms outside this hex circumradius (e.g. Fae Realm r=15). */
+  hexRadius?: number;
 }
 
-const InstancedMushrooms: React.FC<InstancedMushroomsProps> = ({ hiddenIndices }) => {
+const InstancedMushrooms: React.FC<InstancedMushroomsProps> = ({
+  hiddenIndices,
+  hexRadius,
+}) => {
   const stemRef = useRef<InstancedMesh>(null);
   const capRef = useRef<InstancedMesh>(null);
 
@@ -141,12 +147,15 @@ const InstancedMushrooms: React.FC<InstancedMushroomsProps> = ({ hiddenIndices }
     const pos = new Vector3();
 
     for (let i = 0; i < MUSHROOM_COUNT; i++) {
-      if (hide?.has(i)) {
+      const { x, z, h, cr } = instances[i]!;
+      const outsideHex =
+        typeof hexRadius === 'number'
+        && !isInsideHexArenaXZ(x, z, hexRadius, 0.5);
+      if (hide?.has(i) || outsideHex) {
         stem.setMatrixAt(i, _zero);
         cap.setMatrixAt(i, _zero);
         continue;
       }
-      const { x, z, h, cr } = instances[i]!;
       scl.set(1, h / 0.32, 1);
       m.makeScale(scl.x, scl.y, scl.z);
       pos.set(x, h * 0.5, z);
@@ -162,7 +171,7 @@ const InstancedMushrooms: React.FC<InstancedMushroomsProps> = ({ hiddenIndices }
 
     stem.instanceMatrix.needsUpdate = true;
     cap.instanceMatrix.needsUpdate = true;
-  }, [instances]);
+  }, [instances, hexRadius]);
 
   useLayoutEffect(() => {
     if (stemRef.current && capRef.current) {

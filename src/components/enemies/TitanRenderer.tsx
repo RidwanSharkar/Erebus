@@ -10,6 +10,7 @@ import TitanSoulEffect from './TitanSoulEffect';
 import TitanBladestorm from './TitanBladestorm';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyMeleeAttackRangeRing, { TITAN_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
+import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type MeleeTelegraphVisual } from '@/utils/meleeTelegraphVisual';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
@@ -52,7 +53,7 @@ const FADE_DURATION          = 2.5;
 const LERP_SPEED             = 8;
 const WALK_STOP_DELAY        = 300;
 
-const HP_BAR_WIDTH = 3.0;
+const HP_BAR_WIDTH = 4.2;
 const HP_BAR_HEIGHT = 0.28;
 const HP_BAR_FILL_HEIGHT = 0.26;
 
@@ -75,6 +76,7 @@ function TitanRenderer({
   const hpTextRef = useRef<any>(null);
 
   const [isAttacking, setIsAttacking] = useState(false);
+  const [meleeTelegraph, setMeleeTelegraph] = useState<MeleeTelegraphVisual | null>(null);
   const [isPoweringUp, setIsPoweringUp] = useState(false);
   const [isStomping, setIsStomping] = useState(false);
   const [isCasting, setIsCasting] = useState(false);
@@ -141,20 +143,38 @@ function TitanRenderer({
   useEffect(() => {
     if (!socket) return;
 
-    const handleTitanTelegraph = (data: { titanId: string }) => {
+    const handleTitanTelegraph = (data: {
+      titanId: string;
+      hitDelayMs?: number;
+      swingLockMs?: number;
+      attackRange?: number;
+      arcDeg?: number;
+      facing?: number;
+      weightClass?: string;
+      timestamp?: number;
+    }) => {
       if (data.titanId !== id) return;
+      const visual = parseMeleeTelegraphPayload(data, TITAN_MELEE_ATTACK_RANGE, ATTACK_DURATION);
+      setMeleeTelegraph(visual);
       setIsAttacking(true);
       isAttackingRef.current = true;
       isWalkingRef.current = false;
       setIsWalking(false);
+      const duration = meleeAttackDurationFromTelegraph(visual, ATTACK_DURATION);
       trackTimeout(() => {
         setIsAttacking(false);
+        setMeleeTelegraph(null);
         isAttackingRef.current = false;
         if (!isAnimLocked()) {
           isWalkingRef.current = true;
           setIsWalking(true);
         }
-      }, ATTACK_DURATION);
+      }, duration);
+    };
+
+    const handleTitanWhiff = (data: { titanId: string }) => {
+      if (data.titanId !== id) return;
+      setMeleeTelegraph((prev) => (prev ? { ...prev, whiffed: true } : prev));
     };
 
     const handleBladestormPowerup = (data: { titanId: string }) => {
@@ -206,11 +226,13 @@ function TitanRenderer({
     };
 
     socket.on('titan-attack-telegraph', handleTitanTelegraph);
+    socket.on('titan-attack-whiff', handleTitanWhiff);
     socket.on('titan-bladestorm-powerup-start', handleBladestormPowerup);
     socket.on('titan-stomp-start', handleStompStart);
     socket.on('titan-cannon-windup', handleCannonWindup);
     return () => {
       socket.off('titan-attack-telegraph', handleTitanTelegraph);
+      socket.off('titan-attack-whiff', handleTitanWhiff);
       socket.off('titan-bladestorm-powerup-start', handleBladestormPowerup);
       socket.off('titan-stomp-start', handleStompStart);
       socket.off('titan-cannon-windup', handleCannonWindup);
@@ -300,7 +322,17 @@ function TitanRenderer({
       )}
 
       {isAttacking && (
-        <EnemyMeleeAttackRangeRing radius={TITAN_MELEE_ATTACK_RANGE} />
+        <EnemyMeleeAttackRangeRing
+          radius={meleeTelegraph?.attackRange ?? TITAN_MELEE_ATTACK_RANGE}
+          hitDelayMs={meleeTelegraph?.hitDelayMs}
+          swingLockMs={meleeTelegraph?.swingLockMs}
+          arcDeg={meleeTelegraph?.arcDeg}
+          facing={meleeTelegraph?.facing}
+          weightClass={meleeTelegraph?.weightClass}
+          whiffed={meleeTelegraph?.whiffed}
+          startedAtMs={meleeTelegraph?.startedAtMs}
+          commitAtMs={meleeTelegraph?.commitAtMs}
+        />
       )}
 
       <Billboard position={[0, 6.25, 0]} follow lockX={false} lockY={false} lockZ={false}>

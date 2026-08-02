@@ -8,10 +8,11 @@ export const MERCHANT_UTILITY_MAX = 3;
 export const MERCHANT_HEAL_COST = 50;
 export const MERCHANT_OXYGEN_COST = 300;
 export const MERCHANT_WARPDRIVE_COST = 300;
+export const MERCHANT_BACKFILL_COST = 1200;
 
 const BASE_MAX_ENERGY = 100;
 const OXYGEN_ENERGY_PER_PURCHASE = 20;
-const WARPDRIVE_DASH_DISTANCES = [4.125, 4.5, 4.875, 5.125] as const;
+const WARPDRIVE_DASH_DISTANCES = [4.125, 4.875, 5.25, 5.825] as const;
 
 export function getOxygenMaxEnergy(purchases: number): number {
   const capped = Math.max(0, Math.min(MERCHANT_UTILITY_MAX, purchases));
@@ -27,6 +28,47 @@ export function getUtilityStock(inventory: MerchantStockItem[]): MerchantStockIt
   return inventory.find((entry) => entry.kind === 'oxygen' || entry.kind === 'warpdrive');
 }
 
+export function getBackfillStock(
+  inventory: MerchantStockItem[],
+  slot: 'dash_charge' | 'weapon_talent',
+): MerchantStockItem | undefined {
+  return inventory.find(
+    (entry) => entry.kind === 'boss_drop' && entry.backfillSlot === slot && !entry.sold,
+  );
+}
+
+/** True when the run-limit for dash charge / weapon talent is exhausted (backfill may appear). */
+export function isMerchantBaseSlotSoldOut(
+  slot: 'dash_charge' | 'weapon_talent',
+  purchaseState: MerchantPurchaseState,
+): boolean {
+  if (slot === 'dash_charge') return purchaseState.dashChargePurchased;
+  return purchaseState.weaponTalentPurchases >= MERCHANT_WEAPON_TALENT_MAX;
+}
+
+/**
+ * Resolves which stock item a pedestal currently offers:
+ * base dash/talent/utility/boss_drop, or premium backfill when the base is sold out for the run.
+ */
+export function getMerchantSlotStock(
+  slot: MerchantShopSlotKind,
+  inventory: MerchantStockItem[],
+  purchaseState: MerchantPurchaseState,
+): MerchantStockItem | undefined {
+  if (slot === 'heal') return undefined;
+  if (slot === 'utility') return getUtilityStock(inventory);
+  if (slot === 'boss_drop') {
+    return inventory.find((entry) => entry.kind === 'boss_drop' && !entry.backfillSlot);
+  }
+  if (slot === 'dash_charge' || slot === 'weapon_talent') {
+    if (isMerchantBaseSlotSoldOut(slot, purchaseState)) {
+      return getBackfillStock(inventory, slot);
+    }
+    return inventory.find((entry) => entry.kind === slot);
+  }
+  return undefined;
+}
+
 export function isMerchantSlotTaken(
   slot: MerchantShopSlotKind,
   inventory: MerchantStockItem[],
@@ -34,10 +76,15 @@ export function isMerchantSlotTaken(
 ): boolean {
   switch (slot) {
     case 'dash_charge':
-      return purchaseState.dashChargePurchased;
+      if (!purchaseState.dashChargePurchased) return false;
+      if (purchaseState.backfillDashPurchasedThisVisit) return true;
+      return !getBackfillStock(inventory, 'dash_charge');
     case 'weapon_talent':
-      return purchaseState.weaponTalentPurchasedThisVisit
-        || purchaseState.weaponTalentPurchases >= MERCHANT_WEAPON_TALENT_MAX;
+      if (purchaseState.weaponTalentPurchases >= MERCHANT_WEAPON_TALENT_MAX) {
+        if (purchaseState.backfillTalentPurchasedThisVisit) return true;
+        return !getBackfillStock(inventory, 'weapon_talent');
+      }
+      return purchaseState.weaponTalentPurchasedThisVisit;
     case 'heal':
       return purchaseState.healPurchasedThisVisit;
     case 'utility': {
@@ -50,8 +97,8 @@ export function isMerchantSlotTaken(
       return purchaseState.warpdrivePurchases >= MERCHANT_UTILITY_MAX;
     }
     case 'boss_drop': {
-      const entry = inventory.find((s) => s.kind === 'boss_drop');
-      return !!entry?.sold;
+      const entry = inventory.find((s) => s.kind === 'boss_drop' && !s.backfillSlot);
+      return !!entry?.sold || !entry;
     }
     default:
       return false;
@@ -61,9 +108,13 @@ export function isMerchantSlotTaken(
 export function getStockForSlot(
   slot: MerchantShopSlotKind,
   inventory: MerchantStockItem[],
+  purchaseState?: MerchantPurchaseState,
 ): MerchantStockItem | undefined {
+  if (purchaseState) {
+    return getMerchantSlotStock(slot, inventory, purchaseState);
+  }
   if (slot === 'utility') return getUtilityStock(inventory);
-  if (slot === 'boss_drop') return inventory.find((entry) => entry.kind === 'boss_drop');
+  if (slot === 'boss_drop') return inventory.find((entry) => entry.kind === 'boss_drop' && !entry.backfillSlot);
   if (slot === 'heal') return undefined;
   return inventory.find((entry) => entry.kind === slot);
 }
@@ -75,6 +126,26 @@ export interface MerchantShopTooltipData {
   limitLabel?: string;
 }
 
+function getBossDropTooltip(entry: MerchantStockItem): MerchantShopTooltipData {
+  const item = entry.item;
+  const label = item?.label ?? entry.label ?? 'Mystery Item';
+  const stat = item?.stat;
+  const statBonus = item?.statBonus;
+  const rarity = item?.rarity;
+  const statName = stat ? StatSystem.getStatDisplayName(stat) : 'Stats';
+  const rarityLabel = rarity && isItemRarity(rarity) ? ` (${rarity})` : '';
+  const description =
+    entry.description
+    ?? (statBonus != null && stat
+      ? `Grants +${statBonus} ${statName}${rarityLabel}.`
+      : 'A powerful relic from a fallen boss.');
+  return {
+    name: label,
+    cost: entry.cost,
+    description,
+  };
+}
+
 export function getMerchantShopTooltipData(
   slot: MerchantShopSlotKind,
   inventory: MerchantStockItem[],
@@ -82,6 +153,12 @@ export function getMerchantShopTooltipData(
 ): MerchantShopTooltipData | null {
   switch (slot) {
     case 'dash_charge': {
+      if (isMerchantSlotTaken('dash_charge', inventory, purchaseState)) return null;
+      if (isMerchantBaseSlotSoldOut('dash_charge', purchaseState)) {
+        const backfill = getBackfillStock(inventory, 'dash_charge');
+        if (!backfill) return null;
+        return getBossDropTooltip(backfill);
+      }
       const entry = inventory.find((item) => item.kind === 'dash_charge');
       return {
         name: entry?.label ?? 'Dash Charge',
@@ -91,6 +168,11 @@ export function getMerchantShopTooltipData(
     }
     case 'weapon_talent': {
       if (isMerchantSlotTaken('weapon_talent', inventory, purchaseState)) return null;
+      if (isMerchantBaseSlotSoldOut('weapon_talent', purchaseState)) {
+        const backfill = getBackfillStock(inventory, 'weapon_talent');
+        if (!backfill) return null;
+        return getBossDropTooltip(backfill);
+      }
       const entry = inventory.find((item) => item.kind === 'weapon_talent');
       return {
         name: entry?.label ?? 'Class Talent',
@@ -106,24 +188,9 @@ export function getMerchantShopTooltipData(
         description: 'Restores 125 HP instantly.',
       };
     case 'boss_drop': {
-      const entry = inventory.find((item) => item.kind === 'boss_drop');
+      const entry = inventory.find((item) => item.kind === 'boss_drop' && !item.backfillSlot);
       if (!entry || entry.sold) return null;
-      const item = entry.item;
-      const label = item?.label ?? entry.label ?? 'Mystery Item';
-      const stat = item?.stat;
-      const statBonus = item?.statBonus;
-      const rarity = item?.rarity;
-      const statName = stat ? StatSystem.getStatDisplayName(stat) : 'Stats';
-      const rarityLabel = rarity && isItemRarity(rarity) ? ` (${rarity})` : '';
-      const description =
-        statBonus != null && stat
-          ? `Grants +${statBonus} ${statName}${rarityLabel}.`
-          : 'A powerful relic from a fallen boss.';
-      return {
-        name: label,
-        cost: entry.cost,
-        description,
-      };
+      return getBossDropTooltip(entry);
     }
     case 'utility': {
       const entry = getUtilityStock(inventory);

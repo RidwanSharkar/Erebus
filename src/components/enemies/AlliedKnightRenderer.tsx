@@ -44,6 +44,7 @@ function AlliedKnightRenderer({
       maxHealth={maxHealth}
       isDying={isDying}
       campType="ally-green"
+      soulType="yellow"
       showMeleeRangeRing={false}
       staggerBuildup={staggerBuildup}
       attackTelegraphEvent="allied-knight-attack-telegraph"

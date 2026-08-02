@@ -276,8 +276,28 @@ io.on('connection', (socket) => {
       ok = room.activateDevBoss2Arena();
     } else if (camp === 'dev_boss3') {
       ok = room.activateDevBoss3Arena();
+    } else if (/^dev_intro_[1-4]$/.test(camp)) {
+      ok = room.activateDevIntroRoom(Number(camp.slice(-1)));
+    } else if (/^dev_sunken_[1-4]$/.test(camp)) {
+      ok = room.activateDevSunkenRoom(Number(camp.slice(-1)));
+    } else if (/^dev_eternity_[1-5]$/.test(camp)) {
+      ok = room.activateDevEternityRoom(Number(camp.slice(-1)));
+    } else if (camp === 'dev_erebus_gate') {
+      ok = room.activateDevErebusGate();
+    } else if (camp === 'dev_delirium_gate') {
+      ok = room.activateDevDeliriumGate();
     } else if (room.isInCoopThronePrep()) {
-      ok = room.beginIntroRoom(1);
+      ok = room.beginFaeRealmRoom(1);
+    } else if (room.coopFaeRealmPortalOpen && room.coopFaeRealmActive) {
+      if (room.coopFaeRealmRoomIndex === 3) {
+        ok = room.beginIntroRoom(1);
+      } else {
+        ok = room.beginFaeRealmRoom(room.coopFaeRealmRoomIndex + 1);
+      }
+    } else if (room.coopEternityPortalOpen && room.coopEternityActive) {
+      ok = room.beginEternityRoom(room.coopEternityRoomIndex + 1);
+    } else if (room.coopEternityFountainPhase && room.coopEternityFountainUsed && room.coopEternityLootPhaseComplete) {
+      ok = room.enterMainLoopAfterEternity(chosenCampType);
     } else if (room.coopSunkenPortalOpen && room.coopSunkenActive) {
       ok = room.beginSunkenRoom(room.coopSunkenRoomIndex + 1);
     } else if (room.coopSunkenFountainPhase && room.coopSunkenFountainUsed && room.coopSunkenLootPhaseComplete) {
@@ -336,6 +356,30 @@ io.on('connection', (socket) => {
     if (ok) {
       socket.emit('coop-choose-sunken-loot-success', { roomId, stockId, timestamp: Date.now() });
     }
+  });
+
+  socket.on('coop-choose-eternity-pet-upgrade', (data) => {
+    const { roomId, upgradeId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    if (!room.getPlayer(socket.id)) return;
+    if (typeof room.chooseEternityPetUpgrade !== 'function') return;
+
+    const ok = room.chooseEternityPetUpgrade(socket.id, upgradeId);
+    if (ok) {
+      socket.emit('coop-choose-eternity-pet-upgrade-success', { roomId, upgradeId, timestamp: Date.now() });
+    }
+  });
+
+  // Legacy no-op — Eternity III now uses pet upgrades instead of Architect loot.
+  socket.on('coop-choose-eternity-loot', (data) => {
+    const { roomId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    socket.emit('coop-eternity-pet-upgrade-failed', {
+      reason: 'loot_replaced_by_pet_upgrade',
+      timestamp: Date.now(),
+    });
   });
 
   socket.on('coop-pre-boss-reward-claimed', (data) => {

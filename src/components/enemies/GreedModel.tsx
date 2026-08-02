@@ -1,14 +1,15 @@
 'use client';
 
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAnimations, useGLTF } from '@react-three/drei';
-import { AnimationAction, AnimationClip, Group, LoopOnce, LoopRepeat } from 'three';
+import { AnimationAction, AnimationClip, Group } from 'three';
 import { GLTFLoader } from 'three-stdlib';
 import { peek as suspendPeek } from 'suspend-react';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadGltfAnimationClips, preloadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
 import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 import { getCachedProcessedClips } from '@/utils/enemyAnimationClipCache';
+import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
 
 /** Greed uses the idle mesh (same as allied healer / merchant NPC) and always plays Walk. */
 type GreedClip = 'Idle' | 'Walk' | 'Death' | 'Cast' | 'HealCast' | 'Launch';
@@ -77,7 +78,6 @@ export default React.memo(function GreedModel({ isDying, abilityClip, isWalking 
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
   const extraActionsRef = useRef<Partial<Record<GreedClip, AnimationAction>>>({});
-  const hasKickedIdleRef = useRef(false);
   const isMountedRef = useRef(true);
   const requestedDeferredStatesRef = useRef<Set<Exclude<GreedClip, 'Idle'>>>(new Set());
   const [deferredAnimationClips, setDeferredAnimationClips] = useState<
@@ -166,16 +166,13 @@ export default React.memo(function GreedModel({ isDying, abilityClip, isWalking 
   const getAction = (name: GreedClip): AnimationAction | null =>
     idleActions[name] ?? extraActionsRef.current[name] ?? null;
 
-  // Kick Idle before first paint so Greed never flashes T-pose or renders with no bound pose.
-  useLayoutEffect(() => {
-    const idle = idleActions.Idle;
-    if (!idle || hasKickedIdleRef.current) return;
-    hasKickedIdleRef.current = true;
-    idle.enabled = true;
-    idle.setLoop(LoopRepeat, Infinity);
-    idle.play();
-    currentActionRef.current = idle;
-  }, [idleActions]);
+  const resolveIdle = useCallback(() => getAction('Idle'), [idleActions]); // eslint-disable-line react-hooks/exhaustive-deps
+  const posed = useEnemyIdlePose({
+    actions: idleActions,
+    mixer,
+    currentActionRef,
+    resolveIdle,
+  });
 
   useEffect(() => {
     if (!idleActions) return;
@@ -184,20 +181,12 @@ export default React.memo(function GreedModel({ isDying, abilityClip, isWalking 
       : abilityClip
         ? getAction(abilityClip)
         : (isWalking ? getAction('Walk') : getAction('Idle')) ?? getAction('Idle');
-    if (!nextAction || nextAction === currentActionRef.current) return;
-
-    currentActionRef.current?.fadeOut(0.2);
-    if (isDying || abilityClip) {
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = true;
-      nextAction.reset().fadeIn(0.15).play();
-    } else {
-      nextAction.enabled = true;
-      nextAction.setLoop(LoopRepeat, Infinity);
-      nextAction.reset().fadeIn(0.2).play();
-    }
-    currentActionRef.current = nextAction;
-  }, [idleActions, abilityClip, isDying, isWalking, deferredAnimationClips]); // eslint-disable-line react-hooks/exhaustive-deps
+    playEnemyAction(nextAction, currentActionRef, mixer, {
+      loopOnce: !!(isDying || abilityClip),
+      clampWhenFinished: !!(isDying || abilityClip),
+      fadeIn: isDying || abilityClip ? 0.15 : 0.2,
+    });
+  }, [idleActions, abilityClip, isDying, isWalking, deferredAnimationClips, mixer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!mixer || isDying) return;
@@ -205,19 +194,14 @@ export default React.memo(function GreedModel({ isDying, abilityClip, isWalking 
       const name = e.action.getClip().name;
       if (name !== 'Cast' && name !== 'HealCast' && name !== 'Launch') return;
       const fallback = (isWalking ? getAction('Walk') : getAction('Idle')) ?? getAction('Idle');
-      if (!fallback) return;
-      fallback.enabled = true;
-      fallback.setLoop(LoopRepeat, Infinity);
-      currentActionRef.current?.fadeOut(0.15);
-      fallback.reset().fadeIn(0.15).play();
-      currentActionRef.current = fallback;
+      playEnemyAction(fallback, currentActionRef, mixer, { fadeIn: 0.15, fadeOut: 0.15 });
     };
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
   }, [mixer, isDying, isWalking, idleActions, deferredAnimationClips]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <group ref={sceneGroupRef}>
+    <group ref={sceneGroupRef} visible={posed}>
       <group scale={[SCALE, SCALE, SCALE]}>
         <primitive object={clonedScene} />
       </group>

@@ -16,6 +16,52 @@ type CoopBgmMode = 'hub' | 'combat' | 'chaos' | 'none';
 /** Large music files: HTML5 Audio streams instead of full Web Audio decode (lower memory). */
 const LARGE_BGM_HTML5 = true;
 
+/** Named co-op BGM cache keys (room-specific tracks under /audio/sfx/ui/tracks/). */
+const COOP_NAMED_BGM_CACHE_IDS = Object.freeze([
+  'coop_bgm_throne',
+  'coop_bgm_delirium_gate',
+  'coop_bgm_eden',
+  'coop_bgm_erebus_gate',
+  'coop_bgm_sunken_temple',
+  'coop_bgm_eternity_palace',
+  'coop_bgm_merchant',
+  'coop_bgm_boss',
+] as const);
+
+type CoopNamedBgmTrack = { cacheId: string; src: string };
+
+/**
+ * Map combat room kind → fixed track. Returns 'random' for halls / intro / deep_sanctum / etc.
+ * Accepts string | null to avoid coupling AudioSystem to CoopRoomKind.
+ */
+function resolveCoopCombatBgm(
+  roomKind: string | null,
+  opts: { bossThroneArena: boolean },
+): CoopNamedBgmTrack | 'random' {
+  if (roomKind === 'delirium_gate') {
+    return { cacheId: 'coop_bgm_delirium_gate', src: '/audio/sfx/ui/tracks/deliriumGate.mp3' };
+  }
+  if (roomKind === 'eden' || roomKind === 'false_eden' || roomKind === 'dream_layer' || roomKind === 'fae_realm') {
+    return { cacheId: 'coop_bgm_eden', src: '/audio/sfx/ui/tracks/eden.mp3' };
+  }
+  if (roomKind === 'erebus_gate') {
+    return { cacheId: 'coop_bgm_erebus_gate', src: '/audio/sfx/ui/tracks/erebusGate.mp3' };
+  }
+  if (roomKind === 'sunken_temple') {
+    return { cacheId: 'coop_bgm_sunken_temple', src: '/audio/sfx/ui/tracks/sunkenTemple.MP3' };
+  }
+  if (roomKind === 'eternity_palace') {
+    return { cacheId: 'coop_bgm_eternity_palace', src: '/audio/sfx/ui/tracks/throne.MP3' };
+  }
+  if (roomKind === 'merchant') {
+    return { cacheId: 'coop_bgm_merchant', src: '/audio/sfx/ui/tracks/merchant.mp3' };
+  }
+  if (roomKind === 'boss' && opts.bossThroneArena) {
+    return { cacheId: 'coop_bgm_boss', src: '/audio/sfx/ui/tracks/bossBattle.mp3' };
+  }
+  return 'random';
+}
+
 type SfxAsset = { id: string; file: string; html5?: boolean };
 
 const WEAPON_SOUND_ASSETS: SfxAsset[] = [
@@ -79,7 +125,7 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'enemy_blink', file: 'versus/blink.mp3' },
   { id: 'wraith_buzzsaw', file: 'versus/buzzsaw.mp3' },
   { id: 'enemy_death', file: 'versus/deathSFX.mp3' },
-  { id: 'enemy_death_ghoul', file: 'versus/ghoulDeathSFX.mp3' },
+  { id: 'enemy_death_ghoul', file: 'versus/1beastDeath.mp3' },
   { id: 'enemy_death_warlock', file: 'versus/warlockdeath.mp3' },
   { id: 'enemy_death_shade', file: 'versus/shadedeath.mp3' },
   { id: 'enemy_death_viper', file: 'versus/viperdeath.mp3' },
@@ -87,6 +133,21 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'enemy_death_martyr', file: 'versus/martyrdeath.mp3' },
   { id: 'enemy_death_boss2', file: 'versus/boss2death.mp3' },
   { id: 'enemy_death_tentacle_spine', file: 'versus/spinedeath.mp3' },
+  { id: 'beast_tiger_aggro', file: 'versus/beasts/tiger_aggro.mp3' },
+  { id: 'beast_tiger_attack', file: 'versus/beasts/tiger_attack.mp3' },
+  { id: 'beast_wolf_attack1', file: 'versus/beasts/wolf_attack1.mp3' },
+  { id: 'beast_wolf_attack2', file: 'versus/beasts/wolf_attack2.mp3' },
+  { id: 'beast_wolf_howls', file: 'versus/beasts/wolf_howls.mp3' },
+  { id: 'beast_wolf_death', file: 'versus/beasts/wolf_death.mp3' },
+  { id: 'beast_serpent_aggro', file: 'versus/beasts/serpent_aggro.mp3' },
+  { id: 'beast_serpent_attack', file: 'versus/beasts/serpent_attack.mp3' },
+  { id: 'beast_wyvern_aggro', file: 'versus/beasts/wyvern_aggro.mp3' },
+  { id: 'beast_wyvern_attack', file: 'versus/beasts/wyvern_attack.mp3' },
+  { id: 'beast_wyvern_roar', file: 'versus/beasts/wyvern_roar.mp3' },
+  { id: 'beast_death_wyverntiger', file: 'versus/beasts/wyverntiger_death.mp3' },
+  { id: 'beast_bear_aggro', file: 'versus/beasts/bear_aggro.mp3' },
+  { id: 'beast_bear_attack1', file: 'versus/beasts/bear_attack1.mp3' },
+  { id: 'beast_bear_death', file: 'versus/beasts/bear_death.mp3' },
   { id: 'enemy_knight_smite', file: 'versus/smite.mp3' },
   { id: 'enemy_templar_smite', file: 'sword/smite.mp3' },
   { id: 'weaver_ghoul_summon', file: 'versus/summon.mp3' },
@@ -102,6 +163,7 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'warlock_voidbolt', file: 'versus/voidbolt.mp3' },
   { id: 'warlock_zap', file: 'versus/warlockzap.mp3' },
   { id: 'enemy_titan_stomp', file: 'versus/titanstomp.mp3' },
+  { id: 'warhammer_impact', file: 'versus/titanHit.mp3' },
   { id: 'enemy_titan_bladestorm', file: 'runeblade/whirwind2.mp3' },
   { id: 'enemy_frost_ray', file: 'versus/frostRay.mp3' },
   { id: 'enemy_telegraph', file: 'versus/telegraph.mp3' },
@@ -133,7 +195,9 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'ui_interface_4', file: 'ui/interface4.mp3' },
   { id: 'ui_hitbox_bow', file: 'ui/bowHitbox.mp3' },
   { id: 'ui_hitbox_sabres', file: 'ui/sabresHitbox.mp3' },
-  { id: 'ui_hitbox_scythe', file: 'ui/scytheHitbox.mp3' },
+  { id: 'ui_hitbox_scythe_1', file: 'ui/scythe_impact1.mp3' },
+  { id: 'ui_hitbox_scythe_2', file: 'ui/scythe_impact2.mp3' },
+  { id: 'ui_hitbox_scythe_3', file: 'ui/scythe_impact3.mp3' },
   { id: 'ui_hitbox_spear', file: 'ui/spearHitbox.mp3' },
   { id: 'ui_hitbox_sword', file: 'ui/swordHitbox.mp3' },
   { id: 'ui_room_start_1', file: 'ui/start1.mp3' },
@@ -154,10 +218,15 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'ui_deflect_bolt', file: 'ui/Deflect.mp3' },
   { id: 'ui_deflect_cast', file: 'ui/Deflect_cast.mp3' },
   { id: 'ui_locusts', file: 'ui/locusts.mp3' },
+  { id: 'ui_locust_impact', file: 'ui/locust_impact.mp3' },
+  { id: 'valkyrie_judgment_cast', file: 'versus/valykrie_cast.mp3' },
+  { id: 'runeblade_swing1', file: 'runeblade/runeblade_swing1.mp3' },
+  { id: 'judgment_corruption', file: 'versus/judgment_corruption.mp3' },
   { id: 'ui_devouring_circle', file: 'ui/devouringCircle.mp3' },
   { id: 'ui_prime_materia', file: 'ui/primemateria.mp3' },
   { id: 'ui_alchemy', file: 'ui/alchemy.mp3' },
   { id: 'enemy_firebolt', file: 'ui/firebolt.mp3' },
+  { id: 'firebolt_impact', file: 'versus/fireboltImpact.mp3' },
   { id: 'incinerate_charge', file: 'ui/IncinerateCharge.mp3' },
   { id: 'incinerate_armed', file: 'ui/incinerateArmed.mp3' },
   { id: 'ui_shield_break', file: 'ui/1shieldBreak.mp3' },
@@ -222,7 +291,9 @@ const WEAPON_SPECIFIC_SOUND_IDS: Partial<Record<WeaponType, readonly string[]>> 
     'scythe_totem_bolt',
     'scythe_superconductor',
     'icebeam',
-    'ui_hitbox_scythe',
+    'ui_hitbox_scythe_1',
+    'ui_hitbox_scythe_2',
+    'ui_hitbox_scythe_3',
   ],
   [WeaponType.SPEAR]: [
     'spear_swing',
@@ -261,6 +332,7 @@ const WEAPON_SPECIFIC_SOUND_IDS: Partial<Record<WeaponType, readonly string[]>> 
     'runeblade_wraithblade',
     'runeblade_void_grasp',
     'runeblade_swing_hit',
+    'warhammer_impact',
     'runeblade_whirlwind',
     'sword_miss_1',
     'sword_miss_2',
@@ -333,6 +405,8 @@ export class AudioSystem extends System {
   private soundLastPlayedAt = new Map<string, number>();
   /** Active looped gameplay SFX instances — one per soundId (stop-before-play). */
   private loopingSfxInstances = new Map<string, number>();
+  /** Cycles scythe hit-confirm SFX across scythe_impact1/2/3. */
+  private scytheHitboxVariant: 1 | 2 | 3 = 1;
 
   constructor() {
     super();
@@ -681,9 +755,11 @@ export class AudioSystem extends System {
     return this.playWeaponSound(soundId, position, { volume: 0.1 }); // 0.8 * 0.25
   }
 
-  /** Remote player Runeblade LMB — same asset as `playRunebladeSwingHitSound` at enemy volume. */
-  public playEnemyRunebladeSwingHitSound(position: Vector3) {
-    return this.playWeaponSound('runeblade_swing_hit', position, { volume: 0.2 }); // 0.8 * 0.25
+  /** Remote player Runeblade LMB — same asset as local connect at enemy volume. */
+  public playEnemyRunebladeSwingHitSound(position: Vector3, useWarhammerImpact = false) {
+    const soundId = useWarhammerImpact ? 'warhammer_impact' : 'runeblade_swing_hit';
+    const volume = useWarhammerImpact ? 0.25 : 0.2;
+    return this.playWeaponSound(soundId, position, { volume });
   }
 
   // Play enemy sword deflect sound
@@ -737,8 +813,32 @@ export class AudioSystem extends System {
     return this.playWeaponSound('enemy_frost_ray', position, { volume: 0.9 });
   }
 
+  /** Valkyrie Judgment — cast wind-up (first `valkyrie-judgment-cast` payload). */
+  public playValkyrieJudgmentCastSound(position: Vector3) {
+    return this.playWeaponSound('valkyrie_judgment_cast', position, { volume: 0.9 });
+  }
+
+  /** Valkyrie Judgment — sword fall (synced to fall start). */
+  public playValkyrieJudgmentFallSound(position: Vector3) {
+    return this.playWeaponSound('runeblade_swing1', position, { volume: 0.85 });
+  }
+
+  /** Valkyrie Judgment corruption — loop while local player has the debuff. */
+  public setJudgmentCorruptionPlaying(active: boolean): void {
+    if (active) {
+      this.playLoopingWeaponSound('judgment_corruption', this.listenerPosition, { volume: 0.75 });
+    } else {
+      this.stopLoopingWeaponSound('judgment_corruption');
+    }
+  }
+
   public playEnemyFireboltSound(position: Vector3) {
     return this.playWeaponSound('enemy_firebolt', position, { volume: 1.0 });
+  }
+
+  /** Firebolt / frost-ray impact — mirrors warlock voidbolt impact timing. */
+  public playFireboltImpactSound(position: Vector3, config?: SoundConfig) {
+    return this.playWeaponSound('firebolt_impact', position, { volume: 0.9, ...config });
   }
 
   // Play enemy throw spear release sound
@@ -872,9 +972,21 @@ export class AudioSystem extends System {
     return this.playWeaponSound('runeblade_void_grasp', position, { volume: 0.9 });
   }
 
-  /** Runeblade LMB connect — non-crit; crits use `playSwordSwingSound` (sword_swing_1–3). */
+  /** Runeblade LMB connect — non-crit default; Deathdealer crits/non-crits use warhammer impact instead. */
   public playRunebladeSwingHitSound(position: Vector3) {
     return this.playWeaponSound('runeblade_swing_hit', position, { volume: 0.8 });
+  }
+
+  /** Deathdealer warhammer LMB connect (crit and non-crit) — heavy titan impact. */
+  public playWarhammerImpactSound(position: Vector3) {
+    return this.playWeaponSound('warhammer_impact', position, { volume: 0.85 });
+  }
+
+  /** Runeblade LMB impact — routes to warhammer or default connect by aspect. */
+  public playRunebladeLmbImpactSound(position: Vector3, useWarhammerImpact: boolean) {
+    return useWarhammerImpact
+      ? this.playWarhammerImpactSound(position)
+      : this.playRunebladeSwingHitSound(position);
   }
 
   /** Cyclone Rush post-charge blade spin — loop until stopped via `stopSound` / `stopLoopingWeaponSound`. */
@@ -911,6 +1023,42 @@ export class AudioSystem extends System {
   // Play templar hit-damage sound (alternates between 1 and 2)
   public playTemplarDamageSound(position: Vector3, variant: 1 | 2) {
     return this.playWeaponSound(`templar_damage_${variant}`, position, { volume: 0.9 });
+  }
+
+  /**
+   * Incoming enemy melee impact routed by weight class.
+   * beast → beast attack clips / scythe impacts
+   * humanoid → knight/templar damage
+   * giant / large-beast → heavier scythe + stomp-like volume
+   */
+  public playMeleeImpactByWeightClass(
+    weightClass: 'beast' | 'large-beast' | 'humanoid' | 'giant',
+    position: Vector3,
+  ) {
+    if (weightClass === 'beast') {
+      const soundId = `ui_hitbox_scythe_${this.scytheHitboxVariant}`;
+      this.scytheHitboxVariant = ((this.scytheHitboxVariant % 3) + 1) as 1 | 2 | 3;
+      return this.playWeaponSound(soundId, position, { volume: 0.8, rate: 1.05 });
+    }
+    if (weightClass === 'large-beast') {
+      const soundId = `ui_hitbox_scythe_${this.scytheHitboxVariant}`;
+      this.scytheHitboxVariant = ((this.scytheHitboxVariant % 3) + 1) as 1 | 2 | 3;
+      return this.playWeaponSound(soundId, position, { volume: 0.95, rate: 0.92 });
+    }
+    if (weightClass === 'giant') {
+      const soundId = `ui_hitbox_scythe_${this.scytheHitboxVariant}`;
+      this.scytheHitboxVariant = ((this.scytheHitboxVariant % 3) + 1) as 1 | 2 | 3;
+      this.playWeaponSound(soundId, position, { volume: 1.0, rate: 0.82 });
+      return this.playWeaponSound('enemy_titan_stomp', position, { volume: 0.45, rate: 1.15 });
+    }
+    // humanoid
+    const variant = (Math.random() < 0.5 ? 1 : 2) as 1 | 2;
+    return this.playWeaponSound(`templar_damage_${variant}`, position, { volume: 0.9 });
+  }
+
+  /** Whoosh when an enemy melee swing whiffs (player dodged). */
+  public playMeleeWhiffSound(position: Vector3) {
+    return this.playWeaponSound('sword_miss_1', position, { volume: 0.7, rate: 1.1 });
   }
 
   public playEnemyKnightSmiteSound(position: Vector3) {
@@ -998,36 +1146,63 @@ export class AudioSystem extends System {
     }
     switch (enemyType) {
       case 'knight':
+      case 'allied-knight':
       case 'weaver':
+      case 'titan':
+      case 'boss3':
+      case 'destiny':
         return 'enemy_death';
       case 'ghoul':
+      case 'allied-demon':
       case 'boss-skeleton':
       case 'player-zombie':
+      case 'boss':
+      case 'nemesis':
+      case 'terrorhawk':
+      case 'skyray':
         return 'enemy_death_ghoul';
+      case 'tiger':
+      case 'boss-tiger':
+      case 'allied-tiger':
+      case 'wyvern':
+        return 'beast_death_wyverntiger';
+      case 'wolf':
+      case 'boss-wolf':
+      case 'allied-wolf':
+        return 'beast_wolf_death';
+      case 'bear':
+      case 'boss-bear':
+      case 'allied-bear':
+        return 'beast_bear_death';
+      case 'serpent':
+      case 'boss-serpent':
+      case 'allied-serpent':
+      case 'bone-spider':
+      case 'allied-spider':
+      case 'tentacle-spine':
+        return 'enemy_death_tentacle_spine';
       case 'martyr':
         return 'enemy_death_martyr';
       case 'warlock':
         return 'enemy_death_warlock';
       case 'shade':
-        return 'enemy_death_shade';
-      case 'viper':
-        return 'enemy_death_viper';
-      case 'templar':
-        return 'enemy_death_templar';
-      case 'boss':
-        return 'enemy_death_ghoul';
-      case 'boss2':
-        return 'enemy_death_boss2';
-      case 'boss3':
-      case 'titan':
-      case 'nemesis':
-      case 'valkyrie':
-        return 'enemy_death';
+      case 'greed':
       case 'spectre':
       case 'sentinel':
+      case 'death-knight':
+      case 'shaman':
+      case 'assassin':
+      case 'frost-queen':
         return 'enemy_death_shade';
-      case 'tentacle-spine':
-        return 'enemy_death_tentacle_spine';
+      case 'viper':
+      case 'allied-huntress':
+      case 'allied-enchantress':
+        return 'enemy_death_viper';
+      case 'templar':
+      case 'valkyrie':
+        return 'enemy_death_templar';
+      case 'boss2':
+        return 'enemy_death_boss2';
       default:
         return 'enemy_death_templar';
     }
@@ -1068,6 +1243,34 @@ export class AudioSystem extends System {
 
   public playKnightAggroSound(position: Vector3) {
     return this.playWeaponSound('knight_aggro', position, { volume: 0.75 });
+  }
+
+  public playBeastAggroSound(kind: 'tiger' | 'serpent' | 'wyvern' | 'bear', position: Vector3) {
+    const soundId =
+      kind === 'tiger'
+        ? 'beast_tiger_aggro'
+        : kind === 'serpent'
+          ? 'beast_serpent_aggro'
+          : kind === 'bear'
+            ? 'beast_bear_aggro'
+            : 'beast_wyvern_aggro';
+    return this.playWeaponSound(soundId, position, { volume: 0.8 });
+  }
+
+  public playBeastAttackSound(soundId: string, position: Vector3) {
+    return this.playWeaponSound(soundId, position, { volume: 0.85 });
+  }
+
+  public playWolfPackHowlsSound(position: Vector3) {
+    return this.playWeaponSound('beast_wolf_howls', position, { volume: 0.9 });
+  }
+
+  public playBeastWyvernAttackSound(position: Vector3) {
+    return this.playWeaponSound('beast_wyvern_attack', position, { volume: 0.85 });
+  }
+
+  public playBeastWyvernRoarSound(position: Vector3) {
+    return this.playWeaponSound('beast_wyvern_roar', position, { volume: 0.9 });
   }
 
   public playBossTectonicQuakeWarnSound(position: Vector3) {
@@ -1234,6 +1437,11 @@ export class AudioSystem extends System {
   /** Acolyte Locust — one shot per missile released from the shift channel. */
   public playLocustSound() {
     return this.playWeaponSound('ui_locusts', AudioSystem.UI_ORIGIN, { volume: 1.1 });
+  }
+
+  /** Acolyte Locust — played when a missile impacts an enemy. */
+  public playLocustImpactSound(position: Vector3) {
+    return this.playWeaponSound('ui_locust_impact', position, { volume: 0.85 });
   }
 
   /** Alchemist Prime Materia — played when the aura is toggled on. */
@@ -1503,8 +1711,6 @@ export class AudioSystem extends System {
         return 'ui_hitbox_bow';
       case WeaponType.SABRES:
         return 'ui_hitbox_sabres';
-      case WeaponType.SCYTHE:
-        return 'ui_hitbox_scythe';
       case WeaponType.SPEAR:
         return 'ui_hitbox_spear';
       case WeaponType.SWORD:
@@ -1516,6 +1722,13 @@ export class AudioSystem extends System {
     }
   }
 
+  private nextScytheHitboxSoundId(): string {
+    const soundId = `ui_hitbox_scythe_${this.scytheHitboxVariant}`;
+    this.scytheHitboxVariant =
+      this.scytheHitboxVariant === 3 ? 1 : ((this.scytheHitboxVariant + 1) as 1 | 2 | 3);
+    return soundId;
+  }
+
   // Play enemy-hit confirmation sound (per equipped weapon)
   public playUIHitboxSound(
     weapon?: WeaponType,
@@ -1523,7 +1736,10 @@ export class AudioSystem extends System {
     hitWorldPosition?: { x: number; y: number; z: number },
   ) {
     const resolved = weapon ?? this.getCurrentWeaponFromControl();
-    const soundId = this.hitboxSoundIdForWeapon(resolved);
+    const soundId =
+      resolved === WeaponType.SCYTHE
+        ? this.nextScytheHitboxSoundId()
+        : this.hitboxSoundIdForWeapon(resolved);
     const isMeleeMultiTarget = soundId === 'ui_hitbox_sabres' || soundId === 'ui_hitbox_sword';
     const playResult = isMeleeMultiTarget
       ? this.playWeaponSoundWithCooldown(soundId, AudioSystem.UI_ORIGIN, { volume: 0.65 }, AudioSystem.MELEE_HITBOX_SOUND_COOLDOWN_MS)
@@ -1563,6 +1779,12 @@ export class AudioSystem extends System {
         h.stop();
       }
     }
+    for (const id of COOP_NAMED_BGM_CACHE_IDS) {
+      const h = this.soundCache.get(id);
+      if (h) {
+        h.stop();
+      }
+    }
     this.coopRoomInstance = null;
     this.currentCoopRoomTrackId = null;
   }
@@ -1571,6 +1793,14 @@ export class AudioSystem extends System {
   private unloadCoopRoomHowlsFromCache(): void {
     for (let n = 1; n <= 7; n++) {
       const id = `coop_room_${n}`;
+      const h = this.soundCache.get(id);
+      if (h) {
+        h.stop();
+        h.unload();
+        this.soundCache.delete(id);
+      }
+    }
+    for (const id of COOP_NAMED_BGM_CACHE_IDS) {
       const h = this.soundCache.get(id);
       if (h) {
         h.stop();
@@ -1605,7 +1835,71 @@ export class AudioSystem extends System {
   }
 
   /**
-   * Co-op throne prep: no BGM. Idempotent; stops room + chaos.
+   * Load (if needed) and play a looping co-op BGM track. Race-safe against mode changes.
+   */
+  private async _loadAndPlayCoopBgm(
+    cacheId: string,
+    src: string,
+    mode: CoopBgmMode,
+  ): Promise<void> {
+    this.coopBgmMode = mode;
+    this.currentCoopRoomTrackId = cacheId;
+
+    if (!this.soundCache.has(cacheId)) {
+      const sound = new Howl({
+        src: [src],
+        volume: this.getCoopBgmVolume(),
+        loop: true,
+        preload: true,
+        html5: LARGE_BGM_HTML5,
+      });
+      try {
+        await new Promise<void>((resolve, reject) => {
+          sound.on('load', () => resolve());
+          sound.on('loaderror', (_id, err) => reject(new Error(String(err))));
+        });
+        this.soundCache.set(cacheId, sound);
+      } catch (e) {
+        console.warn(`Failed to load ${src}:`, e);
+        this.coopBgmMode = 'none';
+        this.currentCoopRoomTrackId = null;
+        return;
+      }
+    }
+    if (this.coopBgmMode !== mode || this.currentCoopRoomTrackId !== cacheId) {
+      return;
+    }
+    const h = this.soundCache.get(cacheId);
+    if (!h) return;
+    h.volume(this.getCoopBgmVolume());
+    this.coopRoomInstance = h.play();
+  }
+
+  /**
+   * Co-op throne prep at run start: loop throne.MP3. Idempotent if already playing.
+   */
+  public async coopEnterThronePrepMusic(): Promise<void> {
+    if (
+      this.coopBgmMode === 'hub' &&
+      this.currentCoopRoomTrackId === 'coop_bgm_throne' &&
+      this.coopRoomInstance !== null
+    ) {
+      return;
+    }
+    this.stopAllCoopRoomTracks();
+    this.unloadCoopRoomHowlsFromCache();
+    this.stopCoopChaosOnly();
+    this.unloadCoopChaosFromCache();
+    this.evictHubMusicFromMemory();
+    await this._loadAndPlayCoopBgm(
+      'coop_bgm_throne',
+      '/audio/sfx/ui/tracks/throne.MP3',
+      'hub',
+    );
+  }
+
+  /**
+   * Co-op throne prep (no intro pending): silence. Idempotent; stops room + chaos.
    */
   public coopEnterHubMusic(): void {
     this.stopAllCoopRoomTracks();
@@ -1661,6 +1955,30 @@ export class AudioSystem extends System {
   }
 
   /**
+   * Co-op combat room: room-specific track when mapped, else random track1–7.
+   */
+  public async coopEnterCombatRoomMusic(
+    roomKind: string | null,
+    opts: { bossThroneArena?: boolean } = {},
+  ): Promise<void> {
+    const resolved = resolveCoopCombatBgm(roomKind, {
+      bossThroneArena: !!opts.bossThroneArena,
+    });
+    if (resolved === 'random') {
+      await this.coopEnterRandomCombatRoomMusic();
+      return;
+    }
+
+    this.stopAllCoopRoomTracks();
+    this.unloadCoopRoomHowlsFromCache();
+    this.stopCoopChaosOnly();
+    this.unloadCoopChaosFromCache();
+    this.evictHubMusicFromMemory();
+    this.playCoopRoomEnterStinger();
+    await this._loadAndPlayCoopBgm(resolved.cacheId, resolved.src, 'combat');
+  }
+
+  /**
    * Co-op combat room: random track1–7, loop. Stops hub + chaos.
    */
   public async coopEnterRandomCombatRoomMusic(): Promise<void> {
@@ -1673,38 +1991,7 @@ export class AudioSystem extends System {
 
     const n = Math.floor(Math.random() * 7) + 1;
     const id = `coop_room_${n}`;
-    this.coopBgmMode = 'combat';
-    this.currentCoopRoomTrackId = id;
-
-    if (!this.soundCache.has(id)) {
-      const path = `/audio/sfx/ui/track${n}.mp3`;
-      const sound = new Howl({
-        src: [path],
-        volume: this.getCoopBgmVolume(),
-        loop: true,
-        preload: true,
-        html5: LARGE_BGM_HTML5,
-      });
-      try {
-        await new Promise<void>((resolve, reject) => {
-          sound.on('load', () => resolve());
-          sound.on('loaderror', (_id, err) => reject(new Error(String(err))));
-        });
-        this.soundCache.set(id, sound);
-      } catch (e) {
-        console.warn(`Failed to load ${path}:`, e);
-        this.coopBgmMode = 'none';
-        this.currentCoopRoomTrackId = null;
-        return;
-      }
-    }
-    if (this.coopBgmMode !== 'combat' || this.currentCoopRoomTrackId !== id) {
-      return;
-    }
-    const h = this.soundCache.get(id);
-    if (!h) return;
-    h.volume(this.getCoopBgmVolume());
-    this.coopRoomInstance = h.play();
+    await this._loadAndPlayCoopBgm(id, `/audio/sfx/ui/track${n}.mp3`, 'combat');
   }
 
   /** Stop combat-only and chaos. Call when leaving co-op for other modes. */
@@ -1732,6 +2019,7 @@ export class AudioSystem extends System {
   // Clean up resources
   public dispose() {
     this.setFootstepsPlaying(false);
+    this.setJudgmentCorruptionPlaying(false);
     this.stopAllCoopRoomTracks();
     this.stopCoopChaosOnly();
     this.coopBgmMode = 'none';

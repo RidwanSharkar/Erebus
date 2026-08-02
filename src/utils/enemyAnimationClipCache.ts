@@ -22,12 +22,13 @@ export function filterAnimationClipsForRoot(root: Object3D, clips: AnimationClip
   return clips.map((clip) => filterAnimationTracksForRoot(root, clip));
 }
 
-/** Zero root-motion X/Z on Hips position tracks so server position stays authoritative. */
+/** Zero root-motion X/Z on Hips / bone_Root / bone_Main position tracks so server position stays authoritative. */
 export function stripRootMotionXZ(clip: AnimationClip): AnimationClip {
   const result = clip.clone();
   result.tracks = result.tracks.map((track) => {
     if (!track.name.endsWith('.position')) return track;
-    if (!track.name.toLowerCase().includes('hips')) return track;
+    const lower = track.name.toLowerCase();
+    if (!lower.includes('hips') && !lower.includes('bone_root') && !lower.includes('bone_main')) return track;
     const values = Float32Array.from(track.values);
     for (let i = 0; i < values.length; i += 3) {
       values[i] = 0;
@@ -58,6 +59,16 @@ export function getCachedEnemyAnimationClips(
   return built;
 }
 
+/** Drop a session clip cache entry so the next build can store a complete set. */
+export function invalidateEnemyAnimationClipCache(cacheId: string): void {
+  sessionClipCaches.delete(cacheId);
+}
+
+/** Peek at a session clip cache entry without building. */
+export function peekEnemyAnimationClipCache(cacheId: string): AnimationClip[] | undefined {
+  return sessionClipCaches.get(cacheId);
+}
+
 /** Cache processed clips keyed by canonical animation name (for deferred/lazy loaders). */
 const processedClipCaches = new Map<string, AnimationClip[]>();
 
@@ -82,4 +93,11 @@ export function getCachedProcessedClips(
   if (stripRootMotion) clips = clips.map(stripRootMotionXZ);
   processedClipCaches.set(key, clips);
   return clips;
+}
+
+/** Drop processed-clip cache entries whose key starts with `prefix` (e.g. bust poisoned Attack clips). */
+export function invalidateProcessedClipCache(prefix: string): void {
+  for (const key of Array.from(processedClipCaches.keys())) {
+    if (key.startsWith(prefix)) processedClipCaches.delete(key);
+  }
 }

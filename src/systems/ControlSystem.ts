@@ -111,6 +111,10 @@ import {
   TITANS_GRIP_STUN_PROC_CHANCE,
   TITANS_GRIP_STUN_DURATION_MS,
   getTitansGripLmbFlatBonus,
+  getStaggerProcBaseDamage,
+  getStaggerProcStunMs,
+  getUnstableEnergyStaggerProcCombatSnapshot,
+  shouldApplyUnstableEnergyTalent,
   FROST_SOLAR_PROC_EFFECT_ICD_MS,
   RUNEBLADE_FLURRY_ATTACK_SPEED_FACTOR,
   FLURRY_HEAL_VFX_MIN_INTERVAL_MS,
@@ -127,6 +131,7 @@ import {
   DASH_GUARD_DURATION_SEC,
   EXECUTIONER_POST_DASH_WINDOW_MS,
   getEffectiveStrengthWithTalentBonuses,
+  getEffectiveAgilityWithTalentBonuses,
   getExecutionerFlatDamageBonus,
   getCrossentropyBaseDamage,
   getCrossentropyChargeDurationMs,
@@ -146,7 +151,6 @@ import {
   WRATHFUL_BITE_BARRAGE_CRIT_DAMAGE_MULT_ADD,
   INFERNAL_SMITE_CRIT_CHANCE_ADD,
   INFESTED_SMITE_HEAL_PER_TARGET,
-  RUNEBLADE_SMITE_BASE_HEAL,
   RUNEBLADE_FLURRY_HEAL_PER_SLASH,
   STAGGERING_SMITE_BEAM_STAGGER,
   STAGGERING_STRIKE_WRAITH_STAGGER_ADD,
@@ -252,6 +256,7 @@ import {
   getFanOfKnivesFlourishTintFromLoadout,
   getFanOfKnivesProjectileDamage,
   getFireAffinityStormDamage,
+  getFireAffinitySkyfallDamage,
   FAN_OF_KNIVES_MAX_DISTANCE_UNITS,
   FAN_OF_KNIVES_PROJECTILE_SPEED,
   FAN_OF_KNIVES_PROJECTILE_LIFETIME_SEC,
@@ -280,14 +285,19 @@ import {
   OVERRIDE_BYPASS_ICD_SEC,
 } from '@/utils/talents';
 import {
+  ARCHMAGE_BELT,
   ARCHMAGE_COIL,
+  EXODIA_GAUNTLETS,
   EXODIA_HELM,
   EXODIA_PAULDRONS,
+  HEXMETAL_VAMBRACES,
   RAZED_DIAMOND,
   ARCHMAGE_COIL_ENERGY_RESTORE,
   SCORPION_LANCE_ICD_SEC,
   SCORPION_LANCE_WINDOW_SEC,
   SCORPION_SHARD_RANGE,
+  VICEGRIP_RUNEBLADE_COMBO_FLAT_BONUS,
+  VICEGRIP_SABRE_FLAT_BONUS,
   getBloodroseQDamageMultiplier,
   getScorpionShardDamage,
 } from '@/utils/dreamLayerItems';
@@ -301,9 +311,38 @@ import {
   ARCHETYPE_ALCHEMIST,
   ARCHETYPE_SORCERESS,
 } from '@/utils/archetypes';
+import {
+  ASPECT_ARCHMAGE,
+  ASPECT_FROST_AFFINITY,
+  ASPECT_LEGIONNAIRE,
+  ARCHMAGE_ENTROPIC_IGNITE_INTERVAL,
+  FIRE_AFFINITY_SKYFALL_BASE_DAMAGE,
+  DEATHDEALER_THIRD_HIT_STAGGER_PROC_CHANCE,
+  getRunebladeAspectFireRateSec,
+  getRunebladeAspectComboResetSec,
+  getRunebladeSmiteBaseHeal,
+  getRunebladeSmiteCooldownSec,
+  getSabresSkyfallCooldownSec,
+  getTerminalVelocityBonusDamage,
+  isBowRejuvenatingShotAspect,
+  isSabresFireAffinityAspect,
+  isSniperBowAspect,
+  isRunebladeDeathdealerAspect,
+  isRunebladeDeathGraspAspect,
+  isRunebladeTempestSweepAspect,
+  qualifiesForTerminalVelocityRange,
+  TEMPEST_SWEEP_IGNITE_CHARGE_SEC,
+  TEMPEST_SWEEP_MAX_DAMAGE,
+  TEMPEST_SWEEP_MIN_DAMAGE,
+  normalizeWeaponAspect,
+  resolveScytheEntropicColorVariant,
+  isScytheDraconicAspect,
+  type WeaponAspect,
+} from '@/utils/weaponAspects';
 import type { AegisPaletteVariant } from '@/utils/aegisShieldPalette';
 import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
 import { triggerGlobalFireStorm } from '@/components/weapons/fireStormSpawnBridge';
+import { spawnSabresAvalancheOnEnemyFromReact } from '@/components/weapons/Avalanche/sabresAvalancheSpawnBridge';
 import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
 import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
 import { isImmuneToPlayerStunAndFreeze } from '@/utils/enemyStatusImmunity';
@@ -472,6 +511,8 @@ export class ControlSystem extends System {
   /** Co-op throne archetype routing — when false, legacy tap-deflect / hold-sprint applies (PvP). */
   private useArchetypeShiftRouting = false;
   private playerArchetype: Archetype = ARCHETYPE_NONE;
+  /** Throne weapon aspect (Runeblade combat stats / R ability). */
+  private weaponAspect: WeaponAspect = ASPECT_LEGIONNAIRE;
   
   // Callback for broadcasting debuff effects in PVP
   private onDebuffCallback?: (targetEntityId: number, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', duration: number, position: Vector3) => void;
@@ -579,6 +620,8 @@ export class ControlSystem extends System {
   private lastBowFireTime = 0; // Bow projectiles
   private lastScytheFireTime = 0; // Scythe entropic bolts
   private scytheLmbStreamStartTime = 0; // seconds; 0 = not holding / stream ended
+  /** Archmage aspect — counts LMB Entropic Bolts fired; every 3rd applies Ignite. */
+  private archmageEntropicBoltCounter = 0;
   private lastSwordFireTime = 0; // Sword melee attacks
   private lastRunebladeFireTime = 0; // Runeblade melee attacks
   private lastSabresFireTime = 0; // Sabres melee attacks
@@ -601,12 +644,11 @@ export class ControlSystem extends System {
   private lastRejuvenatingShotTime = 0; // Separate tracking for Rejuvenating Shot ability
   private fireRate = 0.2125; // Default for bow
   private swordFireRate = 0.825; // Rate for sword attacks
-  private runebladeFireRate = 0.875; // Runeblade attack rate
   private sabresFireRate = 0.625; // Sabres dual attack rate (600ms between attacks)
   private crescentBladesAttackCount = 0; // Tracks swings toward Crescent Blades special (resets at 3)
   private mortalStrikeAttackCount = 0; // Tracks swings toward Mortal Strike special (resets at 4)
-  private summonTotemFireRate = 7.0; // Summon Totem cooldown
-  private viperStingFireRate = 7.0; // Viper Sting rate (2 seconds cooldown)
+  private summonTotemFireRateBase = 7.0; // Summon Totem / Mantra base cooldown
+  private viperStingFireRateBase = 7.0; // Reaping Talons base cooldown
   private frostNovaFireRate = 12.0; // Frost Nova rate (12 seconds cooldown)
   private cobraShotFireRate = 5.0; // Cobra Shot rate (2 seconds cooldown)
   private rejuvenatingShotFireRate = REJUVENATING_SHOT_COOLDOWN_SEC;
@@ -640,7 +682,7 @@ export class ControlSystem extends System {
   private isBarrageCharging = false;
   private barrageChargeProgress = 0;
   private lastBarrageTime = 0;
-  private barrageFireRate = 8.0; // 5 second cooldown (keeping as requested)
+  private barrageFireRateBase = 8.0; // Frostbite / Barrage base cooldown
   /** Invalidates staggered barrage timeouts on new volleys / weapon reset */
   private barrageVolleyGeneration = 0;
   private fanOfKnivesVolleyGeneration = 0;
@@ -712,6 +754,12 @@ export class ControlSystem extends System {
   private locustNextMissileAt = 0;
   private locustVolleyId = 0;
   private locustVolleyEnergyPaid = false;
+  /** Draconic Scythe — free staggered locust volley after a real dash. */
+  private draconicDashLocustVolleyRemaining = 0;
+  private draconicDashLocustNextAt = 0;
+  private draconicDashLocustVolleyId = 0;
+  private draconicDashLocustSpreadIndex = 0;
+  private readonly draconicDashLocustForward = new Vector3();
   /** Alchemist Prime Materia — toggle Shift aura. */
   private isChannelingPrimeMateria = false;
   /** Timestamp (seconds) when Prime Materia was toggled on; used for min on-time gate. */
@@ -758,7 +806,6 @@ export class ControlSystem extends System {
   private isSkyfalling = false;
   private skyfallPhase: 'none' | 'ascending' | 'descending' | 'landing' = 'none';
   private lastSkyfallTime = 0;
-  private skyfallCooldown = 8.00; // 4 second cooldown
   private skyfallStartTime = 0;
   private skyfallStartPosition = new Vector3();
   private skyfallTargetHeight = 0;
@@ -766,7 +813,7 @@ export class ControlSystem extends System {
   
   // Backstab ability state (Sabres)
   private lastBackstabTime = 0;
-  private backstabCooldown = BACKSTAB_COOLDOWN_SEC;
+  private backstabCooldownBase = BACKSTAB_COOLDOWN_SEC;
   private isBackstabbing = false;
   /** Double Stab talent: staggered charge recharge (one timer at a time). */
   private backstabDoubleStabActive = false;
@@ -782,7 +829,7 @@ export class ControlSystem extends System {
   private static readonly SUNDER_DAMAGE_TIMING_PERCENT = 0.3;
   private static readonly SABRES_FLOURISH_SOUND_LEAD_SEC = 0.35;
   private lastSunderTime = 0;
-  private sunderCooldown = 1.75; // 1.5 second cooldown
+  private sunderCooldownBase = 1.75; // Flourish / Sunder base cooldown
   private isSundering = false;
   private sunderStartTime = 0;
   private sunderDuration = 1.0; // Same animation duration as backstab
@@ -795,7 +842,7 @@ export class ControlSystem extends System {
   private stealthCooldown = 10.0; // 10 second cooldown
   private isStealthing = false;
 
-  // Whirlwind ability state (Spear)
+  // Whirlwind ability state (Spear / Royal Guard Tempest Sweep)
   private lastWhirlwindTime = 0;
   private whirlwindCooldown = 3.0; // 3 second cooldown
   private isWhirlwindCharging = false;
@@ -803,6 +850,8 @@ export class ControlSystem extends System {
   private isWhirlwinding = false;
   private whirlwindStartTime = 0;
   private whirlwindDuration = 0.8; // Duration of the spin animation
+  /** Key that must be released to finish Tempest Sweep charge (Spear E vs Royal Guard R). */
+  private whirlwindReleaseKey: 'e' | 'r' = 'e';
 
   // Throw Spear ability state (Spear)
   private lastThrowSpearTime = 0;
@@ -861,7 +910,6 @@ export class ControlSystem extends System {
 
   // Smite ability state (Runeblade)
   private lastSmiteTime = 0;
-  private smiteCooldown = 8.0; // 2 second cooldown
   private isSmiting = false;
   /** BLOODMAGE room boon — last dash-charge E-ability cooldown bypass. */
   private lastBloodmageTriggerTime = Number.NEGATIVE_INFINITY;
@@ -892,7 +940,7 @@ export class ControlSystem extends System {
 
   // WraithStrike ability state (Runeblade)
   private lastWraithStrikeTime = 0;
-  private wraithStrikeCooldown = WRAITH_STRIKE_COOLDOWN_SEC;
+  private wraithStrikeCooldownBase = WRAITH_STRIKE_COOLDOWN_SEC;
   private isWraithStriking = false;
   /** Double Strike talent: staggered charge recharge (one timer at a time). */
   private wraithStrikeDoubleStrikeActive = false;
@@ -1168,6 +1216,7 @@ export class ControlSystem extends System {
     // Shift tap-vs-hold disambiguation — runs unconditionally every frame (not gated behind the
     // dash/charge/frozen skip below) so a quick Shift tap is never lost mid-dash/charge/etc.
     this.updateShiftBehavior(playerTransform, crossentropyWallNowSec, deltaTime);
+    this.updateDraconicDashLocustVolley(playerTransform, crossentropyWallNowSec);
 
     // Handle knockback movement first (overrides regular movement)
     this.handleKnockbackMovement(playerMovement, playerTransform);
@@ -1500,7 +1549,7 @@ export class ControlSystem extends System {
         break;
       case WeaponType.RUNEBLADE:
         this.currentSubclass = WeaponSubclass.ARCANE;
-        this.fireRate = this.runebladeFireRate;
+        this.fireRate = getRunebladeAspectFireRateSec(this.weaponAspect);
         this.swordComboStep = 1; // Reset combo when switching to runeblade
         break;
       case WeaponType.SPEAR:
@@ -1709,10 +1758,39 @@ export class ControlSystem extends System {
     for (let i = 0; i < slots.length; i++) {
       if (blockQuickSlots && slots[i] !== 'R') continue;
       const abilityId = this.abilityLoadout[slots[i]];
-      if (abilityId && this.inputManager.isKeyPressed(keys[i])) {
+      if (!this.inputManager.isKeyPressed(keys[i])) continue;
+
+      // Royal Guard: physical R hotkey → Tempest Sweep (slot-based, not ability-id-based).
+      if (
+        slots[i] === 'R' &&
+        this.currentWeapon === WeaponType.RUNEBLADE &&
+        isRunebladeTempestSweepAspect(this.weaponAspect)
+      ) {
+        this.tryPerformRoyalGuardTempestSweep(playerTransform);
+        continue;
+      }
+
+      if (abilityId) {
         this.dispatchAbility(abilityId, playerTransform);
       }
     }
+  }
+
+  /** Royal Guard R hotkey — hold/release Tempest Sweep (Spear whirlwind logic on `r`). */
+  private tryPerformRoyalGuardTempestSweep(playerTransform: Transform): void {
+    if (
+      this.isSwinging ||
+      this.isWhirlwindCharging ||
+      this.isWhirlwinding ||
+      this.isThrowSpearCharging ||
+      this.isSmiting ||
+      this.isDeathGrasping ||
+      this.isWraithStriking
+    ) {
+      return;
+    }
+    window.dispatchEvent(new CustomEvent('character-ability-cast'));
+    this.performWhirlwind(playerTransform, 'r');
   }
 
   /** Dispatch an ability by its universal id, executing the corresponding perform method. */
@@ -1720,19 +1798,19 @@ export class ControlSystem extends System {
     switch (abilityId) {
       // ── RUNEBLADE ─────────────────────────────────────────────────────
       case 'RUNEBLADE_Q': // Aegis (Deflect)
-        if (!this.isDeflecting && !this.isSmiting && !this.isSwinging && !this.isWraithStriking) {
+        if (!this.isDeflecting && !this.isSmiting && !this.isSwinging && !this.isWraithStriking && !this.isWhirlwindCharging && !this.isWhirlwinding) {
           window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performDeflect(playerTransform);
         }
         break;
       case 'RUNEBLADE_E': // Wraith Strike
-        if (!this.isWraithStriking && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping) {
+        if (!this.isWraithStriking && !this.isSmiting && !this.isSwinging && !this.isDeathGrasping && !this.isWhirlwindCharging && !this.isWhirlwinding) {
           window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performWraithStrike(playerTransform);
         }
         break;
       case 'RUNEBLADE_R': // Colossus Strike (Smite)
-        if (!this.isSmiting && !this.isSwinging && !this.isDeathGrasping && !this.isWraithStriking) {
+        if (!this.isSmiting && !this.isSwinging && !this.isDeathGrasping && !this.isWraithStriking && !this.isWhirlwindCharging && !this.isWhirlwinding) {
           window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performSmite(playerTransform);
         }
@@ -1825,7 +1903,10 @@ export class ControlSystem extends System {
         break;
       // ── UNIVERSAL ─────────────────────────────────────────────────────
       case 'DEATH_GRASP':
-        if (!this.isDeathGrasping) {
+        if (
+          isRunebladeDeathGraspAspect(this.weaponAspect) &&
+          !this.isDeathGrasping
+        ) {
           window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performDeathGrasp(playerTransform);
         }
@@ -1834,9 +1915,15 @@ export class ControlSystem extends System {
       case 'RUNEBLADE_F': // Aura (Corrupted Aura toggle)
         this.toggleCorruptedAura(playerTransform);
         break;
-      case 'BOW_F': // Rejuvenating Shot
-        if (!this.isBarrageCharging && !this.isViperStingCharging && !this.isCobraShotCharging)
+      case 'BOW_F': // Rejuvenating Shot (Druid aspect only)
+        if (
+          isBowRejuvenatingShotAspect(this.weaponAspect) &&
+          !this.isBarrageCharging &&
+          !this.isViperStingCharging &&
+          !this.isCobraShotCharging
+        ) {
           this.performRejuvenatingShot(playerTransform);
+        }
         break;
       case 'BOW_P': // Tempest Rounds — passive, no active dispatch needed
         break;
@@ -2389,7 +2476,7 @@ export class ControlSystem extends System {
     dt = Math.min(dt, 0.25);
     this.crossentropyCooldownReconcileWallSec = now;
 
-    const maxSec = CROSSENTROPY_COOLDOWN_SEC;
+    const maxSec = this.crossentropyCooldownSec;
     if (this.crossentropyRechargeAccumulator >= maxSec) {
       return;
     }
@@ -2410,7 +2497,7 @@ export class ControlSystem extends System {
     if (shouldApplyAcceleratorTalent(this.talentLoadout, this.abilityLoadout)) {
       mult = Math.pow(2, this.countAcceleratorTotemsInRangeXZ(playerPos.x, playerPos.z));
     }
-    return CROSSENTROPY_COOLDOWN_SEC / mult;
+    return this.crossentropyCooldownSec / mult;
   }
 
   /** Sync Blitz Cannon charge mode with talent + loadout; init or clear charge state on transitions. */
@@ -2446,7 +2533,7 @@ export class ControlSystem extends System {
       if (this.crossentropyCharges < maxC) {
         const rechargeSec = playerPos
           ? this.getCrossentropyEffectiveRechargeSec(playerPos)
-          : CROSSENTROPY_COOLDOWN_SEC;
+          : this.crossentropyCooldownSec;
         this.crossentropyNextChargeAt += rechargeSec;
       } else {
         this.crossentropyNextChargeAt = null;
@@ -2468,7 +2555,7 @@ export class ControlSystem extends System {
     }
     if (this.syncCrossentropyBlitzChargeMode()) {
       const maxC = BLITZ_CANNON_MAX_CHARGES;
-      const rechargeSec = p ? this.getCrossentropyEffectiveRechargeSec(p) : CROSSENTROPY_COOLDOWN_SEC;
+      const rechargeSec = p ? this.getCrossentropyEffectiveRechargeSec(p) : this.crossentropyCooldownSec;
       if (this.crossentropyCharges > 0) {
         const internalCooldownRemaining = Math.max(
           0,
@@ -2498,7 +2585,7 @@ export class ControlSystem extends System {
         maxCharges: maxC,
       };
     }
-    const maxSec = CROSSENTROPY_COOLDOWN_SEC;
+    const maxSec = this.crossentropyCooldownSec;
     const remaining = Math.max(0, maxSec - this.crossentropyRechargeAccumulator);
     return {
       current: remaining,
@@ -2514,9 +2601,20 @@ export class ControlSystem extends System {
   ): { current: number; max: number; isActive: boolean; charges?: number; maxCharges?: number } {
     switch (abilityId) {
       case 'DEATH_GRASP':
-      case 'RUNEBLADE_Q': return { current: Math.max(0, this.deathGraspCooldown - (currentTime - this.lastDeathGraspTime)), max: this.deathGraspCooldown, isActive: this.isDeathGrasping };
+      case 'RUNEBLADE_Q':
+        if (abilityId === 'DEATH_GRASP' && !isRunebladeDeathGraspAspect(this.weaponAspect)) {
+          return { current: 0, max: 0, isActive: false };
+        }
+        return { current: Math.max(0, this.deathGraspCooldown - (currentTime - this.lastDeathGraspTime)), max: this.deathGraspCooldown, isActive: this.isDeathGrasping };
       case 'RUNEBLADE_E': return this.getWraithStrikeCooldownInfo(currentTime);
-      case 'RUNEBLADE_R': return { current: Math.max(0, this.smiteCooldown - (currentTime - this.lastSmiteTime)), max: this.smiteCooldown, isActive: this.isSmiting };
+      case 'RUNEBLADE_R': {
+        const smiteCd = this.getColossusStrikeCooldownSec();
+        return {
+          current: Math.max(0, smiteCd - (currentTime - this.lastSmiteTime)),
+          max: smiteCd,
+          isActive: this.isSmiting,
+        };
+      }
       case 'BOW_Q':       return { current: Math.max(0, this.barrageFireRate - (currentTime - this.lastBarrageTime)), max: this.barrageFireRate, isActive: this.isBarrageCharging };
       case 'BOW_E':       return { current: Math.max(0, this.cobraShotFireRate - (currentTime - this.lastCobraShotTime)), max: this.cobraShotFireRate, isActive: this.isCobraShotCharging };
       case 'BOW_R':       return this.getViperStingCooldownInfo(currentTime);
@@ -2525,14 +2623,25 @@ export class ControlSystem extends System {
       case 'SCYTHE_R':    return this.getCrossentropyCooldownHud(currentTime);
       case 'SABRES_Q':    return this.getBackstabCooldownInfo(currentTime);
       case 'SABRES_E':    return { current: Math.max(0, this.sunderCooldown - (currentTime - this.lastSunderTime)), max: this.sunderCooldown, isActive: this.isSundering };
-      case 'SABRES_R':    return { current: Math.max(0, this.skyfallCooldown - (currentTime - this.lastSkyfallTime)), max: this.skyfallCooldown, isActive: this.isSkyfalling };
+      case 'SABRES_R': {
+        const skyfallCd = getSabresSkyfallCooldownSec(this.weaponAspect);
+        return { current: Math.max(0, skyfallCd - (currentTime - this.lastSkyfallTime)), max: skyfallCd, isActive: this.isSkyfalling };
+      }
       case 'SPEAR_Q':     return { current: Math.max(0, this.throwSpearCooldown - (currentTime - this.lastThrowSpearTime)), max: this.throwSpearCooldown, isActive: this.isThrowSpearCharging };
       case 'SPEAR_E':     return { current: Math.max(0, this.whirlwindCooldown - (currentTime - this.lastWhirlwindTime)), max: this.whirlwindCooldown, isActive: this.isWhirlwindCharging || this.isWhirlwinding };
       case 'SPEAR_R':     return { current: Math.max(0, this.lightningStormCooldown - (currentTime - this.lastLightningStormTime)), max: this.lightningStormCooldown, isActive: false };
       // ── Formerly F-key abilities ──────────────────────────────────────
       case 'RUNEBLADE_F': return { current: Math.max(0, this.corruptedAuraCooldown - (currentTime - this.lastCorruptedAuraTime)), max: this.corruptedAuraCooldown, isActive: this.corruptedAuraActive };
       case 'SWORD_E':     return { current: Math.max(0, this.chargeCooldown - (currentTime - this.lastChargeTime)), max: this.chargeCooldown, isActive: this.isSwordCharging };
-      case 'BOW_F':       return { current: Math.max(0, this.rejuvenatingShotFireRate - (currentTime - this.lastRejuvenatingShotTime)), max: this.rejuvenatingShotFireRate, isActive: false };
+      case 'BOW_F':
+        if (!isBowRejuvenatingShotAspect(this.weaponAspect)) {
+          return { current: 0, max: 0, isActive: false };
+        }
+        return {
+          current: Math.max(0, this.rejuvenatingShotFireRate - (currentTime - this.lastRejuvenatingShotTime)),
+          max: this.rejuvenatingShotFireRate,
+          isActive: this.isRejuvenatingShotCharging,
+        };
       case 'BOW_P':       return { current: 0, max: 0, isActive: false };
       case 'SCYTHE_F':    return this.getSummonTotemCooldownInfo(currentTime);
       case 'SABRES_F':    return { current: Math.max(0, this.stealthCooldown - (currentTime - this.lastStealthTime)), max: this.stealthCooldown, isActive: this.isStealthing };
@@ -2892,7 +3001,7 @@ export class ControlSystem extends System {
   }
 
   private getEntropicBoltFireRateSec(): number {
-    return getEntropicBoltFireRateSec(this.talentLoadout);
+    return getEntropicBoltFireRateSec(this.talentLoadout, this.weaponAspect);
   }
 
   private fireEntropicBoltProjectile(playerTransform: Transform): void {
@@ -2953,7 +3062,7 @@ export class ControlSystem extends System {
     } else {
       this.reconcileCrossentropyCooldown(currentTime, ppos);
       const eps = 1e-6;
-      if (this.crossentropyRechargeAccumulator + eps < CROSSENTROPY_COOLDOWN_SEC) {
+      if (this.crossentropyRechargeAccumulator + eps < this.crossentropyCooldownSec) {
         if (!this.tryBloodmageDashBypass(currentTime)) return;
         isBloodmageBypass = true;
       }
@@ -3025,20 +3134,23 @@ export class ControlSystem extends System {
     if (!this.playerEntity) return;
 
     const currentTime = Date.now() / 1000;
+    let isOverrideBypass = false;
 
     if (this.syncSummonTotemShamanMode()) {
       this.advanceSummonTotemChargeRecharges(currentTime);
       if (this.summonTotemCharges <= 0) {
-        return;
-      }
-      if (currentTime - this.lastSummonTotemShamanChargeSpendTime < MANTRA_SHAMAN_INTERNAL_COOLDOWN_SEC) {
-        return;
+        if (!this.tryOverrideShieldBypass(currentTime)) return;
+        isOverrideBypass = true;
+      } else if (currentTime - this.lastSummonTotemShamanChargeSpendTime < MANTRA_SHAMAN_INTERNAL_COOLDOWN_SEC) {
+        if (!this.tryOverrideShieldBypass(currentTime)) return;
+        isOverrideBypass = true;
       }
     } else if (currentTime - this.lastSummonTotemTime < this.summonTotemFireRate) {
-      return;
+      if (!this.tryOverrideShieldBypass(currentTime)) return;
+      isOverrideBypass = true;
     }
 
-    if (this.summonTotemShamanActive) {
+    if (this.summonTotemShamanActive && !isOverrideBypass) {
       this.summonTotemCharges--;
       this.lastSummonTotemShamanChargeSpendTime = currentTime;
       if (
@@ -3047,7 +3159,7 @@ export class ControlSystem extends System {
       ) {
         this.summonTotemNextChargeAt = currentTime + this.summonTotemFireRate;
       }
-    } else {
+    } else if (!isOverrideBypass) {
       this.lastSummonTotemTime = currentTime;
     }
 
@@ -3308,10 +3420,10 @@ export class ControlSystem extends System {
     };
     let entropicBoltTalent: 'wrathful' | 'staggering' | 'infesting' | 'arctic' | undefined;
     if (wrathEnt) {
-      boltVariant = { colorVariant: 'red', damage: 53 };
+      boltVariant = { colorVariant: 'red', damage: 74 };
       entropicBoltTalent = 'wrathful';
     } else if (stagEnt) {
-      boltVariant = { colorVariant: 'blue', damage: 47 };
+      boltVariant = { colorVariant: 'blue', damage: 67 };
       entropicBoltTalent = 'staggering';
     } else if (infestEnt) {
       boltVariant = { colorVariant: 'green', damage: INFESTING_ENTROPIC_BOLT_DAMAGE };
@@ -3320,7 +3432,10 @@ export class ControlSystem extends System {
       boltVariant = { colorVariant: 'arctic', damage: ARCTIC_ENTROPIC_BOLT_DAMAGE };
       entropicBoltTalent = 'arctic';
     } else {
-      boltVariant = { colorVariant: DEFAULT_ENTROPIC_COLOR_VARIANT, damage: 47 };
+      boltVariant = {
+        colorVariant: resolveScytheEntropicColorVariant(this.weaponAspect),
+        damage: 47,
+      };
     }
 
     const damage =
@@ -3329,6 +3444,14 @@ export class ControlSystem extends System {
         this.talentLoadout,
         this.allocatedPlayerStats.intellect ?? 0,
       );
+
+    let archmageEntropicIgnite = false;
+    if (this.weaponAspect === ASPECT_ARCHMAGE) {
+      this.archmageEntropicBoltCounter += 1;
+      if (this.archmageEntropicBoltCounter % ARCHMAGE_ENTROPIC_IGNITE_INTERVAL === 0) {
+        archmageEntropicIgnite = true;
+      }
+    }
 
     const entropicBaseConfig = {
       speed: 20,
@@ -3344,6 +3467,7 @@ export class ControlSystem extends System {
       entropicFragmentation: shouldApplyFragmentationTalent(this.talentLoadout, this.abilityLoadout),
       entropicFragmentHop: 0,
       sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown',
+      ...(archmageEntropicIgnite ? { archmageEntropicIgnite: true as const } : {}),
     };
 
     this.projectileSystem.createEntropicBoltProjectile(
@@ -3409,6 +3533,7 @@ export class ControlSystem extends System {
       crossentropyGlacial,
       crossentropyMeteor,
       crossentropyFragmentation,
+      weaponAspect: this.weaponAspect,
     };
     
     this.projectileSystem.createCrossentropyBoltProjectile(
@@ -4431,6 +4556,12 @@ export class ControlSystem extends System {
     );
   }
 
+  /** Vicegrip (Exodia Gauntlets) — +50 flat base damage on each Runeblade LMB combo hit. */
+  public getVicegripRunebladeComboFlatBonus(): number {
+    if (!this.hasOwnedItem(EXODIA_GAUNTLETS)) return 0;
+    return VICEGRIP_RUNEBLADE_COMBO_FLAT_BONUS;
+  }
+
   /** Titan's Grip — 25% per-hit stun on Runeblade LMB (non-Blizzard) hits. Returns stun position when applied. */
   public tryTitansGripStunProcFromRunebladeHit(targetId: string): Vector3 | null {
     if (!shouldApplyTitansGripTalent(this.talentLoadout)) return null;
@@ -4463,6 +4594,74 @@ export class ControlSystem extends System {
     }
 
     return stunPosition;
+  }
+
+  /**
+   * Deathdealer — 25% chance on Runeblade third combo hit to fire an immediate Stagger Lightning Bolt.
+   * Co-op: returns serverEnemyId so the caller can emit `deathdealer-stagger-proc` (server applies damage/stun/VFX).
+   * Solo: applies local damage + stun and returns position for VFX.
+   */
+  public tryDeathdealerStaggerProcFromRunebladeThirdHit(
+    targetId: string,
+  ): { position: Vector3; serverEnemyId?: string } | null {
+    if (!isRunebladeDeathdealerAspect(this.weaponAspect)) return null;
+    if (this.currentWeapon !== WeaponType.RUNEBLADE) return null;
+    if (this.swordComboStep !== 3) return null;
+    if (Math.random() >= DEATHDEALER_THIRD_HIT_STAGGER_PROC_CHANCE) return null;
+
+    const entity = this.world.getEntity(parseInt(targetId, 10));
+    if (!entity) return null;
+
+    const enemy = entity.getComponent(Enemy);
+    const targetTransform = entity.getComponent(Transform);
+    if (!enemy || !targetTransform || enemy.isDead) return null;
+
+    const sk = entity.userData?.coopServerEnemyType as string | undefined;
+    if (isImmuneToPlayerStunAndFreeze(sk)) return null;
+
+    const position = targetTransform.position.clone();
+    const serverEnemyId =
+      typeof entity.userData?.serverEnemyId === 'string'
+        ? entity.userData.serverEnemyId
+        : undefined;
+
+    // Co-op: server `_triggerStaggerLightningProc` owns damage/stun/VFX.
+    if (serverEnemyId) {
+      return { position, serverEnemyId };
+    }
+
+    const stats = this.getAllocatedPlayerStats();
+    let procDamage = getStaggerProcBaseDamage(this.talentLoadout, stats.agility);
+    if (shouldApplyUnstableEnergyTalent(this.talentLoadout)) {
+      const runes = getGlobalRuneCounts();
+      const snap = getUnstableEnergyStaggerProcCombatSnapshot({
+        agility: stats.agility,
+        strength: stats.strength,
+        criticalRuneCount: runes.criticalRunes,
+        critDamageRuneCount: runes.critDamageRunes,
+      });
+      if (Math.random() < snap.critChance) {
+        procDamage = Math.floor(procDamage * snap.critDamageMult);
+      }
+    }
+
+    const stunMs = getStaggerProcStunMs(this.talentLoadout);
+    const currentTime = Date.now() / 1000;
+    enemy.stun(stunMs / 1000, currentTime, sk);
+    addGlobalStunnedEnemy(entity.id.toString(), position, stunMs);
+
+    const combatSystem = this.world.getSystem(CombatSystem);
+    if (combatSystem && this.playerEntity) {
+      combatSystem.queueDamage(
+        entity,
+        procDamage,
+        this.playerEntity,
+        'stagger_break',
+        this.playerEntity.userData?.playerId,
+      );
+    }
+
+    return { position };
   }
 
   public isChargeActive(): boolean {
@@ -4601,7 +4800,16 @@ export class ControlSystem extends System {
 
   private handleRunebladeInput(playerTransform: Transform): void {
     // Handle runeblade melee attacks
-    if (this.inputManager.isMouseButtonPressed(0) && !this.isSwinging && !this.isSmiting && !this.isDeathGrasping && !this.isWraithStriking && !this.isSwordCharging) {
+    if (
+      this.inputManager.isMouseButtonPressed(0) &&
+      !this.isSwinging &&
+      !this.isSmiting &&
+      !this.isDeathGrasping &&
+      !this.isWraithStriking &&
+      !this.isSwordCharging &&
+      !this.isWhirlwindCharging &&
+      !this.isWhirlwinding
+    ) {
       this.performRunebladeMeleeAttack(playerTransform);
     }
 
@@ -4610,7 +4818,7 @@ export class ControlSystem extends System {
 
     // Check for combo reset
     const currentTime = Date.now() / 1000;
-    if (currentTime - this.lastSwordAttackTime > this.swordComboResetTime) {
+    if (currentTime - this.lastSwordAttackTime > getRunebladeAspectComboResetSec(this.weaponAspect)) {
       this.swordComboStep = 1;
     }
   }
@@ -4639,7 +4847,7 @@ export class ControlSystem extends System {
 
   private performRunebladeMeleeAttack(playerTransform: Transform): void {
     const currentTime = Date.now() / 1000;
-    let effectiveFireRate = this.runebladeFireRate;
+    let effectiveFireRate = getRunebladeAspectFireRateSec(this.weaponAspect);
     if (this.isFlurryActive) {
       effectiveFireRate /= RUNEBLADE_FLURRY_ATTACK_SPEED_FACTOR;
     }
@@ -4697,8 +4905,9 @@ export class ControlSystem extends System {
   private performSmite(playerTransform: Transform): void {
     // Check cooldown
     const currentTime = Date.now() / 1000;
+    const smiteCooldown = this.getColossusStrikeCooldownSec();
     let isBloodmageBypass = false;
-    if (currentTime - this.lastSmiteTime < this.smiteCooldown) {
+    if (currentTime - this.lastSmiteTime < smiteCooldown) {
       if (!this.tryBloodmageDashBypass(currentTime)) return;
       isBloodmageBypass = true;
     }
@@ -4783,7 +4992,7 @@ export class ControlSystem extends System {
           if (targetsHit <= 0) return;
           const infested = computeInfestedSmiteTalentActive(this.talentLoadout, this.abilityLoadout);
           const totalHeal =
-            RUNEBLADE_SMITE_BASE_HEAL +
+            getRunebladeSmiteBaseHeal(this.weaponAspect) +
             (infested ? targetsHit * INFESTED_SMITE_HEAL_PER_TARGET : 0);
           this.performSmiteHealingFixedAmount(totalHeal);
         },
@@ -5095,20 +5304,23 @@ export class ControlSystem extends System {
 
   private performWraithStrike(playerTransform: Transform): void {
     const currentTime = Date.now() / 1000;
+    let isOverrideBypass = false;
 
     if (this.syncWraithStrikeDoubleStrikeMode()) {
       this.advanceWraithStrikeChargeRecharges(currentTime);
       if (this.wraithStrikeCharges <= 0) {
-        return;
-      }
-      if (
+        if (!this.tryOverrideShieldBypass(currentTime)) return;
+        isOverrideBypass = true;
+      } else if (
         currentTime - this.lastWraithStrikeDoubleStrikeChargeSpendTime <
         WRAITH_STRIKE_DOUBLE_STRIKE_INTERNAL_COOLDOWN_SEC
       ) {
-        return;
+        if (!this.tryOverrideShieldBypass(currentTime)) return;
+        isOverrideBypass = true;
       }
     } else if (currentTime - this.lastWraithStrikeTime < this.wraithStrikeCooldown) {
-      return;
+      if (!this.tryOverrideShieldBypass(currentTime)) return;
+      isOverrideBypass = true;
     }
 
     // Check if already wraith striking
@@ -5116,7 +5328,7 @@ export class ControlSystem extends System {
       return;
     }
 
-    if (this.wraithStrikeDoubleStrikeActive) {
+    if (this.wraithStrikeDoubleStrikeActive && !isOverrideBypass) {
       this.wraithStrikeCharges--;
       this.lastWraithStrikeDoubleStrikeChargeSpendTime = currentTime;
       if (
@@ -5125,7 +5337,7 @@ export class ControlSystem extends System {
       ) {
         this.wraithStrikeNextChargeAt = currentTime + this.wraithStrikeCooldown;
       }
-    } else {
+    } else if (!isOverrideBypass) {
       this.lastWraithStrikeTime = currentTime;
     }
     this.isWraithStriking = true;
@@ -5179,7 +5391,7 @@ export class ControlSystem extends System {
       combatSystem.addWraithStrikeEffect(
         playerTransform.position,
         attackDirection,
-        resolveWraithStrikeTheme(this.talentLoadout, this.abilityLoadout),
+        resolveWraithStrikeTheme(this.talentLoadout, this.abilityLoadout, this.weaponAspect),
       );
     }
 
@@ -5719,7 +5931,7 @@ export class ControlSystem extends System {
     return enemiesHit;
   }
 
-  private performWhirlwind(playerTransform: Transform): void {
+  private performWhirlwind(playerTransform: Transform, releaseKey: 'e' | 'r' = 'e'): void {
     const currentTime = Date.now() / 1000;
 
     // Check cooldown
@@ -5731,6 +5943,7 @@ export class ControlSystem extends System {
     this.isWhirlwindCharging = true;
     this.whirlwindChargeProgress = 0;
     this.whirlwindStartTime = currentTime;
+    this.whirlwindReleaseKey = releaseKey;
 
     // Play whirlwind charge sound
     this.audioSystem?.playWhirlwindChargeSound(playerTransform.position);
@@ -5743,8 +5956,8 @@ export class ControlSystem extends System {
     // Update charge progress (0 to 1)
     this.whirlwindChargeProgress = Math.min(chargeTime / maxChargeTime, 1.0);
 
-    // Check if E key is released or max charge reached
-    if (!this.inputManager.isKeyPressed('e') || this.whirlwindChargeProgress >= 1.0) {
+    // Check if charge key is released or max charge reached
+    if (!this.inputManager.isKeyPressed(this.whirlwindReleaseKey) || this.whirlwindChargeProgress >= 1.0) {
       // Release and execute Whirlwind
       this.executeWhirlwind(playerTransform, currentTime);
     }
@@ -5754,9 +5967,16 @@ export class ControlSystem extends System {
     // Stop charging
     this.isWhirlwindCharging = false;
 
-    // Calculate damage based on charge progress (50 to 200)
-    const minDamage = 100;
-    const maxDamage = 400;
+    // Charge duration before we overwrite whirlwindStartTime for the spin phase
+    const chargeTimeSec = currentTime - this.whirlwindStartTime;
+    const applyTempestSweepIgnite =
+      isRunebladeTempestSweepAspect(this.weaponAspect) &&
+      this.whirlwindReleaseKey === 'r' &&
+      chargeTimeSec >= TEMPEST_SWEEP_IGNITE_CHARGE_SEC;
+
+    // Calculate damage based on charge progress (100 to 300)
+    const minDamage = TEMPEST_SWEEP_MIN_DAMAGE;
+    const maxDamage = TEMPEST_SWEEP_MAX_DAMAGE;
     const chargeDamage = minDamage + (maxDamage - minDamage) * this.whirlwindChargeProgress;
 
     // Start spinning
@@ -5786,10 +6006,14 @@ export class ControlSystem extends System {
     this.audioSystem?.playWhirlwindReleaseSound(playerTransform.position);
 
     // Apply damage to all enemies in range immediately
-    this.performWhirlwindDamage(playerTransform, chargeDamage);
+    this.performWhirlwindDamage(playerTransform, chargeDamage, applyTempestSweepIgnite);
   }
 
-  private performWhirlwindDamage(playerTransform: Transform, baseDamage: number): void {
+  private performWhirlwindDamage(
+    playerTransform: Transform,
+    baseDamage: number,
+    applyTempestSweepIgnite = false,
+  ): void {
     const playerPosition = playerTransform.position;
     const whirlwindRadius = 4.5; // 3.5 unit radius for damage
 
@@ -5818,13 +6042,13 @@ export class ControlSystem extends System {
         const actualDamage = damageResult.damage;
 
         // Queue damage through combat system
-        combatSystem.queueDamage(
+        combatSystem.queueWhirlwindDamage(
           entity,
           actualDamage,
           this.playerEntity || undefined,
-          'whirlwind',
           this.playerEntity?.userData?.playerId,
-          damageResult.isCritical
+          damageResult.isCritical,
+          applyTempestSweepIgnite,
         );
         enemiesHit++;
       }
@@ -6142,7 +6366,7 @@ export class ControlSystem extends System {
     }
 
     if (combatSystem) {
-      combatSystem.addCrescentSlashEffect(playerTransform.position, attackDirection);
+      combatSystem.addCrescentSlashEffect(playerTransform.position, attackDirection, this.weaponAspect);
     }
 
     this.audioSystem?.playSabresSwingSound(playerTransform.position);
@@ -6346,6 +6570,11 @@ export class ControlSystem extends System {
       leftSabreDamage = 43;  // Increased from 19 to 31
       rightSabreDamage = 57; // Increased from 23 to 41
     }
+
+    if (this.hasOwnedItem(EXODIA_GAUNTLETS)) {
+      leftSabreDamage += VICEGRIP_SABRE_FLAT_BONUS;
+      rightSabreDamage += VICEGRIP_SABRE_FLAT_BONUS;
+    }
     
     // Get camera direction for attack direction
     const attackDirection = new Vector3();
@@ -6409,6 +6638,16 @@ export class ControlSystem extends System {
         this.tryGuardSabresSwipesBladeProc(playerTransform);
         this.tryPsionicBladesProc(target, attackDirection, 'left');
 
+        if (this.weaponAspect === ASPECT_FROST_AFFINITY) {
+          const avalancheEnemyId =
+            (target.userData?.serverEnemyId as string | undefined) ??
+            target.id.toString();
+          spawnSabresAvalancheOnEnemyFromReact(
+            avalancheEnemyId,
+            targetTransform.position,
+          );
+        }
+
         // Right sabre hit (with small delay)
         this.scheduleAbilityTimeout(() => {
           if (!targetHealth.isDead) {
@@ -6439,6 +6678,16 @@ export class ControlSystem extends System {
             );
             this.tryGuardSabresSwipesBladeProc(playerTransform);
             this.tryPsionicBladesProc(target, attackDirection, 'right');
+
+            if (this.weaponAspect === ASPECT_FROST_AFFINITY) {
+              const avalancheEnemyId =
+                (target.userData?.serverEnemyId as string | undefined) ??
+                target.id.toString();
+              spawnSabresAvalancheOnEnemyFromReact(
+                avalancheEnemyId,
+                targetTransform.position,
+              );
+            }
           }
         }, 100); // 100ms delay between sabre hits
 
@@ -6452,9 +6701,10 @@ export class ControlSystem extends System {
   // Skyfall ability implementation
   private performSkyfall(playerTransform: Transform): void {
     const currentTime = Date.now() / 1000;
-    
+    const skyfallCd = getSabresSkyfallCooldownSec(this.weaponAspect);
+
     // Check cooldown
-    if (currentTime - this.lastSkyfallTime < this.skyfallCooldown) {
+    if (currentTime - this.lastSkyfallTime < skyfallCd) {
       return;
     }
     
@@ -6546,7 +6796,19 @@ export class ControlSystem extends System {
 
     const landingPosition = playerTransform.position;
     const damageRadius = 4.0; // 4 unit radius
-    const skyfallDamage = 125; // SKYFALL DAMAGE
+    const fireAffinitySkyfall = isSabresFireAffinityAspect(this.weaponAspect);
+    const skyfallDamage = fireAffinitySkyfall
+      ? getFireAffinitySkyfallDamage(
+          this.allocatedPlayerStats,
+          this.talentLoadout,
+          this.abilityLoadout,
+        )
+      : FIRE_AFFINITY_SKYFALL_BASE_DAMAGE;
+    const skyfallDamageType = fireAffinitySkyfall ? 'fire_affinity_skyfall' : 'skyfall';
+
+    if (fireAffinitySkyfall) {
+      triggerGlobalFireStorm(landingPosition);
+    }
 
     // Only consider entities within landing damage radius instead of scanning the whole world
     const allEntities = this.queryNearbyEntities(landingPosition, damageRadius);
@@ -6569,7 +6831,13 @@ export class ControlSystem extends System {
         // Apply Skyfall damage
         const combatSystem = this.world.getSystem(CombatSystem);
         if (combatSystem) {
-          combatSystem.queueDamage(entity, skyfallDamage, this.playerEntity || undefined, 'skyfall', this.playerEntity?.userData?.playerId);
+          combatSystem.queueDamage(
+            entity,
+            skyfallDamage,
+            this.playerEntity || undefined,
+            skyfallDamageType,
+            this.playerEntity?.userData?.playerId,
+          );
           hitCount++;
 
           // Apply stun effect (2 seconds) to enemies hit by Skyfall
@@ -7150,7 +7418,7 @@ export class ControlSystem extends System {
     this.rejuvenatingShotChargeProgress = 0;
     this.isCrossentropyCharging = false; // Reset crossentropy charging
     this.crossentropyChargeProgress = 0;
-    this.crossentropyRechargeAccumulator = CROSSENTROPY_COOLDOWN_SEC;
+    this.crossentropyRechargeAccumulator = this.crossentropyCooldownSec;
     this.crossentropyCooldownReconcileWallSec = null;
     this.crossentropyBlitzActive = false;
     this.crossentropyCharges = 0;
@@ -7405,6 +7673,70 @@ export class ControlSystem extends System {
     return this.exodiaSetMaxEnergyBonus;
   }
 
+  /**
+   * Hexmetal Vambraces (E) / Archmage Belt (Q) cooldown overrides.
+   * Returns the effective max cooldown for cast gates, HUD, and charge recharge.
+   */
+  private resolveAbilityCooldownSec(abilityId: string, baseSec: number): number {
+    switch (abilityId) {
+      case 'BOW_R':
+        return this.hasOwnedItem(HEXMETAL_VAMBRACES) ? 5.0 : baseSec;
+      case 'RUNEBLADE_R':
+        if (!this.hasOwnedItem(HEXMETAL_VAMBRACES)) return baseSec;
+        // Default 8 → 6; Legionnaire 6 → 4.5
+        return baseSec <= 6 ? 4.5 : 6;
+      case 'SCYTHE_R':
+        return this.hasOwnedItem(HEXMETAL_VAMBRACES) ? 6.0 : baseSec;
+      case 'SABRES_E':
+        return this.hasOwnedItem(HEXMETAL_VAMBRACES) ? 0.75 : baseSec;
+      case 'BOW_Q':
+        return this.hasOwnedItem(ARCHMAGE_BELT) ? 6.0 : baseSec;
+      case 'RUNEBLADE_E':
+        return this.hasOwnedItem(ARCHMAGE_BELT) ? 3.75 : baseSec;
+      case 'SCYTHE_F':
+        return this.hasOwnedItem(ARCHMAGE_BELT) ? 6.0 : baseSec;
+      case 'SABRES_Q':
+        return this.hasOwnedItem(ARCHMAGE_BELT) ? 2.75 : baseSec;
+      default:
+        return baseSec;
+    }
+  }
+
+  private get barrageFireRate(): number {
+    return this.resolveAbilityCooldownSec('BOW_Q', this.barrageFireRateBase);
+  }
+
+  private get viperStingFireRate(): number {
+    return this.resolveAbilityCooldownSec('BOW_R', this.viperStingFireRateBase);
+  }
+
+  private get summonTotemFireRate(): number {
+    return this.resolveAbilityCooldownSec('SCYTHE_F', this.summonTotemFireRateBase);
+  }
+
+  private get sunderCooldown(): number {
+    return this.resolveAbilityCooldownSec('SABRES_E', this.sunderCooldownBase);
+  }
+
+  private get wraithStrikeCooldown(): number {
+    return this.resolveAbilityCooldownSec('RUNEBLADE_E', this.wraithStrikeCooldownBase);
+  }
+
+  private get backstabCooldown(): number {
+    return this.resolveAbilityCooldownSec('SABRES_Q', this.backstabCooldownBase);
+  }
+
+  private get crossentropyCooldownSec(): number {
+    return this.resolveAbilityCooldownSec('SCYTHE_R', CROSSENTROPY_COOLDOWN_SEC);
+  }
+
+  private getColossusStrikeCooldownSec(): number {
+    return this.resolveAbilityCooldownSec(
+      'RUNEBLADE_R',
+      getRunebladeSmiteCooldownSec(this.weaponAspect),
+    );
+  }
+
   private tryArchmageCoilOnDashChargeExpended(consumed: number): void {
     if (consumed <= 0 || !this.playerEntity) return;
     if (!this.hasOwnedItem(ARCHMAGE_COIL) || this.hasOwnedItem(EXODIA_HELM)) return;
@@ -7433,28 +7765,35 @@ export class ControlSystem extends System {
     this.lastScorpionLanceIcdSec = nowSec;
 
     const shardDamage = getScorpionShardDamage(this.dreamLayerEffectiveStats.agility);
+    const dir = direction.clone().normalize();
     const spawnPosition = position.clone();
-    spawnPosition.add(direction.clone().multiplyScalar(0.8));
+    spawnPosition.add(dir.clone().multiplyScalar(0.8));
     spawnPosition.y += 1;
+
+    const projectileConfig = {
+      speed: 28,
+      damage: shardDamage,
+      lifetime: 1.5,
+      maxDistance: SCORPION_SHARD_RANGE,
+      piercing: true,
+      projectileType: 'scorpion_shard',
+      subclass: this.currentSubclass,
+      level: this.currentLevel,
+      opacity: 1,
+      sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown',
+    };
 
     this.projectileSystem.createProjectile(
       this.world,
       spawnPosition,
-      direction.clone().normalize(),
+      dir,
       this.playerEntity.id,
-      {
-        speed: 28,
-        damage: shardDamage,
-        lifetime: 1.5,
-        maxDistance: SCORPION_SHARD_RANGE,
-        piercing: true,
-        projectileType: 'scorpion_shard',
-        subclass: this.currentSubclass,
-        level: this.currentLevel,
-        opacity: 1,
-        sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown',
-      },
+      projectileConfig,
     );
+
+    if (this.onProjectileCreatedCallback) {
+      this.onProjectileCreatedCallback('scorpion_shard', spawnPosition, dir, projectileConfig);
+    }
   }
 
   private applyBloodroseToDamage(baseDamage: number): number {
@@ -7659,6 +7998,25 @@ export class ControlSystem extends System {
     );
   }
 
+  /**
+   * Sniper Terminal Velocity — flat bonus when horizontal shot-origin→target distance > 10.
+   * Used by Perfect Shot (ProjectileSystem) and Reaping Talons (useViperSting).
+   */
+  public getTerminalVelocityBonusAtRange(horizontalDistance: number): number {
+    if (this.currentWeapon !== WeaponType.BOW || !isSniperBowAspect(this.weaponAspect)) {
+      return 0;
+    }
+    if (!qualifiesForTerminalVelocityRange(horizontalDistance)) {
+      return 0;
+    }
+    const agility = getEffectiveAgilityWithTalentBonuses(
+      this.allocatedPlayerStats,
+      this.talentLoadout,
+      this.abilityLoadout,
+    );
+    return getTerminalVelocityBonusDamage(agility);
+  }
+
   /** Tempest Rounds: P passive unlock or co-op talent — used for bow crit bonus in DamageCalculator. */
   public isBowTempestRoundsActive(): boolean {
     if (this.currentWeapon !== WeaponType.BOW || !this.selectedWeapons) return false;
@@ -7816,7 +8174,8 @@ export class ControlSystem extends System {
         currentTime - this.lastBackstabDoubleStabChargeSpendTime <
         BACKSTAB_DOUBLE_STAB_INTERNAL_COOLDOWN_SEC
       ) {
-        return;
+        if (!this.tryOverrideShieldBypass(currentTime)) return;
+        isOverrideBypass = true;
       }
     } else if (currentTime - this.lastBackstabTime < this.backstabCooldown) {
       if (!this.tryOverrideShieldBypass(currentTime)) return;
@@ -8240,6 +8599,7 @@ export class ControlSystem extends System {
             }
             this.audioSystem?.playUIDashSound();
             this.tryTriggerRoomBoomDashTalent(key, movement, transform.position, worldDirection);
+            this.tryQueueDraconicDashLocustVolley(transform, worldDirection, currentTime);
             if (
               (this.currentWeapon === WeaponType.RUNEBLADE ||
                 this.currentWeapon === WeaponType.SABRES) &&
@@ -9012,6 +9372,81 @@ export class ControlSystem extends System {
     this.locustVolleyEnergyPaid = false;
   }
 
+  private emitLocustMissile(
+    playerTransform: Transform,
+    forward: Vector3,
+    spreadIndex: number,
+    volleyId: number,
+  ): void {
+    if (!this.onLocustSpawnCallback) return;
+    const damage = computeLocustMissileDamage(this.allocatedPlayerStats);
+    const launchForward = forward.clone();
+    launchForward.y = 0;
+    if (launchForward.lengthSq() < 1e-6) launchForward.set(0, 0, -1);
+    launchForward.normalize();
+    const startPosition = playerTransform.position.clone().add(new Vector3(0, 1.15, 0));
+    this.onLocustSpawnCallback({
+      startPosition,
+      spreadIndex,
+      volleyId,
+      forward: launchForward,
+      damage,
+    });
+  }
+
+  private tryQueueDraconicDashLocustVolley(
+    playerTransform: Transform,
+    dashDirection: Vector3,
+    currentTime: number,
+  ): void {
+    if (!this.onLocustSpawnCallback) return;
+    if (this.currentWeapon !== WeaponType.SCYTHE) return;
+    if (!isScytheDraconicAspect(this.weaponAspect)) return;
+    if (this.isPlayerDead) return;
+
+    this.draconicDashLocustForward.copy(dashDirection);
+    this.draconicDashLocustForward.y = 0;
+    if (this.draconicDashLocustForward.lengthSq() < 1e-6) {
+      this.draconicDashLocustForward.set(0, 0, -1);
+    }
+    this.draconicDashLocustForward.normalize();
+
+    this.locustVolleyId += 1;
+    this.draconicDashLocustVolleyId = this.locustVolleyId;
+    this.draconicDashLocustVolleyRemaining = LOCUST_MISSILES_PER_VOLLEY;
+    this.draconicDashLocustSpreadIndex = 0;
+    this.draconicDashLocustNextAt = currentTime;
+
+    // Fire first missile immediately so the volley starts with the dash.
+    this.updateDraconicDashLocustVolley(playerTransform, currentTime);
+  }
+
+  private updateDraconicDashLocustVolley(
+    playerTransform: Transform,
+    currentTime: number,
+  ): void {
+    if (this.draconicDashLocustVolleyRemaining <= 0) return;
+    if (this.isPlayerDead) {
+      this.draconicDashLocustVolleyRemaining = 0;
+      return;
+    }
+    if (!this.onLocustSpawnCallback) {
+      this.draconicDashLocustVolleyRemaining = 0;
+      return;
+    }
+    if (currentTime < this.draconicDashLocustNextAt) return;
+
+    this.emitLocustMissile(
+      playerTransform,
+      this.draconicDashLocustForward,
+      this.draconicDashLocustSpreadIndex,
+      this.draconicDashLocustVolleyId,
+    );
+    this.draconicDashLocustSpreadIndex += 1;
+    this.draconicDashLocustVolleyRemaining -= 1;
+    this.draconicDashLocustNextAt = currentTime + LOCUST_MISSILE_INTERVAL_SEC;
+  }
+
   private updateLocustChannel(playerTransform: Transform, currentTime: number): void {
     if (!this.playerEntity || !this.onLocustSpawnCallback) return;
 
@@ -9055,22 +9490,13 @@ export class ControlSystem extends System {
     }
 
     const spreadIndex = this.locustMissilesFiredInVolley;
-    const damage = computeLocustMissileDamage(this.allocatedPlayerStats);
-
     const forward = new Vector3();
     this.camera.getWorldDirection(forward);
     forward.y = 0;
     if (forward.lengthSq() < 1e-6) forward.set(0, 0, -1);
     forward.normalize();
 
-    const startPosition = playerTransform.position.clone().add(new Vector3(0, 1.15, 0));
-    this.onLocustSpawnCallback({
-      startPosition,
-      spreadIndex,
-      volleyId: this.locustVolleyId,
-      forward: forward.clone(),
-      damage,
-    });
+    this.emitLocustMissile(playerTransform, forward, spreadIndex, this.locustVolleyId);
 
     this.locustMissilesFiredInVolley += 1;
     this.locustNextMissileAt = currentTime + LOCUST_MISSILE_INTERVAL_SEC;
@@ -9255,6 +9681,18 @@ export class ControlSystem extends System {
     return this.playerArchetype;
   }
 
+  public setWeaponAspect(aspect: WeaponAspect, weapon: WeaponType = this.currentWeapon): void {
+    const normalized = normalizeWeaponAspect(aspect, weapon);
+    this.weaponAspect = normalized;
+    if (this.currentWeapon === WeaponType.RUNEBLADE) {
+      this.fireRate = getRunebladeAspectFireRateSec(normalized);
+    }
+  }
+
+  public getWeaponAspect(): WeaponAspect {
+    return this.weaponAspect;
+  }
+
   public isBlockingDeflectActive(): boolean {
     return this.isBlockingDeflect;
   }
@@ -9431,6 +9869,9 @@ export class ControlSystem extends System {
   }
 
   private performRejuvenatingShot(playerTransform: Transform): void {
+    if (!isBowRejuvenatingShotAspect(this.weaponAspect)) {
+      return;
+    }
     // Check cooldown
     const currentTime = Date.now() / 1000;
     if (currentTime - this.lastRejuvenatingShotTime < this.rejuvenatingShotFireRate) {
@@ -10271,6 +10712,17 @@ export class ControlSystem extends System {
           cooldowns[slot] = this.getCooldownForAbility(id, currentTime);
         }
       }
+      // Royal Guard: physical R is Tempest Sweep even when loadout R is empty/unused.
+      if (
+        this.currentWeapon === WeaponType.RUNEBLADE &&
+        isRunebladeTempestSweepAspect(this.weaponAspect)
+      ) {
+        cooldowns['R'] = {
+          current: Math.max(0, this.whirlwindCooldown - (currentTime - this.lastWhirlwindTime)),
+          max: this.whirlwindCooldown,
+          isActive: this.isWhirlwindCharging || this.isWhirlwinding,
+        };
+      }
       return cooldowns;
     }
 
@@ -10308,11 +10760,13 @@ export class ControlSystem extends System {
         isActive: false
       };
       cooldowns['R'] = this.getViperStingCooldownInfo(currentTime);
-      cooldowns['F'] = {
-        current: Math.max(0, this.rejuvenatingShotFireRate - (currentTime - this.lastRejuvenatingShotTime)),
-        max: this.rejuvenatingShotFireRate,
-        isActive: this.isRejuvenatingShotCharging
-      };
+      if (isBowRejuvenatingShotAspect(this.weaponAspect)) {
+        cooldowns['F'] = {
+          current: Math.max(0, this.rejuvenatingShotFireRate - (currentTime - this.lastRejuvenatingShotTime)),
+          max: this.rejuvenatingShotFireRate,
+          isActive: this.isRejuvenatingShotCharging
+        };
+      }
     } else if (this.currentWeapon === WeaponType.SCYTHE) {
       cooldowns['Q'] = {
         current: Math.max(0, REANIMATE_SUNWELL_COOLDOWN_SEC - (currentTime - this.lastReanimateTime)),
@@ -10334,11 +10788,14 @@ export class ControlSystem extends System {
         max: this.sunderCooldown,
         isActive: this.isSundering
       };
-      cooldowns['R'] = {
-        current: Math.max(0, this.skyfallCooldown - (currentTime - this.lastSkyfallTime)),
-        max: this.skyfallCooldown,
-        isActive: this.isSkyfalling
-      };
+      {
+        const skyfallCd = getSabresSkyfallCooldownSec(this.weaponAspect);
+        cooldowns['R'] = {
+          current: Math.max(0, skyfallCd - (currentTime - this.lastSkyfallTime)),
+          max: skyfallCd,
+          isActive: this.isSkyfalling
+        };
+      }
       cooldowns['F'] = {
         current: Math.max(0, this.stealthCooldown - (currentTime - this.lastStealthTime)),
         max: this.stealthCooldown,
@@ -10351,12 +10808,27 @@ export class ControlSystem extends System {
         max: this.deathGraspCooldown,
         isActive: this.isDeathGrasping
       };
-      cooldowns['E'] = this.getWraithStrikeCooldownInfo(currentTime);
-      cooldowns['R'] = {
-        current: Math.max(0, this.smiteCooldown - (currentTime - this.lastSmiteTime)),
-        max: this.smiteCooldown,
-        isActive: this.isSmiting
-      };
+      if (isRunebladeTempestSweepAspect(this.weaponAspect)) {
+        const smiteCd = this.getColossusStrikeCooldownSec();
+        cooldowns['E'] = {
+          current: Math.max(0, smiteCd - (currentTime - this.lastSmiteTime)),
+          max: smiteCd,
+          isActive: this.isSmiting
+        };
+        cooldowns['R'] = {
+          current: Math.max(0, this.whirlwindCooldown - (currentTime - this.lastWhirlwindTime)),
+          max: this.whirlwindCooldown,
+          isActive: this.isWhirlwindCharging || this.isWhirlwinding
+        };
+      } else {
+        cooldowns['E'] = this.getWraithStrikeCooldownInfo(currentTime);
+        const smiteCd = this.getColossusStrikeCooldownSec();
+        cooldowns['R'] = {
+          current: Math.max(0, smiteCd - (currentTime - this.lastSmiteTime)),
+          max: smiteCd,
+          isActive: this.isSmiting
+        };
+      }
       cooldowns['F'] = {
         current: this.corruptedAuraActive ? 0 : 0, // No cooldown, just active/inactive state
         max: 1,

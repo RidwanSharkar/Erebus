@@ -40,6 +40,27 @@ import {
   computeIgniteDotTickPlan,
   getConcentratedVenomMaxStacks,
 } from '@/utils/talents';
+import {
+  BLADEMASTER_SHADOWFLAME_DOT_FRACTION,
+  BLADEMASTER_SHADOWFLAME_DURATION_MS,
+  BLADEMASTER_SHADOWFLAME_TICKS,
+  FIRE_AFFINITY_SKYFALL_IGNITE_DOT_FRACTION,
+  FIRE_AFFINITY_SKYFALL_IGNITE_DURATION_MS,
+  FIRE_AFFINITY_SKYFALL_IGNITE_TICKS,
+  ARCHMAGE_ENTROPIC_IGNITE_DOT_FRACTION,
+  ARCHMAGE_ENTROPIC_IGNITE_DURATION_MS,
+  ARCHMAGE_ENTROPIC_IGNITE_TICKS,
+  getArchmageFlamePillarDamage,
+  isRunebladeBlademasterAspect,
+  isSabresFireAffinityAspect,
+  isSabresWarlordAspect,
+  isScytheArchmageAspect,
+  TEMPEST_SWEEP_IGNITE_DOT_FRACTION,
+  TEMPEST_SWEEP_IGNITE_DURATION_MS,
+  TEMPEST_SWEEP_IGNITE_TICKS,
+  WARLORD_BACKSTAB_CONCENTRATED_VENOM_STACKS,
+  type WeaponAspect,
+} from '@/utils/weaponAspects';
 import { DamageNumberManager } from '@/utils/DamageNumberManager';
 import { addEnemyHitDamageNumber } from '@/utils/enemyDamageNumber';
 import { ImpactEffectManager } from '@/utils/ImpactEffectManager';
@@ -49,18 +70,16 @@ import { Pillar } from '@/ecs/components/Pillar';
 import { DestructibleMushroom } from '@/ecs/components/DestructibleMushroom';
 import { WeaponType } from '@/components/dragon/weapons';
 import { addGlobalEntangledEnemy } from '@/components/weapons/EntangleManager';
+import { addGlobalVenomousEnemy } from '@/components/projectiles/VenomEffectManager';
 import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
 import {
   COLD_GRACE_SHATTER_DAMAGE,
-  EXODIA_GAUNTLETS,
   EXODIA_HELM,
   JAGUAR_CRIT_VS_VENOMED,
   JAGUAR_EMERALD,
   LIQUID_SAPPHIRE,
   NEEDLER_MAX_STACKS,
-  VICEGRIP_HP_THRESHOLD,
   WYVERN_AMETHYST,
-  getVicegripDamageMultiplier,
   getWyvernNeedlerBurstDamage,
   isEnemyVenomed,
   isPrimaryAttackDamageType,
@@ -142,6 +161,8 @@ interface DamageEvent {
   tempestBurstArcticChill?: boolean;
   /** Tempest Rounds burst — Wyvern Sting zombie on kill. */
   tempestBurstWyvernZombie?: boolean;
+  /** Royal Guard Tempest Sweep — charged R Ignite (80% over 4s). */
+  tempestSweepIgnite?: boolean;
 }
 
 interface HealEvent {
@@ -157,6 +178,7 @@ interface PendingIgniteTick {
   fireAtMs: number;
   source?: Entity;
   sourcePlayerId?: string;
+  damageType?: string;
 }
 
 export class CombatSystem extends System {
@@ -213,6 +235,8 @@ export class CombatSystem extends System {
       cloudkillDamage?: boolean;
       tempestBurstArcticChill?: boolean;
       tempestBurstWyvernZombie?: boolean;
+      tempestSweepIgnite?: boolean;
+      archmageEntropicIgnite?: boolean;
     },
     hitWorldPosition?: { x: number; y: number; z: number },
   ) => void;
@@ -373,14 +397,6 @@ export class CombatSystem extends System {
     const health = target.getComponent(Health);
     if (!enemy || !health || health.isDead) return damage;
 
-    if (cs.hasOwnedItem(EXODIA_GAUNTLETS) && isPrimaryAttackDamageType(damageType)) {
-      const hpFrac = health.maxHealth > 0 ? health.currentHealth / health.maxHealth : 1;
-      if (hpFrac < VICEGRIP_HP_THRESHOLD) {
-        const str = cs.getDreamLayerEffectiveStats?.()?.strength ?? 0;
-        damage = Math.max(0, Math.floor(damage * getVicegripDamageMultiplier(str)));
-      }
-    }
-
     if (cs.hasOwnedItem(LIQUID_SAPPHIRE) && isPrimaryAttackDamageType(damageType) && enemy.isFrozen) {
       const now = Date.now() / 1000;
       enemy.updateFreezeStatus(now);
@@ -439,6 +455,7 @@ export class CombatSystem extends System {
     if (!damageType) return false;
     if (
       damageType === 'ignite' ||
+      damageType === 'shadowflame' ||
       damageType === 'venom' ||
       damageType === 'wyvern_talons_detonate' ||
       damageType === 'player_zombie' ||
@@ -473,14 +490,26 @@ export class CombatSystem extends System {
     this.runebladeLmbSfxArmed = null;
     this.runebladeLmbSfxQueueProcessed = 0;
     this.runebladeLmbSfxQueueAnyCrit = false;
-    const audio = (window as any).controlSystemRef?.current?.getAudioSystem?.() as
-      | { playSwordSwingSound: (s: 1 | 2 | 3, p: Vector3) => void; playRunebladeSwingHitSound: (p: Vector3) => void }
+    const controlSystem = (window as any).controlSystemRef?.current as
+      | {
+          getAudioSystem?: () => {
+            playSwordSwingSound: (s: 1 | 2 | 3, p: Vector3) => void;
+            playWarhammerImpactSound: (p: Vector3) => void;
+            playRunebladeLmbImpactSound: (p: Vector3, useWarhammerImpact: boolean) => void;
+          };
+          getWeaponAspect?: () => string;
+        }
       | undefined;
+    const audio = controlSystem?.getAudioSystem?.();
     if (!audio) return;
-    if (anyCrit) {
+    const useWarhammerImpact = controlSystem?.getWeaponAspect?.() === 'DEATHDEALER';
+    // Deathdealer: titanHit on both crit and non-crit connects.
+    if (anyCrit && useWarhammerImpact) {
+      audio.playWarhammerImpactSound(armed.position);
+    } else if (anyCrit) {
       audio.playSwordSwingSound(armed.step, armed.position);
     } else {
-      audio.playRunebladeSwingHitSound(armed.position);
+      audio.playRunebladeLmbImpactSound(armed.position, useWarhammerImpact);
     }
   }
 
@@ -648,6 +677,7 @@ export class CombatSystem extends System {
         tempestBurstArcticChill?: boolean;
         tempestBurstWyvernZombie?: boolean;
         infernalDashRoom?: boolean;
+        archmageEntropicIgnite?: boolean;
       },
       hitWorldPosition?: { x: number; y: number; z: number },
     ) => void,
@@ -669,6 +699,7 @@ export class CombatSystem extends System {
     tickCount: number,
     source?: Entity,
     sourcePlayerId?: string,
+    dotDamageType: string = 'ignite',
   ): void {
     const totalDot = Math.floor(appliedDamage * dotFraction);
     const plan = computeIgniteDotTickPlan(totalDot, tickCount, durationMs);
@@ -682,6 +713,7 @@ export class CombatSystem extends System {
         fireAtMs: Date.now() + delayMs,
         source,
         sourcePlayerId,
+        damageType: dotDamageType,
       });
     }
   }
@@ -765,6 +797,7 @@ export class CombatSystem extends System {
         enemy.updateCorruptedStatus(currentTime);
         enemy.updateChillStatus(currentTime);
         enemy.updateIgniteStatus(currentTime);
+        enemy.updateShadowflameStatus(currentTime);
         const entangleTick = enemy.updateEntangleStatus(currentTime);
 
         if (!this.onEnemyDamageCallback) {
@@ -829,7 +862,13 @@ export class CombatSystem extends System {
       const health = tick.target.getComponent(Health);
       const enemy = tick.target.getComponent(Enemy);
       if (health && !health.isDead && enemy && !enemy.isDead) {
-        this.queueDamage(tick.target, tick.tickDamage, tick.source, 'ignite', tick.sourcePlayerId);
+        this.queueDamage(
+          tick.target,
+          tick.tickDamage,
+          tick.source,
+          tick.damageType ?? 'ignite',
+          tick.sourcePlayerId,
+        );
       }
     }
     this.pendingIgniteTicks.length = write;
@@ -1139,7 +1178,8 @@ export class CombatSystem extends System {
                               ((damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0) ||
                                 damageEvent.entropicWrathful === true ||
                                 damageEvent.entropicInfesting === true ||
-                                damageEvent.frostTotemChill === true)
+                                damageEvent.frostTotemChill === true ||
+                                source?.getComponent(Projectile)?.archmageEntropicIgnite === true)
                             ? {
                                 damageType: 'entropic' as const,
                                 ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
@@ -1153,6 +1193,9 @@ export class CombatSystem extends System {
                                   : {}),
                                 ...(damageEvent.frostTotemChill === true
                                   ? { frostTotemChill: true as const }
+                                  : {}),
+                                ...(source?.getComponent(Projectile)?.archmageEntropicIgnite === true
+                                  ? { archmageEntropicIgnite: true as const }
                                   : {}),
                               }
                             : damageType === 'icebeam'
@@ -1223,6 +1266,16 @@ export class CombatSystem extends System {
                                           ? {
                                               damageType: 'fire_affinity_storm' as const,
                                             }
+                                          : damageType === 'fire_affinity_skyfall'
+                                            ? {
+                                                damageType: 'fire_affinity_skyfall' as const,
+                                              }
+                                          : damageType === 'whirlwind' &&
+                                              damageEvent.tempestSweepIgnite === true
+                                            ? {
+                                                damageType: 'whirlwind' as const,
+                                                tempestSweepIgnite: true as const,
+                                              }
                                           : damageType === 'deflect_smite'
                                             ? {
                                                 damageType: 'deflect_smite' as const,
@@ -1681,12 +1734,14 @@ export class CombatSystem extends System {
       const venomMaxStacks = getConcentratedVenomMaxStacks(
         (window as any).controlSystemRef?.current?.talentLoadout,
       );
+      let concentratedVenomApplied = false;
       if (
         enemyForVenom &&
         damageType === 'barrage' &&
         damageEvent.wyvernBiteConcentratedVenom === true
       ) {
         enemyForVenom.applyConcentratedVenomStack(currentTime, venomMaxStacks);
+        concentratedVenomApplied = true;
       }
 
       if (
@@ -1701,6 +1756,7 @@ export class CombatSystem extends System {
           currentTime,
           venomMaxStacks,
         );
+        concentratedVenomApplied = true;
       }
 
       if (
@@ -1715,6 +1771,7 @@ export class CombatSystem extends System {
           currentTime,
           venomMaxStacks,
         );
+        concentratedVenomApplied = true;
       }
 
       if (
@@ -1729,6 +1786,24 @@ export class CombatSystem extends System {
           currentTime,
           venomMaxStacks,
         );
+        concentratedVenomApplied = true;
+      }
+
+      // Warlord aspect — 2 stacks of Concentrated Venom per Backstab hit (stacks with Infested Stab)
+      if (
+        enemyForVenom &&
+        damageType === 'backstab' &&
+        damageDealt &&
+        !health.isDead &&
+        !this.onEnemyDamageCallback &&
+        isSabresWarlordAspect(this.getControlSystem()?.getWeaponAspect?.())
+      ) {
+        enemyForVenom.applyConcentratedVenomStacks(
+          WARLORD_BACKSTAB_CONCENTRATED_VENOM_STACKS,
+          currentTime,
+          venomMaxStacks,
+        );
+        concentratedVenomApplied = true;
       }
 
       if (
@@ -1743,6 +1818,7 @@ export class CombatSystem extends System {
           currentTime,
           venomMaxStacks,
         );
+        concentratedVenomApplied = true;
       }
 
       if (
@@ -1758,6 +1834,7 @@ export class CombatSystem extends System {
           currentTime,
           venomMaxStacks,
         );
+        concentratedVenomApplied = true;
       }
 
       if (
@@ -1773,26 +1850,14 @@ export class CombatSystem extends System {
           currentTime,
           venomMaxStacks,
         );
+        concentratedVenomApplied = true;
       }
 
-      if (enemyForVenom) {
-        const venomApplied =
-          (damageType === 'barrage' && damageEvent.wyvernBiteConcentratedVenom === true) ||
-          (damageType === 'crossentropy' &&
-            damageEvent.crossentropyPlague === true &&
-            !damageEvent.crossentropyMeteorDamage &&
-            damageDealt) ||
-          (damageType === 'wraith_strike' && damageEvent.infestedStrike === true && damageDealt) ||
-          (damageType === 'backstab' && damageEvent.infestedBackstab === true && damageDealt) ||
-          ((damageType === 'sunder' || damageType === 'fan_of_knives') &&
-            damageEvent.infestedFlourish === true &&
-            damageDealt) ||
-          (damageType === 'sword' && damageEvent.infestedCombo === true && damageDealt) ||
-          ((damageType === 'sabre_left' || damageType === 'sabre_right') &&
-            damageEvent.sabreInfestingSwipes === true &&
-            damageDealt);
-        if (venomApplied) {
-          this.maybeApplyNeedlerOnVenomApply(target, damageEvent.sourcePlayerId);
+      if (enemyForVenom && concentratedVenomApplied) {
+        this.maybeApplyNeedlerOnVenomApply(target, damageEvent.sourcePlayerId);
+        const venomTransform = target.getComponent(Transform);
+        if (venomTransform) {
+          addGlobalVenomousEnemy(target.id.toString(), venomTransform.position);
         }
       }
 
@@ -1848,6 +1913,153 @@ export class CombatSystem extends System {
           FIRE_AFFINITY_IGNITE_TICKS,
           source,
           damageEvent.sourcePlayerId,
+        );
+      }
+
+      // Royal Guard Tempest Sweep — charged R Ignite (80% of hit over 4s)
+      if (
+        damageDealt &&
+        !health.isDead &&
+        !this.onEnemyDamageCallback &&
+        damageType === 'whirlwind' &&
+        damageEvent.tempestSweepIgnite === true
+      ) {
+        const enemyForIgnite = target.getComponent(Enemy);
+        const igniteTransform = target.getComponent(Transform);
+        if (enemyForIgnite && igniteTransform) {
+          enemyForIgnite.applyIgnite(
+            TEMPEST_SWEEP_IGNITE_DURATION_MS,
+            currentTime,
+            target.id.toString(),
+            igniteTransform.getWorldPosition().clone(),
+          );
+        }
+        this.scheduleLocalIgniteDot(
+          target,
+          actualDamage,
+          TEMPEST_SWEEP_IGNITE_DOT_FRACTION,
+          TEMPEST_SWEEP_IGNITE_DURATION_MS,
+          TEMPEST_SWEEP_IGNITE_TICKS,
+          source,
+          damageEvent.sourcePlayerId,
+        );
+      }
+
+      // Archmage aspect — Crossentropy hit on already-Ignited enemy → flame pillar
+      // (must run BEFORE local Ignite applications on this same hit; solo only)
+      if (
+        damageDealt &&
+        !this.onEnemyDamageCallback &&
+        damageType === 'crossentropy' &&
+        !damageEvent.crossentropyMeteorDamage &&
+        isScytheArchmageAspect(this.getControlSystem()?.getWeaponAspect?.()) &&
+        enemyForVenom?.isIgnitedActive(currentTime)
+      ) {
+        const pillarTransform = target.getComponent(Transform);
+        if (pillarTransform) {
+          const intellect =
+            this.getControlSystem()?.getDreamLayerEffectiveStats?.()?.intellect ?? 0;
+          const pillarDamage = getArchmageFlamePillarDamage(intellect);
+          (window as any).archmageFlamePillarVfx?.(
+            pillarTransform.getWorldPosition().clone(),
+          );
+          if (!health.isDead) {
+            this.queueDamage(
+              target,
+              pillarDamage,
+              source,
+              'archmage_flame_pillar',
+              damageEvent.sourcePlayerId,
+            );
+          }
+        }
+      }
+
+      // Archmage aspect — every 3rd Entropic Bolt Ignite (200% of hit over 4s)
+      if (
+        damageDealt &&
+        !health.isDead &&
+        !this.onEnemyDamageCallback &&
+        damageType === 'entropic' &&
+        source?.getComponent(Projectile)?.archmageEntropicIgnite === true
+      ) {
+        const enemyForIgnite = target.getComponent(Enemy);
+        const igniteTransform = target.getComponent(Transform);
+        if (enemyForIgnite && igniteTransform) {
+          enemyForIgnite.applyIgnite(
+            ARCHMAGE_ENTROPIC_IGNITE_DURATION_MS,
+            currentTime,
+            target.id.toString(),
+            igniteTransform.getWorldPosition().clone(),
+          );
+        }
+        this.scheduleLocalIgniteDot(
+          target,
+          actualDamage,
+          ARCHMAGE_ENTROPIC_IGNITE_DOT_FRACTION,
+          ARCHMAGE_ENTROPIC_IGNITE_DURATION_MS,
+          ARCHMAGE_ENTROPIC_IGNITE_TICKS,
+          source,
+          damageEvent.sourcePlayerId,
+        );
+      }
+
+      // Fire Affinity aspect — Divebomb / Skyfall Ignite (80% of hit over 3s)
+      if (
+        damageDealt &&
+        !health.isDead &&
+        !this.onEnemyDamageCallback &&
+        damageType === 'fire_affinity_skyfall' &&
+        isSabresFireAffinityAspect(this.getControlSystem()?.getWeaponAspect?.())
+      ) {
+        const enemyForIgnite = target.getComponent(Enemy);
+        const igniteTransform = target.getComponent(Transform);
+        if (enemyForIgnite && igniteTransform) {
+          enemyForIgnite.applyIgnite(
+            FIRE_AFFINITY_SKYFALL_IGNITE_DURATION_MS,
+            currentTime,
+            target.id.toString(),
+            igniteTransform.getWorldPosition().clone(),
+          );
+        }
+        this.scheduleLocalIgniteDot(
+          target,
+          actualDamage,
+          FIRE_AFFINITY_SKYFALL_IGNITE_DOT_FRACTION,
+          FIRE_AFFINITY_SKYFALL_IGNITE_DURATION_MS,
+          FIRE_AFFINITY_SKYFALL_IGNITE_TICKS,
+          source,
+          damageEvent.sourcePlayerId,
+        );
+      }
+
+      // Blademaster — Wraith Strike applies Shadowflame (60% of hit over 2.5s)
+      if (
+        damageDealt &&
+        !health.isDead &&
+        !this.onEnemyDamageCallback &&
+        damageType === 'wraith_strike' &&
+        isRunebladeBlademasterAspect(this.getControlSystem()?.getWeaponAspect?.())
+      ) {
+        const enemyForShadowflame = target.getComponent(Enemy);
+        const shadowflameTransform = target.getComponent(Transform);
+        if (enemyForShadowflame && shadowflameTransform) {
+          enemyForShadowflame.applyShadowflame(
+            BLADEMASTER_SHADOWFLAME_DURATION_MS,
+            currentTime,
+            target.id.toString(),
+            shadowflameTransform.getWorldPosition().clone(),
+          );
+        }
+        this.scheduleLocalIgniteDot(
+          target,
+          actualDamage,
+          BLADEMASTER_SHADOWFLAME_DOT_FRACTION,
+          BLADEMASTER_SHADOWFLAME_DURATION_MS,
+          BLADEMASTER_SHADOWFLAME_TICKS,
+          source,
+          damageEvent.sourcePlayerId,
+          'shadowflame',
         );
       }
 
@@ -2250,6 +2462,27 @@ export class CombatSystem extends System {
     });
   }
 
+  /** Tempest Sweep (Spear E / Royal Guard R) — optional charged Ignite flag. */
+  public queueWhirlwindDamage(
+    target: Entity,
+    damage: number,
+    source?: Entity,
+    sourcePlayerId?: string,
+    isCritical?: boolean,
+    tempestSweepIgnite?: boolean,
+  ): void {
+    this.damageQueue.push({
+      target,
+      damage,
+      source,
+      damageType: 'whirlwind',
+      timestamp: Date.now() / 1000,
+      sourcePlayerId,
+      isCritical,
+      ...(tempestSweepIgnite ? { tempestSweepIgnite: true } : {}),
+    });
+  }
+
   public queueHealing(
     target: Entity, 
     amount: number, 
@@ -2404,8 +2637,17 @@ export class CombatSystem extends System {
     this.impactEffectManager.clearConsumed();
   }
 
-  public addCrescentSlashEffect(position: Vector3, direction: Vector3): void {
-    this.impactEffectManager.addImpact('crescent-slash-effect', position, direction);
+  public addCrescentSlashEffect(
+    position: Vector3,
+    direction: Vector3,
+    aspect?: WeaponAspect | null,
+  ): void {
+    this.impactEffectManager.addImpact(
+      'crescent-slash-effect',
+      position,
+      direction,
+      aspect ? { weaponAspect: aspect } : undefined,
+    );
   }
 
   public addMortalStrikeEffect(

@@ -71,6 +71,18 @@ export const ALLY_CHOICE_CARDS: readonly AllyChoiceCardDef[] = [
   },
 ];
 
+export const ALLY_ANCESTOR_ICON_SRC: Record<CoopAllyKind, string> = {
+  knight: '/icons/ancestors/knight.png',
+  huntress: '/icons/ancestors/huntress.png',
+  phantom: '/icons/ancestors/phantom.webp',
+  demon: '/icons/ancestors/demon.png',
+  enchantress: '/icons/ancestors/enchantress.png',
+};
+
+export function getAllyAncestorIconSrc(kind: CoopAllyKind): string {
+  return ALLY_ANCESTOR_ICON_SRC[kind];
+}
+
 export function getAllyChoiceCard(kind: CoopAllyKind): AllyChoiceCardDef | undefined {
   return ALLY_CHOICE_CARDS.find((card) => card.kind === kind);
 }

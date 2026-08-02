@@ -21,6 +21,8 @@ import SpearComponent from '../weapons/Spear';
 import Reanimate, { ReanimateRef } from '../weapons/Reanimate';
 import BoneTail from './BoneTail';
 import ArchmageCrest from './ArchmageCrest';
+import PhoenixTrinketWings from './PhoenixTrinketWings';
+import ShoulderTrinketPlates from './ShoulderTrinketPlates';
 import SpellCastingAura from '../weapons/SpellCastingAura';
 import PrimeMateriaAura from '../weapons/PrimeMateriaAura';
 import IncinerationChargeAura from '../weapons/IncinerationChargeAura';
@@ -28,6 +30,7 @@ import SpellCastingHalos from '../weapons/SpellCastingHalos';
 import DeflectShield from '../weapons/DeflectShield';
 import type { AegisPaletteVariant } from '@/utils/aegisShieldPalette';
 import { isShiftEnergyHaloActive, type VorpalGustStabBoonBeamTheme, type TalentLoadout } from '@/utils/talents';
+import type { WeaponAspect } from '@/utils/weaponAspects';
 
 interface DragonUnitProps {
   position?: Vector3;
@@ -48,7 +51,7 @@ interface DragonUnitProps {
   hasFatebreaker?: boolean;
   /** Co-op duo boon (red + purple) — attaches a small BoneWings back cosmetic. */
   hasFrostQueen?: boolean;
-  /** Co-op / progression level — crest gains an outer layer at 2+. */
+  /** Co-op / progression level — crest layer at 2+, shoulder plates at 3+, phoenix wings at 4+. */
   playerLevel?: number;
   /** Cyclone Rush — Runeblade Charge spin + damage. */
   runebladeStoredCharge?: boolean;
@@ -66,6 +69,8 @@ interface DragonUnitProps {
   titansGripBladeThemeActive?: boolean;
   /** Local: Psionic Blades — permanent purple blade palette. */
   psionicBladesBladeThemeActive?: boolean;
+  /** Throne weapon aspect — visual variant for blade colors/shape. */
+  weaponAspect?: WeaponAspect;
   /** Local: Blizzard talent — storm visibility from ControlSystem (omit when talent not taken). */
   getRunebladeBlizzardTalentActive?: () => boolean;
   /** Local: Runeblade Blizzard — stat-scaled tick damage. */
@@ -76,6 +81,8 @@ interface DragonUnitProps {
   getRunebladeBlizzardParticleSpawnMultiplier?: () => number;
   /** Local: Titan's Grip — flat STR-scaled LMB damage per combo strike. */
   getRunebladeTitansGripLmbFlatBonus?: () => number;
+  /** Local: Vicegrip (Exodia Gauntlets) — +50 flat on each Runeblade combo hit. */
+  getVicegripRunebladeComboFlatBonus?: () => number;
   /** Local: Titan's Grip — 25% per-hit stun proc on Runeblade LMB hits. */
   onRunebladeTitansGripHit?: (targetId: string) => void;
   onBowRelease?: (finalProgress: number, isPerfectShot?: boolean) => void;
@@ -274,11 +281,13 @@ export default function DragonUnit({
   crusaderBladeThemeActive = false,
   titansGripBladeThemeActive = false,
   psionicBladesBladeThemeActive = false,
+  weaponAspect,
   getRunebladeBlizzardTalentActive,
   getRunebladeBlizzardDamagePerTick,
   getRunebladeBlizzardStormHitRadius,
   getRunebladeBlizzardParticleSpawnMultiplier,
   getRunebladeTitansGripLmbFlatBonus,
+  getVicegripRunebladeComboFlatBonus,
   onRunebladeTitansGripHit,
   onSmiteComplete = () => {},
   onColossusStrikeComplete = () => {},
@@ -575,6 +584,7 @@ export default function DragonUnit({
           isRejuvenatingShotCharging={isRejuvenatingShotCharging}
           rejuvenatingShotChargeProgress={rejuvenatingShotChargeProgress}
           isLocalPlayer={isLocalPlayer}
+          weaponAspect={weaponAspect}
         />
       );
     } else if (currentWeapon === WeaponType.SCYTHE) {
@@ -587,6 +597,7 @@ export default function DragonUnit({
           isSpinning={isSpinning}
           talentLoadout={talentLoadout}
           isCrossentropyCharging={isCrossentropyCharging}
+          weaponAspect={weaponAspect}
         />
       );
     } else if (currentWeapon === WeaponType.SWORD) {
@@ -639,6 +650,7 @@ export default function DragonUnit({
             onSunderComplete={onSunderComplete}
             subclass={currentSubclass}
             psionicBladesBladeThemeActive={psionicBladesBladeThemeActive}
+            weaponAspect={weaponAspect}
             enemyData={enemyData}
             onHit={onHit}
           />
@@ -660,6 +672,10 @@ export default function DragonUnit({
           isCorruptedAuraActive={isCorruptedAuraActive}
           crusaderBladeThemeActive={crusaderBladeThemeActive}
           titansGripBladeThemeActive={titansGripBladeThemeActive}
+          weaponAspect={weaponAspect}
+          isWhirlwindCharging={isWhirlwindCharging || false}
+          whirlwindChargeProgress={whirlwindChargeProgress || 0}
+          isWhirlwinding={isWhirlwinding || false}
           isOathstriking={false}
           isCharging={isSwordCharging}
           isDeflecting={isDeflecting}
@@ -692,6 +708,7 @@ export default function DragonUnit({
           getExecutionerFlatBonus={getRunebladeExecutionerFlatBonus}
           getCrusaderLmbFlatBonus={getRunebladeCrusaderLmbFlatBonus}
           getTitansGripLmbFlatBonus={getRunebladeTitansGripLmbFlatBonus}
+          getVicegripFlatBonus={getVicegripRunebladeComboFlatBonus}
           getBlizzardTalentActive={getRunebladeBlizzardTalentActive}
           getBlizzardDamagePerTick={getRunebladeBlizzardDamagePerTick}
           getBlizzardStormHitRadius={getRunebladeBlizzardStormHitRadius}
@@ -820,6 +837,23 @@ export default function DragonUnit({
           parentRef={groupRef}
         />
       </>)}
+      
+
+      {/* Phoenix wings — hover behind crest at level 4+ */}
+      {playerLevel >= 4 && (
+        <PhoenixTrinketWings
+          anchorPosition={crestPosition}
+          hideBody={hideBody}
+        />
+      )}
+
+      {/* Shoulder pauldrons — hover left/right of crest at level 3+ */}
+      {playerLevel >= 3 && (
+        <ShoulderTrinketPlates
+          anchorPosition={crestPosition}
+          hideBody={hideBody}
+        />
+      )}
 
       {/* CREST — visible with or without dragon body, raised higher on character model */}
       <ArchmageCrest
@@ -828,6 +862,7 @@ export default function DragonUnit({
         scale={-0.6}
         weaponType={currentWeapon}
         weaponSubclass={currentSubclass}
+        weaponAspect={weaponAspect}
       />
       {playerLevel >= 2 && (
         <ArchmageCrest
@@ -835,6 +870,7 @@ export default function DragonUnit({
           scale={-0.425}
           weaponType={currentWeapon}
           weaponSubclass={currentSubclass}
+          weaponAspect={weaponAspect}
           wingSpread={-.025}
           rotation={[0.00, 0.00, 0.0]}
         />
@@ -896,6 +932,7 @@ export default function DragonUnit({
         rechargeDurationSec={dashRechargeDurationSec}
         weaponType={currentWeapon}
         weaponSubclass={currentSubclass}
+        weaponAspect={weaponAspect}
         isCorruptedAuraActive={isCorruptedAuraActive}
         yOffset={hideBody ? 1.1 : 0}
       />

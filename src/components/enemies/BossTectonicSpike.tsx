@@ -1,22 +1,24 @@
 'use client';
 
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3, MeshStandardMaterial } from 'three';
+import { Group, Vector3 } from 'three';
 import type { TectonicSpikeTheme } from './BossTectonicSpikeTelegraph';
 import {
   SPIKE_HEIGHT,
-  createTectonicSpikeGeometry,
   createSpikeRiseMotion,
   hashSpikeSeed,
 } from '@/utils/tectonicSpikeGeometry';
+import GroundSpikeModel from './GroundSpikeModel';
 
 const RISE_MS = 520;
-const HOLD_MS = 1600;
-const TOTAL_MS = RISE_MS + HOLD_MS;
+const HOLD_MS = 1080;
+const RETRACT_MS = 520;
+const TOTAL_MS = RISE_MS + HOLD_MS + RETRACT_MS;
+const HOLD_END_MS = RISE_MS + HOLD_MS;
 
 /**
- * Ridged mountain spike erupting from the ground with lateral wobble.
+ * Crystal ground spike erupting from the ground with lateral wobble, then retracting.
  */
 export default function BossTectonicSpike({
   worldPosition,
@@ -26,7 +28,7 @@ export default function BossTectonicSpike({
 }: {
   worldPosition: Vector3;
   theme?: TectonicSpikeTheme;
-  /** Stable key for per-spike sculpt + rise motion variation. */
+  /** Stable key for per-spike rise motion variation. */
   variantSeed?: string;
   onComplete: () => void;
 }) {
@@ -37,31 +39,7 @@ export default function BossTectonicSpike({
 
   const seedKey = variantSeed ?? `${worldPosition.x},${worldPosition.z}`;
   const numericSeed = useMemo(() => hashSpikeSeed(seedKey), [seedKey]);
-
-  const geometry = useMemo(
-    () => createTectonicSpikeGeometry(numericSeed, theme),
-    [numericSeed, theme],
-  );
-
-  const material = useMemo(
-    () =>
-      new MeshStandardMaterial({
-        vertexColors: true,
-        flatShading: true,
-        roughness: 0.9,
-        metalness: 0.1,
-      }),
-    [],
-  );
-
   const riseMotion = useMemo(() => createSpikeRiseMotion(numericSeed), [numericSeed]);
-
-  useEffect(() => {
-    return () => {
-      geometry.dispose();
-      material.dispose();
-    };
-  }, [geometry, material]);
 
   const riseDepth = SPIKE_HEIGHT * 0.92;
 
@@ -70,40 +48,37 @@ export default function BossTectonicSpike({
     const e = performance.now() - t0.current;
 
     if (riseGroup.current) {
+      const { emergenceYaw, leanDir, leanAmt, wobbleFreqX, wobbleFreqZ, wobbleAmp, tiltX, tiltZ } =
+        riseMotion;
+      const baseX = Math.cos(leanDir) * leanAmt;
+      const baseZ = Math.sin(leanDir) * leanAmt;
+
       if (e < RISE_MS) {
         const t = e / RISE_MS;
         const ease = 1 - (1 - t) * (1 - t);
         const yOff = -riseDepth * (1 - ease);
         const wobbleDecay = 1 - t;
-        const {
-          emergenceYaw,
-          leanDir,
-          leanAmt,
-          wobbleFreqX,
-          wobbleFreqZ,
-          wobbleAmp,
-          tiltX,
-          tiltZ,
-        } = riseMotion;
         const xOff =
-          Math.cos(leanDir) * leanAmt * ease +
-          Math.sin(t * wobbleFreqX) * wobbleAmp * wobbleDecay;
+          baseX * ease + Math.sin(t * wobbleFreqX) * wobbleAmp * wobbleDecay;
         const zOff =
-          Math.sin(leanDir) * leanAmt * ease +
-          Math.cos(t * wobbleFreqZ) * wobbleAmp * wobbleDecay;
+          baseZ * ease + Math.cos(t * wobbleFreqZ) * wobbleAmp * wobbleDecay;
         riseGroup.current.position.set(xOff, yOff, zOff);
         riseGroup.current.rotation.set(
           tiltX * wobbleDecay,
           emergenceYaw,
           tiltZ * wobbleDecay,
         );
+      } else if (e < HOLD_END_MS) {
+        riseGroup.current.position.set(baseX, 0, baseZ);
+        riseGroup.current.rotation.set(0, emergenceYaw, 0);
+      } else if (e < TOTAL_MS) {
+        const t = (e - HOLD_END_MS) / RETRACT_MS;
+        const ease = t * t; // ease-in into the ground
+        const yOff = -riseDepth * ease;
+        riseGroup.current.position.set(baseX * (1 - ease), yOff, baseZ * (1 - ease));
+        riseGroup.current.rotation.set(0, emergenceYaw, 0);
       } else {
-        const { emergenceYaw, leanDir, leanAmt } = riseMotion;
-        riseGroup.current.position.set(
-          Math.cos(leanDir) * leanAmt,
-          0,
-          Math.sin(leanDir) * leanAmt,
-        );
+        riseGroup.current.position.set(0, -riseDepth, 0);
         riseGroup.current.rotation.set(0, emergenceYaw, 0);
       }
     }
@@ -117,7 +92,7 @@ export default function BossTectonicSpike({
   return (
     <group ref={root} position={[worldPosition.x, 0, worldPosition.z]}>
       <group ref={riseGroup}>
-        <mesh castShadow geometry={geometry} material={material} />
+        <GroundSpikeModel theme={theme} />
       </group>
     </group>
   );

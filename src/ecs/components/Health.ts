@@ -1,6 +1,7 @@
 // Health component for damage and healing
 import { Component } from '../Entity';
 import { Shield } from './Shield';
+import { PERSEPHONE_SAVE_HP_FRACTION } from '@/utils/dreamLayerItems';
 
 export type InvulnerabilitySource = 'none' | 'aegis' | 'dodge' | 'hit_iframe' | 'deflect' | 'other';
 
@@ -21,6 +22,17 @@ export class Health extends Component {
   public lastDamageTime: number;
   /** Whether the current Deflect invulnerability window has already negated a hit (only the first negated hit fires the bolt/energy refill). */
   public deflectNegationConsumed: boolean;
+  /**
+   * Optional lethal-save (e.g. Persephone). Called when damage would kill;
+   * returning true restores HP to PERSEPHONE_SAVE_HP_FRACTION of max and keeps alive.
+   * Only set on the local player — enemies leave this null.
+   */
+  public lethalSaveHook: (() => boolean) | null;
+  /**
+   * Hexmetal Cloak — when set, raw incoming damage is clamped to this value before
+   * invulnerability/shield mitigation. Null = no cap. Self-damage can pass ignoreDamageCap.
+   */
+  public incomingDamageCap: number | null;
 
   constructor(maxHealth: number = 100) {
     super();
@@ -37,11 +49,23 @@ export class Health extends Component {
     this.regenerationDelay = 3; // Seconds after damage before regeneration starts
     this.lastDamageTime = 0;
     this.deflectNegationConsumed = false;
+    this.lethalSaveHook = null;
+    this.incomingDamageCap = null;
   }
 
-  public takeDamage(amount: number, currentTime: number = Date.now() / 1000, entity?: any, bypassInvulnerability: boolean = false): boolean {
+  public takeDamage(
+    amount: number,
+    currentTime: number = Date.now() / 1000,
+    entity?: any,
+    bypassInvulnerability: boolean = false,
+    ignoreDamageCap: boolean = false,
+  ): boolean {
     if (this.isDead || (!bypassInvulnerability && this.isInvulnerable) || amount <= 0) {
       return false;
+    }
+
+    if (this.incomingDamageCap !== null && !ignoreDamageCap) {
+      amount = Math.min(amount, this.incomingDamageCap);
     }
 
     let finalDamage = amount;
@@ -68,9 +92,14 @@ export class Health extends Component {
       this.invulnerabilityTimer = this.invulnerabilityDuration;
       this.invulnerabilitySource = 'hit_iframe';
 
-      // Check if dead
+      // Check if dead — allow optional lethal-save (Persephone) to intervene
       if (this.currentHealth <= 0) {
-        this.isDead = true;
+        if (this.lethalSaveHook?.()) {
+          this.currentHealth = Math.max(1, Math.floor(this.maxHealth * PERSEPHONE_SAVE_HP_FRACTION));
+          this.isDead = false;
+        } else {
+          this.isDead = true;
+        }
       }
     }
 
@@ -220,6 +249,7 @@ export class Health extends Component {
     this.lastDamageTime = 0;
     this.deflectNegationConsumed = false;
     this.enabled = true;
+    // Keep incomingDamageCap — it reflects Hexmetal Cloak ownership, not combat state.
   }
 
   public clone(): Health {
@@ -233,6 +263,7 @@ export class Health extends Component {
     clone.canRegenerate = this.canRegenerate;
     clone.regenerationRate = this.regenerationRate;
     clone.regenerationDelay = this.regenerationDelay;
+    clone.incomingDamageCap = this.incomingDamageCap;
     clone.lastDamageTime = this.lastDamageTime;
     clone.deflectNegationConsumed = this.deflectNegationConsumed;
     return clone;

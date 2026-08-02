@@ -309,7 +309,7 @@ const IncinerationChargeAura = forwardRef<{ isActive: boolean }, IncinerationCha
   return (
     <group ref={auraRef}>
       <group ref={mainRingRef} position={[0, MAIN_RING_BASE_Y, 0]}>
-        <group ref={innerRunesRef} position={[0, 0.005, 0]}>
+        <group ref={innerRunesRef} position={[0, -0.505, 0]}>
           <mesh
             rotation={[-Math.PI / 2, 0, 0]}
             material={runeBandMaterial}
@@ -319,7 +319,7 @@ const IncinerationChargeAura = forwardRef<{ isActive: boolean }, IncinerationCha
           </mesh>
         </group>
 
-        <group ref={outerRunesRef} position={[0, -0.005, 0]}>
+        <group ref={outerRunesRef} position={[0, -0.515, 0]}>
           <mesh rotation={[-Math.PI / 2, 0, 0]} userData={{ baseOpacity: 0.92 }}>
             <ringGeometry args={[BAND_INNER - RIM_LINE_WIDTH, BAND_INNER, 48]} />
             <meshStandardMaterial

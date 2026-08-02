@@ -7,6 +7,7 @@ import { World } from '@/ecs/World';
 import BossGlbModel from './BossGlbModel';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyMeleeAttackRangeRing, { BOSS_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
+import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type MeleeTelegraphVisual } from '@/utils/meleeTelegraphVisual';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
@@ -73,6 +74,7 @@ function BossRenderer({
   const [impactPlayKey, setImpactPlayKey] = useState(0);
   const [isThrowCasting, setIsThrowCasting] = useState(false);
   const [isAttacking, setIsAttacking] = useState(false);
+  const [meleeTelegraph, setMeleeTelegraph] = useState<MeleeTelegraphVisual | null>(null);
   const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation = useRef(rotation ?? 0);
   const lastMoveTimeRef = useRef(0);
@@ -116,21 +118,40 @@ function BossRenderer({
   useEffect(() => {
     if (!socket) return;
 
-    const onAttackTelegraph = (data: { bossId: string; meleeIndex?: number }) => {
+    const onAttackTelegraph = (data: {
+      bossId: string;
+      meleeIndex?: number;
+      hitDelayMs?: number;
+      swingLockMs?: number;
+      attackRange?: number;
+      arcDeg?: number;
+      facing?: number;
+      weightClass?: string;
+      timestamp?: number;
+    }) => {
       if (data.bossId !== id) return;
       const m = (data.meleeIndex ?? 0) % 2;
       setMeleeIndex(m as 0 | 1);
       setAttackTrigger((k) => k + 1);
+      const visual = parseMeleeTelegraphPayload(data, BOSS_MELEE_ATTACK_RANGE, ATTACK_DURATION);
+      setMeleeTelegraph(visual);
       setIsAttacking(true);
       isAttackingRef.current = true;
       isWalkingRef.current = false;
       setIsWalking(false);
       if (attackEndTimer.current) clearTimeout(attackEndTimer.current);
+      const duration = meleeAttackDurationFromTelegraph(visual, ATTACK_DURATION);
       attackEndTimer.current = setTimeout(() => {
         setIsAttacking(false);
+        setMeleeTelegraph(null);
         isAttackingRef.current = false;
         attackEndTimer.current = null;
-      }, ATTACK_DURATION);
+      }, duration);
+    };
+
+    const onAttackWhiff = (data: { bossId: string }) => {
+      if (data.bossId !== id) return;
+      setMeleeTelegraph((prev) => (prev ? { ...prev, whiffed: true } : prev));
     };
     const onThrowStart = (data: { bossId: string; moveLockMs?: number }) => {
       if (data.bossId !== id) return;
@@ -212,6 +233,7 @@ function BossRenderer({
     };
 
     socket.on('boss-attack-telegraph', onAttackTelegraph);
+    socket.on('boss-attack-whiff', onAttackWhiff);
     socket.on('boss-throw-start', onThrowStart);
     socket.on('boss-leap-start', onLeapStart);
     socket.on('boss-leap-land', onLeapLand);
@@ -228,6 +250,7 @@ function BossRenderer({
         attackEndTimer.current = null;
       }
       socket.off('boss-attack-telegraph', onAttackTelegraph);
+      socket.off('boss-attack-whiff', onAttackWhiff);
       socket.off('boss-throw-start', onThrowStart);
       socket.off('boss-leap-start', onLeapStart);
       socket.off('boss-leap-land', onLeapLand);
@@ -336,7 +359,17 @@ function BossRenderer({
       />
 
       {isAttacking && (
-        <EnemyMeleeAttackRangeRing radius={BOSS_MELEE_ATTACK_RANGE} />
+        <EnemyMeleeAttackRangeRing
+          radius={meleeTelegraph?.attackRange ?? BOSS_MELEE_ATTACK_RANGE}
+          hitDelayMs={meleeTelegraph?.hitDelayMs}
+          swingLockMs={meleeTelegraph?.swingLockMs}
+          arcDeg={meleeTelegraph?.arcDeg}
+          facing={meleeTelegraph?.facing}
+          weightClass={meleeTelegraph?.weightClass}
+          whiffed={meleeTelegraph?.whiffed}
+          startedAtMs={meleeTelegraph?.startedAtMs}
+          commitAtMs={meleeTelegraph?.commitAtMs}
+        />
       )}
 
       <Billboard position={[0, 6.1, 0]} follow lockX={false} lockY={false} lockZ={false}>

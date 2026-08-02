@@ -4,6 +4,8 @@
 // AGILITY:  +1% crit chance per point (no crit damage from Agility)
 // INTELLECT: +2 max shield capacity per point (base max shield 25)
 
+import { isUpgradeableBossRelic } from '@/utils/bossRelicItems';
+
 export type StatKey = 'strength' | 'stamina' | 'agility' | 'intellect';
 
 export interface PlayerStats {
@@ -25,7 +27,7 @@ export class StatSystem {
   private static readonly STAT_POINTS_PER_LEVEL = 5;
 
   static readonly BASE_MAX_SHIELD = 25;
-  static readonly STRENGTH_CRIT_DAMAGE_MULT_PER_POINT = 0.05;
+  static readonly STRENGTH_CRIT_DAMAGE_MULT_PER_POINT = 0.04;
   static readonly STAMINA_HEALTH_PER_POINT = 10;
   static readonly AGILITY_CRIT_CHANCE_PER_POINT = 0.01;
   static readonly INTELLECT_MAX_SHIELD_PER_POINT = 3;
@@ -46,11 +48,14 @@ export class StatSystem {
   /**
    * Flat STR/STA/AGI/INT granted by picked-up items. Rules must stay in sync with
    * `item-picked-up` (boss: positive `statBonus`; amulets: no `statBonus` → +1).
+   * Upgradeable boss relics are deduped by type (highest bonus wins).
    */
   static sumInventoryItemStatBonuses(
-    items: Iterable<{ stat?: StatKey | null; statBonus?: number | null }>,
+    items: Iterable<{ type?: string | null; stat?: StatKey | null; statBonus?: number | null }>,
   ): PlayerStats {
     const out: PlayerStats = { strength: 0, stamina: 0, agility: 0, intellect: 0 };
+    const bestRelicBonus = new Map<string, { stat: StatKey; bonus: number }>();
+
     for (const item of Array.from(items)) {
       const sk = item.stat;
       if (sk == null) continue;
@@ -62,9 +67,30 @@ export class StatSystem {
       } else {
         continue;
       }
+
+      const type = item.type;
+      if (type && isUpgradeableBossRelic(type)) {
+        const prev = bestRelicBonus.get(type);
+        if (!prev || delta > prev.bonus) {
+          bestRelicBonus.set(type, { stat: sk, bonus: delta });
+        }
+        continue;
+      }
+
       out[sk] += delta;
     }
+
+    for (const { stat, bonus } of Array.from(bestRelicBonus.values())) {
+      out[stat] += bonus;
+    }
     return out;
+  }
+
+  /** Net flat-stat change when replacing an upgradeable relic with a higher rarity. */
+  static getBossRelicStatDelta(existingBonus: number | null | undefined, incomingBonus: number | null | undefined): number {
+    const oldB = Math.max(0, Math.floor(Number(existingBonus) || 0));
+    const newB = Math.max(0, Math.floor(Number(incomingBonus) || 0));
+    return Math.max(0, newB - oldB);
   }
 
   /**

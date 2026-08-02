@@ -123,7 +123,7 @@ export function WhirlwindRadialWaveEffect({
     groupRef.current.position.copy(playerPosition);
 
     // Create expanding wave effect - faster and more explosive
-    const waveScale = progress * 10; // Expand to 6 units radius (faster expansion)
+    const waveScale = progress * 5; // Expand to ~3 units radius (smaller than prior yellow wave)
     groupRef.current.scale.setScalar(waveScale);
 
     // Add opacity fading - fade out as it expands
@@ -147,10 +147,10 @@ export function WhirlwindRadialWaveEffect({
     <group ref={groupRef}>
       {/* Main radial wave ring */}
       <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0.155, 0]}>
-        <ringGeometry args={[0.8, 1, 32]} />
+        <ringGeometry args={[0.5, 0.65, 32]} />
         <meshStandardMaterial
-          color="#FFFF00"
-          emissive="#FFFF00"
+          color="#ff3333"
+          emissive="#ff3333"
           emissiveIntensity={1}
           transparent
           opacity={0.8}
@@ -161,10 +161,10 @@ export function WhirlwindRadialWaveEffect({
 
       {/* Secondary inner wave */}
       <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0.15, 0]}>
-        <ringGeometry args={[0.4, 0.6, 24]} />
+        <ringGeometry args={[0.25, 0.4, 24]} />
         <meshStandardMaterial
-          color="#FFFF00"
-          emissive="#FFFF00"
+          color="#ff6600"
+          emissive="#ff6600"
           emissiveIntensity={1}
           transparent
           opacity={0.6}
@@ -173,15 +173,15 @@ export function WhirlwindRadialWaveEffect({
         />
       </mesh>
 
-      {/* Violent Yellow Lightning Sparks */}
+      {/* Violent Red Lightning Sparks */}
       {lightningSparks.map((spark: LightningSpark) => (
         <group key={spark.id}>
           {spark.segments.map((segment, segIdx) => (
             <mesh key={`spark-${spark.id}-seg-${segIdx}`} position={segment.position}>
               <sphereGeometry args={[segment.radius, 4, 4]} />
               <meshStandardMaterial
-                color="#FFFF00"
-                emissive="#FFD700"
+                color="#ff3333"
+                emissive="#ff6600"
                 emissiveIntensity={segment.emissiveIntensity}
                 transparent
                 opacity={1}
@@ -194,8 +194,8 @@ export function WhirlwindRadialWaveEffect({
             <mesh key={`mini-spark-${spark.id}-${miniIdx}`} position={mini.position}>
               <sphereGeometry args={[mini.radius, 3, 3]} />
               <meshStandardMaterial
-                color="#FFFF88"
-                emissive="#FFD700"
+                color="#ff8844"
+                emissive="#ff6600"
                 emissiveIntensity={mini.emissiveIntensity}
                 transparent
                 opacity={0.9}
@@ -210,8 +210,8 @@ export function WhirlwindRadialWaveEffect({
         <mesh key={`crackle-${i}`} position={crackle.position}>
           <sphereGeometry args={[crackle.radius, 3, 3]} />
           <meshStandardMaterial
-            color="#FFFF00"
-            emissive="#FFD700"
+            color="#ff3333"
+            emissive="#ff6600"
             emissiveIntensity={crackle.emissiveIntensity}
             transparent
             opacity={0.8}

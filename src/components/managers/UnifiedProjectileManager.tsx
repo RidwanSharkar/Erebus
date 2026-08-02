@@ -29,6 +29,11 @@ import VenomEffect from '@/components/projectiles/VenomEffect';
 import { Vector3, Color } from '@/utils/three-exports';
 import { DEFAULT_ENTROPIC_COLOR_VARIANT } from '@/utils/entropicColorThemes';
 import { CROSSENTROPY_PLAGUE_VENOM_MS, type CrossentropyVisualTheme, type FanOfKnivesFlourishTint, type TempestBurstTheme, getFanOfKnivesDaggerColorsFromTint } from '@/utils/talents';
+import {
+  isWeaponAspect,
+  resolveCrossentropyBlitzAspectKey,
+  type CrossentropyBlitzAspectKey,
+} from '@/utils/weaponAspects';
 
 // Generous bound covering projectile radius (~0.5) + largest enemy/boss collider radius,
 // used to keep the client-side crossentropy explosion check a local spatial query instead
@@ -45,6 +50,18 @@ function crossentropyThemeFromUserData(userData: Record<string, unknown>): Cross
   if (userData.crossentropyTempest === true) return 'tempest';
   if (userData.crossentropyPlague === true) return 'plague';
   return 'default';
+}
+
+function blitzAspectKeyFromUserData(userData: Record<string, unknown>): CrossentropyBlitzAspectKey {
+  const raw = userData.weaponAspect;
+  const aspect = typeof raw === 'string' && isWeaponAspect(raw) ? raw : undefined;
+  return resolveCrossentropyBlitzAspectKey(aspect);
+}
+
+function blitzAspectKeyFromEvent(event: Record<string, unknown>): CrossentropyBlitzAspectKey {
+  const raw = event.weaponAspect;
+  const aspect = typeof raw === 'string' && isWeaponAspect(raw) ? raw : undefined;
+  return resolveCrossentropyBlitzAspectKey(aspect);
 }
 
 // Data interfaces for each projectile type
@@ -84,6 +101,8 @@ interface ProjectileData {
   crossentropyVisualTheme?: CrossentropyVisualTheme;
   /** PLAGUE boon (mechanics + venom FX); Inferno/Glacial/etc. may override `crossentropyVisualTheme`). */
   crossentropyPlague?: boolean;
+  /** Scythe aspect key for Blitz Cannon default palette. */
+  blitzAspectKey?: CrossentropyBlitzAspectKey;
   /** When the ECS entity despawns, R3F clock elapsed — trail fades out visually only. */
   trailFadeOutStartElapsed?: number;
   /** Wind Shear talent — roll (radians) applied to the crescent visual so paired slashes oppose diagonally. */
@@ -114,6 +133,7 @@ interface ExplosionData {
   infernoCrossentropy?: boolean;
   crossentropyVisualTheme?: CrossentropyVisualTheme;
   reaperCrossentropy?: boolean;
+  blitzAspectKey?: CrossentropyBlitzAspectKey;
 }
 
 interface CrossentropyMeteorData {
@@ -288,12 +308,14 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
       } else if (userData.isCrossentropyBlitzRocket) {
         const existing = projectileData.blitzCrossentropy.find(p => p.entityId === entity.id);
         const theme = crossentropyThemeFromUserData(userData as Record<string, unknown>);
+        const blitzAspectKey = blitzAspectKeyFromUserData(userData as Record<string, unknown>);
         if (existing) {
           existing.position.copy(transform.position);
           if (userData.crossentropyInferno) existing.infernoCrossentropy = true;
           if (userData.reaperCrossentropy) existing.reaperCrossentropy = true;
           existing.crossentropyVisualTheme = theme;
           existing.crossentropyPlague = userData.crossentropyPlague === true;
+          existing.blitzAspectKey = blitzAspectKey;
           newBlitzCrossentropy.push(existing);
         } else {
           newBlitzCrossentropy.push({
@@ -305,6 +327,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
             reaperCrossentropy: userData.reaperCrossentropy === true,
             crossentropyVisualTheme: theme,
             crossentropyPlague: userData.crossentropyPlague === true,
+            blitzAspectKey,
           });
         }
       } else if (userData.isCrossentropyBolt) {
@@ -509,6 +532,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
           (event.crossentropyVisualTheme as CrossentropyVisualTheme | undefined) ??
           (event.infernoCrossentropy === true ? 'inferno' : 'default'),
         reaperCrossentropy: event.reaperCrossentropy === true,
+        blitzAspectKey: blitzAspectKeyFromEvent(event as Record<string, unknown>),
       };
       newExplosions.push(newExplosion);
     }
@@ -810,6 +834,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
           position={bolt.position}
           direction={bolt.direction}
           visualTheme={bolt.crossentropyVisualTheme ?? 'default'}
+          aspectKey={bolt.blitzAspectKey}
           reaperEcsDriven={bolt.reaperCrossentropy === true}
         />
       ))}
@@ -956,6 +981,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
                 explosion.crossentropyVisualTheme ??
                 (explosion.infernoCrossentropy ? 'inferno' : 'default')
               }
+              aspectKey={explosion.blitzAspectKey}
               reaperPurple={explosion.reaperCrossentropy === true}
               onComplete={() => handleExplosionComplete(explosion.id)}
             />

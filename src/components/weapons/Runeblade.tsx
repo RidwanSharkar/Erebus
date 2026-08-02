@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3, Color, Shape, AdditiveBlending, BufferGeometry, Float32BufferAttribute, Points, PointsMaterial } from '@/utils/three-exports';
+import { Group, Vector3, Color, AdditiveBlending, BufferGeometry, Float32BufferAttribute, Points, PointsMaterial } from '@/utils/three-exports';
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import CorruptedAura from './CorruptedAura';
 import Blizzard from './Blizzard/Blizzard';
@@ -9,6 +9,39 @@ import { calculationCache } from '@/utils/CalculationCache';
 import { isInsideMainArenaXZ } from '@/utils/mapConstants';
 import { forEachMushroomHitBySwing } from '@/utils/mushroomMeleeUtils';
 import { MELEE_ARC_MIN_DOT, MELEE_ARC_RANGE } from '@/utils/meleeArcConstants';
+import {
+  ASPECT_BLADEMASTER,
+  ASPECT_LEGIONNAIRE,
+  ASPECT_ROYAL_GUARD,
+  getRunebladeAspectComboDamage,
+  type WeaponAspect,
+} from '@/utils/weaponAspects';
+import RunebladeItemMeshVisual from './RunebladeItemMeshVisual';
+
+/** Mount scale for Runeblade aspect item meshes. */
+const ASPECT_MESH_SCALE = 1.25;
+
+/** Default Runeblade outer mount (tilted for combo swings). */
+const RUNEBLADE_MOUNT = {
+  position: [0, 0, 0] as const,
+  rotation: [-0.65, 0, 0.2] as const,
+  scale: [0.8, 0.9, 0.65] as const,
+};
+
+/** Spear.tsx outer mount — used only during Royal Guard Tempest Sweep. */
+const SPEAR_MOUNT = {
+  position: [0, 0.45, 0.25] as const,
+  rotation: [-0.25, 0.15, 0] as const,
+  scale: [0.825, 0.75, 0.75] as const,
+};
+
+/** Spear.tsx weapon-ref base — used only during Royal Guard Tempest Sweep. */
+const SPEAR_REF_BASE = {
+  position: [-1.18, 0.225, -0.3] as const,
+  rotation: [Math.PI / 2, 0, 0] as const,
+  scale: [0.8, 0.8, 0.7] as const,
+  idleRotation: [-Math.PI / 2, 0, Math.PI] as const,
+};
 
 interface RunebladeProps {
   isSwinging: boolean;
@@ -23,6 +56,13 @@ interface RunebladeProps {
   crusaderBladeThemeActive?: boolean;
   /** Titan's Grip — permanent red blade palette (Crusader/Corrupted Aura override). */
   titansGripBladeThemeActive?: boolean;
+  /** Throne weapon aspect — Blademaster sword / Deathdealer warhammer / Royal Guard spear (below Titan's Grip / Crusader). */
+  weaponAspect?: WeaponAspect;
+  /** Royal Guard Tempest Sweep — charge phase. */
+  isWhirlwindCharging?: boolean;
+  whirlwindChargeProgress?: number;
+  /** Royal Guard Tempest Sweep — active spin. */
+  isWhirlwinding?: boolean;
   chargeDirectionProp?: Vector3;
   onSwingComplete?: () => void;
   onSmiteComplete?: () => void;
@@ -102,6 +142,8 @@ interface RunebladeProps {
   getCrusaderLmbFlatBonus?: () => number;
   /** Local: Titan's Grip — +2 base damage per Strength on each combo strike. */
   getTitansGripLmbFlatBonus?: () => number;
+  /** Local: Vicegrip (Exodia Gauntlets) — +50 flat base damage on each combo strike. */
+  getVicegripFlatBonus?: () => number;
   /** Local: Blizzard class talent — storm active while ControlSystem window is up. */
   getBlizzardTalentActive?: () => boolean;
   /** Local: Runeblade Blizzard — stat-scaled tick damage (42 + 1 per STR/STA/INT/AGI). */
@@ -123,6 +165,10 @@ export default function Runeblade({
   isCorruptedAuraActive = false,
   crusaderBladeThemeActive = false,
   titansGripBladeThemeActive = false,
+  weaponAspect,
+  isWhirlwindCharging = false,
+  whirlwindChargeProgress = 0,
+  isWhirlwinding = false,
   chargeDirectionProp,
   onSwingComplete,
   onSmiteComplete,
@@ -154,6 +200,7 @@ export default function Runeblade({
   getExecutionerFlatBonus,
   getCrusaderLmbFlatBonus,
   getTitansGripLmbFlatBonus,
+  getVicegripFlatBonus,
   getBlizzardTalentActive,
   getBlizzardDamagePerTick,
   getBlizzardStormHitRadius,
@@ -165,35 +212,26 @@ export default function Runeblade({
 
   const useCrusaderOrCorruptedPalette = isCorruptedAuraActive || crusaderBladeThemeActive;
   const useTitansGripPalette = titansGripBladeThemeActive && !useCrusaderOrCorruptedPalette;
-  // Color scheme: F-key Corrupted Aura or Crusader talent blade theme; Titan's Grip red when neither.
-  const { primaryColor, primaryEmissive, secondaryColor, secondaryEmissive } = useMemo(
+  const useBlademasterPalette =
+    weaponAspect === ASPECT_BLADEMASTER && !useCrusaderOrCorruptedPalette && !useTitansGripPalette;
+  // Color scheme for Chain Lightning sparks: Corrupted/Crusader > Titan's Grip > Blademaster > Legionnaire.
+  // Sword GLB themes (Crusader / Titan's Grip) are applied via RunebladeItemMeshVisual bladeTheme.
+  const aspectBladeTheme: 'default' | 'crusader' | 'titans-grip' = useCrusaderOrCorruptedPalette
+    ? 'crusader'
+    : useTitansGripPalette
+      ? 'titans-grip'
+      : 'default';
+  const secondaryColor = useMemo(
     () => {
-      if (useCrusaderOrCorruptedPalette) {
-        return {
-          primaryColor: new Color('#ffaa00'),
-          primaryEmissive: new Color('#ff8800'),
-          secondaryColor: new Color('#ff8800'),
-          secondaryEmissive: new Color('#ff6600'),
-        };
-      }
-      if (useTitansGripPalette) {
-        return {
-          primaryColor: new Color('#B51010'),
-          primaryEmissive: new Color('#cc2222'),
-          secondaryColor: new Color('#EE6666'),
-          secondaryEmissive: new Color('#aa3333'),
-        };
-      }
-      return {
-        primaryColor: new Color(0x1097B5),
-        primaryEmissive: new Color(0x1097B5),
-        secondaryColor: new Color(0x87CEEB),
-        secondaryEmissive: new Color(0x4682B4),
-      };
+      if (useCrusaderOrCorruptedPalette) return new Color('#ff8800');
+      if (useTitansGripPalette) return new Color('#EE6666');
+      if (useBlademasterPalette) return new Color('#DDD6FE');
+      return new Color(0x87CEEB);
     },
-    [useCrusaderOrCorruptedPalette, useTitansGripPalette],
+    [useCrusaderOrCorruptedPalette, useTitansGripPalette, useBlademasterPalette],
   );
 
+  const outerMountRef = useRef<Group>(null);
   const runebladeRef = useRef<Group>(null);
   const corruptedAuraRef = useRef<{ toggle: () => void; isActive: boolean }>(null);
   const swingProgress = useRef(0);
@@ -215,6 +253,10 @@ export default function Runeblade({
   const onChargeSpinEndRef = useRef(onChargeSpinEnd);
   onChargeSpinEndRef.current = onChargeSpinEnd;
   const basePosition = [-1.18, 0.675, 0.675] as const; // POSITIONING
+  const whirlwindRotation = useRef(0);
+  const whirlwindSpeed = useRef(0);
+  const prevWhirlwindState = useRef(false);
+  const wasRoyalGuardTempestActive = useRef(false);
 
   // Chain Lightning Sparks
   const sparkParticles = useRef<Array<{
@@ -293,84 +335,17 @@ export default function Runeblade({
     }
   }, [comboStep]);
 
-  const bladeShape = useMemo(() => {
-    const shape = new Shape();
+  // Royal Guard Tempest Sweep — reset orbit when spin starts
+  useEffect(() => {
+    if (isWhirlwinding && !prevWhirlwindState.current) {
+      whirlwindRotation.current = 0;
+    }
+    prevWhirlwindState.current = isWhirlwinding || false;
+  }, [isWhirlwinding]);
 
-    shape.moveTo(0, 0);
+  const isRoyalGuard = weaponAspect === ASPECT_ROYAL_GUARD;
 
-    shape.lineTo(-0.25, 0.25);
-    shape.lineTo(-0.15, -0.15);
-    shape.lineTo(0, 0);
-
-    shape.lineTo(0.25, 0.25);
-    shape.lineTo(0.15, -0.15);
-    shape.lineTo(0, 0);
-
-    shape.lineTo(0, 0.08);
-    shape.lineTo(-0.2, 0.12);
-    shape.quadraticCurveTo(0.8, -0.15, -0.15, 0.12);
-    shape.quadraticCurveTo(1.8, -0, 1.75, 0.05);
-    shape.quadraticCurveTo(2.15, 0.05, 2.35, 0.225);
-
-    shape.quadraticCurveTo(2.125, -0.125, 2.0, -0.25);
-    shape.quadraticCurveTo(1.8, -0.45, 1.675, -0.55);
-    shape.quadraticCurveTo(0.9, -0.35, 0.125, -0.325);
-    shape.lineTo(0, -0.08);
-    shape.lineTo(0, 0);
-
-    return shape;
-  }, []);
-
-  const innerBladeShape = useMemo(() => {
-    const shape = new Shape();
-    shape.moveTo(0, 0);
-
-    shape.lineTo(0, 0.06);
-    shape.lineTo(-0.15, 0.09);
-    shape.quadraticCurveTo(0.6, -0.11, -0.11, 0.09);
-    shape.quadraticCurveTo(1.35, -0.11, 1.575, 0.04);
-    shape.quadraticCurveTo(1.61, 0.015, 2.12, 0);
-
-    shape.quadraticCurveTo(1.975, -0.094, 1.9, -0.188);
-    shape.quadraticCurveTo(1.7, -0.338, 1.606, -0.413);
-    shape.quadraticCurveTo(0.85, -0.263, 0.094, -0.244);
-    shape.lineTo(0, -0.06);
-    shape.lineTo(0, 0);
-
-    return shape;
-  }, []);
-
-  const bladeExtrudeSettings = useMemo(
-    () => ({
-      steps: 2,
-      depth: 0.05,
-      bevelEnabled: true,
-      bevelThickness: 0.014,
-      bevelSize: 0.02,
-      bevelOffset: 0.04,
-      bevelSegments: 2,
-    }),
-    [],
-  );
-
-  const innerBladeExtrudeSettings = useMemo(
-    () => ({
-      ...bladeExtrudeSettings,
-      depth: 0.06,
-      bevelThickness: 0.02,
-      bevelSize: 0.02,
-      bevelOffset: 0,
-      bevelSegments: 6,
-    }),
-    [bladeExtrudeSettings],
-  );
-
-  const chainLightningBladeExtrudeSettings = useMemo(
-    () => ({ ...bladeExtrudeSettings, depth: 0.07 }),
-    [bladeExtrudeSettings],
-  );
-
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     if (getBlizzardTalentActive) {
       const bz = getBlizzardTalentActive();
       if (bz !== blizzardEdgeRef.current) {
@@ -381,6 +356,98 @@ export default function Runeblade({
     }
 
     if (!runebladeRef.current) return;
+
+    // Royal Guard Tempest Sweep — swap to Spear mount so charge/spin match original spear orientation
+    const isRoyalGuardTempestActive =
+      isRoyalGuard &&
+      (isWhirlwindCharging || isWhirlwinding || whirlwindSpeed.current > 0);
+
+    if (outerMountRef.current && isRoyalGuard) {
+      if (isRoyalGuardTempestActive) {
+        outerMountRef.current.position.set(...SPEAR_MOUNT.position);
+        outerMountRef.current.rotation.set(...SPEAR_MOUNT.rotation);
+        outerMountRef.current.scale.set(...SPEAR_MOUNT.scale);
+        runebladeRef.current.scale.set(...SPEAR_REF_BASE.scale);
+        if (!wasRoyalGuardTempestActive.current) {
+          // Entering tempest — snap ref to Spear default before charge/spin takes over
+          runebladeRef.current.position.set(...SPEAR_REF_BASE.position);
+          runebladeRef.current.rotation.set(...SPEAR_REF_BASE.rotation);
+        }
+      } else if (wasRoyalGuardTempestActive.current) {
+        // Tempest ended — restore Runeblade mount for combo swings
+        outerMountRef.current.position.set(...RUNEBLADE_MOUNT.position);
+        outerMountRef.current.rotation.set(...RUNEBLADE_MOUNT.rotation);
+        outerMountRef.current.scale.set(...RUNEBLADE_MOUNT.scale);
+        runebladeRef.current.scale.set(0.75, 0.8, 0.65);
+        runebladeRef.current.position.set(...basePosition);
+        runebladeRef.current.rotation.set(0, 0, Math.PI);
+      }
+      wasRoyalGuardTempestActive.current = isRoyalGuardTempestActive;
+    }
+
+    // Royal Guard Tempest Sweep — orbital spin (ported from Spear.tsx)
+    if (isRoyalGuard && isWhirlwinding) {
+      if (whirlwindSpeed.current === 0) {
+        whirlwindSpeed.current = 60;
+      }
+      whirlwindSpeed.current = Math.max(0, whirlwindSpeed.current - delta * 1920);
+      whirlwindRotation.current += delta * whirlwindSpeed.current;
+
+      const orbitRadius = 2.5;
+      const angle = whirlwindRotation.current;
+      const orbitalX = Math.cos(angle) * orbitRadius;
+      const orbitalZ = Math.sin(angle) * orbitRadius;
+      const fixedHeight = 0.4;
+
+      runebladeRef.current.rotation.set(Math.PI / 3, -angle + Math.PI, 1);
+      runebladeRef.current.rotateY(-angle + Math.PI);
+      runebladeRef.current.position.set(orbitalX, fixedHeight, orbitalZ);
+      return;
+    } else if (isRoyalGuard && whirlwindSpeed.current > 0) {
+      whirlwindSpeed.current = Math.max(0, whirlwindSpeed.current - delta * 1920);
+      whirlwindRotation.current += delta * whirlwindSpeed.current;
+
+      if (whirlwindSpeed.current < 0.5) {
+        whirlwindSpeed.current = 0;
+        const spearBase = SPEAR_REF_BASE.position;
+        const spearIdle = SPEAR_REF_BASE.idleRotation;
+        runebladeRef.current.position.x += (spearBase[0] - runebladeRef.current.position.x) * 0.75;
+        runebladeRef.current.position.y += (spearBase[1] - runebladeRef.current.position.y) * 0.75;
+        runebladeRef.current.position.z += (spearBase[2] - runebladeRef.current.position.z) * 0.75;
+        runebladeRef.current.rotation.x += (spearIdle[0] - runebladeRef.current.rotation.x) * 0.75;
+        runebladeRef.current.rotation.y += (spearIdle[1] - runebladeRef.current.rotation.y) * 0.75;
+        runebladeRef.current.rotation.z += (spearIdle[2] - runebladeRef.current.rotation.z) * 0.75;
+      } else {
+        const orbitRadius = 2.5;
+        const angle = whirlwindRotation.current;
+        const orbitalX = Math.cos(angle) * orbitRadius;
+        const orbitalZ = Math.sin(angle) * orbitRadius;
+        const fixedHeight = 0.4;
+        runebladeRef.current.rotation.set(Math.PI / 3, -angle + Math.PI, 1);
+        runebladeRef.current.rotateY(-angle + Math.PI);
+        runebladeRef.current.position.set(orbitalX, fixedHeight, orbitalZ);
+      }
+      return;
+    }
+
+    if (isRoyalGuard && isWhirlwindCharging) {
+      const pullAmount = whirlwindChargeProgress;
+      const heightOffset = 0.3 * pullAmount + 0.5;
+      const spinSpeed = pullAmount * 60;
+      const spearBase = SPEAR_REF_BASE.position;
+      const targetX = -0.5 * (1 - pullAmount) - 0.65;
+      const targetY = spearBase[1] + heightOffset;
+      const targetZ = spearBase[2] + 0.5 * pullAmount;
+
+      runebladeRef.current.position.x += (targetX - runebladeRef.current.position.x) * 0.1;
+      runebladeRef.current.position.y += (targetY - runebladeRef.current.position.y) * 0.1;
+      runebladeRef.current.position.z += (targetZ - runebladeRef.current.position.z) * 0.1;
+      // Match Spear.tsx charge: upright (sky-facing) local axes, spin on local Y
+      runebladeRef.current.rotation.x = -Math.PI;
+      runebladeRef.current.rotation.y += delta * spinSpeed;
+      runebladeRef.current.rotation.z = Math.PI;
+      return;
+    }
 
     const now = Date.now();
 
@@ -1055,25 +1122,27 @@ export default function Runeblade({
     const execBonus = getExecutionerFlatBonus?.() ?? 0;
     const crusaderBonus = getCrusaderLmbFlatBonus?.() ?? 0;
     const titansGripBonus = getTitansGripLmbFlatBonus?.() ?? 0;
+    const vicegripBonus = getVicegripFlatBonus?.() ?? 0;
     if (!playerPosition) return;
-    if (!enemyData.length && !mushroomTargets?.length) return;
 
+    // Scorpion Lance: fire on primary attempt even if no melee targets (whiff still consumes the arm window).
     const cs = (window as any).controlSystemRef?.current;
-    if (cs?.tryFireScorpionLanceShardIfArmed && playerPosition) {
+    if (cs?.tryFireScorpionLanceShardIfArmed) {
       const yaw = playerRotation?.y ?? 0;
       const forward = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
       cs.tryFireScorpionLanceShardIfArmed(playerPosition, forward);
     }
 
+    if (!enemyData.length && !mushroomTargets?.length) return;
+
     const now = Date.now();
 
-    const damageValues = {
-      1: 50,
-      2: 60,
-      3: 70,
-    };
-
-    const baseDamage = damageValues[comboStep] + execBonus + crusaderBonus + titansGripBonus;
+    const baseDamage =
+      getRunebladeAspectComboDamage(weaponAspect ?? ASPECT_LEGIONNAIRE, comboStep) +
+      execBonus +
+      crusaderBonus +
+      titansGripBonus +
+      vicegripBonus;
 
     let enemiesHitThisSwing = 0;
     let mushroomsHitThisSwing = 0;
@@ -1167,162 +1236,35 @@ export default function Runeblade({
 
   return (
     <>
-    <group rotation={[-0.65, 0, 0.2]} scale={[0.8, 0.9, 0.65]}>
+    <group
+      ref={outerMountRef}
+      position={[RUNEBLADE_MOUNT.position[0], RUNEBLADE_MOUNT.position[1], RUNEBLADE_MOUNT.position[2]]}
+      rotation={[RUNEBLADE_MOUNT.rotation[0], RUNEBLADE_MOUNT.rotation[1], RUNEBLADE_MOUNT.rotation[2]]}
+      scale={[RUNEBLADE_MOUNT.scale[0], RUNEBLADE_MOUNT.scale[1], RUNEBLADE_MOUNT.scale[2]]}
+    >
       <group
         ref={runebladeRef}
         position={[basePosition[0], basePosition[1], basePosition[2]]}
         rotation={[0, 0, Math.PI]}
         scale={[0.75, 0.8, 0.65]}
       >
-        {/* Handle */}
-        <group position={[0.25, -0.55, 0.35]} rotation={[0, 0, -Math.PI]}>
-          <mesh>
-            <cylinderGeometry args={[0.03, 0.04, 0.9, 12]} />
-            <meshStandardMaterial color="#2a3b4c" roughness={0.7} />
-          </mesh>
-
-          {/* Handle wrappings */}
-          {[...Array(8)].map((_, i) => (
-            <mesh key={i} position={[0, +0.35 - i * 0.11, 0]} rotation={[Math.PI / 2, 0, 0]}>
-              <torusGeometry args={[0.045, 0.016, 8, 16]} />
-              <meshStandardMaterial color="#1a2b3c" metalness={0.6} roughness={0.4} />
-            </mesh>
-          ))}
-        </group>
-
-        {/* CIRCLE CONNECTION POINT */}
-        <group position={[0.25, 0.225, 0.35]} rotation={[Math.PI, 1.5, Math.PI]}>
-          {/* Large torus */}
-          <mesh>
-            <torusGeometry args={[0.26, 0.07, 16, 32]} />
-            <meshStandardMaterial
-              color="#4a5b6c"
-              metalness={0.9}
-              roughness={0.1}
+        <>
+          <group
+            key={weaponAspect ?? 'LEGIONNAIRE'}
+            position={[0.25, 0, 0.35]}
+            rotation={[0, 0, Math.PI]}
+            scale={[ASPECT_MESH_SCALE, -ASPECT_MESH_SCALE, ASPECT_MESH_SCALE]}
+          >
+            <RunebladeItemMeshVisual
+              aspect={weaponAspect}
+              bladeTheme={aspectBladeTheme}
+              emissiveBoost={
+                isRoyalGuard && isWhirlwindCharging ? whirlwindChargeProgress : 0
+              }
             />
-          </mesh>
-
-          {/* Decorative spikes around torus */}
-          {[...Array(8)].map((_, i) => (
-            <mesh
-              key={`spike-${i}`}
-              position={[
-                0.25 * Math.cos(i * Math.PI / 4),
-                0.25 * Math.sin(i * Math.PI / 4),
-                0
-              ]}
-              rotation={[0, 0, i * Math.PI / 4 - Math.PI / 2]}
-            >
-              <coneGeometry args={[0.070, 0.55, 3]} />
-              <meshStandardMaterial
-                color="#4a5b6c"
-                metalness={0.9}
-                roughness={0.1}
-              />
-            </mesh>
-          ))}
-
-          {/* Core orb - YELLOW THEME */}
-          <mesh>
-            <sphereGeometry args={[0.155, 16, 16]} />
-            <meshStandardMaterial
-              color={new Color(0xB5B010)}         // Pure yellow
-              emissive={new Color(0xB5B010)}      // Yellow emission
-              emissiveIntensity={3}
-              transparent
-              opacity={1}
-            />
-          </mesh>
-
-          {/* Multiple glow layers for depth */}
-          <mesh>
-            <sphereGeometry args={[0.1, 16, 16]} />
-            <meshStandardMaterial
-              color={primaryColor}
-              emissive={primaryEmissive}
-              emissiveIntensity={40}
-              transparent
-              opacity={0.8}
-            />
-          </mesh>
-
-          <mesh>
-            <sphereGeometry args={[0.145, 16, 16]} />
-            <meshStandardMaterial
-              color={primaryColor}
-              emissive={primaryEmissive}
-              emissiveIntensity={35}
-              transparent
-              opacity={0.6}
-            />
-          </mesh>
-
-          <mesh>
-            <sphereGeometry args={[.175, 16, 16]} />
-            <meshStandardMaterial
-              color={primaryColor}
-              emissive={primaryEmissive}
-              emissiveIntensity={30}
-              transparent
-              opacity={0.4}
-            />
-          </mesh>
-
-
-        </group>
-
-        {/* Blade*/}
-        <group position={[0.25, 0.5, 0.35]} rotation={[0, -Math.PI / 2, Math.PI / 2]}>
-          {/* Base blade */}
-          <mesh>
-            <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
-            <meshStandardMaterial
-              color={primaryColor}  // Dynamic theme based on corrupted aura
-              emissive={primaryEmissive}
-              emissiveIntensity={1.5}
-              metalness={0.3}
-              roughness={0.1}
-            />
-          </mesh>
-
-          {/* Blade glowing core */}
-          <mesh>
-            <extrudeGeometry args={[innerBladeShape, innerBladeExtrudeSettings]} />
-            <meshStandardMaterial
-              color={primaryColor}  // Dynamic theme based on corrupted aura
-              emissive={primaryEmissive}
-              emissiveIntensity={3}
-              metalness={0.2}
-              roughness={0.1}
-              opacity={0.8}
-              transparent
-            />
-          </mesh>
-        </group>
-
-        {/* Electrical effects */}
-        {hasChainLightning && (
-          <group>
-            {/* Electrical aura around blade */}
-            <group position={[0.25, 0.7, 0.35]} rotation={[0, -Math.PI / 2, Math.PI / 2]} scale={[0.95, 1.10, 0.95]}>
-              <mesh>
-                <extrudeGeometry args={[bladeShape, chainLightningBladeExtrudeSettings]} />
-                <meshStandardMaterial
-                  color={secondaryColor}
-                  emissive={secondaryEmissive}
-                  emissiveIntensity={1.5}
-                  transparent
-                  opacity={0.3}
-                  blending={AdditiveBlending}
-                />
-              </mesh>
-            </group>
-
-            {/* Spark particles — single <points> draw call instead of N×<mesh>.
-                sparkGeometry is filled each frame in useFrame. */}
-            <primitive object={sparkPoints} />
           </group>
-        )}
+          {hasChainLightning && <primitive object={sparkPoints} />}
+        </>
       </group>
 
       {isCharging && chargeTrail.current.map(particle => (

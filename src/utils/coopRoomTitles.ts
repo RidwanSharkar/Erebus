@@ -23,6 +23,8 @@ export const REWARD_ANNOUNCEMENT_COLORS = {
 
 export const INTRO_ROOM_GOLD_REWARDS = [50, 75, 100, 0] as const;
 export const SUNKEN_ROOM_GOLD_REWARDS = INTRO_ROOM_GOLD_REWARDS;
+export const ETERNITY_ROOM_GOLD_REWARDS = [50, 75, 0, 75, 0] as const;
+export const FAE_REALM_ROOM_GOLD_REWARDS = [40, 60, 80] as const;
 export const DEEP_SANCTUM_STAT_POINTS = 8;
 export const DEEP_SANCTUM_GOLD_MIN = 150;
 
@@ -31,8 +33,9 @@ export const GUIDE_ANNOUNCEMENTS = {
   enterPortal: { title: 'ENTER A PORTAL', color: '#eab308' },
   descendPortal: { title: 'DESCEND', color: '#c084fc' },
   drinkFountain: { title: 'DRINK FROM THE FOUNTAIN', color: '#22d3ee' },
-  chooseAlly: { title: 'CHOOSE YOUR ALLY', color: '#eab308' },
+  chooseAlly: { title: 'REVIVE AN ANCESTOR', color: '#eab308' },
   speakWithArchitect: { title: 'SPEAK WITH THE ARCHITECT', color: '#88ddff' },
+  empowerSpiritAnimal: { title: 'EMPOWER YOUR SPIRIT ANIMAL', color: '#34d399' },
   claimReward: { title: 'CLAIM YOUR REWARD', color: '#94a3b8' },
   chooseGateway: { title: 'CHOOSE A GATEWAY', color: '#94a3b8' },
   descendVoid: { title: 'DESCEND', color: '#c084fc' },
@@ -52,7 +55,7 @@ export function buildRunePickupAnnouncement(stat: StatKey): { title: string; col
   };
 }
 
-export type BossSlainLabel = 'hate' | 'knights' | 'envy' | 'fear' | 'trinity';
+export type BossSlainLabel = 'hate' | 'knights' | 'envy' | 'fear' | 'destiny' | 'trinity';
 
 export const BOSS_SLAIN_ANNOUNCEMENTS: Record<
   BossSlainLabel,
@@ -62,6 +65,7 @@ export const BOSS_SLAIN_ANNOUNCEMENTS: Record<
   knights: { title: 'TWIN EMPERORS SLAIN', color: '#dc2626' },
   envy: { title: 'ENVY SLAIN', color: '#22c55e' },
   fear: { title: 'FEAR SLAIN', color: '#6c3dff' },
+  destiny: { title: 'DESTINY SLAIN', color: '#f59e0b' },
   trinity: { title: 'TRINITY SLAIN', color: '#dc2626' },
 };
 
@@ -78,6 +82,8 @@ const ROOM_TITLE_COLORS = {
   boss: '#dc2626',
   intro: '#f5e6b8',
   sunken: '#7dd3fc',
+  eternity: '#f97316',
+  fae: '#f9a8d4',
 } as const;
 
 const COLORED_HALL_BASE: Record<'red' | 'blue' | 'green' | 'purple', string> = {
@@ -172,6 +178,15 @@ export function buildRoomTitleAnnouncement(
     };
   }
 
+  if (kind === 'fae_realm') {
+    const index = visitIndex != null && visitIndex > 0 ? visitIndex : 1;
+    return {
+      title: `FAE REALM ${toRomanNumeral(index)}`,
+      color: ROOM_TITLE_COLORS.fae,
+      glowColor: '#ec4899',
+    };
+  }
+
   if (kind === 'deep_sanctum') {
     const index = visitIndex != null && visitIndex > 0 ? visitIndex : 5;
     return {
@@ -187,6 +202,15 @@ export function buildRoomTitleAnnouncement(
       title: `SUNKEN TEMPLE ${toRomanNumeral(index)}`,
       color: ROOM_TITLE_COLORS.sunken,
       glowColor: ROOM_TITLE_COLORS.sunken,
+    };
+  }
+
+  if (kind === 'eternity_palace') {
+    const index = visitIndex != null && visitIndex > 0 ? visitIndex : 1;
+    return {
+      title: `ETERNITY'S PALACE ${toRomanNumeral(index)}`,
+      color: ROOM_TITLE_COLORS.eternity,
+      glowColor: ROOM_TITLE_COLORS.eternity,
     };
   }
 

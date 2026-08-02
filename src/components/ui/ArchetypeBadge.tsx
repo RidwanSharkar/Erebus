@@ -6,22 +6,54 @@ import {
   getArchetypeIconSrc,
   type ThroneArchetype,
 } from '@/utils/archetypes';
+import {
+  getAllyAncestorIconSrc,
+  getAllyChoiceCard,
+} from '@/utils/coopAllyChoice';
+import type { CoopAllyKind } from '@/utils/coopAllyTargeting';
 import { CardinalNotch } from './LevelBadge';
 import { HEX_PATTERN_BG } from './hudChrome';
 
-interface ArchetypeBadgeProps {
-  archetype: ThroneArchetype;
-  className?: string;
-  id?: string;
-}
+type ArchetypeBadgeProps =
+  | {
+      mode?: 'archetype';
+      archetype: ThroneArchetype;
+      allyKind?: never;
+      className?: string;
+      id?: string;
+    }
+  | {
+      mode: 'ancestor';
+      allyKind: CoopAllyKind;
+      archetype?: never;
+      className?: string;
+      id?: string;
+    };
 
 const RING_SIZE = 64;
 const RING_STROKE = 4;
 const FRAME_PADDING = 12;
 
-export default function ArchetypeBadge({ archetype, className = '', id }: ArchetypeBadgeProps) {
-  const iconSrc = getArchetypeIconSrc(archetype);
-  const meta = ARCHETYPE_DISPLAY[archetype];
+export default function ArchetypeBadge(props: ArchetypeBadgeProps) {
+  const { className = '', id } = props;
+  const isAncestor = props.mode === 'ancestor';
+
+  const iconSrc = isAncestor
+    ? getAllyAncestorIconSrc(props.allyKind)
+    : getArchetypeIconSrc(props.archetype);
+
+  const nameLabel = isAncestor
+    ? (getAllyChoiceCard(props.allyKind)?.title ?? props.allyKind)
+    : ARCHETYPE_DISPLAY[props.archetype].label;
+
+  const tooltipLabel = isAncestor
+    ? `ANCESTOR: ${String(nameLabel).toUpperCase()}`
+    : nameLabel;
+
+  const accentColor = isAncestor
+    ? '#eab308'
+    : ARCHETYPE_DISPLAY[props.archetype].accentColor;
+
   const outerSize = RING_SIZE + FRAME_PADDING;
   const ringRadius = (RING_SIZE - RING_STROKE) / 2;
 
@@ -33,8 +65,8 @@ export default function ArchetypeBadge({ archetype, className = '', id }: Archet
       className={`select-none shrink-0 ${className}`}
       style={{ width: outerSize, height: outerSize }}
       data-block-game-input
-      title={meta.label}
-      aria-label={meta.label}
+      title={tooltipLabel}
+      aria-label={tooltipLabel}
     >
       <div
         className="relative flex items-center justify-center"
@@ -44,7 +76,7 @@ export default function ArchetypeBadge({ archetype, className = '', id }: Archet
           background:
             'linear-gradient(145deg, rgba(50,60,90,0.75) 0%, rgba(10,12,22,0.98) 55%, rgba(4,6,14,1) 100%)',
           borderRadius: '50%',
-          boxShadow: `0 0 24px ${meta.accentColor}33, inset 0 1px 0 rgba(255,255,255,0.14), inset 0 -3px 6px rgba(0,0,0,0.55)`,
+          boxShadow: `0 0 24px ${accentColor}33, inset 0 1px 0 rgba(255,255,255,0.14), inset 0 -3px 6px rgba(0,0,0,0.55)`,
         }}
       >
         <CardinalNotch position="top" />
@@ -91,7 +123,7 @@ export default function ArchetypeBadge({ archetype, className = '', id }: Archet
             src={iconSrc}
             alt=""
             className="absolute inset-0 h-full w-full object-cover"
-            style={{ filter: `drop-shadow(0 0 10px ${meta.accentColor}88)` }}
+            style={{ filter: `drop-shadow(0 0 10px ${accentColor}88)` }}
           />
         </div>
       </div>

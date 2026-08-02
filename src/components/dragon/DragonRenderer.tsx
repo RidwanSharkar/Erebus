@@ -37,6 +37,8 @@ import {
   type VorpalGustStabBoonBeamTheme,
   type TalentLoadout,
 } from '@/utils/talents';
+import type { WeaponAspect } from '@/utils/weaponAspects';
+import { isRunebladeDeathdealerAspect } from '@/utils/weaponAspects';
 
 const _chargeDirScratch = new Vector3();
 const _cameraDirScratch = new Vector3();
@@ -237,6 +239,8 @@ interface DragonRendererProps {
   explosiveTalons?: boolean;
   /** GIANTKILLER: Reaping Talons return hit bonus when forward leg hit same target. */
   giantKillerReapingTalons?: boolean;
+  /** Sniper Terminal Velocity — flat bonus for Perfect Shot / Reaping Talons at >10 range. */
+  getTerminalVelocityBonus?: (horizontalDistance: number) => number;
   /** Wyvern Talons: Reaping hits detonate Cobra + Concentrated Venom remaining DoT. */
   wyvernTalons?: boolean;
   /** Staggering Talons: forward, return, and Explosive detonation Reaping hits apply server stagger. */
@@ -269,6 +273,8 @@ interface DragonRendererProps {
   titansGripBladeThemeActive?: boolean;
   /** Local: Psionic Blades — permanent purple blade palette. */
   psionicBladesBladeThemeActive?: boolean;
+  /** Throne weapon aspect — visual variant for blade colors/shape. */
+  weaponAspect?: WeaponAspect;
   /** Local: Blizzard talent storm (omit when talent not taken). */
   getRunebladeBlizzardTalentActive?: () => boolean;
   /** Local: Runeblade Blizzard — stat-scaled tick damage. */
@@ -279,8 +285,12 @@ interface DragonRendererProps {
   getRunebladeBlizzardParticleSpawnMultiplier?: () => number;
   /** Local: Titan's Grip — flat STR-scaled LMB damage per combo strike. */
   getRunebladeTitansGripLmbFlatBonus?: () => number;
+  /** Local: Vicegrip (Exodia Gauntlets) — +50 flat on each Runeblade combo hit. */
+  getVicegripRunebladeComboFlatBonus?: () => number;
   /** Local: Titan's Grip — 25% per-hit stun proc on Runeblade LMB hits. */
   onRunebladeTitansGripHit?: (targetId: string) => void;
+  /** Local: Deathdealer — 25% Stagger Lightning Bolt proc on Runeblade third combo hit. */
+  onRunebladeDeathdealerThirdHit?: (targetId: string) => void;
   /** Room-boom dash boons override the weapon ghost trail while unlocked. */
   roomBoomGhostTrailColor?: string;
   /** Local player talent loadout — drives scythe handle trail colors. */
@@ -379,6 +389,7 @@ function DragonRenderer({
   onDashChargeExpended,
   explosiveTalons = false,
   giantKillerReapingTalons = false,
+  getTerminalVelocityBonus,
   wyvernTalons = false,
   staggeringTalonsActive = false,
   glacialTalonsTheme = false,
@@ -393,13 +404,16 @@ function DragonRenderer({
   getRunebladeExecutionerFlatBonus,
   getRunebladeCrusaderLmbFlatBonus,
   getRunebladeTitansGripLmbFlatBonus,
+  getVicegripRunebladeComboFlatBonus,
   getRunebladeBlizzardTalentActive,
   getRunebladeBlizzardDamagePerTick,
   getRunebladeBlizzardStormHitRadius,
   getRunebladeBlizzardParticleSpawnMultiplier,
   onRunebladeTitansGripHit,
+  onRunebladeDeathdealerThirdHit,
   titansGripBladeThemeActive = false,
   psionicBladesBladeThemeActive = false,
+  weaponAspect,
   roomBoomGhostTrailColor,
   talentLoadout = null,
   mushroomTargets,
@@ -433,13 +447,13 @@ function DragonRenderer({
     { isAvailable: true, cooldownRemaining: 0 },
     { isAvailable: true, cooldownRemaining: 0 },
     { isAvailable: true, cooldownRemaining: 0 },
-    { isAvailable: true, cooldownRemaining: 0 },
   ];
   const dashChargesRef = useRef<DashChargeStatus[]>(initialDashCharges.map((charge) => ({ ...charge })));
   const [dashCharges, setDashCharges] = useState<DashChargeStatus[]>(() =>
     initialDashCharges.map((charge) => ({ ...charge })),
   );
   const lastAvailableDashCountRef = useRef(initialDashCharges.length);
+  const lastDashChargeLengthRef = useRef(initialDashCharges.length);
   const dashRechargeDurationSec = useRef(8);
   const localChargeDirectionRef = useRef<Vector3 | undefined>(undefined);
   const effectiveChargeDirection = chargeDirection || localChargeDirectionRef.current;
@@ -480,8 +494,10 @@ function DragonRenderer({
   const syncDashChargesHud = useCallback((source: DashChargeStatus[]) => {
     writeDashChargesRef(dashChargesRef.current, source);
     const availableCount = countAvailableDashCharges(dashChargesRef.current);
-    if (availableCount !== lastAvailableDashCountRef.current) {
+    const lengthChanged = source.length !== lastDashChargeLengthRef.current;
+    if (availableCount !== lastAvailableDashCountRef.current || lengthChanged) {
       lastAvailableDashCountRef.current = availableCount;
+      lastDashChargeLengthRef.current = source.length;
       setDashCharges(dashChargesRef.current.map((charge) => ({ ...charge })));
     }
   }, []);
@@ -933,6 +949,17 @@ function DragonRenderer({
         ) {
           onRunebladeTitansGripHit(targetId);
         }
+
+        if (
+          isLocalPlayer &&
+          currentWeapon === WeaponType.RUNEBLADE &&
+          !isBlizzard &&
+          isRunebladeDeathdealerAspect(weaponAspect) &&
+          rbComboStep === 3 &&
+          onRunebladeDeathdealerThirdHit
+        ) {
+          onRunebladeDeathdealerThirdHit(targetId);
+        }
       }
     }
   };
@@ -1011,6 +1038,7 @@ function DragonRenderer({
           crusaderBladeThemeActive={crusaderBladeThemeActive}
           titansGripBladeThemeActive={titansGripBladeThemeActive}
           psionicBladesBladeThemeActive={psionicBladesBladeThemeActive}
+          weaponAspect={weaponAspect}
           onSmiteComplete={onSmiteComplete}
           onColossusStrikeComplete={onColossusStrikeComplete}
           onDeathGraspComplete={onDeathGraspComplete}
@@ -1061,6 +1089,7 @@ function DragonRenderer({
           getRunebladeExecutionerFlatBonus={getRunebladeExecutionerFlatBonus}
           getRunebladeCrusaderLmbFlatBonus={getRunebladeCrusaderLmbFlatBonus}
           getRunebladeTitansGripLmbFlatBonus={getRunebladeTitansGripLmbFlatBonus}
+          getVicegripRunebladeComboFlatBonus={getVicegripRunebladeComboFlatBonus}
           getRunebladeBlizzardTalentActive={getRunebladeBlizzardTalentActive}
           getRunebladeBlizzardDamagePerTick={getRunebladeBlizzardDamagePerTick}
           getRunebladeBlizzardStormHitRadius={getRunebladeBlizzardStormHitRadius}
@@ -1078,6 +1107,7 @@ function DragonRenderer({
         worldPositionRef={effectiveRealTimePositionRef}
         weaponType={currentWeapon}
         weaponSubclass={currentSubclass}
+        weaponAspect={weaponAspect}
         isStealthing={isStealthing}
         isDashingRef={isDashing}
         isWeaponChargeMovingRef={isWeaponChargeMoving}
@@ -1141,6 +1171,7 @@ function DragonRenderer({
           onExecuteFirstForwardHit={executeReapingTalons ? onExecuteFirstForwardHit : undefined}
           giantKiller={giantKillerReapingTalons}
           glacialTalonsTheme={glacialTalonsTheme}
+          getTerminalVelocityBonus={getTerminalVelocityBonus}
         />
       )}
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { positionScratch, type Position3 } from '@/utils/position3';
-import React, { useRef, useState, useEffect, useCallback, useLayoutEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
 import { Group, Mesh, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard } from '@react-three/drei';
@@ -23,6 +23,7 @@ import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import GhostTrail from '../dragon/GhostTrail';
 import AscendantBoneWings from '../dragon/AscendantBoneWings';
 import { WeaponType } from '../dragon/weapons';
+import ChargedOrbitals, { DashChargeStatus } from '../dragon/ChargedOrbitals';
 
 interface ValkyrieRendererProps {
   id: string;
@@ -41,6 +42,9 @@ const JUDGMENT_CAST_MS = 1000;
 const DASH_LERP_SPEED = 24;
 const LUNGE_CHARGE_COLOR = '#fff2a8';
 const FADE_DURATION = 1.5;
+const VALKYRIE_ORBITAL_ACTIVE = '#facc15';
+const VALKYRIE_ORBITAL_INACTIVE = '#3a2a09';
+const VALKYRIE_ORBITAL_Y_OFFSET = 2.1;
 
 export default function ValkyrieRenderer({
   id,
@@ -74,6 +78,11 @@ export default function ValkyrieRenderer({
   const opacity = useRef(1);
   const cachedDeathMats = useRef<any[]>([]);
   const deathCacheBuilt = useRef(false);
+
+  const orbitalCharges = useMemo<DashChargeStatus[]>(
+    () => [0, 1, 2].map(() => ({ isAvailable: true, cooldownRemaining: 0 })),
+    [],
+  );
 
   const setGroupRef = useCallback((group: Group | null) => {
     groupRef.current = group;
@@ -131,6 +140,8 @@ export default function ValkyrieRenderer({
           groupRef.current.position.copy(startPos);
           groupRef.current.rotation.y = data.rotation;
         }
+        // Spin-dash whoosh (swordMiss2) while dashing
+        window.audioSystem?.playRunebladeMissSound?.(3, startPos);
         dashTimer.current = setTimeout(() => {
           setAbilityClip(null);
           setIsDashing(false);
@@ -229,13 +240,24 @@ export default function ValkyrieRenderer({
         weaponType={WeaponType.NONE}
         fixedTrailColor={LUNGE_CHARGE_COLOR}
         isTrailMotionRef={isDashingRef}
-        yOffset={1.0}
+        yOffset={2.75}
       />
+
+      {!isDying && (
+        <ChargedOrbitals
+          parentRef={groupRef as React.RefObject<Group>}
+          dashCharges={orbitalCharges}
+          weaponType={WeaponType.NONE}
+          yOffset={VALKYRIE_ORBITAL_Y_OFFSET}
+          customActiveColor={VALKYRIE_ORBITAL_ACTIVE}
+          customInactiveColor={VALKYRIE_ORBITAL_INACTIVE}
+        />
+      )}
 
       <group ref={setGroupRef}>
         <ValkyrieModel abilityClip={abilityClip} isDying={isDying} />
         {!isDying && (
-          <group position={[0, 2.25, -0.18]} scale={[0.805, 0.805, 0.805]}>
+          <group position={[0, 2.00, -0.18]} scale={[1.12, 1.12, 1.12]}>
             <AscendantBoneWings
               isLeftWing
               parentRef={groupRef as React.RefObject<Group>}
@@ -251,7 +273,7 @@ export default function ValkyrieRenderer({
           </group>
         )}
         {isLungeCharging && <EnemyAbilityChargeTelegraph active primaryColor={LUNGE_CHARGE_COLOR} />}
-        <Billboard position={[0, 3.0, 0]}>
+        <Billboard position={[0, 4.2, 0]} follow lockX={false} lockY={false} lockZ={false}>
           {health > 0 && !isDying && (
             <>
               <EnemyHpBarPlanes fillRef={hpFillRef} backgroundColor={theme.background} fillColor={theme.fill} />

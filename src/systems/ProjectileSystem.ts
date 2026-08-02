@@ -57,6 +57,7 @@ import {
 import { DEFAULT_ENTROPIC_COLOR_VARIANT } from '@/utils/entropicColorThemes';
 import type { CrossentropyVisualTheme, FanOfKnivesFlourishTint } from '@/utils/talents';
 import { CombatSystem } from './CombatSystem';
+import { isWeaponAspect, type WeaponAspect } from '@/utils/weaponAspects';
 
 function crossentropyThemeFromProjectile(projectile: Projectile): CrossentropyVisualTheme {
   if (projectile.infernoCrossentropy === true) return 'inferno';
@@ -64,6 +65,11 @@ function crossentropyThemeFromProjectile(projectile: Projectile): CrossentropyVi
   if (projectile.crossentropyTempest === true) return 'tempest';
   if (projectile.crossentropyPlague === true) return 'plague';
   return 'default';
+}
+
+function weaponAspectFromUserData(ud: Record<string, unknown> | undefined): WeaponAspect | undefined {
+  const raw = ud?.weaponAspect;
+  return typeof raw === 'string' && isWeaponAspect(raw) ? raw : undefined;
 }
 
 export class ProjectileSystem extends System {
@@ -851,9 +857,25 @@ export class ProjectileSystem extends System {
           undefined,
         );
       } else {
+      let outgoingDamage = projectile.damage;
+      if (projectile.isPerfectShot === true) {
+        const csTv = (window as any).controlSystemRef?.current;
+        const localEntTv = csTv?.getPlayerEntity?.() as { id: number } | null | undefined;
+        if (localEntTv && projectile.owner === localEntTv.id && csTv?.getTerminalVelocityBonusAtRange) {
+          const targetTransform = target.getComponent(Transform);
+          if (targetTransform) {
+            const tp = targetTransform.getWorldPosition();
+            const horiz = Math.hypot(
+              tp.x - projectile.startPosition.x,
+              tp.z - projectile.startPosition.z,
+            );
+            outgoingDamage += csTv.getTerminalVelocityBonusAtRange(horiz) || 0;
+          }
+        }
+      }
       this.combatSystem.queueDamage(
         target,
-        projectile.damage,
+        outgoingDamage,
         projectileEntity,
         damageType,
         projectile.sourcePlayerId,
@@ -1044,6 +1066,11 @@ export class ProjectileSystem extends System {
                     ? new Color('#33DD66')
                     : new Color('#8B00FF');
           const isBlitz = projectile.blitzCannon === true;
+          const aspectFromMesh = weaponAspectFromUserData(
+            projectileEntity.getComponent(Renderer)?.mesh?.userData as
+              | Record<string, unknown>
+              | undefined,
+          );
           this.world.emitEvent('explosion', {
             position: explosionPosition,
             color,
@@ -1053,6 +1080,7 @@ export class ProjectileSystem extends System {
             chargeTime: isBlitz ? 0.25 : 1.0,
             infernoCrossentropy: theme === 'inferno',
             crossentropyVisualTheme: theme,
+            ...(aspectFromMesh ? { weaponAspect: aspectFromMesh } : {}),
           });
           if (projectile.crossentropyPlague === true) {
             this.world.emitEvent('crossentropyPlagueVenom', {
@@ -1183,6 +1211,7 @@ export class ProjectileSystem extends System {
       projectile.isBowLmbPrimary = true;
     }
     projectile.setDirection(direction);
+    projectile.setStartPosition(position);
     
     if (config?.piercing) projectile.setPiercing(true);
     if (config?.explosive && config?.explosionRadius) {
@@ -1219,6 +1248,8 @@ export class ProjectileSystem extends System {
     const collider = world.createComponent(Collider);
     collider.radius = 0.15;
     collider.layer = CollisionLayer.PROJECTILE;
+    // Pass through arena ENVIRONMENT walls; hits are resolved against ENEMY/PLAYER only.
+    collider.setMask(CollisionLayer.PLAYER | CollisionLayer.ENEMY);
     projectileEntity.addComponent(collider);
 
     this.world.notifyEntityAdded(projectileEntity);
@@ -1243,6 +1274,7 @@ export class ProjectileSystem extends System {
       if (ent.userData?.isCoopAllyPlayer || ent.userData?.isPlayer === true) continue;
       if (ent.userData?.isCoopAlliedUnit) continue;
       if (ent.userData?.coopServerEnemyType === 'player-zombie') continue;
+      if (ent.userData?.coopServerEnemyType === 'vengeful-spirit') continue;
       const h = ent.getComponent(Health);
       if (!h || h.isDead) continue;
       const tf = ent.getComponent(Transform);
@@ -1302,6 +1334,7 @@ export class ProjectileSystem extends System {
 
     const reaper = projectile.reaperCrossentropy === true;
     const blitzCannon = projectile.blitzCannon === true;
+    const weaponAspect = weaponAspectFromUserData(rendererUd);
     const fragmentConfig = {
       speed: projectile.speed,
       damage: projectile.damage,
@@ -1324,6 +1357,7 @@ export class ProjectileSystem extends System {
       crossentropySuppressFragmentation: true as const,
       ...(subclass != null ? { subclass } : {}),
       ...(typeof level === 'number' ? { level } : {}),
+      ...(weaponAspect ? { weaponAspect } : {}),
     };
 
     const fragmentEntity = this.createCrossentropyBoltProjectile(
@@ -1445,6 +1479,7 @@ export class ProjectileSystem extends System {
       crossentropySuppressFragmentation?: boolean;
       blitzCannon?: boolean;
       maxDistance?: number;
+      weaponAspect?: WeaponAspect;
     }
   ): Entity {
     const crossentropyDirection = direction.clone();
@@ -1555,6 +1590,9 @@ export class ProjectileSystem extends System {
       placeholderMesh.userData.isCrossentropyBlitzRocket = true;
       placeholderMesh.userData.blitzCannon = true;
     }
+    if (config?.weaponAspect && isWeaponAspect(config.weaponAspect)) {
+      placeholderMesh.userData.weaponAspect = config.weaponAspect;
+    }
     
     renderer.mesh = placeholderMesh;
     
@@ -1594,6 +1632,7 @@ export class ProjectileSystem extends System {
       isCryoflame?: boolean;
       colorVariant?: string;
       entropicBoltTalent?: 'wrathful' | 'staggering' | 'infesting' | 'arctic';
+      archmageEntropicIgnite?: boolean;
       entropicFragmentation?: boolean;
       entropicFragmentHop?: number;
     }
@@ -1633,6 +1672,9 @@ export class ProjectileSystem extends System {
         projectile.staggerToAdd = STAGGERING_ENTROPIC_BOLT_STAGGER;
       }
     }
+    if (config?.archmageEntropicIgnite === true) {
+      projectile.archmageEntropicIgnite = true;
+    }
     if (config?.entropicFragmentation === true) {
       projectile.entropicFragmentation = true;
     }
@@ -1663,6 +1705,9 @@ export class ProjectileSystem extends System {
     placeholderMesh.userData.isCryoflame = config?.isCryoflame || false;
     placeholderMesh.userData.colorVariant = config?.colorVariant || DEFAULT_ENTROPIC_COLOR_VARIANT;
     placeholderMesh.userData.entropicBoltTalent = entropicTalent;
+    if (config?.archmageEntropicIgnite === true) {
+      placeholderMesh.userData.archmageEntropicIgnite = true;
+    }
     if (config?.entropicFragmentation === true) {
       placeholderMesh.userData.entropicFragmentation = true;
     }
@@ -1797,19 +1842,21 @@ export class ProjectileSystem extends System {
     const renderer = world.createComponent(Renderer);
 
     // Create a simple placeholder mesh that will be replaced by the React component
-    const placeholderGeometry = new SphereGeometry(0.15, 8, 8);
+    const projectileType = config?.projectileType || 'generic';
+    const isScorpionShard = projectileType === 'scorpion_shard';
+    const placeholderGeometry = new SphereGeometry(isScorpionShard ? 0.22 : 0.15, 8, 8);
     const placeholderMaterial = new MeshStandardMaterial({
-      color: '#ffaa00',
-      emissive: '#ffaa00',
-      emissiveIntensity: 3,
+      color: isScorpionShard ? '#c8ff4a' : '#ffaa00',
+      emissive: isScorpionShard ? '#88ff22' : '#ffaa00',
+      emissiveIntensity: isScorpionShard ? 4 : 3,
       transparent: true,
-      opacity: 0.1 // Very low opacity since React component will handle visuals
+      // Scorpion shard has no React VFX — keep placeholder visible
+      opacity: isScorpionShard ? 0.85 : 0.1
     });
     const placeholderMesh = new Mesh(placeholderGeometry, placeholderMaterial);
 
     // Only mark as RegularArrow if it's actually a regular arrow or generic projectile
     // Don't mark special projectile types like wind_shear
-    const projectileType = config?.projectileType || 'generic';
     if (projectileType === 'generic' || projectileType === 'regular_arrow') {
       placeholderMesh.userData.isRegularArrow = true;
     }
@@ -1865,6 +1912,8 @@ export class ProjectileSystem extends System {
     const collider = world.createComponent(Collider);
     collider.radius = 0.15;
     collider.layer = CollisionLayer.PROJECTILE;
+    // Pass through arena ENVIRONMENT walls; hits are resolved against ENEMY/PLAYER only.
+    collider.setMask(CollisionLayer.PLAYER | CollisionLayer.ENEMY);
     projectileEntity.addComponent(collider);
     
     // Notify systems that the entity is ready (this will trigger RenderSystem.onEntityAdded)

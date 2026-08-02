@@ -18,6 +18,31 @@ type SkyThemeUniforms = {
   sunHalo2: string;
   /** 0 = cool/icy clouds, 1 = warm sunset-style cloud bellies. */
   cloudWarmth: number;
+  /**
+   * Nadir color below `ground`. When omitted, defaults to `ground` (identical legacy look).
+   * Throne cloud-sea presets set a deeper abyss so the void has depth.
+   */
+  abyss?: string;
+  /**
+   * 0 = dark under-horizon cloud bellies (legacy). Higher = keep under-horizon clouds lit
+   * so they read as a sunlit cloud ocean. Defaults to 0.
+   */
+  underLit?: number;
+};
+
+/** Soft pink Fae Realm sky — distinct from purple Dream Layer. */
+export const SKY_FAE_REALM: SkyThemeUniforms = {
+  zenith: '#5a1848',
+  upperMid: '#a04078',
+  midHorizon: '#e878a8',
+  horizon: '#f8c8dc',
+  ground: '#1a0a14',
+  sunColor: '#fff0f8',
+  sunDir: [0.48, 0.3, -0.42],
+  sunHalo0: '#ffe8f4',
+  sunHalo1: '#f0a0c8',
+  sunHalo2: '#c06090',
+  cloudWarmth: 0.65,
 };
 
 /** Twilight holy sanctum — Inner Sanctum castle rooms (warmer/lighter than purple combat). */
@@ -50,6 +75,21 @@ export const SKY_SUNKEN_TEMPLE: SkyThemeUniforms = {
   cloudWarmth: 0.0,
 };
 
+/** Warm autumn amber sky — Eternity's Palace hex rooms. */
+export const SKY_ETERNITY_PALACE: SkyThemeUniforms = {
+  zenith: '#4a2818',
+  upperMid: '#8a4820',
+  midHorizon: '#c87830',
+  horizon: '#f0b878',
+  ground: '#2a1810',
+  sunColor: '#fff0d0',
+  sunDir: [0.42, 0.32, -0.5],
+  sunHalo0: '#ffe8b0',
+  sunHalo1: '#f0a858',
+  sunHalo2: '#c86828',
+  cloudWarmth: 0.92,
+};
+
 /** Warm dusty colosseum sky — Erebus Gate surprise arena. */
 export const SKY_COLOSSEUM: SkyThemeUniforms = {
   zenith: '#6a5038',
@@ -80,6 +120,84 @@ export const SKY_THRONE_BLUE: SkyThemeUniforms = {
   sunHalo1: '#d4ecff',
   sunHalo2: '#7ab8ec',
   cloudWarmth: 0.12,
+  // Celestial cloud sea: deep nadir + lit under-horizon bank so the void isn't flat black.
+  abyss: '#04101f',
+  underLit: 0.85,
+};
+
+/** Crypt of Currency (trial) — light blue sky, clearer than combat room skies. */
+export const SKY_TRIAL_LIGHT_BLUE: SkyThemeUniforms = {
+  zenith: '#4a9ae8',
+  upperMid: '#6eb4f0',
+  midHorizon: '#94c8f4',
+  horizon: '#b8daf8',
+  ground: '#0c1828',
+  sunColor: '#fffef5',
+  sunDir: [0.5, 0.35, -0.45],
+  sunHalo0: '#ffffff',
+  sunHalo1: '#d4ecff',
+  sunHalo2: '#7ab8ec',
+  cloudWarmth: 0.1,
+};
+
+/** Abyssal (purple) gate — complementary light red / coral sky. */
+export const SKY_GATE_LIGHT_RED: SkyThemeUniforms = {
+  zenith: '#c86868',
+  upperMid: '#e08888',
+  midHorizon: '#f0a8a0',
+  horizon: '#f8d0c8',
+  ground: '#281010',
+  sunColor: '#fff8f0',
+  sunDir: [0.5, 0.35, -0.45],
+  sunHalo0: '#fff0e8',
+  sunHalo1: '#f0a090',
+  sunHalo2: '#d06858',
+  cloudWarmth: 0.7,
+};
+
+/** Tempest (blue) gate — complementary light orange / peach sky. */
+export const SKY_GATE_LIGHT_ORANGE: SkyThemeUniforms = {
+  zenith: '#d88848',
+  upperMid: '#e8a068',
+  midHorizon: '#f0c088',
+  horizon: '#f8e0b8',
+  ground: '#281808',
+  sunColor: '#fff8e8',
+  sunDir: [0.5, 0.35, -0.45],
+  sunHalo0: '#fff0d0',
+  sunHalo1: '#f0b878',
+  sunHalo2: '#d88848',
+  cloudWarmth: 0.85,
+};
+
+/** Eldritch (green) gate — complementary light green / mint sky. */
+export const SKY_GATE_LIGHT_GREEN: SkyThemeUniforms = {
+  zenith: '#68a878',
+  upperMid: '#88c098',
+  midHorizon: '#a8d8b0',
+  horizon: '#d0f0d8',
+  ground: '#102018',
+  sunColor: '#f8fff0',
+  sunDir: [0.5, 0.35, -0.45],
+  sunHalo0: '#f0ffe8',
+  sunHalo1: '#b0e0b8',
+  sunHalo2: '#78b888',
+  cloudWarmth: 0.3,
+};
+
+/** Throne prep — soft light purple / lavender (brighter than combat purple). */
+export const SKY_THRONE_LIGHT_PURPLE: SkyThemeUniforms = {
+  zenith: '#8870b8',
+  upperMid: '#a890d0',
+  midHorizon: '#c8b0e8',
+  horizon: '#e8dcf8',
+  ground: '#181028',
+  sunColor: '#fff8ff',
+  sunDir: [0.5, 0.35, -0.45],
+  sunHalo0: '#f8f0ff',
+  sunHalo1: '#d0b8f0',
+  sunHalo2: '#a888d0',
+  cloudWarmth: 0.4,
 };
 
 const SKY_BY_ROOM: Record<RoomBorderTheme, SkyThemeUniforms> = {
@@ -191,12 +309,14 @@ const SKY_FRAG = `
   uniform vec3  uMidHorizon;
   uniform vec3  uHorizon;
   uniform vec3  uGround;
+  uniform vec3  uAbyss;
   uniform vec3  uSunColor;
   uniform vec3  uSunDir;
   uniform vec3  uSunHalo0;
   uniform vec3  uSunHalo1;
   uniform vec3  uSunHalo2;
   uniform float uCloudWarmth;
+  uniform float uUnderLit;
   uniform float uTime;
 
   varying vec3 vDir;
@@ -205,8 +325,9 @@ const SKY_FRAG = `
     vec3 dir = normalize(vDir);
     float h = dir.y;
 
-    // ── Gradient ────────────────────────────────────────────────────────────
-    vec3 sky = uGround;
+    // ── Gradient (two-stop nadir so the void has depth) ─────────────────────
+    vec3 deep = mix(uAbyss, uGround, smoothstep(-0.85, -0.20, h));
+    vec3 sky = deep;
     sky = mix(sky, uHorizon,    smoothstep(-0.15, 0.0,  h));
     sky = mix(sky, uMidHorizon, smoothstep( 0.00, 0.20, h) * (1.0 - smoothstep(0.15, 0.45, h)));
     sky = mix(sky, uUpperMid,   smoothstep( 0.12, 0.45, h));
@@ -250,9 +371,13 @@ const SKY_FRAG = `
     vec3  cBlend  = mix(cCool, cWarm, warmthMix);
 
     // Lit top / dark belly: thick cloud cores shade their undersides.
-    // rawCloud density drives the belly→top gradient so thin edges stay
-    // semi-transparent while dense centers have proper atmospheric depth.
-    vec3  cBelly  = mix(cBlend * 0.28, cBlend * 0.48, smoothstep(-0.15, 0.15, h));
+    // uUnderLit keeps under-horizon clouds bright (throne cloud-sea look).
+    float underKeep = uUnderLit * smoothstep(-0.55, -0.02, h);
+    vec3  cBelly  = mix(
+      mix(cBlend * 0.28, cBlend * 0.48, smoothstep(-0.15, 0.15, h)),
+      cBlend * 0.90,
+      underKeep
+    );
     vec3  cColor  = mix(cBelly, cBlend * 1.04, smoothstep(0.44, 0.75, rawCloud));
 
     // Atmospheric haze: clouds just above/below the horizon fade into the
@@ -260,9 +385,9 @@ const SKY_FRAG = `
     float hazeT = 1.0 - smoothstep(0.0, 0.22, abs(h));
     cColor = mix(cColor, mix(uHorizon, uMidHorizon, 0.35) * 0.72, hazeT * 0.60);
 
-    // ── Opacity fades ────────────────────────────────────────────────────────
+    // ── Opacity fades (extend under-horizon reach for cloud-sea continuity) ─
     float cFadeUp  = smoothstep(0.0, 0.10, h) * (1.0 - smoothstep(0.72, 0.94, h));
-    float cFadeLow = (1.0 - smoothstep(-0.06, 0.14, h)) * smoothstep(-0.88, -0.12, h);
+    float cFadeLow = (1.0 - smoothstep(-0.06, 0.14, h)) * smoothstep(-0.95, -0.08, h);
     float cFade    = max(cFadeUp, cFadeLow * 0.92);
 
     sky = mix(sky, cColor, cloud * cFade * 0.85);
@@ -277,16 +402,43 @@ const SKY_FRAG = `
   }
 `;
 
-export type CustomSkyPreset = RoomBorderTheme | 'throneBlue' | 'sanctumHoly' | 'sunkenTemple' | 'colosseum';
+export type CustomSkyPreset =
+  | RoomBorderTheme
+  | 'throneBlue'
+  | 'throneLightPurple'
+  | 'sanctumHoly'
+  | 'sunkenTemple'
+  | 'eternityPalace'
+  | 'colosseum'
+  | 'trialLightBlue'
+  | 'gateLightRed'
+  | 'gateLightOrange'
+  | 'gateLightGreen'
+  | 'faeRealm';
+
+/** Complementary light sky per gate/camp color (main combat rooms). */
+export const GATE_SKY_PRESET_BY_THEME: Record<RoomBorderTheme, CustomSkyPreset> = {
+  purple: 'gateLightRed',
+  blue: 'gateLightOrange',
+  green: 'gateLightGreen',
+  red: 'trialLightBlue',
+};
 
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 function skyUniformsForPreset(preset: CustomSkyPreset): SkyThemeUniforms {
   if (preset === 'throneBlue') return SKY_THRONE_BLUE;
+  if (preset === 'throneLightPurple') return SKY_THRONE_LIGHT_PURPLE;
   if (preset === 'sanctumHoly') return SKY_SANCTUM_HOLY;
   if (preset === 'sunkenTemple') return SKY_SUNKEN_TEMPLE;
+  if (preset === 'eternityPalace') return SKY_ETERNITY_PALACE;
   if (preset === 'colosseum') return SKY_COLOSSEUM;
+  if (preset === 'trialLightBlue') return SKY_TRIAL_LIGHT_BLUE;
+  if (preset === 'gateLightRed') return SKY_GATE_LIGHT_RED;
+  if (preset === 'gateLightOrange') return SKY_GATE_LIGHT_ORANGE;
+  if (preset === 'gateLightGreen') return SKY_GATE_LIGHT_GREEN;
+  if (preset === 'faeRealm') return SKY_FAE_REALM;
   return SKY_BY_ROOM[preset] ?? SKY_BY_ROOM.red;
 }
 
@@ -297,12 +449,15 @@ function applySkyTheme(material: ShaderMaterial, preset: CustomSkyPreset) {
   material.uniforms.uMidHorizon.value.set(t.midHorizon);
   material.uniforms.uHorizon.value.set(t.horizon);
   material.uniforms.uGround.value.set(t.ground);
+  // Default abyss=ground + underLit=0 → identical legacy look for all non-throne presets.
+  material.uniforms.uAbyss.value.set(t.abyss ?? t.ground);
   material.uniforms.uSunColor.value.set(t.sunColor);
   material.uniforms.uSunDir.value.set(...t.sunDir).normalize();
   material.uniforms.uSunHalo0.value.set(t.sunHalo0);
   material.uniforms.uSunHalo1.value.set(t.sunHalo1);
   material.uniforms.uSunHalo2.value.set(t.sunHalo2);
   material.uniforms.uCloudWarmth.value = t.cloudWarmth;
+  material.uniforms.uUnderLit.value = t.underLit ?? 0;
 }
 
 const CustomSky: React.FC<{
@@ -322,12 +477,14 @@ const CustomSky: React.FC<{
           uMidHorizon:   { value: new Color() },
           uHorizon:      { value: new Color() },
           uGround:       { value: new Color() },
+          uAbyss:        { value: new Color() },
           uSunColor:     { value: new Color() },
           uSunDir:       { value: new Vector3(0, 1, 0) },
           uSunHalo0:     { value: new Color() },
           uSunHalo1:     { value: new Color() },
           uSunHalo2:     { value: new Color() },
           uCloudWarmth:  { value: 1.0 },
+          uUnderLit:     { value: 0 },
           uTime:         { value: 0 },
         },
         vertexShader: SKY_VERT,

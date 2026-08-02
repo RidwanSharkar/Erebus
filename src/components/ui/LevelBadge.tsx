@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { ExperienceSystem } from '@/utils/ExperienceSystem';
-import { getArchetypeIconSvgSrc, type Archetype } from '@/utils/archetypes';
+import { getArchetypeIconSrc, type Archetype } from '@/utils/archetypes';
 
 interface LevelBadgeProps {
   experience: number;
@@ -14,8 +14,8 @@ interface LevelBadgeProps {
   className?: string;
 }
 
-const INTEGRATED_SIZE = 128;
-const STANDALONE_SIZE = 88;
+const INTEGRATED_SIZE = 100;
+const STANDALONE_SIZE = 72;
 const RING_STROKE = 4;
 
 export function CardinalNotch({ position }: { position: 'top' | 'bottom' | 'left' | 'right' }) {
@@ -66,7 +66,7 @@ export default function LevelBadge({
   const showProgressArc = progressPct > 0;
   const gradId = `xpGrad-${isLocalPlayer ? 'local' : 'remote'}-${variant}`;
 
-  const archetypeIcon = selectedArchetype ? getArchetypeIconSvgSrc(selectedArchetype) : null;
+  const archetypePortrait = selectedArchetype ? getArchetypeIconSrc(selectedArchetype) : null;
   const outerSize = ringSize + framePadding;
 
   const xpCaption = isMaxLevel
@@ -156,61 +156,74 @@ export default function LevelBadge({
               boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.65)',
             }}
           >
-            {/* Hex backdrop */}
+            {archetypePortrait ? (
+              <img
+                src={archetypePortrait}
+                alt=""
+                className="absolute inset-0 h-full w-full object-cover"
+                style={{ filter: 'drop-shadow(0 0 10px rgba(100,180,255,0.35))' }}
+              />
+            ) : (
+              <div
+                className="absolute inset-0 opacity-40"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(
+                    `<svg xmlns='http://www.w3.org/2000/svg' width='40' height='35' viewBox='0 0 40 35'>
+                      <path d='M20 0l17 10v15l-17 10L3 25V10z' fill='none' stroke='rgba(80,140,255,0.35)' stroke-width='0.8'/>
+                    </svg>`,
+                  )}")`,
+                  backgroundSize: '40px 35px',
+                }}
+              />
+            )}
+
+            {/* Scrim so level / XP text stays readable over portraits */}
             <div
-              className="absolute inset-0 opacity-40"
+              className="absolute inset-0 pointer-events-none"
               style={{
-                backgroundImage: `url("data:image/svg+xml,${encodeURIComponent(
-                  `<svg xmlns='http://www.w3.org/2000/svg' width='40' height='35' viewBox='0 0 40 35'>
-                    <path d='M20 0l17 10v15l-17 10L3 25V10z' fill='none' stroke='rgba(80,140,255,0.35)' stroke-width='0.8'/>
-                  </svg>`,
-                )}")`,
-                backgroundSize: '40px 35px',
+                background: archetypePortrait
+                  ? 'linear-gradient(transparent 30%, rgba(0,0,0,0.75) 100%)'
+                  : 'transparent',
               }}
             />
 
-            {archetypeIcon ? (
-              <img
-                src={archetypeIcon}
-                alt=""
-                className={`opacity-90 ${isIntegrated ? 'w-9 h-9 mb-0.5' : 'w-7 h-7 mb-0.5'}`}
-                style={{ filter: 'drop-shadow(0 0 8px rgba(100,180,255,0.55))' }}
-              />
-            ) : (
-              <span className="text-[8px] font-bold uppercase tracking-widest text-white/40 mb-0.5">
-                Level
+            <div className="relative z-[1] flex flex-col items-center justify-center">
+              {!archetypePortrait && (
+                <span className="text-[8px] font-bold uppercase tracking-widest text-white/40 mb-0.5">
+                  Level
+                </span>
+              )}
+
+              <span
+                className={`font-black leading-none tabular-nums ${isIntegrated ? 'text-3xl' : 'text-2xl'}`}
+                style={{
+                  color: 'rgba(255,255,255,0.96)',
+                  textShadow: `0 0 14px ${accentFrom}66, 0 2px 4px rgba(0,0,0,0.85)`,
+                }}
+              >
+                {level}
               </span>
-            )}
 
-            <span
-              className={`font-black leading-none tabular-nums ${isIntegrated ? 'text-3xl' : 'text-2xl'}`}
-              style={{
-                color: 'rgba(255,255,255,0.96)',
-                textShadow: `0 0 14px ${accentFrom}66, 0 2px 4px rgba(0,0,0,0.85)`,
-              }}
-            >
-              {level}
-            </span>
-
-            {isIntegrated && (
-              <div className="mt-1 text-center px-2" style={{ zIndex: 1 }}>
-                <p
-                  className="text-[7px] font-bold uppercase tracking-[0.2em] leading-none mb-0.5"
-                  style={{ color: 'rgba(180,190,210,0.65)' }}
-                >
-                  {isMaxLevel ? 'Max Level' : 'Experience'}
-                </p>
-                <p
-                  className="text-[9px] font-semibold tabular-nums leading-none"
-                  style={{
-                    color: accentFrom,
-                    textShadow: `0 0 8px ${accentFrom}44`,
-                  }}
-                >
-                  {xpCaption}
-                </p>
-              </div>
-            )}
+              {isIntegrated && (
+                <div className="mt-1 text-center px-2">
+                  <p
+                    className="text-[7px] font-bold uppercase tracking-[0.2em] leading-none mb-0.5"
+                    style={{ color: 'rgba(180,190,210,0.85)' }}
+                  >
+                    {isMaxLevel ? 'Max Level' : 'Experience'}
+                  </p>
+                  <p
+                    className="text-[9px] font-semibold tabular-nums leading-none"
+                    style={{
+                      color: accentFrom,
+                      textShadow: `0 0 8px ${accentFrom}44`,
+                    }}
+                  >
+                    {xpCaption}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 

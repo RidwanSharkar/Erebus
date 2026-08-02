@@ -1,7 +1,26 @@
 import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending, SphereGeometry, CylinderGeometry } from '@/utils/three-exports';
+import {
+  Vector3,
+  Mesh,
+  Group,
+  MeshBasicMaterial,
+  Color,
+  AdditiveBlending,
+  SphereGeometry,
+  Quaternion,
+} from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import { DEATH_GRASP_HIT_RADIUS, DEATH_GRASP_STANDOFF } from '@/utils/weaponAbilities';
+
+const _particleBase = new Vector3();
+const _twistOffset = new Vector3();
+const _rightScaled = new Vector3();
+const _upScaled = new Vector3();
+const _yAxis = new Vector3(0, 1, 0);
+const _tempStartToReturn = new Vector3();
+const _tempMidpoint = new Vector3();
+const _tempQuaternion = new Quaternion();
 
 interface AnimatedDeathGraspProps {
   startPosition: Vector3;
@@ -9,12 +28,20 @@ interface AnimatedDeathGraspProps {
   onHit: (targetId: string, position: Vector3) => void;
   onPullStart: () => void;
   onComplete: () => void;
-  // Enemy data for collision detection (NPC enemies only)
+  /** Enemy data for collision detection (NPC enemies only) */
   enemyData?: Array<{
     id: string;
     position: Vector3;
     health: number;
+    type?: string;
+    isBoss1EliteKnight?: boolean;
   }>;
+  /** True when this enemy should not be pulled (bosses / elites / training dummy). */
+  isEnemyPullImmune?: (enemyId: string) => boolean;
+  /** Optional live enemy position during return (server-synced pull lerp). */
+  getPulledEnemyPosition?: (enemyId: string) => Vector3 | null;
+  /** Called each frame during return while pulling an enemy toward the caster. */
+  onEnemyPullFrame?: (enemyId: string, position: Vector3) => void;
 }
 
 export default function AnimatedDeathGrasp({
@@ -24,367 +51,427 @@ export default function AnimatedDeathGrasp({
   onPullStart,
   onComplete,
   enemyData = [],
+  isEnemyPullImmune,
+  getPulledEnemyPosition,
+  onEnemyPullFrame,
 }: AnimatedDeathGraspProps) {
   const timeRef = useRef(0);
   const flickerRef = useRef(1);
-  const phaseRef = useRef<'forward' | 'return' | 'complete'>('forward');
-  const hitTargetRef = useRef<{ id: string; position: Vector3 } | null>(null);
+  const phaseRef = useRef<'forward' | 'impact' | 'return' | 'complete'>('forward');
+  const hitTargetRef = useRef<{
+    id: string;
+    /** Original hit position (fixed for lerp start). */
+    startPosition: Vector3;
+    /** Mutable chain/enemy anchor during return. */
+    position: Vector3;
+    pullImmune: boolean;
+    pullDestination: Vector3;
+  } | null>(null);
   const pullTriggered = useRef(false);
-  
-  // Animation timing
-  const forwardDuration = 0.6; // Forward projectile phase
-  const returnDuration = 0.6;  // Return phase with enemy
-  const totalDuration = forwardDuration + returnDuration;
+  const hitReported = useRef(false);
+  const completedRef = useRef(false);
 
-  // Calculate direction and distance
-  const direction = useMemo(() => {
-    return targetPosition.clone().sub(startPosition).normalize();
-  }, [startPosition, targetPosition]);
+  const forwardDuration = 0.6;
+  const returnDuration = 0.6;
+  const impactOnlyDuration = 0.2;
 
-  const maxRange = useMemo(() => {
-    return startPosition.distanceTo(targetPosition);
-  }, [startPosition, targetPosition]);
+  const currentProjectilePosition = useRef(startPosition.clone());
+  const currentReturnPosition = useRef(startPosition.clone());
+  const tmpEnemyPos = useRef(new Vector3());
 
-  // Use useMemo for static geometries and materials
-  const geometries = useMemo(() => ({
-    particle: new SphereGeometry(0.15, 8, 8),
-    impact: new SphereGeometry(0.2, 8, 8),
-    core: new SphereGeometry(0.18, 8, 8),
-    chain: new CylinderGeometry(0.02, 0.02, 1, 6)
-  }), []);
+  const impactRef = useRef<Group>(null);
+  const returnCoreRef = useRef<Group>(null);
+  const chainRef = useRef<Mesh>(null);
+  const startCoreRef = useRef<Group>(null);
+  const particleRefs = useRef<(Mesh | null)[]>([]);
 
-  useEffect(() => {
-    const g = geometries;
-    return () => {
-      g.particle.dispose();
-      g.impact.dispose();
-      g.core.dispose();
-      g.chain.dispose();
-    };
-  }, [geometries]);
+  const { right, up, particles, targetFixed } = useMemo(() => {
+    const path = targetPosition.clone().sub(startPosition);
+    const pathDistance = Math.max(path.length(), 0.01);
+    const normalizedDirection = path.normalize();
+    const worldUp = new Vector3(0, 1, 0);
+    const side = new Vector3().crossVectors(normalizedDirection, worldUp);
+    if (side.lengthSq() < 1e-5) {
+      side.set(1, 0, 0);
+    } else {
+      side.normalize();
+    }
+    const pathUp = new Vector3().crossVectors(side, normalizedDirection).normalize();
+    const segmentCount = Math.min(20, Math.max(12, Math.ceil(pathDistance * 4)));
+    const streamCount = 3;
+    const particleData: Array<{
+      progress: number;
+      streamIndex: number;
+      phaseOffset: number;
+      baseScale: number;
+    }> = [];
 
-  const materials = useMemo(() => ({
-    spiral1: new MeshBasicMaterial({
-      color: new Color("#6A0DAD"),
-      transparent: true,
-      opacity: 1.0,
-      blending: AdditiveBlending
-    }),
-    spiral2: new MeshBasicMaterial({
-      color: new Color("#9370DB"),
-      transparent: true,
-      opacity: 1.0,
-      blending: AdditiveBlending
-    }),
-    spiral3: new MeshBasicMaterial({
-      color: new Color("#8A2BE2"),
-      transparent: true,
-      opacity: 1.0,
-      blending: AdditiveBlending
-    }),
-    impact: new MeshBasicMaterial({
-      color: new Color("#6A0DAD"),
-      transparent: true,
-      opacity: 1.0,
-      blending: AdditiveBlending
-    }),
-    core: new MeshBasicMaterial({
-      color: new Color("#9370DB"),
-      transparent: true,
-      opacity: 1.0,
-      blending: AdditiveBlending
-    }),
-    chain: new MeshBasicMaterial({
-      color: new Color("#4A0E4E"),
-      transparent: true,
-      opacity: 0.8,
-      blending: AdditiveBlending
-    })
-  }), []);
-
-  useEffect(() => {
-    const m = materials;
-    return () => {
-      m.spiral1.dispose();
-      m.spiral2.dispose();
-      m.spiral3.dispose();
-      m.impact.dispose();
-      m.core.dispose();
-      m.chain.dispose();
-    };
-  }, [materials]);
-
-  // Pre-calculate spiraling particle streams for forward phase
-  const forwardSpiralStreams = useMemo(() => {
-    const segments = Math.ceil(maxRange * 4); // More segments for smoother spirals
-    const streams = [[], [], []] as Array<Array<{position: Vector3, scale: number}>>;
-
-    // Create normalized direction vector and perpendicular vectors for spiral calculation
-    const up = new Vector3(0, 1, 0);
-    const right = new Vector3().crossVectors(direction, up).normalize();
-    const forward = new Vector3().crossVectors(right, direction).normalize();
-
-    // Spiral parameters
-    const spiralRadius = 0.15;
-    const spiralTurns = 3;
-
-    for (let streamIndex = 0; streamIndex < 3; streamIndex++) {
-      const phaseOffset = (streamIndex * Math.PI * 2) / 3; // 120 degrees apart
-
-      for (let i = 0; i < segments; i++) {
-        const progress = i / segments;
-        const basePos = startPosition.clone().lerp(targetPosition, progress);
-
-        // Calculate spiral position
-        const spiralAngle = progress * spiralTurns * Math.PI * 2 + phaseOffset;
-        const currentRadius = spiralRadius * (1 - progress * 0.3); // Taper towards target
-
-        // Create spiral offset
-        const spiralOffset = right.clone().multiplyScalar(Math.cos(spiralAngle) * currentRadius)
-          .add(forward.clone().multiplyScalar(Math.sin(spiralAngle) * currentRadius));
-
-        const spiralPos = basePos.clone().add(spiralOffset);
-
-        // Add some organic variation
-        const variation = 0.02;
-        spiralPos.x += (Math.random() - 0.5) * variation;
-        spiralPos.y += (Math.random() - 0.5) * variation;
-        spiralPos.z += (Math.random() - 0.5) * variation;
-
-        // Scale particles - larger at start, smaller towards target
-        const scale = 1.2 - progress * 0.8 + Math.sin(progress * Math.PI * 6) * 0.1;
-
-        streams[streamIndex].push({
-          position: spiralPos,
-          scale: Math.max(0.3, scale)
+    for (let streamIndex = 0; streamIndex < streamCount; streamIndex += 1) {
+      const phaseOffset = (streamIndex * Math.PI * 2) / streamCount;
+      for (let i = 0; i <= segmentCount; i += 1) {
+        const progress = i / segmentCount;
+        particleData.push({
+          progress,
+          streamIndex,
+          phaseOffset,
+          baseScale: Math.max(0.3, 1.2 - progress * 0.8 + Math.sin(progress * Math.PI * 6) * 0.1),
         });
       }
     }
 
-    return streams;
-  }, [startPosition, targetPosition, direction, maxRange]);
+    return {
+      right: side,
+      up: pathUp,
+      particles: particleData,
+      targetFixed: targetPosition.clone(),
+    };
+  }, [startPosition, targetPosition]);
 
-  // Current projectile position for forward phase
-  const currentProjectilePosition = useRef(startPosition.clone());
-  const currentReturnPosition = useRef(targetPosition.clone());
+  const geometries = useMemo(
+    () => ({
+      particle: new SphereGeometry(0.15, 8, 8),
+      impact: new SphereGeometry(0.2, 8, 8),
+      core: new SphereGeometry(0.18, 8, 8),
+    }),
+    [],
+  );
 
-  // Borrow ONE pooled light (collapses the former 3 phase <pointLight>s into one that
-  // follows the active phase head) instead of mounting lights (avoids lit-shader recompiles).
+  const materials = useMemo(
+    () => ({
+      spiral: [
+        new MeshBasicMaterial({
+          color: new Color('#6A0DAD'),
+          transparent: true,
+          opacity: 0.95,
+          blending: AdditiveBlending,
+          depthWrite: false,
+        }),
+        new MeshBasicMaterial({
+          color: new Color('#9370DB'),
+          transparent: true,
+          opacity: 0.85,
+          blending: AdditiveBlending,
+          depthWrite: false,
+        }),
+        new MeshBasicMaterial({
+          color: new Color('#8A2BE2'),
+          transparent: true,
+          opacity: 0.75,
+          blending: AdditiveBlending,
+          depthWrite: false,
+        }),
+      ],
+      impact: new MeshBasicMaterial({
+        color: new Color('#c4b5fd'),
+        transparent: true,
+        opacity: 0.9,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      }),
+      core: new MeshBasicMaterial({
+        color: new Color('#e9d5ff'),
+        transparent: true,
+        opacity: 0.95,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      }),
+      chain: new MeshBasicMaterial({
+        color: new Color('#4A0E4E'),
+        transparent: true,
+        opacity: 0,
+        blending: AdditiveBlending,
+        depthWrite: false,
+      }),
+    }),
+    [],
+  );
+
+  useEffect(() => {
+    const g = geometries;
+    const m = materials;
+    return () => {
+      g.particle.dispose();
+      g.impact.dispose();
+      g.core.dispose();
+      m.spiral.forEach((mat) => mat.dispose());
+      m.impact.dispose();
+      m.core.dispose();
+      m.chain.dispose();
+    };
+  }, [geometries, materials]);
+
   const graspLight = useDynamicLight({ color: '#6A0DAD', distance: 5, decay: 2, priority: 1 });
 
-  useFrame((_, delta) => {
-    timeRef.current = Math.min(timeRef.current + delta, totalDuration);
-    flickerRef.current = Math.random() * 0.3 + 0.7;
+  const checkForHits = (currentPos: Vector3) => {
+    if (!enemyData || enemyData.length === 0) return;
+    for (const enemy of enemyData) {
+      if (enemy.health <= 0) continue;
+      const distance = currentPos.distanceTo(enemy.position);
+      if (distance <= DEATH_GRASP_HIT_RADIUS) {
+        const pullImmune = isEnemyPullImmune?.(enemy.id) === true;
+        const toEnemy = enemy.position.clone().sub(startPosition);
+        toEnemy.y = 0;
+        if (toEnemy.lengthSq() < 1e-6) {
+          toEnemy.set(0, 0, 1);
+        } else {
+          toEnemy.normalize();
+        }
+        const pullDestination = startPosition.clone().add(
+          toEnemy.multiplyScalar(DEATH_GRASP_STANDOFF),
+        );
+        pullDestination.y = enemy.position.y;
 
-    const totalProgress = timeRef.current / totalDuration;
+        hitTargetRef.current = {
+          id: enemy.id,
+          startPosition: enemy.position.clone(),
+          position: enemy.position.clone(),
+          pullImmune,
+          pullDestination,
+        };
+        if (!hitReported.current) {
+          hitReported.current = true;
+          onHit(enemy.id, enemy.position.clone());
+        }
+        return;
+      }
+    }
+  };
+
+  useFrame((_, delta) => {
+    if (completedRef.current) return;
+
+    timeRef.current += delta;
+    flickerRef.current = Math.random() * 0.3 + 0.7;
 
     if (phaseRef.current === 'forward') {
       const forwardProgress = Math.min(timeRef.current / forwardDuration, 1);
-      
-      // Update current projectile position
-      currentProjectilePosition.current = startPosition.clone().lerp(targetPosition, forwardProgress);
+      currentProjectilePosition.current.lerpVectors(startPosition, targetFixed, forwardProgress);
 
-      // Check for hits during forward phase
       if (forwardProgress < 0.9 && !hitTargetRef.current) {
         checkForHits(currentProjectilePosition.current);
       }
 
-      // Transition to return phase when forward phase completes or target is hit
-      if (forwardProgress >= 1.0 || hitTargetRef.current) {
-        if (!pullTriggered.current) {
-          pullTriggered.current = true;
-          onPullStart();
-          
-          // If we hit a target, use its position; otherwise use the target position
-          if (hitTargetRef.current) {
-            currentReturnPosition.current = hitTargetRef.current.position.clone();
-          } else {
-            currentReturnPosition.current = targetPosition.clone();
-          }
+      const shouldEndForward = forwardProgress >= 1.0 || !!hitTargetRef.current;
+      if (shouldEndForward && !pullTriggered.current) {
+        pullTriggered.current = true;
+        onPullStart();
+
+        if (hitTargetRef.current) {
+          currentReturnPosition.current.copy(hitTargetRef.current.position);
+        } else {
+          currentReturnPosition.current.copy(targetFixed);
         }
-        
-        phaseRef.current = 'return';
-        // Reset time for return phase
-        timeRef.current = 0;
-      }
-    } else if (phaseRef.current === 'return') {
-      const returnProgress = Math.min(timeRef.current / returnDuration, 1);
-      
-      // Update return position - move from hit position back to start
-      currentReturnPosition.current = (hitTargetRef.current?.position || targetPosition)
-        .clone()
-        .lerp(startPosition, returnProgress);
 
-      // Complete when return phase finishes
-      if (returnProgress >= 1.0) {
+        if (hitTargetRef.current?.pullImmune) {
+          phaseRef.current = 'impact';
+          timeRef.current = 0;
+        } else {
+          // Hit or miss — play return spiral
+          phaseRef.current = 'return';
+          timeRef.current = 0;
+        }
+      }
+    } else if (phaseRef.current === 'impact') {
+      if (timeRef.current >= impactOnlyDuration) {
         phaseRef.current = 'complete';
+        completedRef.current = true;
+        graspLight.current?.setIntensity(0);
         onComplete();
+        return;
+      }
+    } else if (phaseRef.current === 'return') {
+      const returnProgress = Math.min(timeRef.current / returnDuration, 1);
+      const hit = hitTargetRef.current;
+
+      let enemyStart = hit?.position || targetFixed;
+      const live = hit ? getPulledEnemyPosition?.(hit.id) : null;
+      if (live) {
+        enemyStart = live;
+      }
+
+      // Chain head travels from enemy toward caster; enemy mesh lerps to standoff
+      currentReturnPosition.current.lerpVectors(enemyStart, startPosition, returnProgress);
+
+      if (hit && !hit.pullImmune) {
+        const enemyLerpPos = hit.startPosition.clone().lerp(hit.pullDestination, returnProgress);
+        tmpEnemyPos.current.copy(enemyLerpPos);
+        hit.position.copy(enemyLerpPos);
+        onEnemyPullFrame?.(hit.id, tmpEnemyPos.current);
+      }
+
+      if (returnProgress >= 1.0) {
+        if (hit && !hit.pullImmune) {
+          onEnemyPullFrame?.(hit.id, hit.pullDestination.clone());
+        }
+        phaseRef.current = 'complete';
+        completedRef.current = true;
+        graspLight.current?.setIntensity(0);
+        onComplete();
+        return;
       }
     }
 
-    // Update material opacities based on phase and progress
+    const phase = phaseRef.current;
+    const forwardProgress =
+      phase === 'forward' ? Math.min(timeRef.current / forwardDuration, 1) : 1;
+    const returnProgress =
+      phase === 'return' ? Math.min(timeRef.current / returnDuration, 1) : phase === 'complete' ? 1 : 0;
+    const flicker = flickerRef.current;
+
     let baseOpacity = 1.0;
-    if (phaseRef.current === 'forward') {
-      const forwardProgress = Math.min(timeRef.current / forwardDuration, 1);
-      baseOpacity = 1.0 - forwardProgress * 0.3; // Slight fade during forward
-    } else if (phaseRef.current === 'return') {
-      const returnProgress = Math.min(timeRef.current / returnDuration, 1);
-      baseOpacity = 0.7 * (1 - returnProgress * 0.8); // Fade out during return
-    } else {
-      baseOpacity = 0; // Fully faded when complete
+    if (phase === 'forward') {
+      baseOpacity = 1.0 - forwardProgress * 0.3;
+    } else if (phase === 'return') {
+      baseOpacity = 0.7 - returnProgress * 0.4;
+    } else if (phase === 'impact') {
+      baseOpacity = 0.85;
     }
 
-    materials.spiral1.opacity = (baseOpacity * 0.9) * flickerRef.current;
-    materials.spiral2.opacity = (baseOpacity * 0.85) * (flickerRef.current * 0.9 + 0.1);
-    materials.spiral3.opacity = (baseOpacity * 0.8) * (flickerRef.current * 0.8 + 0.2);
-    materials.impact.opacity = (baseOpacity * 0.7) * flickerRef.current;
-    materials.core.opacity = (baseOpacity * 1.1) * flickerRef.current;
-    materials.chain.opacity = (baseOpacity * 0.6) * flickerRef.current;
+    materials.spiral.forEach((material, index) => {
+      material.opacity = baseOpacity * (0.95 - index * 0.1) * flicker;
+    });
+    materials.impact.opacity = (baseOpacity * 0.7) * flicker;
+    materials.core.opacity = (baseOpacity * 1.1) * flicker;
 
-    // Drive the single pooled light at the active phase head (world space). Replicates the
-    // moving phase light: forward → projectile head (8 * flicker), return → return head
-    // (6 * flicker), complete → start glow off.
-    if (phaseRef.current === 'forward') {
+    const showReturnChain =
+      phase === 'return' && !!hitTargetRef.current && !hitTargetRef.current.pullImmune;
+    materials.chain.opacity = showReturnChain ? (baseOpacity * 0.6) * flicker : 0;
+
+    // Update spiral particles imperatively
+    particles.forEach((particle, index) => {
+      const mesh = particleRefs.current[index];
+      if (!mesh) return;
+
+      let isVisible = false;
+      if (phase === 'forward' || phase === 'impact') {
+        isVisible = particle.progress <= forwardProgress + 0.04;
+      } else if (phase === 'return') {
+        // Reveal reverse path: particles near target first, then toward caster
+        isVisible = particle.progress >= 1 - returnProgress - 0.04;
+      }
+
+      mesh.visible = isVisible;
+      if (!isVisible) return;
+
+      _particleBase.lerpVectors(startPosition, targetFixed, particle.progress);
+      const spiralAngle =
+        particle.progress * Math.PI * 2 * 4 + particle.phaseOffset + timeRef.current * 2.5;
+      const radius =
+        0.2 *
+        (1 - particle.progress * 0.3) *
+        (phase === 'return' ? 1 - returnProgress * 0.2 : 1);
+      _rightScaled.copy(right).multiplyScalar(Math.cos(spiralAngle) * radius);
+      _upScaled.copy(up).multiplyScalar(Math.sin(spiralAngle) * radius);
+      _twistOffset.copy(_rightScaled).add(_upScaled);
+      _particleBase.add(_twistOffset);
+
+      if (phase === 'return') {
+        const collapse = returnProgress * Math.max(0, 1 - particle.progress) * 0.35;
+        _particleBase.lerp(startPosition, collapse);
+      }
+
+      mesh.position.copy(_particleBase);
+      const pulse =
+        0.82 +
+        Math.sin(timeRef.current * 8 + particle.progress * 20 + particle.streamIndex) * 0.18;
+      mesh.scale.setScalar(
+        particle.baseScale * pulse * (phase === 'return' ? 1 - returnProgress * 0.2 : 1),
+      );
+    });
+
+    // Impact head (forward / impact phases)
+    if (impactRef.current) {
+      const showImpact = phase === 'forward' || phase === 'impact';
+      impactRef.current.visible = showImpact;
+      if (showImpact) {
+        impactRef.current.position.copy(currentProjectilePosition.current);
+        impactRef.current.rotation.y += delta * 6.5;
+        impactRef.current.rotation.x += delta * 3.2;
+        const impactScale = 1.5 * (1 + Math.sin(timeRef.current * 10) * 0.12);
+        impactRef.current.scale.setScalar(impactScale);
+      }
+    }
+
+    // Return core + chain
+    if (returnCoreRef.current) {
+      returnCoreRef.current.visible = phase === 'return';
+      if (phase === 'return') {
+        returnCoreRef.current.position.copy(currentReturnPosition.current);
+        returnCoreRef.current.rotation.y -= delta * 9;
+        returnCoreRef.current.scale.setScalar(1.3 - returnProgress * 0.35);
+      }
+    }
+
+    if (chainRef.current) {
+      chainRef.current.visible = showReturnChain;
+      if (showReturnChain && hitTargetRef.current) {
+        const hitPos = hitTargetRef.current.position;
+        const returnPos = currentReturnPosition.current;
+        const toStart = _tempStartToReturn.copy(returnPos).sub(hitPos);
+        const chainLength = Math.max(toStart.length(), 0.01);
+        const midpoint = _tempMidpoint.copy(hitPos).add(returnPos).multiplyScalar(0.5);
+        chainRef.current.position.copy(midpoint);
+        chainRef.current.scale.set(1, chainLength, 1);
+        const chainDirection = toStart.normalize();
+        chainRef.current.quaternion.copy(
+          _tempQuaternion.setFromUnitVectors(_yAxis, chainDirection),
+        );
+      }
+    }
+
+    if (startCoreRef.current) {
+      startCoreRef.current.rotation.y += delta * 4.5;
+      startCoreRef.current.scale.setScalar(1 + Math.sin(timeRef.current * 8) * 0.12);
+    }
+
+    // Pooled light follows projectile / return head
+    if (phase === 'forward' || phase === 'impact') {
       const p = currentProjectilePosition.current;
       graspLight.current?.setPosition(p.x, p.y, p.z);
-      graspLight.current?.setIntensity(8 * flickerRef.current);
-    } else if (phaseRef.current === 'return') {
+      graspLight.current?.setIntensity(8 * flicker);
+    } else if (phase === 'return') {
       const p = currentReturnPosition.current;
       graspLight.current?.setPosition(p.x, p.y, p.z);
-      graspLight.current?.setIntensity(6 * flickerRef.current);
+      graspLight.current?.setIntensity(6 * flicker);
     } else {
       graspLight.current?.setPosition(startPosition.x, startPosition.y, startPosition.z);
       graspLight.current?.setIntensity(0);
     }
   });
 
-  const checkForHits = (currentPos: Vector3) => {
-    // Death Grasp only targets enemy units (NPC enemies), not players
-    if (enemyData && enemyData.length > 0) {
-      for (const enemy of enemyData) {
-        if (enemy.health <= 0) continue;
-
-        const distance = currentPos.distanceTo(enemy.position);
-        if (distance <= 2.5) { // Collision radius
-          hitTargetRef.current = { id: enemy.id, position: enemy.position.clone() };
-          onHit(enemy.id, enemy.position.clone());
-          return;
-        }
-      }
-    }
-  };
-
-  // Calculate visible spiral streams based on current phase and progress
-  const getVisibleSpiralStreams = () => {
-    if (phaseRef.current === 'forward') {
-      const forwardProgress = Math.min(timeRef.current / forwardDuration, 1);
-      // Show progressive spiral streams during forward phase
-      return forwardSpiralStreams.map(stream => 
-        stream.slice(0, Math.floor(stream.length * forwardProgress))
-      );
-    } else if (phaseRef.current === 'return') {
-      const returnProgress = Math.min(timeRef.current / returnDuration, 1);
-      // Show reverse spiral streams during return phase
-      return forwardSpiralStreams.map(stream => {
-        const reverseStream = [...stream].reverse();
-        return reverseStream.slice(0, Math.floor(reverseStream.length * returnProgress));
-      });
-    }
-    return [[], [], []]; // No streams when complete
-  };
-
-  const visibleStreams = getVisibleSpiralStreams();
-
   return (
-    <group>
-      {/* Animated spiraling particle streams */}
-      {visibleStreams.map((stream, streamIndex) => {
-        const materials_array = [materials.spiral1, materials.spiral2, materials.spiral3];
-        const currentMaterial = materials_array[streamIndex];
-
-        return (
-          <group key={`stream-${streamIndex}`}>
-            {stream.map((particle, particleIndex) => (
-              <mesh
-                key={`particle-${streamIndex}-${particleIndex}`}
-                position={particle.position.toArray()}
-                geometry={geometries.particle}
-                material={currentMaterial}
-                scale={[particle.scale, particle.scale, particle.scale]}
-              />
-            ))}
-          </group>
-        );
-      })}
-
-      {/* Impact effect at current position */}
-      {phaseRef.current === 'forward' && (
+    <group frustumCulled={false}>
+      {particles.map((particle, index) => (
         <mesh
-          position={currentProjectilePosition.current.toArray()}
-          geometry={geometries.impact}
-          material={materials.impact}
-          scale={[1.5, 1.5, 1.5]}
+          key={`${particle.streamIndex}-${index}`}
+          ref={(mesh) => {
+            particleRefs.current[index] = mesh;
+          }}
+          geometry={geometries.particle}
+          material={materials.spiral[particle.streamIndex]}
+          visible={false}
+          frustumCulled={false}
         />
-      )}
+      ))}
 
-      {/* Return effect during return phase */}
-      {phaseRef.current === 'return' && hitTargetRef.current && (
-        <>
-          {/* Chain connecting hit target to current return position */}
-          <mesh
-            position={[
-              (hitTargetRef.current.position.x + currentReturnPosition.current.x) / 2,
-              (hitTargetRef.current.position.y + currentReturnPosition.current.y) / 2,
-              (hitTargetRef.current.position.z + currentReturnPosition.current.z) / 2
-            ]}
-            geometry={geometries.chain}
-            material={materials.chain}
-            scale={[
-              1,
-              hitTargetRef.current.position.distanceTo(currentReturnPosition.current),
-              1
-            ]}
-            rotation={[
-              Math.PI / 2,
-              Math.atan2(
-                hitTargetRef.current.position.x - currentReturnPosition.current.x,
-                hitTargetRef.current.position.z - currentReturnPosition.current.z
-              ),
-              0
-            ]}
-          />
-          
-          {/* Glowing effect at return position */}
-          <mesh
-            position={currentReturnPosition.current.toArray()}
-            geometry={geometries.core}
-            material={materials.core}
-            scale={[1.3, 1.3, 1.3]}
-          />
-        </>
-      )}
+      <group ref={impactRef} position={startPosition.clone()}>
+        <mesh geometry={geometries.impact} material={materials.impact} scale={[1.65, 1.65, 1.65]} />
+        <mesh geometry={geometries.core} material={materials.core} scale={[0.9, 0.9, 0.9]} />
+      </group>
 
-      {/* Starting point core glow */}
-      <mesh
-        position={startPosition.toArray()}
-        geometry={geometries.core}
-        material={materials.core}
-        scale={[1.3, 1.3, 1.3]}
-      />
+      <group ref={returnCoreRef} position={targetPosition.clone()} visible={false}>
+        <mesh geometry={geometries.impact} material={materials.impact} scale={[1.3, 1.3, 1.3]} />
+        <mesh geometry={geometries.core} material={materials.core} scale={[0.8, 0.8, 0.8]} />
+      </group>
 
-      {/* Additional pulsing core at start */}
-      <mesh
-        position={startPosition.toArray()}
-        geometry={geometries.particle}
-        material={materials.spiral1}
-        scale={[
-          2 + Math.sin(timeRef.current * 8) * 0.5,
-          2 + Math.sin(timeRef.current * 8) * 0.5,
-          2 + Math.sin(timeRef.current * 8) * 0.5
-        ]}
-      />
+      <mesh ref={chainRef} material={materials.chain} visible={false} frustumCulled={false}>
+        <cylinderGeometry args={[0.035, 0.035, 1, 7]} />
+      </mesh>
 
-      {/* Dynamic lighting is driven via the pooled light in useFrame above. */}
+      <group ref={startCoreRef} position={startPosition.clone()}>
+        <mesh geometry={geometries.core} material={materials.core} scale={[1.2, 1.2, 1.2]} />
+        <mesh geometry={geometries.impact} material={materials.spiral[0]} scale={[1.7, 1.7, 1.7]} />
+      </group>
     </group>
   );
 }

@@ -42,6 +42,7 @@ export class InputManager extends EventEmitter {
   private readonly boundOnPointerLockError: () => void;
   private readonly boundOnWindowBlur: () => void;
   private readonly boundOnWindowFocus: () => void;
+  private readonly boundOnVisibilityChange: () => void;
   private readonly boundPreventContextMenu: (event: Event) => void;
 
   // Flag to allow all keyboard input (used for chat)
@@ -72,6 +73,7 @@ export class InputManager extends EventEmitter {
     this.boundOnPointerLockError = this.onPointerLockError.bind(this);
     this.boundOnWindowBlur = this.onWindowBlur.bind(this);
     this.boundOnWindowFocus = this.onWindowFocus.bind(this);
+    this.boundOnVisibilityChange = this.onVisibilityChange.bind(this);
     this.boundPreventContextMenu = (e) => e.preventDefault();
     this.setupEventListeners();
   }
@@ -134,9 +136,8 @@ export class InputManager extends EventEmitter {
   public setGameInputBlocked(blocked: boolean): void {
     this.gameInputBlocked = blocked;
     if (blocked) {
-      this.mouseButtons.clear();
-      this.mouseDelta.x = 0;
-      this.mouseDelta.y = 0;
+      // Drop held keys/buttons so releasing Shift (etc.) over UI cannot leave stale state.
+      this.releaseAllInput();
     }
   }
 
@@ -243,6 +244,7 @@ export class InputManager extends EventEmitter {
     document.addEventListener('pointerlockchange', this.boundOnPointerLockChange);
     document.addEventListener('pointerlockerror', this.boundOnPointerLockError);
     document.addEventListener('contextmenu', this.boundPreventContextMenu);
+    document.addEventListener('visibilitychange', this.boundOnVisibilityChange);
     window.addEventListener('blur', this.boundOnWindowBlur);
     window.addEventListener('focus', this.boundOnWindowFocus);
   }
@@ -402,11 +404,24 @@ export class InputManager extends EventEmitter {
     this.isPointerLocked = false;
   }
 
-  private onWindowBlur(): void {
-    // Clear all input state when window loses focus
+  /** Clears held keys/buttons so lost keyups (tab switch, blur, UI block) cannot stick. */
+  private releaseAllInput(): void {
     this.keys.clear();
     this.mouseButtons.clear();
     this.keyTimings.clear();
+    this.mouseDelta.x = 0;
+    this.mouseDelta.y = 0;
+  }
+
+  private onWindowBlur(): void {
+    this.releaseAllInput();
+  }
+
+  private onVisibilityChange(): void {
+    // Tab switches often fire visibilitychange without window.blur — clear held keys.
+    if (document.hidden) {
+      this.releaseAllInput();
+    }
   }
 
   private onWindowFocus(): void {
@@ -442,6 +457,7 @@ export class InputManager extends EventEmitter {
     document.removeEventListener('wheel', this.boundOnWheel);
     document.removeEventListener('pointerlockchange', this.boundOnPointerLockChange);
     document.removeEventListener('pointerlockerror', this.boundOnPointerLockError);
+    document.removeEventListener('visibilitychange', this.boundOnVisibilityChange);
     window.removeEventListener('blur', this.boundOnWindowBlur);
     window.removeEventListener('focus', this.boundOnWindowFocus);
 

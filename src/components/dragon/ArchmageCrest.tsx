@@ -3,6 +3,7 @@ import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
 import { useRef, useMemo, useEffect } from 'react';
 import { Shape, ExtrudeGeometry, Group, MeshStandardMaterial, SphereGeometry, DoubleSide } from 'three';
 import { WeaponType, WeaponSubclass } from './weapons';
+import { getAspectDragonVisualOverrides, type WeaponAspect } from '@/utils/weaponAspects';
 
 /** Euler [x, y, z] in radians */
 export type WingEuler = [number, number, number];
@@ -28,6 +29,8 @@ interface ArchmageCrestProps {
   scale?: number;
   weaponType: WeaponType;
   weaponSubclass?: WeaponSubclass;
+  /** Throne weapon aspect — overrides subclass/type crest colors when defined. */
+  weaponAspect?: WeaponAspect;
   /** Multiplier for horizontal wing separation (>1 pushes blades further apart). */
   wingSpread?: number;
   /** Root Euler rotation in radians [x, y, z]; offsets the whole crest from default orientation. */
@@ -45,6 +48,7 @@ export default function ArchmageCrest({
   scale = 1,
   weaponType,
   weaponSubclass,
+  weaponAspect,
   wingSpread = 1,
   rotation = [0, 0, 0],
   leftWing,
@@ -57,6 +61,11 @@ export default function ArchmageCrest({
 
   // Get color based on weapon type/subclass (matching GhostTrail)
   const getCrestColor = (): { main: string; emissive: string; glow: string; secondary: string } => {
+    const aspectCrest = getAspectDragonVisualOverrides(weaponAspect)?.crest;
+    if (aspectCrest) {
+      return aspectCrest;
+    }
+
     if (weaponSubclass) {
       switch (weaponSubclass) {
         // Scythe subclasses
@@ -119,7 +128,7 @@ export default function ArchmageCrest({
   // Memoized on the actual inputs so materials below only rebuild when the
   // theme genuinely changes, instead of on every render (getCrestColor()
   // used to return a brand-new object identity each call).
-  const colors = useMemo(() => getCrestColor(), [weaponType, weaponSubclass]);
+  const colors = useMemo(() => getCrestColor(), [weaponType, weaponSubclass, weaponAspect]);
 
   // Cached materials for performance - weapon themed
   const materials = useMemo(() => ({

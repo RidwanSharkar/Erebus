@@ -56,7 +56,7 @@ function KnightSoulEffect({ soulType, compact = false }: KnightSoulEffectProps) 
   const coreRadius = 0.14 * cfg.scale;
   const glowRadius = 0.3 * cfg.scale;
   const particleRadius = 0.08 * cfg.scale;
-  const coreYOffset = 0.325 * cfg.scale;
+  const coreYOffset = 0.25 * cfg.scale;
   const orbitYOffset = 0.25 * cfg.scale;
   const lightYOffset = 0.2 * cfg.scale;
 

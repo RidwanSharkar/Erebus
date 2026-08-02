@@ -161,6 +161,7 @@ export default function CharacterRenderer({
   const groupRef         = useRef<Group | null>(null);
   const { camera }       = useThree();
   const [animState, setAnimState] = useState<AnimState>('Idle');
+  const [runAnimTimeScale, setRunAnimTimeScale] = useState(1);
   const [dashJetsActive, setDashJetsActive] = useState(false);
   const [dashBurstId, setDashBurstId] = useState(0);
   const dashFlagsRef = useRef({ isBackward: false, isLeft: false, isRight: false });
@@ -366,6 +367,9 @@ export default function CharacterRenderer({
 
     const movement = entity.getComponent(Movement);
     if (!movement) return;
+
+    const nextRunScale = movement.persistenceHunterActive && !movement.isSprinting ? 1.12 : 1;
+    setRunAnimTimeScale((prev) => (prev === nextRunScale ? prev : nextRunScale));
 
     const transform = entity.getComponent(Transform);
     if (transform?.position) {
@@ -611,6 +615,7 @@ export default function CharacterRenderer({
             animState={animState}
             isDead={isDead}
             portalFallRef={portalFallAnimRef}
+            runAnimTimeScale={runAnimTimeScale}
           />
         </group>
         <group position={[0, 1.0, -0.12]}>

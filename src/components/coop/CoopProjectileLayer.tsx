@@ -4,12 +4,15 @@ import React, { forwardRef, memo, useCallback, useImperativeHandle, useState } f
 import { Vector3 } from '@/utils/three-exports';
 import ShadeDaggerProjectile from '@/components/enemies/ShadeDaggerProjectile';
 import WarlockProjectile from '@/components/enemies/WarlockProjectile';
+import MedusaProjectile from '@/components/enemies/MedusaProjectile';
 import ViperArrowProjectile from '@/components/enemies/ViperArrowProjectile';
 import KnightFrostProjectile from '@/components/enemies/KnightFrostProjectile';
 import KnightDeathGraspProjectile from '@/components/enemies/KnightDeathGraspProjectile';
 import GreedFireProjectile from '@/components/enemies/GreedFireProjectile';
 import SentinelVoidProjectile from '@/components/enemies/SentinelVoidProjectile';
+import BoneSpiderEnsnaringShot from '@/components/enemies/BoneSpiderEnsnaringShot';
 import EnchantressEarthShockProjectile from '@/components/enemies/EnchantressEarthShockProjectile';
+import AlliedSpiderEnsnaringThreadsProjectile from '@/components/enemies/AlliedSpiderEnsnaringThreadsProjectile';
 import Meteor from '@/components/enemies/Meteor';
 import CrossentropyMeteor from '@/components/projectiles/CrossentropyMeteor';
 import CloudkillArrow from '@/components/projectiles/CloudkillArrow';
@@ -19,14 +22,19 @@ import type {
   CloudkillArrowState,
   CrossentropyMeteorState,
   GreedFireballState,
+  WyvernBreathFireboltState,
+  DestinyBreathFireboltState,
   SentinelVoidOrbState,
+  BoneSpiderEnsnaringShotState,
   EnchantressEarthShockState,
+  AlliedSpiderEnsnaringThreadsState,
   KnightDeathGraspProjectileState,
   KnightFrostProjectileState,
   MeteorState,
   ShadeDaggerState,
   ViperArrowState,
   WarlockProjectileState,
+  MedusaProjectileState,
 } from '@/components/coop/coopVfxLayerTypes';
 
 export type CoopProjectileLayerHandle = {
@@ -36,15 +44,26 @@ export type CoopProjectileLayerHandle = {
   addBossSpear: (spear: BossSpearState) => void;
   addKnightFrostProjectile: (projectile: KnightFrostProjectileState) => void;
   addWarlockProjectile: (projectile: WarlockProjectileState) => void;
+  addMedusaProjectile: (projectile: MedusaProjectileState) => void;
   addViperArrow: (arrow: ViperArrowState) => void;
   addKnightDeathGraspProjectile: (projectile: KnightDeathGraspProjectileState) => void;
   addKnightDeathGraspProjectiles: (projectiles: KnightDeathGraspProjectileState[]) => void;
   addGreedFireball: (fireball: GreedFireballState) => void;
   removeGreedFireballByGreedId: (greedId: string) => void;
+  addWyvernBreathFirebolt: (firebolt: WyvernBreathFireboltState) => void;
+  removeWyvernBreathFireboltByWyvernId: (wyvernId: string) => void;
+  removeWyvernBreathFireboltById: (fireboltId: string) => void;
+  addDestinyBreathFirebolt: (firebolt: DestinyBreathFireboltState) => void;
+  removeDestinyBreathFireboltByDestinyId: (destinyId: string) => void;
+  removeDestinyBreathFireboltById: (fireboltId: string) => void;
   addSentinelVoidOrb: (orb: SentinelVoidOrbState) => void;
   removeSentinelVoidOrbBySentinelId: (sentinelId: string) => void;
+  addBoneSpiderEnsnaringShot: (shot: BoneSpiderEnsnaringShotState) => void;
+  removeBoneSpiderEnsnaringShotBySpiderId: (spiderId: string) => void;
   addEnchantressEarthShock: (projectile: EnchantressEarthShockState) => void;
   removeEnchantressEarthShockByEnchantressId: (enchantressId: string) => void;
+  addAlliedSpiderEnsnaringThreads: (projectile: AlliedSpiderEnsnaringThreadsState) => void;
+  removeAlliedSpiderEnsnaringThreadsBySpiderId: (spiderId: string) => void;
   addCrossentropyMeteor: (meteor: CrossentropyMeteorState) => void;
   addCloudkillArrow: (arrow: CloudkillArrowState) => void;
 };
@@ -70,11 +89,16 @@ const CoopProjectileLayer = memo(forwardRef<CoopProjectileLayerHandle, CoopProje
     const [bossSpears, setBossSpears] = useState<BossSpearState[]>([]);
     const [knightFrostProjectiles, setKnightFrostProjectiles] = useState<KnightFrostProjectileState[]>([]);
     const [warlockProjectiles, setWarlockProjectiles] = useState<WarlockProjectileState[]>([]);
+    const [medusaProjectiles, setMedusaProjectiles] = useState<MedusaProjectileState[]>([]);
     const [viperArrows, setViperArrows] = useState<ViperArrowState[]>([]);
     const [knightDeathGraspProjectiles, setKnightDeathGraspProjectiles] = useState<KnightDeathGraspProjectileState[]>([]);
     const [greedFireballs, setGreedFireballs] = useState<GreedFireballState[]>([]);
+    const [wyvernBreathFirebolts, setWyvernBreathFirebolts] = useState<WyvernBreathFireboltState[]>([]);
+    const [destinyBreathFirebolts, setDestinyBreathFirebolts] = useState<DestinyBreathFireboltState[]>([]);
     const [sentinelVoidOrbs, setSentinelVoidOrbs] = useState<SentinelVoidOrbState[]>([]);
+    const [boneSpiderEnsnaringShots, setBoneSpiderEnsnaringShots] = useState<BoneSpiderEnsnaringShotState[]>([]);
     const [enchantressEarthShocks, setEnchantressEarthShocks] = useState<EnchantressEarthShockState[]>([]);
+    const [alliedSpiderEnsnaringThreads, setAlliedSpiderEnsnaringThreads] = useState<AlliedSpiderEnsnaringThreadsState[]>([]);
     const [activeCrossentropyMeteors, setActiveCrossentropyMeteors] = useState<CrossentropyMeteorState[]>([]);
     const [activeCloudkillArrows, setActiveCloudkillArrows] = useState<CloudkillArrowState[]>([]);
 
@@ -84,11 +108,16 @@ const CoopProjectileLayer = memo(forwardRef<CoopProjectileLayerHandle, CoopProje
       setBossSpears([]);
       setKnightFrostProjectiles([]);
       setWarlockProjectiles([]);
+      setMedusaProjectiles([]);
       setViperArrows([]);
       setKnightDeathGraspProjectiles([]);
       setGreedFireballs([]);
+      setWyvernBreathFirebolts([]);
+      setDestinyBreathFirebolts([]);
       setSentinelVoidOrbs([]);
+      setBoneSpiderEnsnaringShots([]);
       setEnchantressEarthShocks([]);
+      setAlliedSpiderEnsnaringThreads([]);
       setActiveCrossentropyMeteors([]);
       setActiveCloudkillArrows([]);
     }, []);
@@ -113,6 +142,10 @@ const CoopProjectileLayer = memo(forwardRef<CoopProjectileLayerHandle, CoopProje
       setWarlockProjectiles((prev) => [...prev, projectile]);
     }, []);
 
+    const addMedusaProjectile = useCallback((projectile: MedusaProjectileState) => {
+      setMedusaProjectiles((prev) => [...prev, projectile]);
+    }, []);
+
     const addViperArrow = useCallback((arrow: ViperArrowState) => {
       setViperArrows((prev) => [...prev, arrow]);
     }, []);
@@ -133,6 +166,30 @@ const CoopProjectileLayer = memo(forwardRef<CoopProjectileLayerHandle, CoopProje
       setGreedFireballs((prev) => prev.filter((f) => f.greedId !== greedId));
     }, []);
 
+    const addWyvernBreathFirebolt = useCallback((firebolt: WyvernBreathFireboltState) => {
+      setWyvernBreathFirebolts((prev) => [...prev, firebolt]);
+    }, []);
+
+    const removeWyvernBreathFireboltByWyvernId = useCallback((wyvernId: string) => {
+      setWyvernBreathFirebolts((prev) => prev.filter((f) => f.wyvernId !== wyvernId));
+    }, []);
+
+    const removeWyvernBreathFireboltById = useCallback((fireboltId: string) => {
+      setWyvernBreathFirebolts((prev) => prev.filter((f) => f.id !== fireboltId));
+    }, []);
+
+    const addDestinyBreathFirebolt = useCallback((firebolt: DestinyBreathFireboltState) => {
+      setDestinyBreathFirebolts((prev) => [...prev, firebolt]);
+    }, []);
+
+    const removeDestinyBreathFireboltByDestinyId = useCallback((destinyId: string) => {
+      setDestinyBreathFirebolts((prev) => prev.filter((f) => f.destinyId !== destinyId));
+    }, []);
+
+    const removeDestinyBreathFireboltById = useCallback((fireboltId: string) => {
+      setDestinyBreathFirebolts((prev) => prev.filter((f) => f.id !== fireboltId));
+    }, []);
+
     const addSentinelVoidOrb = useCallback((orb: SentinelVoidOrbState) => {
       setSentinelVoidOrbs((prev) => [...prev, orb]);
     }, []);
@@ -141,12 +198,28 @@ const CoopProjectileLayer = memo(forwardRef<CoopProjectileLayerHandle, CoopProje
       setSentinelVoidOrbs((prev) => prev.filter((o) => o.sentinelId !== sentinelId));
     }, []);
 
+    const addBoneSpiderEnsnaringShot = useCallback((shot: BoneSpiderEnsnaringShotState) => {
+      setBoneSpiderEnsnaringShots((prev) => [...prev, shot]);
+    }, []);
+
+    const removeBoneSpiderEnsnaringShotBySpiderId = useCallback((spiderId: string) => {
+      setBoneSpiderEnsnaringShots((prev) => prev.filter((s) => s.spiderId !== spiderId));
+    }, []);
+
     const addEnchantressEarthShock = useCallback((projectile: EnchantressEarthShockState) => {
       setEnchantressEarthShocks((prev) => [...prev, projectile]);
     }, []);
 
     const removeEnchantressEarthShockByEnchantressId = useCallback((enchantressId: string) => {
       setEnchantressEarthShocks((prev) => prev.filter((p) => p.enchantressId !== enchantressId));
+    }, []);
+
+    const addAlliedSpiderEnsnaringThreads = useCallback((projectile: AlliedSpiderEnsnaringThreadsState) => {
+      setAlliedSpiderEnsnaringThreads((prev) => [...prev, projectile]);
+    }, []);
+
+    const removeAlliedSpiderEnsnaringThreadsBySpiderId = useCallback((spiderId: string) => {
+      setAlliedSpiderEnsnaringThreads((prev) => prev.filter((p) => p.spiderId !== spiderId));
     }, []);
 
     const addCrossentropyMeteor = useCallback((meteor: CrossentropyMeteorState) => {
@@ -164,15 +237,26 @@ const CoopProjectileLayer = memo(forwardRef<CoopProjectileLayerHandle, CoopProje
       addBossSpear,
       addKnightFrostProjectile,
       addWarlockProjectile,
+      addMedusaProjectile,
       addViperArrow,
       addKnightDeathGraspProjectile,
       addKnightDeathGraspProjectiles,
       addGreedFireball,
       removeGreedFireballByGreedId,
+      addWyvernBreathFirebolt,
+      removeWyvernBreathFireboltByWyvernId,
+      removeWyvernBreathFireboltById,
+      addDestinyBreathFirebolt,
+      removeDestinyBreathFireboltByDestinyId,
+      removeDestinyBreathFireboltById,
       addSentinelVoidOrb,
       removeSentinelVoidOrbBySentinelId,
+      addBoneSpiderEnsnaringShot,
+      removeBoneSpiderEnsnaringShotBySpiderId,
       addEnchantressEarthShock,
       removeEnchantressEarthShockByEnchantressId,
+      addAlliedSpiderEnsnaringThreads,
+      removeAlliedSpiderEnsnaringThreadsBySpiderId,
       addCrossentropyMeteor,
       addCloudkillArrow,
     }), [
@@ -182,15 +266,26 @@ const CoopProjectileLayer = memo(forwardRef<CoopProjectileLayerHandle, CoopProje
       addBossSpear,
       addKnightFrostProjectile,
       addWarlockProjectile,
+      addMedusaProjectile,
       addViperArrow,
       addKnightDeathGraspProjectile,
       addKnightDeathGraspProjectiles,
       addGreedFireball,
       removeGreedFireballByGreedId,
+      addWyvernBreathFirebolt,
+      removeWyvernBreathFireboltByWyvernId,
+      removeWyvernBreathFireboltById,
+      addDestinyBreathFirebolt,
+      removeDestinyBreathFireboltByDestinyId,
+      removeDestinyBreathFireboltById,
       addSentinelVoidOrb,
       removeSentinelVoidOrbBySentinelId,
+      addBoneSpiderEnsnaringShot,
+      removeBoneSpiderEnsnaringShotBySpiderId,
       addEnchantressEarthShock,
       removeEnchantressEarthShockByEnchantressId,
+      addAlliedSpiderEnsnaringThreads,
+      removeAlliedSpiderEnsnaringThreadsBySpiderId,
       addCrossentropyMeteor,
       addCloudkillArrow,
     ]);
@@ -228,6 +323,25 @@ const CoopProjectileLayer = memo(forwardRef<CoopProjectileLayerHandle, CoopProje
           />
         ))}
 
+        {wyvernBreathFirebolts.map((firebolt) => (
+          <GreedFireProjectile
+            key={firebolt.id}
+            startPosition={firebolt.startPosition}
+            targetPosition={firebolt.targetPosition}
+            onComplete={() => setWyvernBreathFirebolts((prev) => prev.filter((f) => f.id !== firebolt.id))}
+          />
+        ))}
+
+        {destinyBreathFirebolts.map((firebolt) => (
+          <GreedFireProjectile
+            key={firebolt.id}
+            startPosition={firebolt.startPosition}
+            targetPosition={firebolt.targetPosition}
+            fromAir={firebolt.fromAir}
+            onComplete={() => setDestinyBreathFirebolts((prev) => prev.filter((f) => f.id !== firebolt.id))}
+          />
+        ))}
+
         {sentinelVoidOrbs.map((orb) => (
           <SentinelVoidProjectile
             key={orb.id}
@@ -237,12 +351,30 @@ const CoopProjectileLayer = memo(forwardRef<CoopProjectileLayerHandle, CoopProje
           />
         ))}
 
+        {boneSpiderEnsnaringShots.map((shot) => (
+          <BoneSpiderEnsnaringShot
+            key={shot.id}
+            startPosition={shot.startPosition}
+            targetPosition={shot.targetPosition}
+            onComplete={() => setBoneSpiderEnsnaringShots((prev) => prev.filter((s) => s.id !== shot.id))}
+          />
+        ))}
+
         {enchantressEarthShocks.map((projectile) => (
           <EnchantressEarthShockProjectile
             key={projectile.id}
             startPosition={projectile.startPosition}
             targetPosition={projectile.targetPosition}
             onComplete={() => setEnchantressEarthShocks((prev) => prev.filter((p) => p.id !== projectile.id))}
+          />
+        ))}
+
+        {alliedSpiderEnsnaringThreads.map((projectile) => (
+          <AlliedSpiderEnsnaringThreadsProjectile
+            key={projectile.id}
+            startPosition={projectile.startPosition}
+            targetPosition={projectile.targetPosition}
+            onComplete={() => setAlliedSpiderEnsnaringThreads((prev) => prev.filter((p) => p.id !== projectile.id))}
           />
         ))}
 
@@ -303,6 +435,20 @@ const CoopProjectileLayer = memo(forwardRef<CoopProjectileLayerHandle, CoopProje
               // Damage, hit audio, and floating numbers are server-authoritative via `player-damaged`.
             }}
             onComplete={() => setWarlockProjectiles((prev) => prev.filter((p) => p.id !== orb.id))}
+          />
+        ))}
+
+        {medusaProjectiles.map((bolt) => (
+          <MedusaProjectile
+            key={bolt.id}
+            startPosition={bolt.startPosition}
+            targetPosition={bolt.targetPosition}
+            damage={bolt.damage}
+            getPlayerPosition={getLocalPlayerPosition}
+            onHitPlayer={() => {
+              // Damage is server-authoritative via `player-damaged`.
+            }}
+            onComplete={() => setMedusaProjectiles((prev) => prev.filter((p) => p.id !== bolt.id))}
           />
         ))}
 

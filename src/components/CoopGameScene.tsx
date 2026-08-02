@@ -55,7 +55,6 @@ import GoldCollectMoteEffect from './enemies/GoldCollectMoteEffect';
 import BowShotImpact from './weapons/BowShotImpact';
 import EntropicBoltImpact from './weapons/EntropicBoltImpact';
 import SabreImpactEffect from './weapons/SabreImpactEffect';
-import CrescentSlashEffect from './weapons/CrescentSlashEffect';
 import MortalStrikeEffect from './weapons/MortalStrikeEffect';
 import PsionicBladeSliceEffect from './weapons/PsionicBladeSliceEffect';
 import PlayerHitBurst from './weapons/PlayerHitBurst';
@@ -67,14 +66,31 @@ import {
   EREBUS_PLAYER_DAMAGE_FEEDBACK_EVENT,
   type PlayerDamageFeedbackTone,
 } from '@/utils/playerDamageFeedbackEvent';
-import { applyIncomingCoopDamage } from '@/utils/applyIncomingCoopDamage';
-import BossTectonicSpike from './enemies/BossTectonicSpike';
-import BossTectonicSpikeTelegraph, {
+import {
+  applyIncomingCoopDamage,
+  isLocalPlayerMeleeTelegraphTarget,
+  setPetEvasionChanceProvider,
+  showIncomingAttackMissNumber,
+} from '@/utils/applyIncomingCoopDamage';
+import {
+  dispatchMeleeHitStop,
+  meleeImpactDirection,
+  meleeImpactPosition,
+  meleeShakeForWeightClass,
+  normalizeMeleeWeightClass,
+  playIncomingMeleeImpactSound,
+  playIncomingMeleeWhiffSound,
+} from '@/utils/meleeHitFeel';
+import {
+  PET_UPGRADE_EVASION_CHANCE,
+  PET_UPGRADE_EVASION_RANGE,
+  PET_UPGRADE_PERSISTENCE_HUNTER_RANGE,
+} from '@/utils/petCompanionUpgrades';
+import { resolveFaeBeastCompanionId } from '@/utils/faeBeastCompanion';
+import {
   POST_SPIKE_CRACK_HOLD_MS,
   SPIKE_CRACK_FADE_MS,
-  TECTONIC_HIT_RADIUS,
 } from './enemies/BossTectonicSpikeTelegraph';
-import SpikeGroundCracksVfx from './environment/SpikeGroundCracksVfx';
 import CoopProjectileLayer, { type CoopProjectileLayerHandle } from './coop/CoopProjectileLayer';
 import CoopBossTelegraphLayer, { type CoopBossTelegraphLayerHandle } from './coop/CoopBossTelegraphLayer';
 import CoopGroundTelegraphLayer, { type CoopGroundTelegraphLayerHandle } from './coop/CoopGroundTelegraphLayer';
@@ -105,6 +121,7 @@ import type {
   ViperArrowState,
   WarlockFlameStrikeState,
   WarlockProjectileState,
+  MedusaProjectileState,
   WeaverLightningState,
 } from './coop/coopVfxLayerTypes';
 import { applyPlayerMove, getPlayerLivePosition, getPlayerLiveRotation } from '@/utils/playerLiveTransform';
@@ -118,8 +135,21 @@ import {
   isSunkenSentinelSelectable,
   type SunkenSentinelEncounterRef,
 } from '@/utils/sunkenSentinelEncounter';
+import {
+  isEternityPalaceLootSelectable,
+  type EternityPalaceEncounterRef,
+} from '@/utils/eternityPalaceEncounter';
 import { SkillPointData } from '@/utils/SkillPointSystem';
-import { AbilityLoadout, getDefaultLoadoutForWeapon } from '@/utils/weaponAbilities';
+import {
+  AbilityLoadout,
+  getDefaultLoadoutForWeapon,
+  syncBowLoadoutRForAspect,
+  syncRunebladeLoadoutRForAspect,
+  isDeathGraspPullImmune,
+  DEATH_GRASP_TAUNT_MS,
+  DEATH_GRASP_PULL_DURATION_MS,
+  DEATH_GRASP_STANDOFF,
+} from '@/utils/weaponAbilities';
 import {
   TENTACLE_GROUND_TELEGRAPH_LEAD_MS,
   TENTACLE_SPINE_IMPACT_TELEGRAPH_MS,
@@ -229,26 +259,39 @@ import {
   LOCUST_MISSILE_INTERVAL_SEC,
   LOCUST_MISSILES_PER_VOLLEY,
   LOCUST_TARGET_RADIUS,
+  ENTANGLEMENT_DURATION_MS,
 } from '@/utils/talents';
 import {
   EXODIA_GREAVES,
   EXODIA_HELM,
   EXODIA_PLATE,
-  EXODIA_GAUNTLETS,
+  HEXMETAL_CLOAK,
+  HEXMETAL_LEGGINGS,
+  HEXMETAL_ATTACK_SLOW_MULT,
+  HEXMETAL_DAMAGE_CAP,
+  HEXMETAL_SET_3_BONUS_DASH_CHARGES,
   JAGUAR_EMERALD,
   INFINITE_AMBER,
   INFINITE_AMBER_ENERGY_REGEN_MULT,
   KAISER_ICD_SEC,
   KAISER_PILLAR_DAMAGE,
   PERSEPHONE,
+  getArchmageSetCount,
+  getArchmageSetStatBonuses,
   getDefaultDreamShardCount,
   getExodiaSetCount,
   getExodiaSetStatBonuses,
+  getHexmetalSetCount,
   getSleepwalkerDreamShardCount,
   inventoryToOwnedTypes,
   hasOwnedItem,
+  isUniqueDreamLayerItem,
   setJaguarEmeraldOwnedGlobal,
 } from '@/utils/dreamLayerItems';
+import {
+  isUpgradeableBossRelic,
+  resolveBossRelicPickup,
+} from '@/utils/bossRelicItems';
 import { StatSystem, StatPointData, type PlayerStats } from '@/utils/StatSystem';
 import { ITEM_RARITY_COLORS, isItemRarity } from '@/utils/itemRarity';
 import { setGlobalAgilityStatPoints, setGlobalStrengthStatPoints } from '@/core/DamageCalculator';
@@ -256,12 +299,24 @@ import { logJsHeapSnapshotDev } from '@/utils/coopMemoryDebug';
 import { isBowPerfectShotProgress } from '@/utils/bowConstants';
 import { getRuneCountForWeapon } from '@/utils/runeCount';
 import { registerEnemyAttackTelegraphSounds } from '@/utils/enemyTelegraphSound';
+import { registerBeastAudioSounds } from '@/utils/beastAudioSounds';
 import { registerKnightAnimationSocketListeners } from '@/utils/knightAnimationDispatch';
-import { registerSpectreAnimationSocketListeners } from '@/utils/spectreAnimationDispatch';
+import { registerAssassinAnimationSocketListeners } from '@/utils/assassinAnimationDispatch';
 import { registerValkyrieAnimationSocketListeners } from '@/utils/valkyrieAnimationDispatch';
+import { VALKYRIE_JUDGMENT_FALL_MS } from '@/utils/valkyrieJudgmentConstants';
+import {
+  FROST_QUEEN_TELEPORT_LOCK_MS,
+} from '@/utils/frostQueenCoopAbilitiesConstants';
 import { addEnemyHitDamageNumber } from '@/utils/enemyDamageNumber';
+import { registerMedusaVoidWarp } from '@/utils/medusaVoidWarpState';
 import type { DamageNumberManager } from '@/utils/DamageNumberManager';
 import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
+import {
+  scheduleKnightStyleMiss,
+  cancelKnightStyleMiss,
+  playKnightStyleHit,
+  clearAllKnightStyleMissTimers,
+} from '@/utils/knightStyleMeleeSound';
 
 const ZERO_PLAYER_STATS: PlayerStats = { strength: 0, stamina: 0, agility: 0, intellect: 0 };
 
@@ -313,6 +368,8 @@ import BowPowershotManager from '@/components/projectiles/BowPowershotManager';
 import FrostNovaManager, { addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
 import ArcticBlizzardManager from '@/components/weapons/Blizzard/ArcticBlizzardManager';
 import { spawnArcticGroundBlizzardAtFromReact } from '@/components/weapons/Blizzard/arcticBlizzardSpawnBridge';
+import AvalancheEffectManager from '@/components/weapons/Avalanche/AvalancheEffectManager';
+import FrostQueenPlayerIceStormManager from '@/components/weapons/Avalanche/FrostQueenPlayerIceStormManager';
 import Blizzard from '@/components/weapons/Blizzard/Blizzard';
 import StunManager, { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
 import EntangleManager, { addGlobalEntangledEnemy, addGlobalEntangledPlayer } from '@/components/weapons/EntangleManager';
@@ -320,6 +377,7 @@ import IgniteEffectManager from '@/components/weapons/IgniteEffectManager';
 import FireStormManager from '@/components/weapons/FireStormManager';
 
 import CobraShotManager from '@/components/projectiles/CobraShotManager';
+import { addGlobalVenomousEnemy } from '@/components/projectiles/VenomEffectManager';
 
 import RejuvenatingShotManager from '@/components/projectiles/RejuvenatingShotManager';
 import ThrowSpearManager, { triggerGlobalThrowSpear } from '@/components/projectiles/ThrowSpearManager';
@@ -350,11 +408,8 @@ import ThroneRoom, {
   THRONE_TALENT_PEDESTAL_POSITION,
   THRONE_PORTAL_POSITION,
   THRONE_PORTAL_POSITIONS,
-  THRONE_DEV_BOSS_PORTAL_INTERACT_RADIUS,
-  THRONE_DEV_BOSS_PORTAL_POSITION,
-  THRONE_DEV_BOSS2_PORTAL_POSITION,
-  THRONE_DEV_BOSS3_PORTAL_POSITION,
   MAIN_COMBAT_CHOICE_PORTAL_POSITIONS,
+  CASTLE_ROOM_CHOICE_PORTAL_POSITIONS,
   MAIN_COMBAT_BOSS_PORTAL_POSITION,
   MAIN_COMBAT_PEDESTAL_POSITION,
   MAIN_COMBAT_PEDESTAL_INTERACT_RADIUS,
@@ -375,14 +430,21 @@ import {
   ARCHETYPE_NONE,
   isSelectableArchetype,
 } from '@/utils/archetypes';
+import {
+  type WeaponAspect,
+  ASPECT_LEGIONNAIRE,
+  cycleWeaponAspect,
+  defaultWeaponAspect,
+  normalizeWeaponAspect,
+  resolveMaxDashCharges,
+} from '@/utils/weaponAspects';
 import CombatArenaPedestal from '@/components/environment/CombatArenaPedestal';
 import {
   getMerchantShopHintLabel,
   getMerchantShopStockId,
 } from '@/components/environment/MerchantShopPedestals';
-import CastleWallCollision from '@/components/environment/CastleWallCollision';
 import PillarCollision from '@/components/environment/PillarCollision';
-import { MAIN_ARENA_HEX_RADIUS, MAIN_MAP_RADIUS, CASTLE_ROOM_BOUNDS, HEX_ARENA_RADIUS, PENTAGON_ARENA_RADIUS, clampToMainArenaXZ } from '@/utils/mapConstants';
+import { MAIN_ARENA_HEX_RADIUS, MAIN_MAP_RADIUS, CASTLE_ROOM_BOUNDS, HEX_ARENA_RADIUS, FAE_REALM_HEX_RADIUS, ETERNITY_PALACE_HEX_RADIUS, PENTAGON_ARENA_RADIUS, clampToMainArenaXZ, isInsideHexArenaXZ } from '@/utils/mapConstants';
 import { getOxygenMaxEnergy, isMerchantSlotTaken } from '@/utils/merchantShopUtils';
 import {
   getDreamLayerShopHintLabel,
@@ -431,6 +493,7 @@ import { Text } from '@react-three/drei';
 const BossRenderer = React.lazy(() => import('./enemies/BossRenderer'));
 const Boss2Renderer = React.lazy(() => import('./enemies/Boss2Renderer'));
 const Boss3Renderer = React.lazy(() => import('./enemies/Boss3Renderer'));
+const DestinyRenderer = React.lazy(() => import('./enemies/DestinyRenderer'));
 const TemplarRenderer = React.lazy(() => import('./enemies/TemplarRenderer'));
 const TitanRenderer = React.lazy(() => import('./enemies/TitanRenderer'));
 const ViperRenderer = React.lazy(() => import('./enemies/ViperRenderer'));
@@ -1055,6 +1118,21 @@ function preloadEnemyModelsForTypes(types: Iterable<string>): void {
         case 'ghoul':
           void import('./enemies/GhoulModel').then(mod => mod.preloadGhoulModels());
           break;
+        case 'allied-tiger':
+          void import('./enemies/TigerModel').then(mod => mod.preloadTigerModels());
+          break;
+        case 'allied-wolf':
+          void import('./enemies/WolfModel').then(mod => mod.preloadWolfModels());
+          break;
+        case 'allied-bear':
+          void import('./enemies/BearModel').then(mod => mod.preloadBearModels());
+          break;
+        case 'allied-serpent':
+          void import('./enemies/SerpentModel').then(mod => mod.preloadSerpentModels());
+          break;
+        case 'allied-spider':
+          void import('./enemies/BoneSpiderModel').then(mod => mod.preloadBoneSpiderModels());
+          break;
         case 'allied-enchantress':
         case 'greed':
           void import('./enemies/GreedModel').then(mod => mod.preloadGreedModels());
@@ -1069,10 +1147,14 @@ function preloadEnemyModelsForTypes(types: Iterable<string>): void {
         case 'weaver':
         case 'boss3':
           void import('./enemies/WeaverModel').then(mod => mod.preloadWeaverModels());
+          void import('./enemies/GroundSpikeModel').then(mod => mod.preloadGroundSpikeModel());
           break;
         case 'zombie':
         case 'player-zombie':
           void import('./enemies/ZombieModel').then(mod => mod.preloadZombieModels());
+          break;
+        case 'vengeful-spirit':
+          void import('./enemies/VengefulSpiritModel').then(mod => mod.preloadVengefulSpiritModels());
           break;
         case 'martyr':
           void import('./enemies/MartyrModel').then(mod => mod.preloadMartyrModels());
@@ -1086,17 +1168,76 @@ function preloadEnemyModelsForTypes(types: Iterable<string>): void {
         case 'spectre':
           void import('./enemies/SpectreModel').then(mod => mod.preloadSpectreModels());
           break;
+        case 'death-knight':
+          void import('./enemies/DeathKnightModel').then(mod => mod.preloadDeathKnightModels());
+          break;
+        case 'shaman':
+          void import('./enemies/ShamanModel').then(mod => mod.preloadShamanModels());
+          break;
+        case 'assassin':
+          void import('./enemies/AssassinModel').then(mod => mod.preloadAssassinModels());
+          break;
+        case 'serpent':
+        case 'boss-serpent':
+          void import('./enemies/SerpentModel').then(mod => mod.preloadSerpentModels());
+          break;
+        case 'tiger':
+        case 'boss-tiger':
+          void import('./enemies/TigerModel').then(mod => mod.preloadTigerModels());
+          break;
+        case 'wolf':
+        case 'boss-wolf':
+          void import('./enemies/WolfModel').then(mod => mod.preloadWolfModels());
+          break;
+        case 'bear':
+        case 'boss-bear':
+          void import('./enemies/BearModel').then(mod => mod.preloadBearModels());
+          break;
+        case 'skyray':
+          void import('./enemies/SkyRayModel').then(mod => mod.preloadSkyRayModels());
+          break;
+        case 'frost-queen':
+          void import('./enemies/FrostQueenModel').then(mod => mod.preloadFrostQueenModels());
+          break;
+        case 'medusa':
+          void import('./enemies/MedusaModel').then(mod => mod.preloadMedusaModels());
+          break;
+        case 'terrorhawk':
+          void import('./enemies/TerrorhawkModel').then(mod => mod.preloadTerrorhawkModels());
+          break;
+        case 'wyvern':
+          void import('./enemies/WyvernModel').then(mod => mod.preloadWyvernModels());
+          break;
+        case 'destiny':
+          void import('./enemies/DestinyModel').then(mod => mod.preloadDestinyModels());
+          break;
+        case 'bone-spider':
+          void import('./enemies/BoneSpiderModel').then(mod => mod.preloadBoneSpiderModels());
+          break;
         case 'sentinel':
           void import('./enemies/SentinelModel').then(mod => mod.preloadSentinelModels());
           break;
         case 'nemesis':
           void import('./enemies/NemesisModel').then(mod => mod.preloadNemesisModels());
           break;
+        case 'stone-giant':
+          void import('./enemies/StoneGiantModel').then(mod => mod.preloadStoneGiantModels());
+          break;
+        case 'eternal-oak':
+          void import('./enemies/EternalOakModel').then(mod => mod.preloadEternalOakModels());
+          break;
+        case 'colossus':
+          void import('./enemies/ColossusModel').then(mod => mod.preloadColossusModels());
+          break;
         case 'valkyrie':
           void import('./enemies/ValkyrieModel').then(mod => mod.preloadValkyrieModels());
           break;
         case 'boss':
           void import('./enemies/BossGlbModel').then(mod => mod.preloadBossModels());
+          void import('./enemies/GroundSpikeModel').then(mod => mod.preloadGroundSpikeModel());
+          break;
+        case 'tentacle-spine':
+          void import('./enemies/TentacleSpineModel').then(mod => mod.preloadTentacleSpineModels());
           break;
       }
     }, 1200);
@@ -1114,11 +1255,27 @@ async function warmupLazyRendererChunks(): Promise<void> {
     import('./enemies/BossRenderer'),
     import('./enemies/Boss2Renderer'),
     import('./enemies/Boss3Renderer'),
+    import('./enemies/DestinyRenderer'),
     import('./enemies/TemplarRenderer'),
     import('./enemies/TitanRenderer'),
     import('./enemies/SpectreRenderer'),
+    import('./enemies/DeathKnightRenderer'),
+    import('./enemies/ShamanRenderer'),
+    import('./enemies/AssassinRenderer'),
+    import('./enemies/SerpentRenderer'),
+    import('./enemies/FrostQueenRenderer'),
+    import('./enemies/MedusaRenderer'),
+    import('./enemies/WyvernRenderer'),
+    import('./enemies/TerrorhawkRenderer'),
+    import('./enemies/EnemyTigerRenderer'),
+    import('./enemies/WolfRenderer'),
+    import('./enemies/SkyRayRenderer'),
+    import('./enemies/BoneSpiderRenderer'),
     import('./enemies/SentinelRenderer'),
     import('./enemies/NemesisRenderer'),
+    import('./enemies/StoneGiantRenderer'),
+    import('./enemies/EternalOakRenderer'),
+    import('./enemies/ColossusRenderer'),
     import('./enemies/ValkyrieRenderer'),
     import('./enemies/ViperRenderer'),
     import('./enemies/WarlockRenderer'),
@@ -1157,12 +1314,29 @@ async function preloadAllEnemyModels(): Promise<void> {
     import('./enemies/WeaverModel').then((mod) => { mod.preloadWeaverModels(); }),
     import('./enemies/ViperModel').then((mod) => { mod.preloadViperModels(); }),
     import('./enemies/ZombieModel').then((mod) => { mod.preloadZombieModels(); }),
+    import('./enemies/VengefulSpiritModel').then((mod) => { mod.preloadVengefulSpiritModels(); }),
     import('./enemies/MartyrModel').then((mod) => { mod.preloadMartyrModels(); }),
     import('./enemies/BossGlbModel').then((mod) => { mod.preloadBossModels(); }),
     import('./enemies/TitanModel').then((mod) => { mod.preloadTitanModels(); }),
     import('./enemies/SpectreModel').then((mod) => { mod.preloadSpectreModels(); }),
+    import('./enemies/DeathKnightModel').then((mod) => { mod.preloadDeathKnightModels(); }),
+    import('./enemies/ShamanModel').then((mod) => { mod.preloadShamanModels(); }),
+    import('./enemies/AssassinModel').then((mod) => { mod.preloadAssassinModels(); }),
+    import('./enemies/SerpentModel').then((mod) => { mod.preloadSerpentModels(); }),
+    import('./enemies/FrostQueenModel').then((mod) => { mod.preloadFrostQueenModels(); }),
+    import('./enemies/MedusaModel').then((mod) => { mod.preloadMedusaModels(); }),
+    import('./enemies/WyvernModel').then((mod) => { mod.preloadWyvernModels(); }),
+    import('./enemies/TerrorhawkModel').then((mod) => { mod.preloadTerrorhawkModels(); }),
+    import('./enemies/TigerModel').then((mod) => { mod.preloadTigerModels(); }),
+    import('./enemies/WolfModel').then((mod) => { mod.preloadWolfModels(); }),
+    import('./enemies/BearModel').then((mod) => { mod.preloadBearModels(); }),
+    import('./enemies/SkyRayModel').then((mod) => { mod.preloadSkyRayModels(); }),
+    import('./enemies/BoneSpiderModel').then((mod) => { mod.preloadBoneSpiderModels(); }),
     import('./enemies/SentinelModel').then((mod) => { mod.preloadSentinelModels(); }),
     import('./enemies/NemesisModel').then((mod) => { mod.preloadNemesisModels(); }),
+    import('./enemies/StoneGiantModel').then((mod) => { mod.preloadStoneGiantModels(); }),
+    import('./enemies/EternalOakModel').then((mod) => { mod.preloadEternalOakModels(); }),
+    import('./enemies/ColossusModel').then((mod) => { mod.preloadColossusModels(); }),
     import('./enemies/ValkyrieModel').then((mod) => { mod.preloadValkyrieModels(); }),
   ]).catch((e) => console.warn('Enemy model preload failed (non-fatal):', e));
 }
@@ -1210,6 +1384,10 @@ interface CoopGameSceneProps {
   onRequestThroneTalentModal?: (weapon: WeaponType) => void;
   /** After equipping a weapon from a throne pedestal (co-op prep) — e.g. roll class boons. */
   onThroneWeaponEquipped?: (weapon: WeaponType) => void;
+  /** True after class talent has been picked for the currently equipped weapon — enables aspect cycling on that pedestal. */
+  canCycleWeaponAspect?: boolean;
+  /** Fired when the local player cycles weapon aspect in the throne room. */
+  onWeaponAspectCycled?: (aspect: WeaponAspect) => void;
   /** When true (dev), `T` near the talent pillar opens the talent modal without competing with `X` + ability pillar. */
   throneDevTalentShortcutEnabled?: boolean;
   /** True when the room is cleared and the combat pedestal is waiting to be interacted with (aura shown). */
@@ -1220,6 +1398,8 @@ interface CoopGameSceneProps {
   onCombatArenaPedestalInteract?: (rewardKind?: string | null) => void;
   /** Called when the player presses X near the sunken temple sentinel (room IV). */
   onSunkenSentinelInteract?: () => void;
+  /** Called when the player presses X near the Eternity's Palace Architect (room IV). */
+  onEternityPalaceArchitectInteract?: () => void;
   /** Merchant dash charge purchased this run — grants a 4th dash orbital. */
   extraDashChargePurchased?: boolean;
   /** Proximity hint above the HUD health bar ("Press 'x' to interact"). */
@@ -1246,6 +1426,21 @@ function isRuneAmuletItem(item: { type?: string; category?: string }) {
   return item.category !== 'boss_drop'
     && typeof item.type === 'string'
     && item.type.startsWith('AMULET_OF');
+}
+
+/** Skip auto-pickup when local inventory cannot usefully acquire this boss drop. */
+function canLocalPlayerAcquireBossDrop(
+  item: { type?: string; category?: string; rarity?: string },
+  inventory: Array<{ type: string; rarity?: string }>,
+): boolean {
+  if (item.category !== 'boss_drop' || !item.type) return true;
+  const existing = inventory.find((i) => i.type === item.type);
+  if (isUpgradeableBossRelic(item.type)) {
+    return resolveBossRelicPickup(existing?.rarity, item.rarity) !== 'discard';
+  }
+  if (isUniqueDreamLayerItem(item.type) && existing) return false;
+  if (existing) return false;
+  return true;
 }
 
 // Taunt Effect Indicator Component
@@ -1552,11 +1747,14 @@ export function CoopGameScene({
   onRequestThroneAbilityModal,
   onRequestThroneTalentModal,
   onThroneWeaponEquipped,
+  canCycleWeaponAspect = false,
+  onWeaponAspectCycled,
   throneDevTalentShortcutEnabled = false,
   pedestalBoonReady = false,
   portalsUnlocked = false,
   onCombatArenaPedestalInteract,
   onSunkenSentinelInteract,
+  onEternityPalaceArchitectInteract,
   extraDashChargePurchased = false,
   onInteractHintChange,
   onLocalPlayerDefeated,
@@ -1576,6 +1774,7 @@ export function CoopGameScene({
     updatePlayerPosition,
     updatePlayerWeapon,
     updatePlayerArchetype,
+    updatePlayerWeaponAspect,
     updatePlayerHealth,
     updatePlayerShield,
     updatePlayerEnergy,
@@ -1596,6 +1795,7 @@ export function CoopGameScene({
     damageMushroom,
     detonateWyvernConcentratedVenom,
     triggerTyrantsCloakStrike,
+    triggerDeathdealerStaggerProc,
     applyStatusEffect, // For applying status effects to enemies (freeze, slow, corrupted)
     updatePlayerEssence,
     updatePlayerFlow,
@@ -1603,6 +1803,7 @@ export function CoopGameScene({
     closeChat,
     setSelectedWeapons,
     setSelectedArchetype,
+    rememberWeaponAspect,
     setAbilityLoadout,
     pickupItem,
     pickupGoldDrop,
@@ -1623,6 +1824,7 @@ export function CoopGameScene({
     hideCoopPortalTransition,
     endCoopPortalTransition,
     claimDeepSanctumReward,
+    chooseEternityPalaceLoot,
   } = useMultiplayerActions();
 
   const {
@@ -1648,17 +1850,34 @@ export function CoopGameScene({
     coopMainArenaIntermissionSeq,
     coopIntroIntermissionSeq,
     coopSunkenIntermissionSeq,
+    coopEternityIntermissionSeq,
+    coopFaeRealmIntermissionSeq,
     coopIntroPortalOpen,
     coopIntroFountainPhase,
     coopIntroFountainUsed,
     coopIntroAllyChoiceMade,
+    coopFaeRealmPortalOpen,
     coopSunkenPortalOpen,
     coopSunkenFountainPhase,
     coopSunkenFountainUsed,
     coopSunkenLootClaimedPlayerIds,
     coopSunkenLootPhaseComplete,
+    coopEternityPortalOpen,
+    coopEternityFountainPhase,
+    coopEternityFountainUsed,
+    coopEternityLootOffer,
+    coopEternityLootClaimedPlayerIds,
+    coopEternityLootPhaseComplete,
+    coopPetCompanionUpgrade,
+    coopEternityCompleted,
+    coopEternityActive,
+    coopEternityRoomIndex,
+    coopFaeRealmRoomIndex,
+    coopSunkenRoomIndex,
     coopAllyOffer,
     coopAllyKind,
+    coopFaeBeastCompanionGranted,
+    coopFaeBeastCompanionKind,
     coopVoidPortalOffered,
     coopDeepSanctumLevel,
     deepSanctumRewardKind,
@@ -1677,6 +1896,8 @@ export function CoopGameScene({
     coopCurrentRoomKind,
     coopClearedRoomKind,
     selectedArchetype,
+    selectedWeaponAspect,
+    weaponAspectByWeapon,
     merchantInventory,
     merchantPurchaseState,
     dreamLayerInventory,
@@ -1716,6 +1937,10 @@ export function CoopGameScene({
   const inventorySnapshotRef = useRef(inventory);
   inventorySnapshotRef.current = inventory;
 
+  /** Persephone ownership for the local lethal-save hook (cleared immediately on consume). */
+  const hasPersephoneRef = useRef(false);
+  hasPersephoneRef.current = inventory.some((item) => item.type === PERSEPHONE);
+
   const talentLoadoutRef = useRef(talentLoadout);
   const lastRebukeTimeSecRef = useRef(0);
   const lastTyrantsCloakTimeSecRef = useRef(0);
@@ -1739,6 +1964,12 @@ export function CoopGameScene({
 
   const exodiaSetCount = useMemo(() => getExodiaSetCount(inventory), [inventory]);
   const exodiaSetBonuses = useMemo(() => getExodiaSetStatBonuses(exodiaSetCount), [exodiaSetCount]);
+  const hexmetalSetCount = useMemo(() => getHexmetalSetCount(inventory), [inventory]);
+  const archmageSetCount = useMemo(() => getArchmageSetCount(inventory), [inventory]);
+  const archmageSetBonuses = useMemo(
+    () => getArchmageSetStatBonuses(archmageSetCount),
+    [archmageSetCount],
+  );
   const ownedItemTypes = useMemo(() => inventoryToOwnedTypes(inventory), [inventory]);
 
   const dreamLayerCombatStats = useMemo(
@@ -1746,9 +1977,12 @@ export function CoopGameScene({
       strength: effectiveCombatStats.strength + exodiaSetBonuses.strength,
       stamina: effectiveCombatStats.stamina + exodiaSetBonuses.stamina,
       agility: effectiveCombatStats.agility,
-      intellect: effectiveCombatStats.intellect + exodiaSetBonuses.intellect,
+      intellect:
+        effectiveCombatStats.intellect +
+        exodiaSetBonuses.intellect +
+        archmageSetBonuses.intellect,
     }),
-    [effectiveCombatStats, exodiaSetBonuses],
+    [effectiveCombatStats, exodiaSetBonuses, archmageSetBonuses],
   );
 
   const lastKaiserProcSecRef = useRef(0);
@@ -1781,30 +2015,47 @@ export function CoopGameScene({
   const isCastleRoom =
     coopCurrentRoomKind === 'intro' || coopCurrentRoomKind === 'deep_sanctum';
   const isSunkenTemple = coopCurrentRoomKind === 'sunken_temple';
+  const isEternityPalace = coopCurrentRoomKind === 'eternity_palace';
+  const isFaeRealm = coopCurrentRoomKind === 'fae_realm';
   const isErebusGate = coopCurrentRoomKind === 'erebus_gate';
   const isIntroCastleRoom = coopCurrentRoomKind === 'intro';
   const hexArenaVariant =
-    coopCurrentRoomKind === 'merchant'
-      ? 'merchant' as const
-      : coopCurrentRoomKind === 'dream_layer'
-        ? 'dream_layer' as const
+    coopCurrentRoomKind === 'dream_layer'
+      ? 'dream_layer' as const
       : (coopCurrentRoomKind === 'eden' || coopCurrentRoomKind === 'false_eden')
         ? 'eden' as const
-        : 'stat' as const;
+        : coopCurrentRoomKind === 'merchant'
+          ? 'merchant' as const
+          : coopCurrentRoomKind === 'trial'
+            ? 'trial' as const
+            : 'stat' as const;
 
   const coopArenaClampBounds = useMemo(() => {
     if (inThroneRoom || inBossThroneArena) return COOP_THRONE_ROOM_RADIUS;
+    if (isFaeRealm) return FAE_REALM_HEX_RADIUS;
+    if (isEternityPalace) return ETERNITY_PALACE_HEX_RADIUS;
     if (isSunkenTemple) return PENTAGON_ARENA_RADIUS;
     if (isErebusGate) return CASTLE_ROOM_BOUNDS.halfX;
     if (isCastleRoom) return CASTLE_ROOM_BOUNDS;
     if (isHexCombatArena) return HEX_ARENA_RADIUS;
     return MAIN_ARENA_HEX_RADIUS;
-  }, [inThroneRoom, inBossThroneArena, isCastleRoom, isSunkenTemple, isErebusGate, isHexCombatArena]);
+  }, [inThroneRoom, inBossThroneArena, isCastleRoom, isFaeRealm, isEternityPalace, isSunkenTemple, isErebusGate, isHexCombatArena]);
 
   const dimThroneLikeLighting = inThroneRoom || inBossThroneArena;
 
+  const isColoredCoopRoom =
+    coopCurrentRoomKind === 'blue'
+    || coopCurrentRoomKind === 'green'
+    || coopCurrentRoomKind === 'red'
+    || coopCurrentRoomKind === 'purple';
   const mushroomsEnabled =
-    !inThroneRoom && !inBossThroneArena && !isCastleRoom && !isSunkenTemple && !isErebusGate;
+    !inThroneRoom
+    && !inBossThroneArena
+    && !isCastleRoom
+    && !isSunkenTemple
+    && !isEternityPalace
+    && !isErebusGate
+    && !isColoredCoopRoom;
 
   const effectiveMushroomHealth = useMemo(() => {
     if (mushroomState?.health?.length === MUSHROOM_COUNT) return mushroomState.health;
@@ -1920,6 +2171,25 @@ export function CoopGameScene({
   // Knight/Templar miss-sound scheduling: cancel timer when damage event confirms a hit
   const knightPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const templarPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const spectrePendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const deathKnightPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const shamanPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const serpentPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const tigerPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const wolfPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const bearPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const boneSpiderPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const skyrayPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const terrorhawkPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const wyvernPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const bossPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const nemesisPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const titanPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const stoneGiantPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const eternalOakPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const colossusPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  /** Viper shotId → targetPlayerId so miss text only shows for the targeted local player. */
+  const viperPendingShotTargetsRef = useRef(new Map<string, string>());
   /** Pending Viper line + arrow setTimeouts; cleared on socket effect cleanup. */
   const viperAttackScheduleTimeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   /** tentacle ground telegraph: per-enemy windup/impact timers */
@@ -2013,6 +2283,38 @@ export function CoopGameScene({
     playerEntityRef.current = playerEntity?.id ?? null;
   }, [playerEntity]);
 
+  // Install Persephone lethal-save hook on the local player's Health so every damage path can save.
+  useEffect(() => {
+    if (!playerEntity) return;
+    const health = playerEntity.getComponent?.(Health) as Health | undefined;
+    if (!health) return;
+
+    health.lethalSaveHook = () => {
+      if (!hasPersephoneRef.current) return false;
+      hasPersephoneRef.current = false;
+
+      // Health.takeDamage restores HP when we return true; sync + notify server after.
+      queueMicrotask(() => {
+        health.isDead = false;
+        updatePlayerHealth(health.currentHealth, health.maxHealth);
+        if (socket && currentRoomId) {
+          socket.emit('persephone-consumed', {
+            roomId: currentRoomId,
+            newHealth: health.currentHealth,
+            maxHealth: health.maxHealth,
+          });
+        }
+      });
+      return true;
+    };
+
+    return () => {
+      if (health.lethalSaveHook) {
+        health.lethalSaveHook = null;
+      }
+    };
+  }, [playerEntity, socket, currentRoomId, updatePlayerHealth]);
+
   /** Warlock orb wind-up duration — keep aligned with WarlockRenderer LAUNCH_ANIMATION_DURATION & warlock_launch.glb */
   const WARLOCK_ORB_CHARGE_MS = 1400;
 
@@ -2030,6 +2332,13 @@ export function CoopGameScene({
       variant: 'titans-grip',
     });
   }, []);
+  const spawnDeathdealerStaggerLightning = useCallback((position: Vector3) => {
+    (window as any).audioSystem?.playLightningBoltSound(position);
+    lightningBurstLayerRef.current?.addStaggerProcEffect({
+      id: `deathdealer-stagger-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      position: position.clone(),
+    });
+  }, []);
   const groundHazardLayerRef = useRef<CoopGroundHazardLayerHandle>(null);
   const summonRitualLayerRef = useRef<CoopSummonRitualLayerHandle>(null);
   const allyCombatLayerRef = useRef<CoopAllyCombatLayerHandle>(null);
@@ -2039,7 +2348,7 @@ export function CoopGameScene({
   const greaterHealImpactTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const environmentVfxLayerRef = useRef<CoopEnvironmentVfxLayerHandle>(null);
   const tentacleSpineLayerRef = useRef<CoopTentacleSpineLayerHandle>(null);
-  const tentacleSpineFxRef = useRef<Map<string, { windSeq: number; slamSeq: number; dir: { x: number; z: number } }>>(new Map());
+  const tentacleSpineFxRef = useRef<Map<string, { windSeq: number; slamSeq: number; dir: { x: number; z: number }; windupAt?: number; slamAt?: number }>>(new Map());
 
   const clearTentacleSpineGroundTelegraph = useCallback((enemyId: string) => {
     const p = tentacleSpinePendingByEnemyRef.current.get(enemyId);
@@ -2100,6 +2409,10 @@ export function CoopGameScene({
   onRequestThroneTalentModalRef.current = onRequestThroneTalentModal;
   const onThroneWeaponEquippedRef = useRef(onThroneWeaponEquipped);
   onThroneWeaponEquippedRef.current = onThroneWeaponEquipped;
+  const canCycleWeaponAspectRef = useRef(canCycleWeaponAspect);
+  canCycleWeaponAspectRef.current = canCycleWeaponAspect;
+  const onWeaponAspectCycledRef = useRef(onWeaponAspectCycled);
+  onWeaponAspectCycledRef.current = onWeaponAspectCycled;
   const throneInteractKeyPrevRef = useRef(false);
   const throneTalentInteractKeyPrevRef = useRef(false);
   const throneDevTalentShortcutEnabledRef = useRef(false);
@@ -2153,6 +2466,10 @@ export function CoopGameScene({
   selectedWeaponsRef.current = selectedWeapons ?? initialWeaponsForEngineRef.current;
   const selectedArchetypeRef = useRef<Archetype>(selectedArchetype ?? ARCHETYPE_NONE);
   selectedArchetypeRef.current = selectedArchetype ?? ARCHETYPE_NONE;
+  const selectedWeaponAspectRef = useRef<WeaponAspect>(
+    selectedWeaponAspect ?? ASPECT_LEGIONNAIRE,
+  );
+  selectedWeaponAspectRef.current = selectedWeaponAspect ?? ASPECT_LEGIONNAIRE;
 
   const coopIntroPortalOpenRef = useRef(coopIntroPortalOpen);
   coopIntroPortalOpenRef.current = coopIntroPortalOpen;
@@ -2168,6 +2485,8 @@ export function CoopGameScene({
   coopFalseEdenClearedRef.current = coopFalseEdenCleared;
   const coopIntroAllyChoiceMadeRef = useRef(coopIntroAllyChoiceMade);
   coopIntroAllyChoiceMadeRef.current = coopIntroAllyChoiceMade;
+  const coopFaeRealmPortalOpenRef = useRef(coopFaeRealmPortalOpen);
+  coopFaeRealmPortalOpenRef.current = coopFaeRealmPortalOpen;
   const coopSunkenPortalOpenRef = useRef(coopSunkenPortalOpen);
   coopSunkenPortalOpenRef.current = coopSunkenPortalOpen;
   const coopSunkenFountainPhaseRef = useRef(coopSunkenFountainPhase);
@@ -2178,6 +2497,18 @@ export function CoopGameScene({
   coopSunkenLootPhaseCompleteRef.current = coopSunkenLootPhaseComplete;
   const coopSunkenLootClaimedPlayerIdsRef = useRef(coopSunkenLootClaimedPlayerIds);
   coopSunkenLootClaimedPlayerIdsRef.current = coopSunkenLootClaimedPlayerIds;
+  const coopEternityPortalOpenRef = useRef(coopEternityPortalOpen);
+  coopEternityPortalOpenRef.current = coopEternityPortalOpen;
+  const coopEternityFountainPhaseRef = useRef(coopEternityFountainPhase);
+  coopEternityFountainPhaseRef.current = coopEternityFountainPhase;
+  const coopEternityFountainUsedRef = useRef(coopEternityFountainUsed);
+  coopEternityFountainUsedRef.current = coopEternityFountainUsed;
+  const coopEternityLootPhaseCompleteRef = useRef(coopEternityLootPhaseComplete);
+  coopEternityLootPhaseCompleteRef.current = coopEternityLootPhaseComplete;
+  const coopPetCompanionUpgradeRef = useRef(coopPetCompanionUpgrade);
+  coopPetCompanionUpgradeRef.current = coopPetCompanionUpgrade;
+  const coopEternityLootClaimedPlayerIdsRef = useRef(coopEternityLootClaimedPlayerIds);
+  coopEternityLootClaimedPlayerIdsRef.current = coopEternityLootClaimedPlayerIds;
   const coopVoidPortalOfferedRef = useRef(coopVoidPortalOffered);
   coopVoidPortalOfferedRef.current = coopVoidPortalOffered;
   const deepSanctumRewardKindRef = useRef(deepSanctumRewardKind);
@@ -2192,6 +2523,9 @@ export function CoopGameScene({
   const sunkenSentinelEncounterRef = useRef<SunkenSentinelEncounterRef | null>(null);
   const onSunkenSentinelInteractRef = useRef(onSunkenSentinelInteract);
   onSunkenSentinelInteractRef.current = onSunkenSentinelInteract;
+  const eternityPalaceEncounterRef = useRef<EternityPalaceEncounterRef | null>(null);
+  const onEternityPalaceArchitectInteractRef = useRef(onEternityPalaceArchitectInteract);
+  onEternityPalaceArchitectInteractRef.current = onEternityPalaceArchitectInteract;
   const throneVoidPortalOpenAtRef = useRef<number | null>(null);
   const [throneVoidPortalOpenProgress, setThroneVoidPortalOpenProgress] = useState(0);
   const [throneVoidPortalOpen, setThroneVoidPortalOpen] = useState(false);
@@ -2226,6 +2560,13 @@ export function CoopGameScene({
   useEffect(() => {
     if (inThroneRoom) {
       portalUseSentRef.current = false;
+      void import('@/components/environment/ThroneStatueDecor').then((mod) => {
+        mod.preloadThroneStatueDecor();
+      });
+      // Necromancer spirits may spawn on dummy hits — warm Summon/Attack clips early.
+      void import('./enemies/VengefulSpiritModel').then((mod) => {
+        mod.preloadVengefulSpiritModels();
+      });
     }
   }, [inThroneRoom]);
 
@@ -2276,7 +2617,7 @@ export function CoopGameScene({
 
   useEffect(() => {
     portalUseSentRef.current = false;
-  }, [coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopIntroIntermissionSeq, coopSunkenIntermissionSeq, coopDeepSanctumIntermissionSeq, coopEdenIntermissionSeq, coopIntroPortalOpen, coopIntroFountainPhase, coopIntroFountainUsed, coopIntroAllyChoiceMade, coopSunkenPortalOpen, coopSunkenFountainPhase, coopSunkenFountainUsed, coopSunkenLootPhaseComplete]);
+  }, [coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopIntroIntermissionSeq, coopSunkenIntermissionSeq, coopEternityIntermissionSeq, coopFaeRealmIntermissionSeq, coopDeepSanctumIntermissionSeq, coopEdenIntermissionSeq, coopIntroPortalOpen, coopIntroFountainPhase, coopIntroFountainUsed, coopIntroAllyChoiceMade, coopFaeRealmPortalOpen, coopSunkenPortalOpen, coopSunkenFountainPhase, coopSunkenFountainUsed, coopSunkenLootPhaseComplete, coopEternityPortalOpen, coopEternityFountainPhase, coopEternityFountainUsed, coopEternityLootPhaseComplete]);
 
   // Layout: apply before paint so physics boundary mode matches the active arena shell.
   useLayoutEffect(() => {
@@ -2286,6 +2627,10 @@ export function CoopGameScene({
     const r =
       inThroneRoom || inBossThroneArena
         ? COOP_THRONE_ROOM_RADIUS + 2
+        : isFaeRealm
+          ? FAE_REALM_HEX_RADIUS
+        : isEternityPalace
+          ? ETERNITY_PALACE_HEX_RADIUS
         : isSunkenTemple
           ? PENTAGON_ARENA_RADIUS
         : isErebusGate
@@ -2295,12 +2640,12 @@ export function CoopGameScene({
           : isHexCombatArena
             ? HEX_ARENA_RADIUS
             : MAIN_ARENA_HEX_RADIUS;
-    const mainCoopRoom = !inThroneRoom && !inBossThroneArena && !isHexCombatArena && !isCastleRoom && !isSunkenTemple && !isErebusGate;
-    const boundaryMode = isCastleRoom || isSunkenTemple || isErebusGate ? 'circle' : isHexCombatArena ? 'hex' : 'circle';
+    const mainCoopRoom = !inThroneRoom && !inBossThroneArena && !isHexCombatArena && !isCastleRoom && !isSunkenTemple && !isErebusGate && !isFaeRealm && !isEternityPalace;
+    const boundaryMode = isCastleRoom || isSunkenTemple || isErebusGate ? 'circle' : (isHexCombatArena || isFaeRealm || isEternityPalace) ? 'hex' : 'circle';
     phys?.setMapRadius(r);
     phys?.setArenaBoundaryMode?.(boundaryMode);
     const throneObstacles = inThroneRoom ? getThronePrepPhysicsObstacles() : null;
-    const castleWallsOn = false; // Main combat rooms use circular boundary projection; ECS wall boxes are projectile blockers.
+    const castleWallsOn = false; // Main combat rooms use circular boundary projection for players; projectiles pass through the arena edge.
     phys?.setCastleWallPhysicsEnabled(castleWallsOn);
     phys?.setArenaBoundaryMode?.(boundaryMode);
     phys?.setTreeCollisionEnabled?.(!mainCoopRoom);
@@ -2311,7 +2656,7 @@ export function CoopGameScene({
     controlSystemRef.current?.setArenaBoundaryMode?.(boundaryMode);
     controlSystemRef.current?.setThroneChargePillars(throneObstacles);
     controlSystemRef.current?.setChargeCornerMountains(null);
-  }, [inThroneRoom, inBossThroneArena, isHexCombatArena, isCastleRoom, isSunkenTemple, isErebusGate, gameStarted, engineReady]);
+  }, [inThroneRoom, inBossThroneArena, isHexCombatArena, isCastleRoom, isFaeRealm, isEternityPalace, isSunkenTemple, isErebusGate, gameStarted, engineReady]);
 
   const prevInThroneRef = useRef(inThroneRoom);
   // Place the local player at their server throne spawn ONCE per throne entry, then let the
@@ -2567,7 +2912,7 @@ export function CoopGameScene({
             health: p.health,
           }))),
       ...Array.from(enemies.values())
-        .filter((e) => !e.isDying && e.health > 0 && e.alliedUnit !== true && e.type !== 'allied-knight' && e.type !== 'allied-huntress' && e.type !== 'allied-phantom' && e.type !== 'allied-demon' && e.type !== 'allied-enchantress' && e.type !== 'allied-healer' && e.type !== 'player-zombie')
+        .filter((e) => !e.isDying && e.health > 0 && e.alliedUnit !== true && e.type !== 'allied-knight' && e.type !== 'allied-huntress' && e.type !== 'allied-phantom' && e.type !== 'allied-demon' && e.type !== 'allied-enchantress' && e.type !== 'allied-healer' && e.type !== 'allied-tiger' && e.type !== 'allied-wolf' && e.type !== 'allied-bear' && e.type !== 'allied-serpent' && e.type !== 'allied-spider' && e.type !== 'player-zombie' && e.type !== 'vengeful-spirit')
         .map((e) => {
           const live = enemyTransformsRef.current.get(e.id);
           const p = live?.position ?? e.position;
@@ -2583,7 +2928,7 @@ export function CoopGameScene({
 
   const getLiveCoopEnemyData = useCallback(() => {
     return Array.from(enemiesRef.current.values())
-      .filter((e) => !e.isDying && e.health > 0 && e.alliedUnit !== true && e.type !== 'allied-knight' && e.type !== 'allied-huntress' && e.type !== 'allied-phantom' && e.type !== 'allied-demon' && e.type !== 'allied-enchantress' && e.type !== 'allied-healer' && e.type !== 'player-zombie')
+      .filter((e) => !e.isDying && e.health > 0 && e.alliedUnit !== true && e.type !== 'allied-knight' && e.type !== 'allied-huntress' && e.type !== 'allied-phantom' && e.type !== 'allied-demon' && e.type !== 'allied-enchantress' && e.type !== 'allied-healer' && e.type !== 'allied-tiger' && e.type !== 'allied-wolf' && e.type !== 'allied-bear' && e.type !== 'allied-serpent' && e.type !== 'allied-spider' && e.type !== 'player-zombie' && e.type !== 'vengeful-spirit')
       .map((e) => {
         const live = enemyTransformsRef.current.get(e.id);
         const p = live?.position ?? e.position;
@@ -2592,6 +2937,8 @@ export function CoopGameScene({
           position: new Vector3(p.x, p.y, p.z),
           health: e.health,
           maxHealth: e.maxHealth,
+          type: e.type,
+          isBoss1EliteKnight: e.isBoss1EliteKnight === true,
         };
       });
   }, [enemiesRef, enemyTransformsRef]);
@@ -2856,6 +3203,41 @@ export function CoopGameScene({
   const nextWhirlwindRadialWaveEffectId = useRef(0);
 
   const nextDeathGraspEffectId = useRef(0);
+  /** Active Death Grasp enemy pulls: client lerp while return VFX plays. */
+  const deathGraspPullsRef = useRef<Map<string, {
+    from: { x: number; y: number; z: number };
+    to: { x: number; y: number; z: number };
+    startTime: number;
+    durationMs: number;
+  }>>(new Map());
+
+  const isDeathGraspPullImmuneEnemy = useCallback((enemyId: string) => {
+    const enemy = enemiesRef.current.get(enemyId);
+    return isDeathGraspPullImmune(enemy);
+  }, [enemiesRef]);
+
+  const getDeathGraspPulledEnemyPosition = useCallback((enemyId: string): Vector3 | null => {
+    const pull = deathGraspPullsRef.current.get(enemyId);
+    if (!pull) return null;
+    const t = Math.min(1, (Date.now() - pull.startTime) / pull.durationMs);
+    return new Vector3(
+      pull.from.x + (pull.to.x - pull.from.x) * t,
+      pull.from.y + (pull.to.y - pull.from.y) * t,
+      pull.from.z + (pull.to.z - pull.from.z) * t,
+    );
+  }, []);
+
+  const onDeathGraspEnemyPullFrame = useCallback((enemyId: string, position: Vector3) => {
+    const existing = enemyTransformsRef.current.get(enemyId);
+    enemyTransformsRef.current.set(enemyId, {
+      position: { x: position.x, y: position.y, z: position.z },
+      rotation: existing?.rotation ?? 0,
+    });
+    const enemy = enemiesRef.current.get(enemyId);
+    if (enemy) {
+      enemy.position = { x: position.x, y: position.y, z: position.z };
+    }
+  }, [enemiesRef, enemyTransformsRef]);
 
 
   // PVP Summon Totem Effect Management (ref-only — never rendered)
@@ -2935,6 +3317,26 @@ export function CoopGameScene({
   // Track active debuff indicators to prevent visual overcrowding
   // Key format: "playerId:debuffType" -> debuff effect id
   const activeDebuffIndicators = useRef<Map<string, number>>(new Map());
+  const judgmentCorruptionStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const valkyrieJudgmentFallTimeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  const stopJudgmentCorruptionSound = useCallback(() => {
+    if (judgmentCorruptionStopTimerRef.current) {
+      clearTimeout(judgmentCorruptionStopTimerRef.current);
+      judgmentCorruptionStopTimerRef.current = null;
+    }
+    window.audioSystem?.setJudgmentCorruptionPlaying?.(false);
+  }, []);
+
+  const scheduleJudgmentCorruptionStop = useCallback((durationMs: number) => {
+    if (judgmentCorruptionStopTimerRef.current) {
+      clearTimeout(judgmentCorruptionStopTimerRef.current);
+    }
+    judgmentCorruptionStopTimerRef.current = setTimeout(() => {
+      judgmentCorruptionStopTimerRef.current = null;
+      window.audioSystem?.setJudgmentCorruptionPlaying?.(false);
+    }, durationMs);
+  }, []);
 
   // PVP Frost Nova Effect Management (ref-only — FrostNovaManager renders locally)
   const pvpFrostNovaEffectsRef = useRef<Array<{
@@ -2987,13 +3389,17 @@ export function CoopGameScene({
       if (!event.wasKilled) return;
       const enemy = enemiesRef.current.get(event.enemyId);
       if (!enemy) return;
-      const isBoss = enemy.type === 'boss' || enemy.type === 'boss2' || enemy.type === 'boss3';
-      const isTitan = enemy.type === 'titan';
-      if (!isBoss && !isTitan) return;
+      const isBoss = enemy.type === 'boss' || enemy.type === 'boss2' || enemy.type === 'boss3' || enemy.type === 'destiny';
+      const isTitanScale =
+        enemy.type === 'titan'
+        || enemy.type === 'stone-giant'
+        || enemy.type === 'eternal-oak'
+        || enemy.type === 'colossus';
+      if (!isBoss && !isTitanScale) return;
       explosionBurstLayerRef.current?.addDeathFlashExplosion({
         id: `death-flash-${event.enemyId}-${event.timestamp}`,
         position: { x: enemy.position.x, y: enemy.position.y, z: enemy.position.z },
-        scale: isTitan ? 'titan' : 'boss',
+        scale: isTitanScale ? 'titan' : 'boss',
       });
     });
   }, [subscribeEnemyDamage]);
@@ -3018,9 +3424,17 @@ export function CoopGameScene({
 
   // Function to create venom effect on PVP players
   // Function to create debuff effect on PVP players
-  const createPvpDebuffEffect = useCallback((playerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'entangled', position: Vector3, duration: number = 5000) => {
+  const createPvpDebuffEffect = useCallback((
+    playerId: string,
+    debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted' | 'entangled',
+    position: Vector3,
+    duration: number = 5000,
+    options?: { source?: string },
+  ) => {
     // Debug: Check if this is the local player
     const isLocalPlayer = playerId === socket?.id;
+    const isJudgmentCorruption =
+      isLocalPlayer && debuffType === 'corrupted' && options?.source === 'valkyrie_judgment';
     
     // Check if there's already an active debuff indicator for this player and debuff type
     const indicatorKey = `${playerId}:${debuffType}`;
@@ -3061,6 +3475,10 @@ export function CoopGameScene({
             }
           }
         }
+        if (isJudgmentCorruption) {
+          window.audioSystem?.setJudgmentCorruptionPlaying?.(true);
+          scheduleJudgmentCorruptionStop(extendedDuration);
+        }
       }
       
       return; // Exit early, don't create a new indicator
@@ -3077,6 +3495,10 @@ export function CoopGameScene({
 
     if (debuffType === 'frozen') {
       (window as any).audioSystem?.playFrozenStatusSound?.(position);
+    }
+    if (isJudgmentCorruption) {
+      window.audioSystem?.setJudgmentCorruptionPlaying?.(true);
+      scheduleJudgmentCorruptionStop(duration);
     }
     
     // Track this new debuff indicator
@@ -3113,7 +3535,7 @@ export function CoopGameScene({
         effect => effect.id !== debuffEffect.id,
       );
     }, debuffEffect.duration);
-  }, [socket?.id, playerEntity, applyLocalPlayerStun]);
+  }, [socket?.id, playerEntity, applyLocalPlayerStun, scheduleJudgmentCorruptionStop]);
 
   // Function to create frozen effect on PVP players (called by PVPFrostNovaManager)
   const createPvpFrozenEffect = useCallback((playerId: string, position: Vector3) => {
@@ -3163,6 +3585,7 @@ export function CoopGameScene({
       staggeringSmite?: boolean;
       infernalSmite?: boolean;
       vengeanceSmite?: boolean;
+      weaponAspect?: WeaponAspect;
     },
   ) => {
     const sequenceDelaySec = opts?.sequenceDelaySec ?? 0;
@@ -3181,6 +3604,7 @@ export function CoopGameScene({
       staggeringSmite: !!opts?.staggeringSmite,
       infernalSmite: !!opts?.infernalSmite,
       vengeanceSmite: !!opts?.vengeanceSmite,
+      ...(opts?.weaponAspect ? { weaponAspect: opts.weaponAspect } : {}),
     };
 
     pvpAbilityLayerRef.current?.addSmite(smiteEffect);
@@ -3241,17 +3665,41 @@ export function CoopGameScene({
     enemyId: string,
     hitPosition: Vector3,
     attackerId: string,
+    castPosition: Vector3,
+    direction: Vector3,
   ) => {
-    if (socket && currentRoomId) {
-      socket.emit('enemy_damaged', {
-        roomId: currentRoomId,
-        enemyId,
-        damage: 80,
-        attackerId,
-        position: { x: hitPosition.x, y: hitPosition.y, z: hitPosition.z },
+    // Only the casting client reports the hit for validation
+    if (!socket || !currentRoomId || attackerId !== socket.id) return;
+
+    const enemy = enemiesRef.current.get(enemyId);
+    if (enemy && !isDeathGraspPullImmune(enemy)) {
+      const pdx = hitPosition.x - castPosition.x;
+      const pdz = hitPosition.z - castPosition.z;
+      const pLen = Math.hypot(pdx, pdz) || 1;
+      const to = {
+        x: castPosition.x + (pdx / pLen) * DEATH_GRASP_STANDOFF,
+        y: hitPosition.y,
+        z: castPosition.z + (pdz / pLen) * DEATH_GRASP_STANDOFF,
+      };
+      deathGraspPullsRef.current.set(enemyId, {
+        from: { x: hitPosition.x, y: hitPosition.y, z: hitPosition.z },
+        to,
+        startTime: Date.now(),
+        durationMs: DEATH_GRASP_PULL_DURATION_MS,
       });
+      setTimeout(() => {
+        deathGraspPullsRef.current.delete(enemyId);
+      }, DEATH_GRASP_PULL_DURATION_MS + 100);
     }
-  }, [socket, currentRoomId]);
+
+    socket.emit('player-deathgrasp-hit', {
+      roomId: currentRoomId,
+      enemyId,
+      castPosition: { x: castPosition.x, y: castPosition.y, z: castPosition.z },
+      direction: { x: direction.x, y: direction.y, z: direction.z },
+      hitPosition: { x: hitPosition.x, y: hitPosition.y, z: hitPosition.z },
+    });
+  }, [socket, currentRoomId, enemiesRef]);
   const getVengeanceSmiteDamageMultiplier = useCallback(
     () => controlSystemRef.current?.getVengeanceSmiteDamageMultiplier() ?? 1,
     [],
@@ -3499,14 +3947,17 @@ export function CoopGameScene({
 
     const applyEnemyStatus = (entity: Entity, enemy: Enemy, position: Vector3, effectType: 'ignite' | 'freeze', durationMs: number) => {
       if (effectType === 'ignite') {
+        // Local VFX only — server applies Ignite from infernalDashRoom hitMeta on enemy-damage.
+        // Emitting apply-status-effect here raced ahead of that path and suppressed Pyromania
+        // (hadActiveIgnite=true by the time the attributed ignite arrived).
         enemy.applyIgnite(durationMs, nowSec, entity.id.toString(), position.clone());
-      } else {
-        const sk = entity.userData?.coopServerEnemyType as string | undefined;
-        if (isImmuneToPlayerStunAndFreeze(sk)) return;
-        const cappedMs = capFreezeMsForEnemy(enemy, durationMs, sk);
-        enemy.freeze(cappedMs / 1000, nowSec, sk);
-        addGlobalFrozenEnemy(entity.id.toString(), position.clone(), cappedMs);
+        return;
       }
+      const sk = entity.userData?.coopServerEnemyType as string | undefined;
+      if (isImmuneToPlayerStunAndFreeze(sk)) return;
+      const cappedMs = capFreezeMsForEnemy(enemy, durationMs, sk);
+      enemy.freeze(cappedMs / 1000, nowSec, sk);
+      addGlobalFrozenEnemy(entity.id.toString(), position.clone(), cappedMs);
       const serverEnemyId = entity.userData?.serverEnemyId as string | undefined;
       if (serverEnemyId) {
         applyStatusEffect(serverEnemyId, effectType, durationMs);
@@ -3925,6 +4376,7 @@ export function CoopGameScene({
     if (deadPlayerId === socket?.id && controlSystemRef.current) {
       console.log(`💀 Setting player dead state in ControlSystem for ${deadPlayerId}`);
       controlSystemRef.current.setPlayerDead(true);
+      stopJudgmentCorruptionSound();
 
       // Play death sound effect
       if (engineRef.current) {
@@ -3972,7 +4424,7 @@ export function CoopGameScene({
     // Note: Experience rewards for kills are handled in handlePlayerDamaged
     // This function only handles the death of the local player
 
-  }, [socket, players, playerEntityRef, engineRef, controlSystemRef, cameraSystemRef, broadcastPlayerDeathEffect, handlePlayerRespawn, onLocalPlayerDefeated]);
+  }, [socket, players, playerEntityRef, engineRef, controlSystemRef, cameraSystemRef, broadcastPlayerDeathEffect, handlePlayerRespawn, onLocalPlayerDefeated, stopJudgmentCorruptionSound]);
 
 
   // Function to handle wave completion (legacy multiplayer mode - wave experience removed)
@@ -4131,15 +4583,54 @@ export function CoopGameScene({
     setJaguarEmeraldOwnedGlobal(hasOwnedItem(ownedItemTypes, JAGUAR_EMERALD));
   }, [ownedItemTypes]);
 
+  // Hexmetal Cloak / Leggings / 2pc walk — sync onto local player Health + Movement
   useEffect(() => {
-    if (!extraDashChargePurchased || !engineReady || playerEntityRef.current === null) return;
+    if (!engineReady || playerEntityRef.current === null) return;
+    const world = engineRef.current?.getWorld();
+    const ent = world?.getEntity(playerEntityRef.current);
+    if (!ent) return;
+    const health = ent.getComponent(Health);
+    const movement = ent.getComponent(Movement);
+    if (health) {
+      health.incomingDamageCap = hasOwnedItem(ownedItemTypes, HEXMETAL_CLOAK)
+        ? HEXMETAL_DAMAGE_CAP
+        : null;
+    }
+    if (movement) {
+      movement.attackSlowMultiplier = hasOwnedItem(ownedItemTypes, HEXMETAL_LEGGINGS)
+        ? HEXMETAL_ATTACK_SLOW_MULT
+        : 0.5;
+      movement.hexmetalWalkSpeedActive = hexmetalSetCount >= 2;
+    }
+  }, [ownedItemTypes, hexmetalSetCount, engineReady]);
+
+  const applyPlayerMaxDashCharges = useCallback(() => {
+    if (!engineReady || playerEntityRef.current === null) return;
     const world = engineRef.current?.getWorld();
     const ent = world?.getEntity(playerEntityRef.current);
     const movement = ent?.getComponent(Movement);
-    if (movement && movement.maxDashCharges < 4) {
-      movement.setMaxDashCharges(4);
+    if (!movement) return;
+    const weapon =
+      controlSystemRef.current?.getCurrentWeapon?.() ??
+      selectedWeapons?.primary ??
+      WeaponType.NONE;
+    const aspect = selectedWeaponAspectRef.current;
+    const hexmetalBonus =
+      hexmetalSetCount >= 3 ? HEXMETAL_SET_3_BONUS_DASH_CHARGES : 0;
+    const target = resolveMaxDashCharges(
+      weapon,
+      aspect,
+      extraDashChargePurchased,
+      hexmetalBonus,
+    );
+    if (movement.maxDashCharges !== target) {
+      movement.setMaxDashCharges(target);
     }
-  }, [extraDashChargePurchased, engineReady]);
+  }, [engineReady, extraDashChargePurchased, selectedWeapons?.primary, hexmetalSetCount]);
+
+  useEffect(() => {
+    applyPlayerMaxDashCharges();
+  }, [applyPlayerMaxDashCharges, selectedWeaponAspect, engineReady]);
 
   useEffect(() => {
     if (!engineReady || playerEntityRef.current === null) return;
@@ -4249,17 +4740,25 @@ export function CoopGameScene({
     position,
     shieldOnly = false,
     fatal = false,
+    weightClass,
   }: {
     damage: number;
     damageType?: string;
     position?: Vector3;
     shieldOnly?: boolean;
     fatal?: boolean;
+    weightClass?: string;
   }) => {
     const intensity = Math.min(1, Math.max(0.18, damage / 85));
     const tone: PlayerDamageFeedbackTone = fatal ? 'fatal' : shieldOnly ? 'shield' : 'health';
-    const shakeIntensity = shieldOnly ? intensity * 0.11 : 0.08 + intensity * 0.22;
-    const shakeDuration = fatal ? 0.28 : Math.min(0.26, 0.11 + intensity * 0.13);
+    const wc = normalizeMeleeWeightClass(weightClass);
+    const weightShake = meleeShakeForWeightClass(wc, intensity);
+    const shakeIntensity = shieldOnly
+      ? intensity * 0.11
+      : 0.08 + weightShake.intensity * 0.22;
+    const shakeDuration = fatal
+      ? 0.28
+      : Math.min(0.32, weightShake.duration + intensity * 0.08);
 
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent(EREBUS_PLAYER_DAMAGE_FEEDBACK_EVENT, {
@@ -4444,7 +4943,7 @@ export function CoopGameScene({
     if (!health || health.isDead) return;
     if (health.currentHealth <= BLOOD_ORBS_DASH_HP_COST) return;
 
-    const damageApplied = health.takeDamage(BLOOD_ORBS_DASH_HP_COST, Date.now() / 1000, ent, false);
+    const damageApplied = health.takeDamage(BLOOD_ORBS_DASH_HP_COST, Date.now() / 1000, ent, false, true);
     if (!damageApplied) return;
 
     const position = transform
@@ -4755,6 +5254,9 @@ export function CoopGameScene({
     shieldBefore,
     position,
     attackerServerEnemyId,
+    weightClass,
+    hitStopMs,
+    impactDirection,
   }: {
     damage: number;
     damageType?: string;
@@ -4765,6 +5267,9 @@ export function CoopGameScene({
     shieldBefore?: number;
     position?: Vector3;
     attackerServerEnemyId?: string;
+    weightClass?: string;
+    hitStopMs?: number;
+    impactDirection?: { x?: number; y?: number; z?: number };
   }) => {
     if (!damageApplied) return;
 
@@ -4784,7 +5289,30 @@ export function CoopGameScene({
       position,
       shieldOnly,
       fatal: health.isDead,
+      weightClass,
     });
+
+    dispatchMeleeHitStop(attackerServerEnemyId, hitStopMs);
+
+    // Subtle contact-point gash on the side the blow came from
+    if (position && impactDirection) {
+      const dir = meleeImpactDirection({ impactDirection });
+      const wc = normalizeMeleeWeightClass(weightClass);
+      combatFeedbackLayerRef.current?.addImpacts?.([
+        {
+          id: `melee-gash-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          type: 'melee-contact-gash',
+          position: position.clone(),
+          direction: dir,
+          weightClass: wc,
+          timestamp: Date.now(),
+        },
+      ]);
+      // Hit reactions should appear this frame — bypass the 100ms mount throttle.
+      if (combatFeedbackLayerRef.current?.flushPendingImpacts?.()) {
+        combatFeedbackLayerRef.current.mountImpactsNow?.();
+      }
+    }
 
     tryRebukeOnDamageTaken(attackerServerEnemyId, damageApplied);
     tryHatemailVestOnDamageTaken(attackerServerEnemyId, damageApplied, damage);
@@ -4798,6 +5326,20 @@ export function CoopGameScene({
     const t = playerEntity.getComponent(Transform);
     return t ? t.position.clone() : null;
   }, [playerEntity]);
+
+  /** Floating "MISS" above the local player when an enemy swing/shot fails to connect. */
+  const showLocalPlayerMissNumber = useCallback(() => {
+    const id = playerEntityRef.current;
+    if (id == null || !engineRef.current) return;
+    const entity = engineRef.current.getWorld().getEntity(id);
+    if (!entity) return;
+    const transform = entity.getComponent(Transform);
+    const damageNumberManager = engineRef.current.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+    if (!transform || !damageNumberManager?.addDamageNumber) return;
+    const pos = transform.position.clone();
+    pos.y -= 0.5;
+    showIncomingAttackMissNumber(damageNumberManager, pos);
+  }, []);
 
   const spawnDreamShardFromDeath = useCallback((
     deathPos: { x: number; y: number; z: number },
@@ -4887,10 +5429,20 @@ export function CoopGameScene({
     (window as any).dreamLayerColdGraceShatter = (serverEnemyId: string) => {
       applyStatusEffect(serverEnemyId, 'freeze', 0);
     };
+    (window as any).archmageFlamePillarVfx = (position: Vector3) => {
+      if (!position) return;
+      const strikePos = position.clone();
+      (window as any).audioSystem?.playWarlockImmolateSound?.(strikePos);
+      bossTelegraphLayerRef.current?.addWarlockFlameStrike({
+        id: `archmage-flame-pillar-local-${nextRoomBoomEffectId.current++}`,
+        position: strikePos,
+      });
+    };
 
     return () => {
       delete (window as any).dreamLayerKaiserOnCrit;
       delete (window as any).dreamLayerColdGraceShatter;
+      delete (window as any).archmageFlamePillarVfx;
     };
   }, [applyStatusEffect, damageEnemy, ownedItemTypes, socket?.id]);
 
@@ -5101,6 +5653,9 @@ export function CoopGameScene({
       maxRange?: number;
       endPosition?: { x: number; y: number; z: number };
     }) => {
+      if (data.shotId && data.targetPlayerId) {
+        viperPendingShotTargetsRef.current.set(data.shotId, data.targetPlayerId);
+      }
       const start = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
       const staleTarget = new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z);
       const range = data.maxRange ?? VIPER_ARROW_MAX_RANGE;
@@ -5159,10 +5714,19 @@ export function CoopGameScene({
       const soundPosition = data.position
         ? new Vector3(data.position.x, data.position.y, data.position.z)
         : new Vector3(0, 0, 0);
+      const targetedPlayerId = data.shotId
+        ? viperPendingShotTargetsRef.current.get(data.shotId)
+        : undefined;
+      if (data.shotId) {
+        viperPendingShotTargetsRef.current.delete(data.shotId);
+      }
       if (data.hit) {
         (window as any).audioSystem?.playViperImpactSound?.(soundPosition);
       } else {
         (window as any).audioSystem?.playViperMissSound?.(soundPosition);
+        if (targetedPlayerId && targetedPlayerId === socket?.id) {
+          showLocalPlayerMissNumber();
+        }
       }
     };
 
@@ -5172,10 +5736,55 @@ export function CoopGameScene({
     return () => {
       viperAttackScheduleTimeoutsRef.current.forEach(t => { clearTimeout(t); });
       viperAttackScheduleTimeoutsRef.current = [];
+      viperPendingShotTargetsRef.current.clear();
       socket.off('viper-attack-telegraph', handleViperAttackTelegraph);
       socket.off('viper-arrow-outcome', handleViperArrowOutcome);
     };
-  }, [socket]);
+  }, [socket, showLocalPlayerMissNumber]);
+
+  // Pet companion upgrades: Tiger Evasion chance provider + Persistence Hunter walk buff.
+  useEffect(() => {
+    const isNearFaeBeast = (range: number): boolean => {
+      const localId = socket?.id;
+      if (!localId || playerEntityRef.current == null || !engineRef.current) return false;
+      const entity = engineRef.current.getWorld().getEntity(playerEntityRef.current);
+      const transform = entity?.getComponent(Transform);
+      if (!transform) return false;
+      const beast = enemiesRef.current.get(resolveFaeBeastCompanionId(localId));
+      if (!beast || beast.isDying || (beast.health ?? 0) <= 0) return false;
+      const dx = transform.position.x - (beast.position?.x ?? 0);
+      const dz = transform.position.z - (beast.position?.z ?? 0);
+      return dx * dx + dz * dz <= range * range;
+    };
+
+    setPetEvasionChanceProvider(() => {
+      if (coopPetCompanionUpgradeRef.current !== 'tiger_evasion') return 0;
+      return isNearFaeBeast(PET_UPGRADE_EVASION_RANGE) ? PET_UPGRADE_EVASION_CHANCE : 0;
+    });
+
+    const tickId = window.setInterval(() => {
+      if (playerEntityRef.current == null || !engineRef.current) return;
+      const entity = engineRef.current.getWorld().getEntity(playerEntityRef.current);
+      const movement = entity?.getComponent(Movement);
+      if (!movement) return;
+      const active =
+        coopPetCompanionUpgradeRef.current === 'wolf_persistence_hunter'
+        && isNearFaeBeast(PET_UPGRADE_PERSISTENCE_HUNTER_RANGE);
+      if (movement.persistenceHunterActive !== active) {
+        movement.persistenceHunterActive = active;
+      }
+    }, 100);
+
+    return () => {
+      setPetEvasionChanceProvider(null);
+      window.clearInterval(tickId);
+      if (playerEntityRef.current != null && engineRef.current) {
+        const entity = engineRef.current.getWorld().getEntity(playerEntityRef.current);
+        const movement = entity?.getComponent(Movement);
+        if (movement) movement.persistenceHunterActive = false;
+      }
+    };
+  }, [socket?.id, enemiesRef]);
 
   // Set up PVP event listeners for player actions and damage
   useEffect(() => {
@@ -5190,8 +5799,11 @@ export function CoopGameScene({
     const unregisterEnemyTelegraphSounds = registerEnemyAttackTelegraphSounds(socket, {
       getEnemyPosition: (enemyId) => enemiesRef.current.get(enemyId)?.position,
     });
+    const unregisterBeastAudioSounds = registerBeastAudioSounds(socket, {
+      getEnemyPosition: (enemyId) => enemiesRef.current.get(enemyId)?.position,
+    });
     const unregisterKnightAnimationListeners = registerKnightAnimationSocketListeners(socket);
-    const unregisterSpectreAnimationListeners = registerSpectreAnimationSocketListeners(socket);
+    const unregisterAssassinAnimationListeners = registerAssassinAnimationSocketListeners(socket);
     const unregisterValkyrieAnimationListeners = registerValkyrieAnimationSocketListeners(socket);
 
     const handleCoopRoomWhisper = (data: { roomColor?: string }) => {
@@ -5478,6 +6090,9 @@ export function CoopGameScene({
                 const blitzCannon = !!crossCfg.blitzCannon;
                 const speed = crossCfg.speed ?? 15;
                 const lifetime = crossCfg.lifetime ?? 2.5;
+                const remoteAspect =
+                  crossCfg.weaponAspect ??
+                  players.get(data.playerId)?.weaponAspect;
                 projectileSystem.createCrossentropyBoltProjectile(
                   engineRef.current.getWorld(),
                   position,
@@ -5502,6 +6117,7 @@ export function CoopGameScene({
                     crossentropyFragmentation: !!crossCfg.crossentropyFragmentation,
                     crossentropySuppressFragmentation: !!crossCfg.crossentropySuppressFragmentation,
                     ...(blitzCannon ? { blitzCannon: true } : {}),
+                    ...(remoteAspect ? { weaponAspect: remoteAspect } : {}),
                   }
                 );
                 break;
@@ -5835,7 +6451,10 @@ export function CoopGameScene({
             window.audioSystem.playEnemySwordSwingSound(data.animationData?.comboStep || 1, position);
             break;
           case 'runeblade_swing':
-            window.audioSystem.playEnemyRunebladeSwingHitSound(position);
+            window.audioSystem.playEnemyRunebladeSwingHitSound(
+              position,
+              players.get(data.playerId)?.weaponAspect === 'DEATHDEALER',
+            );
             break;
           case 'sabres_swing':
             window.audioSystem.playEnemySabresSwingSound(position);
@@ -5957,12 +6576,16 @@ export function CoopGameScene({
           const staggeringSmite = !!(data.extraData && data.extraData.staggeringSmite);
           const infernalSmite = !!(data.extraData && data.extraData.infernalSmite);
           const vengeanceSmite = !!(data.extraData && data.extraData.vengeanceSmite);
+          const remoteSmiteAspect =
+            (data.extraData?.weaponAspect as WeaponAspect | undefined) ??
+            players.get(data.playerId)?.weaponAspect;
           createPvpSmiteEffect(data.playerId, position, undefined, {
             sequenceDelaySec: 0,
             infestedSmite,
             staggeringSmite,
             infernalSmite,
             vengeanceSmite,
+            ...(remoteSmiteAspect ? { weaponAspect: remoteSmiteAspect } : {}),
           });
           const trinityExtras = data.extraData?.trinityExtras as
             | Array<{ position: { x: number; y: number; z: number }; delaySec?: number }>
@@ -5973,7 +6596,14 @@ export function CoopGameScene({
                 data.playerId,
                 new Vector3(ex.position.x, ex.position.y, ex.position.z),
                 undefined,
-                { sequenceDelaySec: ex.delaySec ?? 0, infestedSmite, staggeringSmite, infernalSmite, vengeanceSmite },
+                {
+                  sequenceDelaySec: ex.delaySec ?? 0,
+                  infestedSmite,
+                  staggeringSmite,
+                  infernalSmite,
+                  vengeanceSmite,
+                  ...(remoteSmiteAspect ? { weaponAspect: remoteSmiteAspect } : {}),
+                },
               );
             }
           }
@@ -6162,25 +6792,11 @@ export function CoopGameScene({
           });
         } else if (data.abilityType === 'deathgrasp') {
 
-          // Create death grasp visual effect and taunt nearby bosses
+          // Create death grasp visual effect (taunt/pull applied on confirmed hit)
           const position = new Vector3(data.position.x, data.position.y, data.position.z);
           const direction = new Vector3(data.direction.x, data.direction.y, data.direction.z);
 
           createPvpDeathGraspEffect(data.playerId, position, direction);
-
-          // Show taunt effects on nearby bosses (Deathgrasp now taunts enemies)
-          const tauntRange = 15; // Same range as backend
-          enemies.forEach((enemy: any) => {
-            if (enemy.type === 'boss' || enemy.type === 'boss2' || enemy.type === 'boss3') {
-              const enemyPos = new Vector3(enemy.position.x, enemy.position.y, enemy.position.z);
-              const distance = position.distanceTo(enemyPos);
-
-              if (distance <= tauntRange) {
-                // Create taunt visual effect on this boss
-                createEnemyTauntEffect(enemy.id, 10000); // 10 seconds taunt duration
-              }
-            }
-          });
 
           // Update player state to show death grasping animation
           setMultiplayerPlayerStates(prev => {
@@ -6307,12 +6923,15 @@ export function CoopGameScene({
             wraithDirection.normalize();
           }
 
-          const wraithStrikeTheme = resolveWraithStrikeThemeFromMeta({
-            wrathfulStrike,
-            infestedStrike,
-            wraithGuard: !!(data.extraData && data.extraData.wraithGuard),
-            staggeringStrike: !!(data.extraData && data.extraData.staggeringStrike),
-          });
+          const wraithStrikeTheme = resolveWraithStrikeThemeFromMeta(
+            {
+              wrathfulStrike,
+              infestedStrike,
+              wraithGuard: !!(data.extraData && data.extraData.wraithGuard),
+              staggeringStrike: !!(data.extraData && data.extraData.staggeringStrike),
+            },
+            players.get(data.playerId)?.weaponAspect,
+          );
 
           const remoteWraithStrikeImpact: ImpactEffectEvent = {
             id: `wraith_strike_remote_${Date.now()}_${Math.random()}`,
@@ -6846,6 +7465,9 @@ export function CoopGameScene({
               typeof getTotemBoltVariantFromTalentLoadout
             > | undefined;
             const superconductor = data.extraData?.superconductor === true;
+            const remoteAspect =
+              (data.extraData?.weaponAspect as WeaponAspect | undefined) ??
+              players.get(data.playerId)?.weaponAspect;
             (window as any).triggerGlobalSummonTotem(
               position,
               undefined, // Let PVPSummonTotemManager handle enemy data
@@ -6857,6 +7479,8 @@ export function CoopGameScene({
               data.playerId, // Remote caster ID (visual-only damage; local client does not apply hits)
               totemBoltVariant,
               superconductor,
+              undefined,
+              remoteAspect,
             );
           }
         }
@@ -6951,6 +7575,48 @@ export function CoopGameScene({
             return;
           }
 
+          if (data.wasSoulBond || data.damageType === 'soul_bond_blocked') {
+            const transform = playerEntity.getComponent(Transform);
+            const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+            if (transform && damageNumberManager) {
+              const pos = transform.position.clone();
+              pos.y -= 0.5;
+              damageNumberManager.addDamageNumber(
+                0,
+                false,
+                pos,
+                'soul_bond_blocked',
+                true,
+                undefined,
+                undefined,
+                'SOUL BOND',
+              );
+            }
+            reconcileLivingServerHealth(health, data);
+            return;
+          }
+
+          if (data.wasDodged || data.damageType === 'dodge_blocked') {
+            const transform = playerEntity.getComponent(Transform);
+            const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+            if (transform && damageNumberManager) {
+              const pos = transform.position.clone();
+              pos.y -= 0.5;
+              damageNumberManager.addDamageNumber(
+                0,
+                false,
+                pos,
+                'dodge_blocked',
+                true,
+                undefined,
+                undefined,
+                'DODGE',
+              );
+            }
+            reconcileLivingServerHealth(health, data);
+            return;
+          }
+
           const transform = playerEntity.getComponent(Transform);
           const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
           const incomingDamagePosition = transform?.position.clone();
@@ -7004,10 +7670,6 @@ export function CoopGameScene({
 
               if (data.damageType === 'titan_stomp' && damageApplied) {
                 applyLocalPlayerStun(2100, 'titan-stomp-stun');
-              }
-
-              if (data.damageType === 'greed_fireball' && damageApplied) {
-                window.audioSystem?.playEnemyFireboltSound(transform.position);
               }
 
               if (data.damageType === 'sentinel_void_orb' && damageApplied) {
@@ -7160,14 +7822,57 @@ export function CoopGameScene({
 
     // Knight telegraph — schedule a miss sound; cancel it if a damage event arrives first
     const handleKnightAttackTelegraph = (data: any) => {
-      if (data.targetPlayerId !== socket?.id) return;
+      if (!isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
       const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
       // Server applies damage after ~1000ms — wait slightly longer before calling it a miss
       const timer = setTimeout(() => {
         knightPendingMissTimers.current.delete(data.knightId);
         window.audioSystem?.playKnightMissSound(pos);
-      }, 1100);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 1000) + 50);
       knightPendingMissTimers.current.set(data.knightId, timer);
+    };
+
+    // Allied knight melee — all clients hear swing miss/hit (reuses enemy knight SFX)
+    const handleAlliedKnightAttackTelegraph = (data: {
+      knightId?: string;
+      position?: { x: number; y: number; z: number };
+    }) => {
+      if (!data.knightId) return;
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      scheduleKnightStyleMiss(data.knightId, pos);
+    };
+
+    // Ghoul / allied-demon telegraph — schedule knight miss; cancel on hit
+    const handleGhoulAttackTelegraph = (data: {
+      ghoulId?: string;
+      targetPlayerId?: string;
+      targetCombatAllyId?: string;
+      position?: { x: number; y: number; z: number };
+    }) => {
+      if (!data.ghoulId) return;
+      const attacker = enemiesRef.current.get(data.ghoulId);
+      const attackerType = attacker?.type;
+      const isAlliedDemon = attackerType === 'allied-demon';
+      const isEnemyGhoul = attackerType === 'ghoul' || !attacker;
+      if (isAlliedDemon) {
+        const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+        scheduleKnightStyleMiss(data.ghoulId, pos);
+        return;
+      }
+      // Enemy ghoul: only the targeted local player schedules miss (same as knight)
+      if (!isEnemyGhoul || !isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      scheduleKnightStyleMiss(data.ghoulId, pos, 1100, showLocalPlayerMissNumber);
+    };
+
+    const handlePlayerZombieAttackTelegraph = (data: {
+      zombieId?: string;
+      position?: { x: number; y: number; z: number };
+    }) => {
+      if (!data.zombieId) return;
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      scheduleKnightStyleMiss(data.zombieId, pos);
     };
 
     const clearTentacleSpineGroundTelegraphForSocket = clearTentacleSpineGroundTelegraph;
@@ -7205,16 +7910,15 @@ export function CoopGameScene({
 
       {
         const prevFx = tentacleSpineFxRef.current.get(enemyId) ?? { windSeq: 0, slamSeq: 0, dir: { x: 0, z: 1 } };
-        tentacleSpineLayerRef.current?.updateFx(enemyId, {
+        const nextFx = {
           windSeq: prevFx.windSeq + 1,
           slamSeq: prevFx.slamSeq,
           dir: { x: data.dirX ?? 0, z: data.dirZ ?? 1 },
-        });
-        tentacleSpineFxRef.current.set(enemyId, {
-          windSeq: prevFx.windSeq + 1,
-          slamSeq: prevFx.slamSeq,
-          dir: { x: data.dirX ?? 0, z: data.dirZ ?? 1 },
-        });
+          windupAt: eventTime,
+          slamAt: undefined as number | undefined,
+        };
+        tentacleSpineLayerRef.current?.updateFx(enemyId, nextFx);
+        tentacleSpineFxRef.current.set(enemyId, nextFx);
       }
 
       const lineDelay = Math.max(0, TENTACLE_SPINE_WINDUP_MS - TENTACLE_GROUND_TELEGRAPH_LEAD_MS);
@@ -7256,7 +7960,12 @@ export function CoopGameScene({
       const dirZ = data.dirZ ?? 1;
       {
         const prevFx = tentacleSpineFxRef.current.get(enemyId) ?? { windSeq: 0, slamSeq: 0, dir: { x: 0, z: 1 } };
-        const nextFx = { ...prevFx, slamSeq: prevFx.slamSeq + 1, dir: { x: dirX, z: dirZ } };
+        const nextFx = {
+          ...prevFx,
+          slamSeq: prevFx.slamSeq + 1,
+          dir: { x: dirX, z: dirZ },
+          slamAt: impactTime,
+        };
         tentacleSpineLayerRef.current?.updateFx(enemyId, nextFx);
         tentacleSpineFxRef.current.set(enemyId, nextFx);
       }
@@ -7340,6 +8049,9 @@ export function CoopGameScene({
             shield,
             shieldBefore,
             position: transform.position,
+            weightClass: data.weightClass,
+            hitStopMs: data.hitStopMs,
+            impactDirection: data.impactDirection,
             attackerServerEnemyId: data.knightId,
           });
         }
@@ -7502,6 +8214,77 @@ export function CoopGameScene({
       applyServerDeathGraspPull(data);
     };
 
+    const handlePlayerDeathGraspHit = (data: {
+      playerId: string;
+      enemyId: string;
+      hitPosition: { x: number; y: number; z: number };
+      pulled: boolean;
+      pullPosition?: { x: number; y: number; z: number } | null;
+      timestamp: number;
+    }) => {
+      if (!data?.enemyId) return;
+      createEnemyTauntEffect(data.enemyId, DEATH_GRASP_TAUNT_MS);
+
+      if (data.pulled && data.pullPosition) {
+        const from = data.hitPosition || {
+          x: data.pullPosition.x,
+          y: data.pullPosition.y,
+          z: data.pullPosition.z,
+        };
+        deathGraspPullsRef.current.set(data.enemyId, {
+          from: { x: from.x, y: from.y, z: from.z },
+          to: {
+            x: data.pullPosition.x,
+            y: data.pullPosition.y,
+            z: data.pullPosition.z,
+          },
+          startTime: Date.now(),
+          durationMs: DEATH_GRASP_PULL_DURATION_MS,
+        });
+        setTimeout(() => {
+          deathGraspPullsRef.current.delete(data.enemyId);
+        }, DEATH_GRASP_PULL_DURATION_MS + 100);
+      }
+    };
+
+    const handlePlayerDeathGraspPull = (data: {
+      enemyId: string;
+      casterId: string;
+      pullPosition: { x: number; y: number; z: number };
+      durationMs?: number;
+      timestamp?: number;
+    }) => {
+      if (!data?.enemyId || !data.pullPosition) return;
+      const durationMs = data.durationMs ?? DEATH_GRASP_PULL_DURATION_MS;
+      const existing = deathGraspPullsRef.current.get(data.enemyId);
+      const live = enemyTransformsRef.current.get(data.enemyId);
+      const enemy = enemiesRef.current.get(data.enemyId);
+      const from = existing?.from ?? live?.position ?? enemy?.position ?? data.pullPosition;
+      deathGraspPullsRef.current.set(data.enemyId, {
+        from: { x: from.x, y: from.y, z: from.z },
+        to: {
+          x: data.pullPosition.x,
+          y: data.pullPosition.y,
+          z: data.pullPosition.z,
+        },
+        startTime: existing?.startTime ?? Date.now(),
+        durationMs,
+      });
+
+      setTimeout(() => {
+        const existingTf = enemyTransformsRef.current.get(data.enemyId);
+        enemyTransformsRef.current.set(data.enemyId, {
+          position: { ...data.pullPosition },
+          rotation: existingTf?.rotation ?? 0,
+        });
+        const e = enemiesRef.current.get(data.enemyId);
+        if (e) {
+          e.position = { ...data.pullPosition };
+        }
+        deathGraspPullsRef.current.delete(data.enemyId);
+      }, durationMs + 50);
+    };
+
     // Knight Smite — physical damage (themed by soulType; wider post-Boss-2)
     const handleKnightSmite = (data: any) => {
       if (data.targetPosition) {
@@ -7560,6 +8343,9 @@ export function CoopGameScene({
             shield,
             shieldBefore,
             position: transform.position,
+            weightClass: data.weightClass,
+            hitStopMs: data.hitStopMs,
+            impactDirection: data.impactDirection,
             attackerServerEnemyId: data.knightId,
           });
         }
@@ -7619,6 +8405,7 @@ export function CoopGameScene({
           id: `knight-frost-impact-${data.knightId}-${Date.now()}`,
           position: p.clone(),
         });
+        window.audioSystem?.playFireboltImpactSound(p);
       }
 
       const playerEntity = getLocalPlayerEntity();
@@ -7658,6 +8445,9 @@ export function CoopGameScene({
             shield,
             shieldBefore,
             position: transform.position,
+            weightClass: data.weightClass,
+            hitStopMs: data.hitStopMs,
+            impactDirection: data.impactDirection,
             attackerServerEnemyId: data.knightId,
           });
         }
@@ -7680,14 +8470,108 @@ export function CoopGameScene({
       }
     };
 
+    // Frost Queen — Ice Shards (2x frost ray projectiles)
+    const handleFrostQueenIceShardsProjectile = (data: {
+      frostQueenId: string;
+      shardIndex?: number;
+      startPosition: { x: number; y: number; z: number };
+      endPosition: { x: number; y: number; z: number };
+      travelMs: number;
+    }) => {
+      const start = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
+      const end = new Vector3(data.endPosition.x, data.endPosition.y, data.endPosition.z);
+      window.audioSystem?.playEnemyFrostRaySound(start);
+      projectileLayerRef.current?.addKnightFrostProjectile({
+        id: `frost-queen-shard-${data.frostQueenId}-${data.shardIndex ?? 0}-${Date.now()}`,
+        startPosition: start.clone(),
+        endPosition: end.clone(),
+        travelMs: data.travelMs,
+      });
+    };
+
+    const handleFrostQueenIceShardsHit = (data: any) => {
+      if (data.targetPosition) {
+        const p = new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z);
+        allyCombatLayerRef.current?.addKnightFrostImpact({
+          id: `frost-queen-shard-impact-${data.frostQueenId}-${data.shardIndex ?? 0}-${Date.now()}`,
+          position: p.clone(),
+        });
+      }
+
+      // Ally-targeted shards: impact VFX only (server applies damage + hostileFreeze).
+      if (data.targetCombatAllyId) return;
+
+      const playerEntity = getLocalPlayerEntity();
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+      if (blockLocalDamageDuringCoopPortal()) return;
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+        const transform = playerEntity.getComponent(Transform);
+        const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+        const incomingPos = transform?.position.clone();
+        if (incomingPos) incomingPos.y -= 0.5;
+
+        const { damageApplied, healthBefore, shieldBefore } = applyIncomingCoopDamage({
+          damage: data.damage,
+          damageType: 'magical',
+          sourceEnemyId: data.frostQueenId,
+          playerEntity,
+          health,
+          shield,
+          damageNumberManager,
+          damageNumberPosition: incomingPos,
+        });
+
+        if (transform) {
+          triggerAppliedLocalPlayerDamageFeedback({
+            damage: data.damage,
+            damageType: 'frost',
+            damageApplied,
+            health,
+            healthBefore,
+            shield,
+            shieldBefore,
+            position: transform.position,
+            weightClass: data.weightClass,
+            hitStopMs: data.hitStopMs,
+            impactDirection: data.impactDirection,
+            attackerServerEnemyId: data.frostQueenId,
+          });
+        }
+
+        if (shield) updatePlayerShield(socket.id, shield.currentShield, shield.maxShield);
+        if (wasAlive && health.isDead) handlePlayerDeath(socket.id, data.frostQueenId);
+
+        if (damageApplied) {
+          const movement = playerEntity.getComponent(Movement);
+          if (movement) {
+            const freezeDuration = data.slowDuration ?? KNIGHT_FROST_FREEZE_MS;
+            movement.freeze(freezeDuration);
+            pvpAbilityLayerRef.current?.addLocalPlayerFrozen({
+              id: nextLocalPlayerFrozenEffectId.current++,
+              startTime: Date.now(),
+              duration: freezeDuration,
+            });
+          }
+        }
+      }
+    };
+
     // Templar telegraph — schedule a miss sound; cancel it if a damage event arrives first
     const handleTemplarAttackTelegraph = (data: any) => {
-      if (data.targetPlayerId !== socket?.id) return;
+      if (!isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
       const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
       const timer = setTimeout(() => {
         templarPendingMissTimers.current.delete(data.templarId);
         window.audioSystem?.playTemplarMissSound(pos);
-      }, 1100);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 1000) + 50);
       templarPendingMissTimers.current.set(data.templarId, timer);
     };
 
@@ -7727,9 +8611,7 @@ export function CoopGameScene({
         });
 
         if (damageApplied) {
-          const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
-          window.audioSystem?.playTemplarDamageSound(pos, templarDamageVariant.current);
-          templarDamageVariant.current = templarDamageVariant.current === 1 ? 2 : 1;
+          playIncomingMeleeImpactSound(data, templarDamageVariant);
         }
 
         if (transform) {
@@ -7742,6 +8624,9 @@ export function CoopGameScene({
             shield,
             shieldBefore,
             position: transform.position,
+            weightClass: data.weightClass,
+            hitStopMs: data.hitStopMs,
+            impactDirection: data.impactDirection,
             attackerServerEnemyId: data.templarId,
           });
         }
@@ -7752,6 +8637,926 @@ export function CoopGameScene({
 
         if (wasAlive && health.isDead) {
           handlePlayerDeath(socket.id, data.templarId);
+        }
+      }
+    };
+
+    // Spectre telegraph — schedule a miss sound; cancel it if a damage event arrives first
+    const handleSpectreAttackTelegraph = (data: any) => {
+      if (!isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      const timer = setTimeout(() => {
+        spectrePendingMissTimers.current.delete(data.spectreId);
+        window.audioSystem?.playTemplarMissSound(pos);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 1000) + 50);
+      spectrePendingMissTimers.current.set(data.spectreId, timer);
+    };
+
+    const handleSpectreAttack = (data: any) => {
+      const playerEntity = getLocalPlayerEntity();
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+      if (blockLocalDamageDuringCoopPortal()) return;
+
+      const pendingMiss = spectrePendingMissTimers.current.get(data.spectreId);
+      if (pendingMiss) {
+        clearTimeout(pendingMiss);
+        spectrePendingMissTimers.current.delete(data.spectreId);
+      }
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+        const transform = playerEntity.getComponent(Transform);
+        const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+        const incomingPos = transform?.position.clone();
+        if (incomingPos) incomingPos.y -= 0.5;
+
+        const { damageApplied, healthBefore, shieldBefore } = applyIncomingCoopDamage({
+          damage: data.damage,
+          damageType: 'physical',
+          sourceEnemyId: data.spectreId,
+          playerEntity,
+          health,
+          shield,
+          damageNumberManager,
+          damageNumberPosition: incomingPos,
+        });
+
+        if (damageApplied) {
+          playIncomingMeleeImpactSound(data, templarDamageVariant);
+        }
+
+        if (transform) {
+          triggerAppliedLocalPlayerDamageFeedback({
+            damage: data.damage,
+            damageType: 'physical',
+            damageApplied,
+            health,
+            healthBefore,
+            shield,
+            shieldBefore,
+            position: transform.position,
+            weightClass: data.weightClass,
+            hitStopMs: data.hitStopMs,
+            impactDirection: data.impactDirection,
+            attackerServerEnemyId: data.spectreId,
+          });
+        }
+
+        if (shield) {
+          updatePlayerShield(socket.id, shield.currentShield, shield.maxShield);
+        }
+
+        if (wasAlive && health.isDead) {
+          handlePlayerDeath(socket.id, data.spectreId);
+        }
+      }
+    };
+
+    // Death Knight telegraph — schedule a miss sound; cancel it if a damage event arrives first
+    const handleDeathKnightAttackTelegraph = (data: any) => {
+      if (!isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      const timer = setTimeout(() => {
+        deathKnightPendingMissTimers.current.delete(data.deathKnightId);
+        window.audioSystem?.playTemplarMissSound(pos);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 750) + 50);
+      deathKnightPendingMissTimers.current.set(data.deathKnightId, timer);
+    };
+
+    const handleDeathKnightAttack = (data: any) => {
+      const playerEntity = getLocalPlayerEntity();
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+      if (blockLocalDamageDuringCoopPortal()) return;
+
+      const pendingMiss = deathKnightPendingMissTimers.current.get(data.deathKnightId);
+      if (pendingMiss) {
+        clearTimeout(pendingMiss);
+        deathKnightPendingMissTimers.current.delete(data.deathKnightId);
+      }
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+        const transform = playerEntity.getComponent(Transform);
+        const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+        const incomingPos = transform?.position.clone();
+        if (incomingPos) incomingPos.y -= 0.5;
+
+        const { damageApplied, healthBefore, shieldBefore } = applyIncomingCoopDamage({
+          damage: data.damage,
+          damageType: 'physical',
+          sourceEnemyId: data.deathKnightId,
+          playerEntity,
+          health,
+          shield,
+          damageNumberManager,
+          damageNumberPosition: incomingPos,
+        });
+
+        if (damageApplied) {
+          playIncomingMeleeImpactSound(data, templarDamageVariant);
+        }
+
+        if (transform) {
+          triggerAppliedLocalPlayerDamageFeedback({
+            damage: data.damage,
+            damageType: 'physical',
+            damageApplied,
+            health,
+            healthBefore,
+            shield,
+            shieldBefore,
+            position: transform.position,
+            weightClass: data.weightClass,
+            hitStopMs: data.hitStopMs,
+            impactDirection: data.impactDirection,
+            attackerServerEnemyId: data.deathKnightId,
+          });
+        }
+
+        if (shield) {
+          updatePlayerShield(socket.id, shield.currentShield, shield.maxShield);
+        }
+
+        if (wasAlive && health.isDead) {
+          handlePlayerDeath(socket.id, data.deathKnightId);
+        }
+      }
+    };
+
+    // Shaman telegraph — schedule a miss sound; cancel it if a damage event arrives first
+    const handleShamanAttackTelegraph = (data: any) => {
+      if (!isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      const timer = setTimeout(() => {
+        shamanPendingMissTimers.current.delete(data.shamanId);
+        window.audioSystem?.playTemplarMissSound(pos);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 800) + 50);
+      shamanPendingMissTimers.current.set(data.shamanId, timer);
+    };
+
+    const handleShamanAttack = (data: any) => {
+      const playerEntity = getLocalPlayerEntity();
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+      if (blockLocalDamageDuringCoopPortal()) return;
+
+      const pendingMiss = shamanPendingMissTimers.current.get(data.shamanId);
+      if (pendingMiss) {
+        clearTimeout(pendingMiss);
+        shamanPendingMissTimers.current.delete(data.shamanId);
+      }
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+        const transform = playerEntity.getComponent(Transform);
+        const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+        const incomingPos = transform?.position.clone();
+        if (incomingPos) incomingPos.y -= 0.5;
+
+        const { damageApplied, healthBefore, shieldBefore } = applyIncomingCoopDamage({
+          damage: data.damage,
+          damageType: 'physical',
+          sourceEnemyId: data.shamanId,
+          playerEntity,
+          health,
+          shield,
+          damageNumberManager,
+          damageNumberPosition: incomingPos,
+        });
+
+        if (damageApplied) {
+          playIncomingMeleeImpactSound(data, templarDamageVariant);
+        }
+
+        if (transform) {
+          triggerAppliedLocalPlayerDamageFeedback({
+            damage: data.damage,
+            damageType: 'physical',
+            damageApplied,
+            health,
+            healthBefore,
+            shield,
+            shieldBefore,
+            position: transform.position,
+            weightClass: data.weightClass,
+            hitStopMs: data.hitStopMs,
+            impactDirection: data.impactDirection,
+            attackerServerEnemyId: data.shamanId,
+          });
+        }
+
+        if (shield) {
+          updatePlayerShield(socket.id, shield.currentShield, shield.maxShield);
+        }
+
+        if (wasAlive && health.isDead) {
+          handlePlayerDeath(socket.id, data.shamanId);
+        }
+      }
+    };
+
+    // Serpent telegraph — schedule a miss sound; cancel it if a damage event arrives first
+    const handleSerpentAttackTelegraph = (data: any) => {
+      if (!isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      const timer = setTimeout(() => {
+        serpentPendingMissTimers.current.delete(data.serpentId);
+        window.audioSystem?.playTemplarMissSound(pos);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 750) + 50);
+      serpentPendingMissTimers.current.set(data.serpentId, timer);
+    };
+
+    const handleSerpentAttack = (data: any) => {
+      const playerEntity = getLocalPlayerEntity();
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+      if (blockLocalDamageDuringCoopPortal()) return;
+
+      const pendingMiss = serpentPendingMissTimers.current.get(data.serpentId);
+      if (pendingMiss) {
+        clearTimeout(pendingMiss);
+        serpentPendingMissTimers.current.delete(data.serpentId);
+      }
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+        const transform = playerEntity.getComponent(Transform);
+        const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+        const incomingPos = transform?.position.clone();
+        if (incomingPos) incomingPos.y -= 0.5;
+
+        const { damageApplied, healthBefore, shieldBefore } = applyIncomingCoopDamage({
+          damage: data.damage,
+          damageType: 'physical',
+          sourceEnemyId: data.serpentId,
+          playerEntity,
+          health,
+          shield,
+          damageNumberManager,
+          damageNumberPosition: incomingPos,
+        });
+
+        if (damageApplied) {
+          playIncomingMeleeImpactSound(data, templarDamageVariant);
+        }
+
+        if (transform) {
+          triggerAppliedLocalPlayerDamageFeedback({
+            damage: data.damage,
+            damageType: 'physical',
+            damageApplied,
+            health,
+            healthBefore,
+            shield,
+            shieldBefore,
+            position: transform.position,
+            weightClass: data.weightClass,
+            hitStopMs: data.hitStopMs,
+            impactDirection: data.impactDirection,
+            attackerServerEnemyId: data.serpentId,
+          });
+        }
+
+        if (shield) {
+          updatePlayerShield(socket.id, shield.currentShield, shield.maxShield);
+        }
+
+        if (wasAlive && health.isDead) {
+          handlePlayerDeath(socket.id, data.serpentId);
+        }
+      }
+    };
+
+    // Wyvern telegraph — schedule a miss sound; cancel it if a damage event arrives first
+    const handleWyvernAttackTelegraph = (data: any) => {
+      if (!isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      const timer = setTimeout(() => {
+        wyvernPendingMissTimers.current.delete(data.wyvernId);
+        window.audioSystem?.playTemplarMissSound(pos);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 1300) + 50);
+      wyvernPendingMissTimers.current.set(data.wyvernId, timer);
+    };
+
+    const handleWyvernAttack = (data: any) => {
+      const playerEntity = getLocalPlayerEntity();
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+      if (blockLocalDamageDuringCoopPortal()) return;
+
+      const pendingMiss = wyvernPendingMissTimers.current.get(data.wyvernId);
+      if (pendingMiss) {
+        clearTimeout(pendingMiss);
+        wyvernPendingMissTimers.current.delete(data.wyvernId);
+      }
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+        const transform = playerEntity.getComponent(Transform);
+        const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+        const incomingPos = transform?.position.clone();
+        if (incomingPos) incomingPos.y -= 0.5;
+
+        const { damageApplied, healthBefore, shieldBefore } = applyIncomingCoopDamage({
+          damage: data.damage,
+          damageType: 'physical',
+          sourceEnemyId: data.wyvernId,
+          playerEntity,
+          health,
+          shield,
+          damageNumberManager,
+          damageNumberPosition: incomingPos,
+        });
+
+        if (damageApplied) {
+          playIncomingMeleeImpactSound(data, templarDamageVariant);
+        }
+
+        if (transform) {
+          triggerAppliedLocalPlayerDamageFeedback({
+            damage: data.damage,
+            damageType: 'physical',
+            damageApplied,
+            health,
+            healthBefore,
+            shield,
+            shieldBefore,
+            position: transform.position,
+            weightClass: data.weightClass,
+            hitStopMs: data.hitStopMs,
+            impactDirection: data.impactDirection,
+            attackerServerEnemyId: data.wyvernId,
+          });
+        }
+
+        if (shield) {
+          updatePlayerShield(socket.id, shield.currentShield, shield.maxShield);
+        }
+
+        if (wasAlive && health.isDead) {
+          handlePlayerDeath(socket.id, data.wyvernId);
+        }
+      }
+    };
+
+    const handleDestinyAttackTelegraph = (data: any) => {
+      if (!isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      const timer = setTimeout(() => {
+        wyvernPendingMissTimers.current.delete(data.destinyId);
+        window.audioSystem?.playTemplarMissSound(pos);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 1200) + 50);
+      wyvernPendingMissTimers.current.set(data.destinyId, timer);
+    };
+
+    const handleDestinyAttack = (data: any) => {
+      const playerEntity = getLocalPlayerEntity();
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+      if (blockLocalDamageDuringCoopPortal()) return;
+
+      const pendingMiss = wyvernPendingMissTimers.current.get(data.destinyId);
+      if (pendingMiss) {
+        clearTimeout(pendingMiss);
+        wyvernPendingMissTimers.current.delete(data.destinyId);
+      }
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+        const transform = playerEntity.getComponent(Transform);
+        const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+        const incomingPos = transform?.position.clone();
+        if (incomingPos) incomingPos.y -= 0.5;
+
+        const { damageApplied, healthBefore, shieldBefore } = applyIncomingCoopDamage({
+          damage: data.damage,
+          damageType: 'physical',
+          sourceEnemyId: data.destinyId,
+          playerEntity,
+          health,
+          shield,
+          damageNumberManager,
+          damageNumberPosition: incomingPos,
+        });
+
+        if (damageApplied) {
+          playIncomingMeleeImpactSound(data, templarDamageVariant);
+        }
+
+        if (transform) {
+          triggerAppliedLocalPlayerDamageFeedback({
+            damage: data.damage,
+            damageType: 'physical',
+            damageApplied,
+            health,
+            healthBefore,
+            shield,
+            shieldBefore,
+            position: transform.position,
+            weightClass: data.weightClass,
+            hitStopMs: data.hitStopMs,
+            impactDirection: data.impactDirection,
+            attackerServerEnemyId: data.destinyId,
+          });
+        }
+
+        if (shield) {
+          updatePlayerShield(socket.id, shield.currentShield, shield.maxShield);
+        }
+
+        if (wasAlive && health.isDead) {
+          handlePlayerDeath(socket.id, data.destinyId);
+        }
+      }
+    };
+
+    // Tiger telegraph — schedule a miss sound; cancel it if a damage event arrives first
+    const handleTigerAttackTelegraph = (data: any) => {
+      if (!isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      const timer = setTimeout(() => {
+        tigerPendingMissTimers.current.delete(data.tigerId);
+        window.audioSystem?.playTemplarMissSound(pos);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 750) + 50);
+      tigerPendingMissTimers.current.set(data.tigerId, timer);
+    };
+
+    const handleTigerAttack = (data: any) => {
+      const playerEntity = getLocalPlayerEntity();
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+      if (blockLocalDamageDuringCoopPortal()) return;
+
+      const pendingMiss = tigerPendingMissTimers.current.get(data.tigerId);
+      if (pendingMiss) {
+        clearTimeout(pendingMiss);
+        tigerPendingMissTimers.current.delete(data.tigerId);
+      }
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+        const transform = playerEntity.getComponent(Transform);
+        const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+        const incomingPos = transform?.position.clone();
+        if (incomingPos) incomingPos.y -= 0.5;
+
+        const { damageApplied, healthBefore, shieldBefore } = applyIncomingCoopDamage({
+          damage: data.damage,
+          damageType: 'physical',
+          sourceEnemyId: data.tigerId,
+          playerEntity,
+          health,
+          shield,
+          damageNumberManager,
+          damageNumberPosition: incomingPos,
+        });
+
+        if (damageApplied) {
+          playIncomingMeleeImpactSound(data, templarDamageVariant);
+        }
+
+        if (transform) {
+          triggerAppliedLocalPlayerDamageFeedback({
+            damage: data.damage,
+            damageType: 'physical',
+            damageApplied,
+            health,
+            healthBefore,
+            shield,
+            shieldBefore,
+            position: transform.position,
+            weightClass: data.weightClass,
+            hitStopMs: data.hitStopMs,
+            impactDirection: data.impactDirection,
+            attackerServerEnemyId: data.tigerId,
+          });
+        }
+
+        if (shield) {
+          updatePlayerShield(socket.id, shield.currentShield, shield.maxShield);
+        }
+
+        if (wasAlive && health.isDead) {
+          handlePlayerDeath(socket.id, data.tigerId);
+        }
+      }
+    };
+
+    const handleWolfAttackTelegraph = (data: any) => {
+      if (!isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      const timer = setTimeout(() => {
+        wolfPendingMissTimers.current.delete(data.wolfId);
+        window.audioSystem?.playTemplarMissSound(pos);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 650) + 50);
+      wolfPendingMissTimers.current.set(data.wolfId, timer);
+    };
+
+    const handleWolfAttack = (data: any) => {
+      const playerEntity = getLocalPlayerEntity();
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+      if (blockLocalDamageDuringCoopPortal()) return;
+
+      const pendingMiss = wolfPendingMissTimers.current.get(data.wolfId);
+      if (pendingMiss) {
+        clearTimeout(pendingMiss);
+        wolfPendingMissTimers.current.delete(data.wolfId);
+      }
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+        const transform = playerEntity.getComponent(Transform);
+        const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+        const incomingPos = transform?.position.clone();
+        if (incomingPos) incomingPos.y -= 0.5;
+
+        const { damageApplied, healthBefore, shieldBefore } = applyIncomingCoopDamage({
+          damage: data.damage,
+          damageType: 'physical',
+          sourceEnemyId: data.wolfId,
+          playerEntity,
+          health,
+          shield,
+          damageNumberManager,
+          damageNumberPosition: incomingPos,
+        });
+
+        if (damageApplied) {
+          playIncomingMeleeImpactSound(data, templarDamageVariant);
+        }
+
+        if (transform) {
+          triggerAppliedLocalPlayerDamageFeedback({
+            damage: data.damage,
+            damageType: 'physical',
+            damageApplied,
+            health,
+            healthBefore,
+            shield,
+            shieldBefore,
+            position: transform.position,
+            weightClass: data.weightClass,
+            hitStopMs: data.hitStopMs,
+            impactDirection: data.impactDirection,
+            attackerServerEnemyId: data.wolfId,
+          });
+        }
+
+        if (shield) {
+          updatePlayerShield(socket.id, shield.currentShield, shield.maxShield);
+        }
+
+        if (wasAlive && health.isDead) {
+          handlePlayerDeath(socket.id, data.wolfId);
+        }
+      }
+    };
+
+    const handleBearAttackTelegraph = (data: any) => {
+      if (!isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      const timer = setTimeout(() => {
+        bearPendingMissTimers.current.delete(data.bearId);
+        window.audioSystem?.playTemplarMissSound(pos);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 750) + 50);
+      bearPendingMissTimers.current.set(data.bearId, timer);
+    };
+
+    const handleBearAttack = (data: any) => {
+      const playerEntity = getLocalPlayerEntity();
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+      if (blockLocalDamageDuringCoopPortal()) return;
+
+      const pendingMiss = bearPendingMissTimers.current.get(data.bearId);
+      if (pendingMiss) {
+        clearTimeout(pendingMiss);
+        bearPendingMissTimers.current.delete(data.bearId);
+      }
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+        const transform = playerEntity.getComponent(Transform);
+        const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+        const incomingPos = transform?.position.clone();
+        if (incomingPos) incomingPos.y -= 0.5;
+
+        const { damageApplied, healthBefore, shieldBefore } = applyIncomingCoopDamage({
+          damage: data.damage,
+          damageType: 'physical',
+          sourceEnemyId: data.bearId,
+          playerEntity,
+          health,
+          shield,
+          damageNumberManager,
+          damageNumberPosition: incomingPos,
+        });
+
+        if (damageApplied) {
+          playIncomingMeleeImpactSound(data, templarDamageVariant);
+        }
+
+        if (transform) {
+          triggerAppliedLocalPlayerDamageFeedback({
+            damage: data.damage,
+            damageType: 'physical',
+            damageApplied,
+            health,
+            healthBefore,
+            shield,
+            shieldBefore,
+            position: transform.position,
+            weightClass: data.weightClass,
+            hitStopMs: data.hitStopMs,
+            impactDirection: data.impactDirection,
+            attackerServerEnemyId: data.bearId,
+          });
+        }
+
+        if (shield) {
+          updatePlayerShield(socket.id, shield.currentShield, shield.maxShield);
+        }
+
+        if (wasAlive && health.isDead) {
+          handlePlayerDeath(socket.id, data.bearId);
+        }
+      }
+    };
+
+    const handleBoneSpiderAttackTelegraph = (data: any) => {
+      if (!isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      const timer = setTimeout(() => {
+        boneSpiderPendingMissTimers.current.delete(data.spiderId);
+        window.audioSystem?.playTemplarMissSound(pos);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 900) + 50);
+      boneSpiderPendingMissTimers.current.set(data.spiderId, timer);
+    };
+
+    const handleBoneSpiderAttack = (data: any) => {
+      const playerEntity = getLocalPlayerEntity();
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+      if (blockLocalDamageDuringCoopPortal()) return;
+
+      const pendingMiss = boneSpiderPendingMissTimers.current.get(data.spiderId);
+      if (pendingMiss) {
+        clearTimeout(pendingMiss);
+        boneSpiderPendingMissTimers.current.delete(data.spiderId);
+      }
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+        const transform = playerEntity.getComponent(Transform);
+        const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+        const incomingPos = transform?.position.clone();
+        if (incomingPos) incomingPos.y -= 0.5;
+
+        const { damageApplied, healthBefore, shieldBefore } = applyIncomingCoopDamage({
+          damage: data.damage,
+          damageType: 'physical',
+          sourceEnemyId: data.spiderId,
+          playerEntity,
+          health,
+          shield,
+          damageNumberManager,
+          damageNumberPosition: incomingPos,
+        });
+
+        if (damageApplied) {
+          playIncomingMeleeImpactSound(data, templarDamageVariant);
+        }
+
+        if (transform) {
+          triggerAppliedLocalPlayerDamageFeedback({
+            damage: data.damage,
+            damageType: 'physical',
+            damageApplied,
+            health,
+            healthBefore,
+            shield,
+            shieldBefore,
+            position: transform.position,
+            weightClass: data.weightClass,
+            hitStopMs: data.hitStopMs,
+            impactDirection: data.impactDirection,
+            attackerServerEnemyId: data.spiderId,
+          });
+        }
+
+        if (shield) {
+          updatePlayerShield(socket.id, shield.currentShield, shield.maxShield);
+        }
+
+        if (wasAlive && health.isDead) {
+          handlePlayerDeath(socket.id, data.spiderId);
+        }
+      }
+    };
+
+    // Skyray telegraph — schedule a miss sound; cancel it if a damage event arrives first
+    const handleSkyrayAttackTelegraph = (data: any) => {
+      if (!isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      const timer = setTimeout(() => {
+        skyrayPendingMissTimers.current.delete(data.skyrayId);
+        window.audioSystem?.playTemplarMissSound(pos);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 900) + 50);
+      skyrayPendingMissTimers.current.set(data.skyrayId, timer);
+    };
+
+    const handleSkyrayAttack = (data: any) => {
+      const playerEntity = getLocalPlayerEntity();
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+      if (blockLocalDamageDuringCoopPortal()) return;
+
+      const pendingMiss = skyrayPendingMissTimers.current.get(data.skyrayId);
+      if (pendingMiss) {
+        clearTimeout(pendingMiss);
+        skyrayPendingMissTimers.current.delete(data.skyrayId);
+      }
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+        const transform = playerEntity.getComponent(Transform);
+        const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+        const incomingPos = transform?.position.clone();
+        if (incomingPos) incomingPos.y -= 0.5;
+
+        const { damageApplied, healthBefore, shieldBefore } = applyIncomingCoopDamage({
+          damage: data.damage,
+          damageType: 'physical',
+          sourceEnemyId: data.skyrayId,
+          playerEntity,
+          health,
+          shield,
+          damageNumberManager,
+          damageNumberPosition: incomingPos,
+        });
+
+        if (damageApplied) {
+          playIncomingMeleeImpactSound(data, templarDamageVariant);
+        }
+
+        if (transform) {
+          triggerAppliedLocalPlayerDamageFeedback({
+            damage: data.damage,
+            damageType: 'physical',
+            damageApplied,
+            health,
+            healthBefore,
+            shield,
+            shieldBefore,
+            position: transform.position,
+            weightClass: data.weightClass,
+            hitStopMs: data.hitStopMs,
+            impactDirection: data.impactDirection,
+            attackerServerEnemyId: data.skyrayId,
+          });
+        }
+
+        if (shield) {
+          updatePlayerShield(socket.id, shield.currentShield, shield.maxShield);
+        }
+
+        if (wasAlive && health.isDead) {
+          handlePlayerDeath(socket.id, data.skyrayId);
+        }
+      }
+    };
+
+    // Terrorhawk telegraph — schedule a miss sound; cancel it if a damage event arrives first
+    const handleTerrorhawkAttackTelegraph = (data: any) => {
+      if (!isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+      const timer = setTimeout(() => {
+        terrorhawkPendingMissTimers.current.delete(data.terrorhawkId);
+        window.audioSystem?.playTemplarMissSound(pos);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 900) + 50);
+      terrorhawkPendingMissTimers.current.set(data.terrorhawkId, timer);
+    };
+
+    const handleTerrorhawkAttack = (data: any) => {
+      const playerEntity = getLocalPlayerEntity();
+      if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
+      if (blockLocalDamageDuringCoopPortal()) return;
+
+      const pendingMiss = terrorhawkPendingMissTimers.current.get(data.terrorhawkId);
+      if (pendingMiss) {
+        clearTimeout(pendingMiss);
+        terrorhawkPendingMissTimers.current.delete(data.terrorhawkId);
+      }
+
+      const deathState = playerDeathStates.get(socket.id);
+      if (deathState?.isDead) return;
+
+      const health = playerEntity.getComponent(Health);
+      const shield = playerEntity.getComponent(Shield);
+      if (health) {
+        const wasAlive = !health.isDead;
+        const transform = playerEntity.getComponent(Transform);
+        const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+        const incomingPos = transform?.position.clone();
+        if (incomingPos) incomingPos.y -= 0.5;
+
+        const { damageApplied, healthBefore, shieldBefore } = applyIncomingCoopDamage({
+          damage: data.damage,
+          damageType: 'physical',
+          sourceEnemyId: data.terrorhawkId,
+          playerEntity,
+          health,
+          shield,
+          damageNumberManager,
+          damageNumberPosition: incomingPos,
+        });
+
+        if (damageApplied) {
+          playIncomingMeleeImpactSound(data, templarDamageVariant);
+        }
+
+        if (transform) {
+          triggerAppliedLocalPlayerDamageFeedback({
+            damage: data.damage,
+            damageType: 'physical',
+            damageApplied,
+            health,
+            healthBefore,
+            shield,
+            shieldBefore,
+            position: transform.position,
+            weightClass: data.weightClass,
+            hitStopMs: data.hitStopMs,
+            impactDirection: data.impactDirection,
+            attackerServerEnemyId: data.terrorhawkId,
+          });
+        }
+
+        if (shield) {
+          updatePlayerShield(socket.id, shield.currentShield, shield.maxShield);
+        }
+
+        if (wasAlive && health.isDead) {
+          handlePlayerDeath(socket.id, data.terrorhawkId);
         }
       }
     };
@@ -7828,7 +9633,10 @@ export function CoopGameScene({
                     window.audioSystem.playEnemyEntropicBoltSound(position);
                     break;
                 case WeaponType.RUNEBLADE:
-                  window.audioSystem.playEnemyRunebladeSwingHitSound(position);
+                  window.audioSystem.playEnemyRunebladeSwingHitSound(
+                    position,
+                    player?.weaponAspect === 'DEATHDEALER',
+                  );
                   break;
                 }
               }
@@ -7920,7 +9728,9 @@ export function CoopGameScene({
                 : new Vector3(0, 0, 0));
         }
         
-        createPvpDebuffEffect(targetPlayerId, debuffType, position, duration);
+        createPvpDebuffEffect(targetPlayerId, debuffType, position, duration, {
+          source: effectData?.source,
+        });
       }
     };
 
@@ -8368,7 +10178,10 @@ export function CoopGameScene({
       position?: { x: number; y: number; z: number };
     }) => {
       const healAmount = data.healAmount ?? 0;
-      if (healAmount <= 0 || data.healingType !== 'rejuvenating_shot') return;
+      if (
+        healAmount <= 0
+        || (data.healingType !== 'rejuvenating_shot' && data.healingType !== 'beast_regen_wolf')
+      ) return;
 
       let healingPosition: Vector3 | null = null;
       if (data.position) {
@@ -8389,7 +10202,7 @@ export function CoopGameScene({
           healAmount,
           false,
           healingPosition,
-          'rejuvenating_shot_healing',
+          data.healingType === 'beast_regen_wolf' ? 'beast_regen_healing' : 'rejuvenating_shot_healing',
           false,
         );
       }
@@ -8436,6 +10249,24 @@ export function CoopGameScene({
       }
     };
 
+    const handleBossAttackTelegraph = (data: {
+      bossId?: string;
+      targetPlayerId?: string;
+      targetCombatAllyId?: string;
+      position?: { x: number; y: number; z: number };
+      hitDelayMs?: number;
+    }) => {
+      if (!data.bossId || !isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const existing = bossPendingMissTimers.current.get(data.bossId);
+      if (existing) clearTimeout(existing);
+      // Server hit delay is BOSS_MELEE_HIT_DELAY_MS (875) — wait slightly longer
+      const timer = setTimeout(() => {
+        bossPendingMissTimers.current.delete(data.bossId!);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 975) + 50);
+      bossPendingMissTimers.current.set(data.bossId, timer);
+    };
+
     const handleBossAttack = (data: {
       bossId: string;
       targetPlayerId: string;
@@ -8447,6 +10278,13 @@ export function CoopGameScene({
 
       if (targetPlayerId === socket?.id && playerEntity) {
         if (blockLocalDamageDuringCoopPortal()) return;
+
+        // Cancel pending miss — this attack connected
+        const pendingMiss = bossPendingMissTimers.current.get(data.bossId);
+        if (pendingMiss) {
+          clearTimeout(pendingMiss);
+          bossPendingMissTimers.current.delete(data.bossId);
+        }
 
         // Apply damage to local player
         const health = playerEntity.getComponent(Health);
@@ -8707,6 +10545,29 @@ export function CoopGameScene({
       }
     };
 
+    const handleTigerPounceStart = (_data: {
+      tigerId: string;
+      landPosition: { x: number; y: number; z: number };
+      durationMs?: number;
+      timestamp: number;
+    }) => {
+      // Tiger pounce: no Templar-style ground telegraph / leap shockwave.
+    };
+
+    const handleTigerPounceLand = (data: {
+      tigerId: string;
+      landPosition?: { x: number; y: number; z: number };
+    }) => {
+      if (data.landPosition) {
+        const land = data.landPosition;
+        window.audioSystem?.playWeaponSound?.(
+          'beast_tiger_attack',
+          new Vector3(land.x, land.y, land.z),
+          { volume: 0.5 },
+        );
+      }
+    };
+
     const handleTitanStompShockwave = (data: {
       titanId: string;
       soulType?: 'green' | 'red' | 'blue' | 'purple';
@@ -8891,6 +10752,41 @@ export function CoopGameScene({
         });
     };
 
+    const handleShamanStormShockZap = (data: {
+      shamanId: string;
+      beams?: { startPosition: { x: number; y: number; z: number }; targetPosition: { x: number; y: number; z: number } }[];
+      strikeAt: number;
+      halfWidth?: number;
+      vfxScale?: number;
+      timestamp: number;
+    }) => {
+      const beams =
+        data.beams && data.beams.length > 0
+          ? data.beams.map((b) => ({
+              startPosition: new Vector3(b.startPosition.x, b.startPosition.y, b.startPosition.z),
+              targetPosition: new Vector3(b.targetPosition.x, b.targetPosition.y, b.targetPosition.z),
+            }))
+          : [];
+      if (beams.length === 0) return;
+      lightningBurstLayerRef.current?.addShamanStormShockZap({
+          id: `shaman-storm-shock-${data.shamanId}-${data.timestamp}`,
+          beams,
+          strikeAt: data.strikeAt,
+          halfWidth: data.halfWidth ?? 1.0,
+          vfxScale: data.vfxScale ?? 1,
+        });
+    };
+
+    const handleShamanSpiritWolvesCast = (data: {
+      shamanId: string;
+      position?: { x: number; y: number; z: number };
+      timestamp?: number;
+    }) => {
+      if (!data.position) return;
+      const pos = new Vector3(data.position.x, data.position.y ?? 0, data.position.z);
+      window.audioSystem?.playWolfPackHowlsSound?.(pos);
+    };
+
     const handleBoss3NovaRelease = (data: {
       bossId: string;
       origin: { x: number; z: number };
@@ -8933,6 +10829,40 @@ export function CoopGameScene({
           variant: 'templar',
           theme: 'red',
         });
+    };
+
+    const handleFrostQueenTeleport = (data: {
+      frostQueenId: string;
+      startPosition: { x: number; y: number; z: number };
+      endPosition: { x: number; y: number; z: number };
+      timestamp?: number;
+    }) => {
+      const ts = data.timestamp ?? Date.now();
+      const start = new Vector3(
+        data.startPosition.x,
+        data.startPosition.y ?? 0,
+        data.startPosition.z,
+      );
+      const end = new Vector3(
+        data.endPosition.x,
+        data.endPosition.y ?? 0,
+        data.endPosition.z,
+      );
+
+      window.audioSystem?.playEnemyFrostNovaSound?.(start);
+      allyCombatLayerRef.current?.addKnightFrostImpact({
+        id: `${data.frostQueenId}-tp-start-${ts}`,
+        position: start.clone(),
+      });
+
+      const arrivalDelay = Math.round(FROST_QUEEN_TELEPORT_LOCK_MS * 0.45);
+      setTimeout(() => {
+        window.audioSystem?.playEnemyFrostRaySound?.(end);
+        allyCombatLayerRef.current?.addKnightFrostImpact({
+          id: `${data.frostQueenId}-tp-end-${ts}`,
+          position: end.clone(),
+        });
+      }, arrivalDelay);
     };
 
     const handleTemplarBlinkSmiteImpact = (data: any) => {
@@ -9109,6 +11039,23 @@ export function CoopGameScene({
       }, 1000);
     };
 
+    const spawnDreamshroudMistEffect = (
+      assassinId: string,
+      position: { x: number; y?: number; z: number },
+    ) => {
+      const mistPosition = new Vector3(position.x, position.y ?? 1.0, position.z);
+      const effectId = `dreamshroud-mist-${assassinId}-${Date.now()}`;
+      groundHazardLayerRef.current?.addMistEffect({
+        id: effectId,
+        position: mistPosition,
+        startTime: Date.now(),
+        color: '#44FF88',
+      });
+      setTimeout(() => {
+        groundHazardLayerRef.current?.removeMistEffect(effectId);
+      }, 1000);
+    };
+
     const handleWraithStealthCloak = (data: {
       wraithId: string;
       position: { x: number; y?: number; z: number };
@@ -9123,6 +11070,22 @@ export function CoopGameScene({
     }) => {
       if (!data?.wraithId || !data.position) return;
       spawnWraithMistEffect(data.wraithId, data.position);
+    };
+
+    const handleAssassinDreamshroudCloak = (data: {
+      assassinId: string;
+      position: { x: number; y?: number; z: number };
+    }) => {
+      if (!data?.assassinId || !data.position) return;
+      spawnDreamshroudMistEffect(data.assassinId, data.position);
+    };
+
+    const handleAssassinDreamshroudReveal = (data: {
+      assassinId: string;
+      position: { x: number; y?: number; z: number };
+    }) => {
+      if (!data?.assassinId || !data.position) return;
+      spawnDreamshroudMistEffect(data.assassinId, data.position);
     };
 
     const handleFissionDetonation = (data: {
@@ -9152,7 +11115,7 @@ export function CoopGameScene({
       for (const entity of allEntities) {
         if (entity.userData?.serverEnemyId === enemyId) {
           const isAlly = isCoopPlayerAllyEntity(entity);
-          if (isAlly && effectType !== 'hostileRoot') break;
+          if (isAlly && effectType !== 'hostileRoot' && effectType !== 'hostileFreeze') break;
 
           const enemy = entity.getComponent(Enemy);
           if (enemy) {
@@ -9172,8 +11135,8 @@ export function CoopGameScene({
                   spawnTitansGripStunLightning(transform.position);
                 }
               }
-            } else if (effectType === 'freeze') {
-              if (isImmuneToPlayerStunAndFreeze(sk)) break;
+            } else if (effectType === 'freeze' || effectType === 'hostileFreeze') {
+              if (effectType === 'freeze' && isImmuneToPlayerStunAndFreeze(sk)) break;
               const freezeMs = capFreezeMsForEnemy(enemy, duration, sk);
               enemy.freeze(duration / 1000, currentTime, sk);
 
@@ -9193,11 +11156,17 @@ export function CoopGameScene({
               if (transform) {
                 enemy.applyIgnite(duration, currentTime, entity.id.toString(), transform.position.clone());
               }
+            } else if (effectType === 'shadowflame') {
+              const transform = entity.getComponent(Transform);
+              if (transform) {
+                enemy.applyShadowflame(duration, currentTime, entity.id.toString(), transform.position.clone());
+              }
             } else if (effectType === 'entangle' || effectType === 'hostileRoot') {
               enemy.entangle(duration / 1000, currentTime);
               const transform = entity.getComponent(Transform);
               if (transform) {
-                addGlobalEntangledEnemy(entity.id.toString(), transform.position.clone(), duration);
+                const theme = (data as any)?.entangleTheme === 'spider' ? 'spider' : 'default';
+                addGlobalEntangledEnemy(entity.id.toString(), transform.position.clone(), duration, theme);
               }
             }
           }
@@ -9465,6 +11434,8 @@ export function CoopGameScene({
     socket.on('ghoul-leap-land', handleGhoulLeapLand);
     socket.on('templar-leap-start', handleTemplarLeapStart);
     socket.on('templar-leap-land', handleTemplarLeapLand);
+    socket.on('tiger-pounce-start', handleTigerPounceStart);
+    socket.on('tiger-pounce-land', handleTigerPounceLand);
     socket.on('titan-stomp-shockwave', handleTitanStompShockwave);
     socket.on('titan-cannon-windup', handleTitanCannonWindup);
 
@@ -9493,64 +11464,82 @@ export function CoopGameScene({
     socket.on('boss2-archon-lightning', handleBoss2ArchonLightning);
     socket.on('warlock-archon-shock', handleWarlockArchonShock);
     socket.on('knight-storm-lash-zap', handleKnightStormLashZap);
+    socket.on('shaman-storm-shock-zap', handleShamanStormShockZap);
+    socket.on('shaman-spirit-wolves-cast', handleShamanSpiritWolvesCast);
     socket.on('boss3-nova-release', handleBoss3NovaRelease);
     socket.on('templar-teleport', handleTemplarTeleport);
+    socket.on('frost-queen-teleport', handleFrostQueenTeleport);
     socket.on('templar-blink-smite-impact', handleTemplarBlinkSmiteImpact);
     socket.on('martyr-detonation-telegraph', handleMartyrDetonationTelegraph);
     socket.on('martyr-detonation-impact', handleMartyrDetonationImpact);
     socket.on('wraith-stealth-cloak', handleWraithStealthCloak);
     socket.on('wraith-stealth-reveal', handleWraithStealthReveal);
+    socket.on('assassin-dreamshroud-cloak', handleAssassinDreamshroudCloak);
+    socket.on('assassin-dreamshroud-reveal', handleAssassinDreamshroudReveal);
     socket.on('fission-detonation', handleFissionDetonation);
     socket.on('boss-skeleton-attack', handleBossSkeletonAttack);
     socket.on('knight-attack-telegraph', handleKnightAttackTelegraph);
+    socket.on('allied-knight-attack-telegraph', handleAlliedKnightAttackTelegraph);
+    socket.on('ghoul-attack-telegraph', handleGhoulAttackTelegraph);
+    socket.on('player-zombie-attack-telegraph', handlePlayerZombieAttackTelegraph);
     socket.on('tentacle-spine-windup', handleTentacleSpineWindup);
     socket.on('tentacle-spine-slam', handleTentacleSpineSlamSocket);
     socket.on('knight-attack', handleKnightAttack);
     socket.on('knight-spin-hit', handleKnightAttack);
-    const handleSpectreSpinHit = (data: any) => handleKnightAttack({ ...data, knightId: data.spectreId });
-    const handleSpectreSpinLand = (data: {
-      spectreId?: string;
-      position?: { x: number; y: number; z: number };
-      rotation?: number;
-    }) => {
-      if (!data.position) return;
-      const position = new Vector3(data.position.x, data.position.y, data.position.z);
-      const rotation = data.rotation ?? 0;
-      const direction = new Vector3(Math.sin(rotation), 0, Math.cos(rotation));
-      const spectreLandImpact: ImpactEffectEvent = {
-        id: `spectre_spin_land_${Date.now()}_${Math.random()}`,
-        type: 'spectre-spin-land-effect',
-        position,
-        direction,
-        timestamp: Date.now(),
-      };
-      combatFeedbackLayerRef.current?.addImpacts([spectreLandImpact]);
-      if (combatFeedbackLayerRef.current?.flushPendingImpacts()) {
-        combatFeedbackLayerRef.current?.mountImpacts();
-      }
-    };
+    const handleAssassinSpinHit = (data: any) => handleKnightAttack({ ...data, knightId: data.assassinId });
+    socket.on('assassin-spin-hit', handleAssassinSpinHit);
     const handleValkyrieLungeHit = (data: any) => handleKnightAttack({ ...data, knightId: data.valkyrieId });
     const handleValkyrieJudgmentCast = (data: {
       valkyrieId: string;
-      targetPosition: { x: number; y: number; z: number };
-      strikeAt: number;
+      targetPosition?: { x: number; y: number; z: number };
+      strikeAt?: number;
       hoverMs?: number;
       fallMs?: number;
       skyHeight?: number;
     }) => {
       if (!coopServerEnemyLiving(data.valkyrieId)) return;
-      if (!data.targetPosition) return;
+
+      // Cast wind-up phase (no strike target yet)
+      if (!data.targetPosition) {
+        const valkyrie = enemiesRef.current.get(data.valkyrieId);
+        const live = enemyTransformsRef.current.get(data.valkyrieId);
+        const pos = live?.position ?? valkyrie?.position;
+        if (pos) {
+          window.audioSystem?.playValkyrieJudgmentCastSound?.(
+            new Vector3(pos.x, pos.y, pos.z),
+          );
+        }
+        return;
+      }
+
+      if (data.strikeAt == null) return;
+
+      const strikeId = `valkyrie-judgment-${data.valkyrieId}-${data.strikeAt}`;
+      const strikePos = new Vector3(
+        data.targetPosition.x,
+        data.targetPosition.y,
+        data.targetPosition.z,
+      );
       explosionBurstLayerRef.current?.addValkyrieJudgmentStrike({
-        id: `valkyrie-judgment-${data.valkyrieId}-${data.strikeAt}`,
-        position: new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z),
+        id: strikeId,
+        position: strikePos,
         strikeAt: data.strikeAt,
         hoverMs: data.hoverMs,
         fallMs: data.fallMs,
         skyHeight: data.skyHeight,
       });
+
+      const fallMs = data.fallMs ?? VALKYRIE_JUDGMENT_FALL_MS;
+      const fallStart = data.strikeAt - fallMs;
+      const delay = Math.max(0, fallStart - Date.now());
+      const existing = valkyrieJudgmentFallTimeoutsRef.current.get(strikeId);
+      if (existing) clearTimeout(existing);
+      const timeoutId = setTimeout(() => {
+        valkyrieJudgmentFallTimeoutsRef.current.delete(strikeId);
+        window.audioSystem?.playValkyrieJudgmentFallSound?.(strikePos);
+      }, delay);
+      valkyrieJudgmentFallTimeoutsRef.current.set(strikeId, timeoutId);
     };
-    socket.on('spectre-spin-hit', handleSpectreSpinHit);
-    socket.on('spectre-spin-land', handleSpectreSpinLand);
     socket.on('valkyrie-lunge-hit', handleValkyrieLungeHit);
     socket.on('valkyrie-judgment-cast', handleValkyrieJudgmentCast);
     socket.on('knight-smite',  handleKnightSmite);
@@ -9558,12 +11547,94 @@ export function CoopGameScene({
     socket.on('allied-healer-greater-heal', handleAlliedHealerGreaterHeal);
     socket.on('knight-frost',  handleKnightFrost);
     socket.on('knight-frost-projectile', handleKnightFrostProjectile);
+    socket.on('frost-queen-ice-shards-projectile', handleFrostQueenIceShardsProjectile);
+    socket.on('frost-queen-ice-shards-hit', handleFrostQueenIceShardsHit);
     socket.on('knight-deathgrasp-projectile', handleKnightDeathGraspProjectile);
     socket.on('knight-deathgrasp-pull', handleKnightDeathGraspPull);
     socket.on('boss2-deathgrasp-projectiles', handleBoss2DeathGraspProjectiles);
     socket.on('boss2-deathgrasp-pull', handleBoss2DeathGraspPull);
+    socket.on('player-deathgrasp-hit', handlePlayerDeathGraspHit);
+    socket.on('player-deathgrasp-pull', handlePlayerDeathGraspPull);
     socket.on('templar-attack-telegraph', handleTemplarAttackTelegraph);
     socket.on('templar-attack', handleTemplarAttack);
+    socket.on('spectre-attack-telegraph', handleSpectreAttackTelegraph);
+    socket.on('spectre-attack', handleSpectreAttack);
+    socket.on('death-knight-attack-telegraph', handleDeathKnightAttackTelegraph);
+    socket.on('death-knight-attack', handleDeathKnightAttack);
+    socket.on('shaman-attack-telegraph', handleShamanAttackTelegraph);
+    socket.on('shaman-attack', handleShamanAttack);
+    socket.on('serpent-attack-telegraph', handleSerpentAttackTelegraph);
+    socket.on('serpent-attack', handleSerpentAttack);
+    socket.on('wyvern-attack-telegraph', handleWyvernAttackTelegraph);
+    socket.on('wyvern-attack', handleWyvernAttack);
+    socket.on('destiny-attack-telegraph', handleDestinyAttackTelegraph);
+    socket.on('destiny-attack', handleDestinyAttack);
+    socket.on('tiger-attack-telegraph', handleTigerAttackTelegraph);
+    socket.on('tiger-attack', handleTigerAttack);
+    socket.on('wolf-attack-telegraph', handleWolfAttackTelegraph);
+    socket.on('wolf-attack', handleWolfAttack);
+    socket.on('bear-attack-telegraph', handleBearAttackTelegraph);
+    socket.on('bear-attack', handleBearAttack);
+    socket.on('bone-spider-attack-telegraph', handleBoneSpiderAttackTelegraph);
+    socket.on('bone-spider-attack', handleBoneSpiderAttack);
+    socket.on('skyray-attack-telegraph', handleSkyrayAttackTelegraph);
+    socket.on('skyray-attack', handleSkyrayAttack);
+    socket.on('terrorhawk-attack-telegraph', handleTerrorhawkAttackTelegraph);
+    socket.on('terrorhawk-attack', handleTerrorhawkAttack);
+
+    // Centralized melee whiff: cancel pending miss timer, play whoosh + MISS floater immediately
+    const meleeWhiffBindings: Array<{
+      event: string;
+      idField: string;
+      timers: React.MutableRefObject<Map<string, ReturnType<typeof setTimeout>>>;
+    }> = [
+      { event: 'knight-attack-whiff', idField: 'knightId', timers: knightPendingMissTimers },
+      { event: 'templar-attack-whiff', idField: 'templarId', timers: templarPendingMissTimers },
+      { event: 'spectre-attack-whiff', idField: 'spectreId', timers: spectrePendingMissTimers },
+      { event: 'death-knight-attack-whiff', idField: 'deathKnightId', timers: deathKnightPendingMissTimers },
+      { event: 'shaman-attack-whiff', idField: 'shamanId', timers: shamanPendingMissTimers },
+      { event: 'serpent-attack-whiff', idField: 'serpentId', timers: serpentPendingMissTimers },
+      { event: 'tiger-attack-whiff', idField: 'tigerId', timers: tigerPendingMissTimers },
+      { event: 'wolf-attack-whiff', idField: 'wolfId', timers: wolfPendingMissTimers },
+      { event: 'bear-attack-whiff', idField: 'bearId', timers: bearPendingMissTimers },
+      { event: 'bone-spider-attack-whiff', idField: 'boneSpiderId', timers: boneSpiderPendingMissTimers },
+      { event: 'skyray-attack-whiff', idField: 'skyrayId', timers: skyrayPendingMissTimers },
+      { event: 'terrorhawk-attack-whiff', idField: 'terrorhawkId', timers: terrorhawkPendingMissTimers },
+      { event: 'wyvern-attack-whiff', idField: 'wyvernId', timers: wyvernPendingMissTimers },
+      { event: 'destiny-attack-whiff', idField: 'destinyId', timers: wyvernPendingMissTimers },
+      { event: 'boss-attack-whiff', idField: 'bossId', timers: bossPendingMissTimers },
+      { event: 'nemesis-attack-whiff', idField: 'nemesisId', timers: nemesisPendingMissTimers },
+      { event: 'titan-attack-whiff', idField: 'titanId', timers: titanPendingMissTimers },
+      { event: 'stone-giant-attack-whiff', idField: 'stoneGiantId', timers: stoneGiantPendingMissTimers },
+      { event: 'eternal-oak-attack-whiff', idField: 'eternalOakId', timers: eternalOakPendingMissTimers },
+      { event: 'colossus-attack-whiff', idField: 'colossusId', timers: colossusPendingMissTimers },
+      { event: 'ghoul-attack-whiff', idField: 'ghoulId', timers: knightPendingMissTimers },
+    ];
+
+    const handleMeleeAttackWhiff = (idField: string, timers: React.MutableRefObject<Map<string, ReturnType<typeof setTimeout>>>) =>
+      (data: any) => {
+        if (!isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+        const id = data?.[idField];
+        if (id) {
+          const pending = timers.current.get(id);
+          if (pending) {
+            clearTimeout(pending);
+            timers.current.delete(id);
+          }
+        }
+        const pos = meleeImpactPosition(data);
+        playIncomingMeleeWhiffSound(pos);
+        showLocalPlayerMissNumber();
+      };
+
+    const meleeWhiffHandlers = meleeWhiffBindings.map((b) => ({
+      event: b.event,
+      handler: handleMeleeAttackWhiff(b.idField, b.timers),
+    }));
+    for (const { event, handler } of meleeWhiffHandlers) {
+      socket.on(event, handler);
+    }
+
     socket.on('enemy-status-effect', handleEnemyStatusEffect);
     socket.on('enemy-chill-sync', handleEnemyChillSync);
     socket.on('enemy-stagger-proc', handleEnemyStaggerProc);
@@ -9612,6 +11683,47 @@ export function CoopGameScene({
 
     socket.on('warlock-orb-impact', handleWarlockOrbImpact);
 
+    const handleMedusaVoidWarpTelegraph = (data: {
+      medusaId: string;
+      durationMs: number;
+      timestamp?: number;
+    }) => {
+      if (!data?.medusaId) return;
+      registerMedusaVoidWarp(data.medusaId, data.durationMs, data.timestamp ?? Date.now());
+    };
+
+    const handleMedusaProjectileTelegraph = (data: {
+      medusaId: string;
+      startPosition: { x: number; y: number; z: number };
+      targetPosition: { x: number; y: number; z: number };
+      damage: number;
+    }) => {
+      if (!coopServerEnemyLiving(data.medusaId)) return;
+      projectileLayerRef.current?.addMedusaProjectile({
+        id: `medusa-bolt-${data.medusaId}-${Date.now()}-${Math.random()}`,
+        startPosition: new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z),
+        targetPosition: new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z),
+        damage: data.damage,
+        medusaId: data.medusaId,
+      } satisfies MedusaProjectileState);
+    };
+
+    const handleMedusaProjectileImpact = (data: {
+      medusaId: string;
+      position: { x: number; y: number; z: number };
+      hit: boolean;
+    }) => {
+      const pos = new Vector3(data.position.x, data.position.y, data.position.z);
+      explosionBurstLayerRef.current?.addWarlockVoidBoltExplosion({
+        id: `medusa-bolt-impact-${data.medusaId}-${Date.now()}-${Math.random()}`,
+        position: pos,
+      });
+    };
+
+    socket.on('medusa-voidwarp-telegraph', handleMedusaVoidWarpTelegraph);
+    socket.on('medusa-projectile-telegraph', handleMedusaProjectileTelegraph);
+    socket.on('medusa-projectile-impact', handleMedusaProjectileImpact);
+
     const handleGreedLaunchTelegraph = (data: {
       greedId: string;
       startPosition: { x: number; y: number; z: number };
@@ -9635,9 +11747,87 @@ export function CoopGameScene({
       hit: boolean;
     }) => {
       projectileLayerRef.current?.removeGreedFireballByGreedId(data.greedId);
+      const pos = new Vector3(data.position.x, data.position.y ?? 0, data.position.z);
+      window.audioSystem?.playFireboltImpactSound(
+        pos,
+        data.hit ? undefined : { volume: 0.45 },
+      );
     };
 
     socket.on('greed-fireball-impact', handleGreedFireballImpact);
+
+    const handleWyvernBreathFirebolt = (data: {
+      wyvernId: string;
+      fireboltId?: string;
+      startPosition: { x: number; y: number; z: number };
+      targetPosition: { x: number; y: number; z: number };
+      damage: number;
+    }) => {
+      if (!coopServerEnemyLiving(data.wyvernId)) return;
+      projectileLayerRef.current?.addWyvernBreathFirebolt({
+          id: data.fireboltId || `wyvern-breath-${data.wyvernId}-${Date.now()}`,
+          startPosition: new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z),
+          targetPosition: new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z),
+          wyvernId: data.wyvernId,
+      });
+    };
+
+    socket.on('wyvern-breath-firebolt', handleWyvernBreathFirebolt);
+
+    const handleWyvernBreathImpact = (data: {
+      wyvernId: string;
+      fireboltId?: string;
+      position: { x: number; y: number; z: number };
+      hit: boolean;
+    }) => {
+      if (data.fireboltId) {
+        projectileLayerRef.current?.removeWyvernBreathFireboltById(data.fireboltId);
+      } else {
+        projectileLayerRef.current?.removeWyvernBreathFireboltByWyvernId(data.wyvernId);
+      }
+      const pos = new Vector3(data.position.x, data.position.y ?? 0, data.position.z);
+      window.audioSystem?.playFireboltImpactSound(
+        pos,
+        data.hit ? undefined : { volume: 0.45 },
+      );
+    };
+
+    socket.on('wyvern-breath-impact', handleWyvernBreathImpact);
+
+    const handleDestinyBreathFirebolt = (data: {
+      destinyId: string;
+      fireboltId?: string;
+      startPosition: { x: number; y: number; z: number };
+      targetPosition: { x: number; y: number; z: number };
+      damage: number;
+      fromAir?: boolean;
+    }) => {
+      if (!coopServerEnemyLiving(data.destinyId)) return;
+      projectileLayerRef.current?.addDestinyBreathFirebolt({
+          id: data.fireboltId || `destiny-breath-${data.destinyId}-${Date.now()}`,
+          startPosition: new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z),
+          targetPosition: new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z),
+          destinyId: data.destinyId,
+          fromAir: !!data.fromAir,
+      });
+    };
+
+    socket.on('destiny-breath-firebolt', handleDestinyBreathFirebolt);
+
+    const handleDestinyBreathImpact = (data: {
+      destinyId: string;
+      fireboltId?: string;
+      position: { x: number; y: number; z: number };
+      hit: boolean;
+    }) => {
+      if (data.fireboltId) {
+        projectileLayerRef.current?.removeDestinyBreathFireboltById(data.fireboltId);
+      } else {
+        projectileLayerRef.current?.removeDestinyBreathFireboltByDestinyId(data.destinyId);
+      }
+    };
+
+    socket.on('destiny-breath-impact', handleDestinyBreathImpact);
 
     const handleSentinelOrbTelegraph = (data: {
       sentinelId: string;
@@ -9659,6 +11849,29 @@ export function CoopGameScene({
 
     socket.on('sentinel-orb-telegraph', handleSentinelOrbTelegraph);
     socket.on('sentinel-orb-impact', handleSentinelOrbImpact);
+
+    const handleBoneSpiderEnsnaringShotTelegraph = (data: {
+      spiderId: string;
+      shotId?: string;
+      startPosition: { x: number; y: number; z: number };
+      targetPosition: { x: number; y: number; z: number };
+    }) => {
+      if (!coopServerEnemyLiving(data.spiderId)) return;
+      projectileLayerRef.current?.addBoneSpiderEnsnaringShot({
+        id: `bone-spider-ensnare-${data.spiderId}-${data.shotId ?? Date.now()}`,
+        startPosition: new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z),
+        targetPosition: new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z),
+        spiderId: data.spiderId,
+        shotId: data.shotId,
+      });
+    };
+
+    const handleBoneSpiderEnsnaringShotOutcome = (data: { spiderId: string }) => {
+      projectileLayerRef.current?.removeBoneSpiderEnsnaringShotBySpiderId(data.spiderId);
+    };
+
+    socket.on('bone-spider-ensnaring-shot-telegraph', handleBoneSpiderEnsnaringShotTelegraph);
+    socket.on('bone-spider-ensnaring-shot-outcome', handleBoneSpiderEnsnaringShotOutcome);
 
     const handleEnchantressEarthShockTelegraph = (data: {
       enchantressId: string;
@@ -9686,6 +11899,56 @@ export function CoopGameScene({
     };
 
     socket.on('enchantress-earth-shock-impact', handleEnchantressEarthShockImpact);
+
+    const handleAlliedSpiderEnsnaringThreadsTelegraph = (data: {
+      spiderId: string;
+      shotId?: string;
+      startPosition: { x: number; y: number; z: number };
+      targetPosition: { x: number; y: number; z: number };
+    }) => {
+      if (!coopServerEnemyLiving(data.spiderId)) return;
+      projectileLayerRef.current?.addAlliedSpiderEnsnaringThreads({
+        id: `allied-spider-threads-${data.shotId || data.spiderId}-${Date.now()}`,
+        startPosition: new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z),
+        targetPosition: new Vector3(data.targetPosition.x, data.targetPosition.y, data.targetPosition.z),
+        spiderId: data.spiderId,
+        shotId: data.shotId,
+      });
+    };
+
+    const handleAlliedSpiderEnsnaringThreadsImpact = (data: {
+      spiderId: string;
+      hit?: boolean;
+      targetEnemyId?: string;
+      entangleTheme?: string;
+      position?: { x: number; y: number; z: number };
+    }) => {
+      projectileLayerRef.current?.removeAlliedSpiderEnsnaringThreadsBySpiderId(data.spiderId);
+      if (data.hit && data.targetEnemyId && data.entangleTheme === 'spider' && data.position) {
+        addGlobalEntangledEnemy(
+          data.targetEnemyId,
+          new Vector3(data.position.x, data.position.y, data.position.z),
+          5000,
+          'spider',
+        );
+      }
+    };
+
+    socket.on('allied-spider-ensnaring-threads-telegraph', handleAlliedSpiderEnsnaringThreadsTelegraph);
+    socket.on('allied-spider-ensnaring-threads-impact', handleAlliedSpiderEnsnaringThreadsImpact);
+
+    const handleAlliedBearSiegebreakerTaunt = (data: {
+      bearId: string;
+      enemyIds?: string[];
+      durationMs?: number;
+    }) => {
+      const duration = typeof data.durationMs === 'number' ? data.durationMs : 6000;
+      for (const enemyId of data.enemyIds || []) {
+        createEnemyTauntEffect(enemyId, duration);
+      }
+    };
+
+    socket.on('allied-bear-siegebreaker-taunt', handleAlliedBearSiegebreakerTaunt);
 
     const handleGreedEmberZoneSpawned = (data: {
       id: string;
@@ -9775,11 +12038,32 @@ export function CoopGameScene({
 
     socket.on('boss2-flame-pillar', handleBoss2FlamePillar);
 
+    const handleArchmageFlamePillar = (data: {
+      enemyId?: string;
+      position: { x: number; y: number; z: number };
+      fromPlayerId?: string;
+    }) => {
+      if (!data?.position) return;
+      const strikePos = new Vector3(data.position.x, data.position.y, data.position.z);
+      (window as any).audioSystem?.playWarlockImmolateSound?.(strikePos);
+      bossTelegraphLayerRef.current?.addWarlockFlameStrike({
+        id: `archmage-flame-pillar-${data.enemyId ?? 'x'}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        position: strikePos.clone(),
+      });
+    };
+
+    socket.on('archmage-flame-pillar', handleArchmageFlamePillar);
+
     // ── Ghoul attack (melee damage to local player) ──────────────────────────
     const handleGhoulAttack = (data: any) => {
       const playerEntity = getLocalPlayerEntity();
       if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
       if (blockLocalDamageDuringCoopPortal()) return;
+
+      // Cancel pending miss sound — this attack connected
+      if (data.ghoulId) {
+        cancelKnightStyleMiss(data.ghoulId);
+      }
 
       const deathState = playerDeathStates.get(socket.id);
       if (deathState?.isDead) return;
@@ -9792,6 +12076,11 @@ export function CoopGameScene({
         const healthBefore = health.currentHealth;
         const shieldBefore = shield?.currentShield;
         const damageApplied = health.takeDamage(data.damage, Date.now() / 1000, playerEntity, false);
+
+        if (damageApplied) {
+          const pos = new Vector3(data.position?.x ?? 0, data.position?.y ?? 0, data.position?.z ?? 0);
+          playKnightStyleHit(pos);
+        }
 
         if (playerEntity) {
           const transform = playerEntity.getComponent(Transform);
@@ -9827,10 +12116,106 @@ export function CoopGameScene({
     };
 
     // ── Titan attack (melee damage to local player; knockback via player-knockback event) ──
+    const handleTitanAttackTelegraph = (data: {
+      titanId?: string;
+      targetPlayerId?: string;
+      targetCombatAllyId?: string;
+      position?: { x: number; y: number; z: number };
+      hitDelayMs?: number;
+    }) => {
+      if (!data.titanId || !isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const existing = titanPendingMissTimers.current.get(data.titanId);
+      if (existing) clearTimeout(existing);
+      // Server hit delay is TITAN_HIT_DELAY_MS (875) — wait slightly longer
+      const timer = setTimeout(() => {
+        titanPendingMissTimers.current.delete(data.titanId!);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 975) + 50);
+      titanPendingMissTimers.current.set(data.titanId, timer);
+    };
+
+    const handleNemesisAttackTelegraph = (data: {
+      nemesisId?: string;
+      targetPlayerId?: string;
+      targetCombatAllyId?: string;
+      position?: { x: number; y: number; z: number };
+      hitDelayMs?: number;
+    }) => {
+      if (!data.nemesisId || !isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const existing = nemesisPendingMissTimers.current.get(data.nemesisId);
+      if (existing) clearTimeout(existing);
+      // Server hit delay is NEMESIS_HIT_DELAY_MS (437) — wait slightly longer
+      const timer = setTimeout(() => {
+        nemesisPendingMissTimers.current.delete(data.nemesisId!);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 550) + 50);
+      nemesisPendingMissTimers.current.set(data.nemesisId, timer);
+    };
+
+    const handleStoneGiantAttackTelegraph = (data: {
+      stoneGiantId?: string;
+      targetPlayerId?: string;
+      targetCombatAllyId?: string;
+      position?: { x: number; y: number; z: number };
+      hitDelayMs?: number;
+    }) => {
+      if (!data.stoneGiantId || !isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const existing = stoneGiantPendingMissTimers.current.get(data.stoneGiantId);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        stoneGiantPendingMissTimers.current.delete(data.stoneGiantId!);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 1100) + 50);
+      stoneGiantPendingMissTimers.current.set(data.stoneGiantId, timer);
+    };
+
+    const handleEternalOakAttackTelegraph = (data: {
+      eternalOakId?: string;
+      targetPlayerId?: string;
+      targetCombatAllyId?: string;
+      position?: { x: number; y: number; z: number };
+      hitDelayMs?: number;
+    }) => {
+      if (!data.eternalOakId || !isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const existing = eternalOakPendingMissTimers.current.get(data.eternalOakId);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        eternalOakPendingMissTimers.current.delete(data.eternalOakId!);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 1250) + 50);
+      eternalOakPendingMissTimers.current.set(data.eternalOakId, timer);
+    };
+
+    const handleColossusAttackTelegraph = (data: {
+      colossusId?: string;
+      targetPlayerId?: string;
+      targetCombatAllyId?: string;
+      position?: { x: number; y: number; z: number };
+      hitDelayMs?: number;
+    }) => {
+      if (!data.colossusId || !isLocalPlayerMeleeTelegraphTarget(data, socket?.id)) return;
+      const existing = colossusPendingMissTimers.current.get(data.colossusId);
+      if (existing) clearTimeout(existing);
+      const timer = setTimeout(() => {
+        colossusPendingMissTimers.current.delete(data.colossusId!);
+        showLocalPlayerMissNumber();
+      }, (typeof data.hitDelayMs === 'number' ? data.hitDelayMs : 820) + 50);
+      colossusPendingMissTimers.current.set(data.colossusId, timer);
+    };
+
     const handleTitanAttack = (data: any) => {
       const playerEntity = getLocalPlayerEntity();
       if (data.targetPlayerId !== socket?.id || !playerEntity || !socket?.id) return;
       if (blockLocalDamageDuringCoopPortal()) return;
+
+      // Cancel pending titan miss — this attack connected
+      if (data.titanId) {
+        const pendingMiss = titanPendingMissTimers.current.get(data.titanId);
+        if (pendingMiss) {
+          clearTimeout(pendingMiss);
+          titanPendingMissTimers.current.delete(data.titanId);
+        }
+      }
 
       const deathState = playerDeathStates.get(socket.id);
       if (deathState?.isDead) return;
@@ -10059,9 +12444,75 @@ export function CoopGameScene({
     };
 
     socket.on('ghoul-attack', handleGhoulAttack);
-    const handleNemesisAttack = (data: any) => handleTitanAttack({ ...data, titanId: data.nemesisId });
+    const handleNemesisAttack = (data: any) => {
+      if (data.nemesisId) {
+        const pendingMiss = nemesisPendingMissTimers.current.get(data.nemesisId);
+        if (pendingMiss) {
+          clearTimeout(pendingMiss);
+          nemesisPendingMissTimers.current.delete(data.nemesisId);
+        }
+      }
+      handleTitanAttack({ ...data, titanId: data.nemesisId });
+    };
+    const handleStoneGiantAttack = (data: any) => {
+      if (data.stoneGiantId) {
+        const pendingMiss = stoneGiantPendingMissTimers.current.get(data.stoneGiantId);
+        if (pendingMiss) {
+          clearTimeout(pendingMiss);
+          stoneGiantPendingMissTimers.current.delete(data.stoneGiantId);
+        }
+      }
+      handleTitanAttack({ ...data, titanId: data.stoneGiantId });
+    };
+    const handleEternalOakAttack = (data: any) => {
+      if (data.eternalOakId) {
+        const pendingMiss = eternalOakPendingMissTimers.current.get(data.eternalOakId);
+        if (pendingMiss) {
+          clearTimeout(pendingMiss);
+          eternalOakPendingMissTimers.current.delete(data.eternalOakId);
+        }
+      }
+      handleTitanAttack({ ...data, titanId: data.eternalOakId });
+    };
+    const handleColossusAttack = (data: any) => {
+      if (data.colossusId) {
+        const pendingMiss = colossusPendingMissTimers.current.get(data.colossusId);
+        if (pendingMiss) {
+          clearTimeout(pendingMiss);
+          colossusPendingMissTimers.current.delete(data.colossusId);
+        }
+      }
+      handleTitanAttack({ ...data, titanId: data.colossusId });
+    };
+    const handleEternalOakEarthbreakerImpact = (data: {
+      eternalOakId?: string;
+      position?: { x: number; y: number; z: number };
+      radius?: number;
+      stunMs?: number;
+    }) => {
+      if (!data.position || !socket?.id) return;
+      const playerEntity = getLocalPlayerEntity();
+      if (!playerEntity) return;
+      const transform = playerEntity.getComponent(Transform);
+      if (!transform) return;
+      const radius = data.radius ?? 6;
+      const dx = transform.position.x - data.position.x;
+      const dz = transform.position.z - data.position.z;
+      if (dx * dx + dz * dz > radius * radius) return;
+      applyLocalPlayerStun(data.stunMs ?? 3300, 'eternal-oak-earthbreaker');
+    };
+    socket.on('boss-attack-telegraph', handleBossAttackTelegraph);
+    socket.on('titan-attack-telegraph', handleTitanAttackTelegraph);
+    socket.on('nemesis-attack-telegraph', handleNemesisAttackTelegraph);
+    socket.on('stone-giant-attack-telegraph', handleStoneGiantAttackTelegraph);
+    socket.on('eternal-oak-attack-telegraph', handleEternalOakAttackTelegraph);
+    socket.on('colossus-attack-telegraph', handleColossusAttackTelegraph);
     socket.on('titan-attack', handleTitanAttack);
     socket.on('nemesis-attack', handleNemesisAttack);
+    socket.on('stone-giant-attack', handleStoneGiantAttack);
+    socket.on('eternal-oak-attack', handleEternalOakAttack);
+    socket.on('colossus-attack', handleColossusAttack);
+    socket.on('eternal-oak-earthbreaker-impact', handleEternalOakEarthbreakerImpact);
     socket.on('weaver-heal-telegraph', handleWeaverHealTelegraph);
     socket.on('weaver-summon-telegraph', handleWeaverSummonTelegraph);
     socket.on('weaver-lightning-telegraph', handleWeaverLightningTelegraph);
@@ -10074,8 +12525,9 @@ export function CoopGameScene({
 
     return () => {
       unregisterEnemyTelegraphSounds();
+      unregisterBeastAudioSounds();
       unregisterKnightAnimationListeners();
-      unregisterSpectreAnimationListeners();
+      unregisterAssassinAnimationListeners();
       unregisterValkyrieAnimationListeners();
       socket.off('coop-room-whisper', handleCoopRoomWhisper);
       tentacleSpinePendingByEnemyRef.current.forEach((p, enemyId) => {
@@ -10114,6 +12566,7 @@ export function CoopGameScene({
       socket.off('player-shield-changed', handlePlayerShieldChanged);
       socket.off('player-knockback', handlePlayerKnockback);
       socket.off('boss-attack', handleBossAttack);
+      socket.off('boss-attack-telegraph', handleBossAttackTelegraph);
       socket.off('boss-defeated', handleBossDefeated);
       socket.off('boss-meteor-cast', handleBossMeteorCast);
       socket.off('crossentropy-meteor-cast', handleCrossentropyMeteorCast);
@@ -10126,6 +12579,8 @@ export function CoopGameScene({
       socket.off('ghoul-leap-land', handleGhoulLeapLand);
       socket.off('templar-leap-start', handleTemplarLeapStart);
       socket.off('templar-leap-land', handleTemplarLeapLand);
+      socket.off('tiger-pounce-start', handleTigerPounceStart);
+      socket.off('tiger-pounce-land', handleTigerPounceLand);
       socket.off('titan-stomp-shockwave', handleTitanStompShockwave);
       socket.off('titan-cannon-windup', handleTitanCannonWindup);
       socket.off('incineration-beam', handleIncinerationBeam);
@@ -10135,40 +12590,116 @@ export function CoopGameScene({
       socket.off('boss2-archon-lightning', handleBoss2ArchonLightning);
       socket.off('warlock-archon-shock', handleWarlockArchonShock);
       socket.off('knight-storm-lash-zap', handleKnightStormLashZap);
+      socket.off('shaman-storm-shock-zap', handleShamanStormShockZap);
+      socket.off('shaman-spirit-wolves-cast', handleShamanSpiritWolvesCast);
       socket.off('boss3-nova-release', handleBoss3NovaRelease);
       socket.off('templar-teleport', handleTemplarTeleport);
+      socket.off('frost-queen-teleport', handleFrostQueenTeleport);
       socket.off('templar-blink-smite-impact', handleTemplarBlinkSmiteImpact);
       socket.off('martyr-detonation-telegraph', handleMartyrDetonationTelegraph);
       socket.off('martyr-detonation-impact', handleMartyrDetonationImpact);
       socket.off('wraith-stealth-cloak', handleWraithStealthCloak);
       socket.off('wraith-stealth-reveal', handleWraithStealthReveal);
+      socket.off('assassin-dreamshroud-cloak', handleAssassinDreamshroudCloak);
+      socket.off('assassin-dreamshroud-reveal', handleAssassinDreamshroudReveal);
       socket.off('fission-detonation', handleFissionDetonation);
       socket.off('boss-skeleton-attack', handleBossSkeletonAttack);
       socket.off('knight-attack-telegraph', handleKnightAttackTelegraph);
+      socket.off('allied-knight-attack-telegraph', handleAlliedKnightAttackTelegraph);
+      socket.off('ghoul-attack-telegraph', handleGhoulAttackTelegraph);
+      socket.off('player-zombie-attack-telegraph', handlePlayerZombieAttackTelegraph);
       socket.off('tentacle-spine-windup', handleTentacleSpineWindup);
       socket.off('tentacle-spine-slam', handleTentacleSpineSlamSocket);
       socket.off('knight-attack', handleKnightAttack);
       socket.off('knight-spin-hit', handleKnightAttack);
-      socket.off('spectre-spin-hit', handleSpectreSpinHit);
-      socket.off('spectre-spin-land', handleSpectreSpinLand);
+      socket.off('assassin-spin-hit', handleAssassinSpinHit);
       socket.off('valkyrie-lunge-hit', handleValkyrieLungeHit);
       socket.off('valkyrie-judgment-cast', handleValkyrieJudgmentCast);
+      valkyrieJudgmentFallTimeoutsRef.current.forEach((timeoutId) => {
+        clearTimeout(timeoutId);
+      });
+      valkyrieJudgmentFallTimeoutsRef.current.clear();
+      stopJudgmentCorruptionSound();
       socket.off('knight-smite',  handleKnightSmite);
       socket.off('allied-knight-smite-impact', handleAlliedKnightSmiteImpact);
       socket.off('allied-healer-greater-heal', handleAlliedHealerGreaterHeal);
       socket.off('knight-frost',  handleKnightFrost);
       socket.off('knight-frost-projectile', handleKnightFrostProjectile);
+      socket.off('frost-queen-ice-shards-projectile', handleFrostQueenIceShardsProjectile);
+      socket.off('frost-queen-ice-shards-hit', handleFrostQueenIceShardsHit);
       socket.off('knight-deathgrasp-projectile', handleKnightDeathGraspProjectile);
       socket.off('knight-deathgrasp-pull', handleKnightDeathGraspPull);
       socket.off('boss2-deathgrasp-projectiles', handleBoss2DeathGraspProjectiles);
       socket.off('boss2-deathgrasp-pull', handleBoss2DeathGraspPull);
+      socket.off('player-deathgrasp-hit', handlePlayerDeathGraspHit);
+      socket.off('player-deathgrasp-pull', handlePlayerDeathGraspPull);
       socket.off('templar-attack-telegraph', handleTemplarAttackTelegraph);
       socket.off('templar-attack', handleTemplarAttack);
+      socket.off('spectre-attack-telegraph', handleSpectreAttackTelegraph);
+      socket.off('spectre-attack', handleSpectreAttack);
+      socket.off('death-knight-attack-telegraph', handleDeathKnightAttackTelegraph);
+      socket.off('death-knight-attack', handleDeathKnightAttack);
+      socket.off('shaman-attack-telegraph', handleShamanAttackTelegraph);
+      socket.off('shaman-attack', handleShamanAttack);
+      socket.off('serpent-attack-telegraph', handleSerpentAttackTelegraph);
+      socket.off('serpent-attack', handleSerpentAttack);
+      socket.off('wyvern-attack-telegraph', handleWyvernAttackTelegraph);
+      socket.off('wyvern-attack', handleWyvernAttack);
+      socket.off('destiny-attack-telegraph', handleDestinyAttackTelegraph);
+      socket.off('destiny-attack', handleDestinyAttack);
+      socket.off('tiger-attack-telegraph', handleTigerAttackTelegraph);
+      socket.off('tiger-attack', handleTigerAttack);
+      socket.off('wolf-attack-telegraph', handleWolfAttackTelegraph);
+      socket.off('wolf-attack', handleWolfAttack);
+      socket.off('bear-attack-telegraph', handleBearAttackTelegraph);
+      socket.off('bear-attack', handleBearAttack);
+      socket.off('bone-spider-attack-telegraph', handleBoneSpiderAttackTelegraph);
+      socket.off('bone-spider-attack', handleBoneSpiderAttack);
+      socket.off('skyray-attack-telegraph', handleSkyrayAttackTelegraph);
+      socket.off('skyray-attack', handleSkyrayAttack);
+      socket.off('terrorhawk-attack-telegraph', handleTerrorhawkAttackTelegraph);
+      socket.off('terrorhawk-attack', handleTerrorhawkAttack);
+      for (const { event, handler } of meleeWhiffHandlers) {
+        socket.off(event, handler);
+      }
       // Clear any pending miss timers on cleanup
       knightPendingMissTimers.current.forEach(clearTimeout);
       knightPendingMissTimers.current.clear();
       templarPendingMissTimers.current.forEach(clearTimeout);
       templarPendingMissTimers.current.clear();
+      spectrePendingMissTimers.current.forEach(clearTimeout);
+      spectrePendingMissTimers.current.clear();
+      deathKnightPendingMissTimers.current.forEach(clearTimeout);
+      deathKnightPendingMissTimers.current.clear();
+      shamanPendingMissTimers.current.forEach(clearTimeout);
+      shamanPendingMissTimers.current.clear();
+      serpentPendingMissTimers.current.forEach(clearTimeout);
+      serpentPendingMissTimers.current.clear();
+      tigerPendingMissTimers.current.forEach(clearTimeout);
+      tigerPendingMissTimers.current.clear();
+      wolfPendingMissTimers.current.forEach(clearTimeout);
+      wolfPendingMissTimers.current.clear();
+      bearPendingMissTimers.current.forEach(clearTimeout);
+      bearPendingMissTimers.current.clear();
+      boneSpiderPendingMissTimers.current.forEach(clearTimeout);
+      boneSpiderPendingMissTimers.current.clear();
+      skyrayPendingMissTimers.current.forEach(clearTimeout);
+      skyrayPendingMissTimers.current.clear();
+      wyvernPendingMissTimers.current.forEach(clearTimeout);
+      wyvernPendingMissTimers.current.clear();
+      bossPendingMissTimers.current.forEach(clearTimeout);
+      bossPendingMissTimers.current.clear();
+      nemesisPendingMissTimers.current.forEach(clearTimeout);
+      nemesisPendingMissTimers.current.clear();
+      titanPendingMissTimers.current.forEach(clearTimeout);
+      titanPendingMissTimers.current.clear();
+      stoneGiantPendingMissTimers.current.forEach(clearTimeout);
+      stoneGiantPendingMissTimers.current.clear();
+      eternalOakPendingMissTimers.current.forEach(clearTimeout);
+      eternalOakPendingMissTimers.current.clear();
+      colossusPendingMissTimers.current.forEach(clearTimeout);
+      colossusPendingMissTimers.current.clear();
+      clearAllKnightStyleMissTimers();
       socket.off('enemy-status-effect', handleEnemyStatusEffect);
       socket.off('enemy-chill-sync', handleEnemyChillSync);
       socket.off('enemy-stagger-proc', handleEnemyStaggerProc);
@@ -10178,21 +12709,43 @@ export function CoopGameScene({
       socket.off('warlock-blink-telegraph', handleWarlockBlinkTelegraph);
       socket.off('warlock-attack-telegraph', handleWarlockAttackTelegraph);
       socket.off('warlock-orb-impact', handleWarlockOrbImpact);
+      socket.off('medusa-voidwarp-telegraph', handleMedusaVoidWarpTelegraph);
+      socket.off('medusa-projectile-telegraph', handleMedusaProjectileTelegraph);
+      socket.off('medusa-projectile-impact', handleMedusaProjectileImpact);
       socket.off('greed-launch-telegraph', handleGreedLaunchTelegraph);
       socket.off('greed-fireball-impact', handleGreedFireballImpact);
+      socket.off('wyvern-breath-firebolt', handleWyvernBreathFirebolt);
+      socket.off('wyvern-breath-impact', handleWyvernBreathImpact);
+      socket.off('destiny-breath-firebolt', handleDestinyBreathFirebolt);
+      socket.off('destiny-breath-impact', handleDestinyBreathImpact);
       socket.off('enchantress-earth-shock-telegraph', handleEnchantressEarthShockTelegraph);
       socket.off('enchantress-earth-shock-impact', handleEnchantressEarthShockImpact);
+      socket.off('allied-spider-ensnaring-threads-telegraph', handleAlliedSpiderEnsnaringThreadsTelegraph);
+      socket.off('allied-spider-ensnaring-threads-impact', handleAlliedSpiderEnsnaringThreadsImpact);
+      socket.off('allied-bear-siegebreaker-taunt', handleAlliedBearSiegebreakerTaunt);
       socket.off('greed-ember-zone-spawned', handleGreedEmberZoneSpawned);
       socket.off('greed-ember-zone-expired', handleGreedEmberZoneExpired);
       socket.off('warlock-meteor-ember-zone-spawned', handleWarlockMeteorEmberZoneSpawned);
       socket.off('warlock-meteor-ember-zone-expired', handleWarlockMeteorEmberZoneExpired);
       socket.off('warlock-flame-strike', handleWarlockFlameStrike);
       socket.off('boss2-flame-pillar', handleBoss2FlamePillar);
+      socket.off('archmage-flame-pillar', handleArchmageFlamePillar);
       socket.off('ghoul-attack', handleGhoulAttack);
       socket.off('titan-attack', handleTitanAttack);
+      socket.off('titan-attack-telegraph', handleTitanAttackTelegraph);
       socket.off('nemesis-attack', handleNemesisAttack);
+      socket.off('nemesis-attack-telegraph', handleNemesisAttackTelegraph);
+      socket.off('stone-giant-attack', handleStoneGiantAttack);
+      socket.off('stone-giant-attack-telegraph', handleStoneGiantAttackTelegraph);
+      socket.off('eternal-oak-attack', handleEternalOakAttack);
+      socket.off('eternal-oak-attack-telegraph', handleEternalOakAttackTelegraph);
+      socket.off('colossus-attack', handleColossusAttack);
+      socket.off('colossus-attack-telegraph', handleColossusAttackTelegraph);
+      socket.off('eternal-oak-earthbreaker-impact', handleEternalOakEarthbreakerImpact);
       socket.off('sentinel-orb-telegraph', handleSentinelOrbTelegraph);
       socket.off('sentinel-orb-impact', handleSentinelOrbImpact);
+      socket.off('bone-spider-ensnaring-shot-telegraph', handleBoneSpiderEnsnaringShotTelegraph);
+      socket.off('bone-spider-ensnaring-shot-outcome', handleBoneSpiderEnsnaringShotOutcome);
       socket.off('weaver-heal-telegraph', handleWeaverHealTelegraph);
       socket.off('weaver-summon-telegraph', handleWeaverSummonTelegraph);
       socket.off('weaver-lightning-telegraph', handleWeaverLightningTelegraph);
@@ -10215,6 +12768,8 @@ export function CoopGameScene({
     onFlowUpdate,
     onFateUpdate,
     spawnTitansGripStunLightning,
+    stopJudgmentCorruptionSound,
+    showLocalPlayerMissNumber,
   ]);
 
   useEffect(() => {
@@ -10298,7 +12853,13 @@ export function CoopGameScene({
         serverEnemy.type === 'allied-demon' ||
         serverEnemy.type === 'allied-enchantress' ||
         serverEnemy.type === 'allied-healer' ||
-        serverEnemy.type === 'player-zombie';
+        serverEnemy.type === 'allied-tiger' ||
+        serverEnemy.type === 'allied-wolf' ||
+        serverEnemy.type === 'allied-bear' ||
+        serverEnemy.type === 'allied-serpent' ||
+        serverEnemy.type === 'allied-spider' ||
+        serverEnemy.type === 'player-zombie' ||
+        serverEnemy.type === 'vengeful-spirit';
 
       const entity = world.createEntity();
 
@@ -10315,7 +12876,7 @@ export function CoopGameScene({
       }
       entity.addComponent(health);
 
-      const enemyType = serverEnemy.type === 'boss' || serverEnemy.type === 'boss2' || serverEnemy.type === 'boss3' ? EnemyType.BOSS : EnemyType.ELITE;
+      const enemyType = serverEnemy.type === 'boss' || serverEnemy.type === 'boss2' || serverEnemy.type === 'boss3' || serverEnemy.type === 'destiny' ? EnemyType.BOSS : EnemyType.ELITE;
       const enemy = new Enemy(enemyType, 1);
       entity.addComponent(enemy);
 
@@ -10323,21 +12884,33 @@ export function CoopGameScene({
       collider.type = ColliderType.SPHERE;
       collider.radius = serverEnemy.type === 'boss' ? 2.0
         : serverEnemy.type === 'boss2' || serverEnemy.type === 'boss3' ? 1.8
+        : serverEnemy.type === 'destiny' ? 1.8
         : serverEnemy.type === 'boss-skeleton' ? 1.2
         : serverEnemy.type === 'allied-healer' || serverEnemy.type === 'greed' || serverEnemy.type === 'allied-enchantress' ? 0.75
         : serverEnemy.type === 'allied-knight' ? 0.85
         : serverEnemy.type === 'allied-huntress' ? 0.75
         : serverEnemy.type === 'allied-phantom' ? 0.75
         : serverEnemy.type === 'allied-demon' ? 0.85
+        : serverEnemy.type === 'allied-tiger' || serverEnemy.type === 'tiger' || serverEnemy.type === 'boss-tiger' ? 0.9 * (serverEnemy.visualScale ?? 1)
+        : serverEnemy.type === 'allied-wolf' ? 0.58 * (serverEnemy.visualScale ?? 1)
+        : serverEnemy.type === 'wolf' || serverEnemy.type === 'boss-wolf' ? 0.65 * (serverEnemy.visualScale ?? 1)
+        : serverEnemy.type === 'allied-bear' || serverEnemy.type === 'bear' || serverEnemy.type === 'boss-bear' ? 1.0 * (serverEnemy.visualScale ?? 1)
+        : serverEnemy.type === 'allied-serpent' ? 0.7 * (serverEnemy.visualScale ?? 1)
+        : serverEnemy.type === 'allied-spider' ? 0.55 * (serverEnemy.visualScale ?? 1)
         : serverEnemy.type === 'knight' ? 0.85 * (serverEnemy.visualScale ?? 1)
-        : serverEnemy.type === 'templar' || serverEnemy.type === 'ghoul' ? 0.95
-        : serverEnemy.type === 'titan' || serverEnemy.type === 'nemesis' ? 1.2
-        : serverEnemy.type === 'spectre' || serverEnemy.type === 'sentinel' ? 0.9
+        : serverEnemy.type === 'templar' || serverEnemy.type === 'ghoul' || serverEnemy.type === 'skyray' ? 0.95
+        : serverEnemy.type === 'terrorhawk' ? 0.76
+        : serverEnemy.type === 'serpent' || serverEnemy.type === 'boss-serpent' ? 0.95 * (serverEnemy.visualScale ?? 1)
+        : serverEnemy.type === 'wyvern' ? 1.05
+        : serverEnemy.type === 'bone-spider' ? 1.35
+        : serverEnemy.type === 'titan' || serverEnemy.type === 'nemesis' || serverEnemy.type === 'stone-giant' || serverEnemy.type === 'eternal-oak' || serverEnemy.type === 'colossus' ? 1.2
+        : serverEnemy.type === 'spectre' || serverEnemy.type === 'sentinel' || serverEnemy.type === 'death-knight' || serverEnemy.type === 'shaman' || serverEnemy.type === 'assassin' || serverEnemy.type === 'frost-queen' || serverEnemy.type === 'medusa' ? 0.9
         : serverEnemy.type === 'valkyrie' ? 0.98
         : serverEnemy.type === 'training-dummy' ? 1.85
         : serverEnemy.type === 'shade' ? 1.0
         : serverEnemy.type === 'martyr' ? 0.8
         : serverEnemy.type === 'tentacle-spine' ? 0.55
+        : serverEnemy.type === 'vengeful-spirit' ? 0.7
         : 1.5;
       collider.layer = CollisionLayer.ENEMY;
       collider.isTrigger = true;
@@ -10387,7 +12960,14 @@ export function CoopGameScene({
       mushroomEntityByIndexRef.current.clear();
     };
 
-    if (inThroneRoom || inBossThroneArena || isCastleRoom) {
+    if (
+      inThroneRoom
+      || inBossThroneArena
+      || isCastleRoom
+      || isSunkenTemple
+      || isErebusGate
+      || isColoredCoopRoom
+    ) {
       clearAllMushrooms();
       return;
     }
@@ -10396,7 +12976,15 @@ export function CoopGameScene({
     const healthArr = effectiveMushroomHealth;
 
     for (const [idx, eid] of Array.from(mushroomEntityByIndexRef.current.entries())) {
-      if (healthArr[idx] <= 0) {
+      const inst = instances[idx];
+      const outsideHex =
+        (isFaeRealm
+        && inst
+        && !isInsideHexArenaXZ(inst.x, inst.z, FAE_REALM_HEX_RADIUS, 0.5))
+        || (isEternityPalace
+        && inst
+        && !isInsideHexArenaXZ(inst.x, inst.z, ETERNITY_PALACE_HEX_RADIUS, 0.5));
+      if (healthArr[idx] <= 0 || outsideHex) {
         if (world.getEntity(eid)) world.destroyEntity(eid);
         mushroomEntityByIndexRef.current.delete(idx);
       }
@@ -10405,6 +12993,8 @@ export function CoopGameScene({
     for (let i = 0; i < MUSHROOM_COUNT; i++) {
       if (healthArr[i] <= 0) continue;
       const inst = instances[i]!;
+      if (isFaeRealm && !isInsideHexArenaXZ(inst.x, inst.z, FAE_REALM_HEX_RADIUS, 0.5)) continue;
+      if (isEternityPalace && !isInsideHexArenaXZ(inst.x, inst.z, ETERNITY_PALACE_HEX_RADIUS, 0.5)) continue;
       const c = getMushroomColliderCenter(inst);
       if (mushroomEntityByIndexRef.current.has(i)) {
         const eid = mushroomEntityByIndexRef.current.get(i)!;
@@ -10449,7 +13039,7 @@ export function CoopGameScene({
       world.notifyEntityAdded(entity);
       mushroomEntityByIndexRef.current.set(i, entity.id);
     }
-  }, [gameStarted, engineReady, gameMode, inThroneRoom, inBossThroneArena, isCastleRoom, effectiveMushroomHealth]);
+  }, [gameStarted, engineReady, gameMode, inThroneRoom, inBossThroneArena, isCastleRoom, isFaeRealm, isEternityPalace, isSunkenTemple, isErebusGate, isColoredCoopRoom, effectiveMushroomHealth]);
 
   // Sync server players with local ECS entities — create/destroy only (positions via useFrame + playersTransformsRef).
   useEffect(() => {
@@ -10565,7 +13155,13 @@ export function CoopGameScene({
         serverEnemy.type === 'allied-demon' ||
         serverEnemy.type === 'allied-enchantress' ||
         serverEnemy.type === 'allied-healer' ||
-        serverEnemy.type === 'player-zombie';
+        serverEnemy.type === 'allied-tiger' ||
+        serverEnemy.type === 'allied-wolf' ||
+        serverEnemy.type === 'allied-bear' ||
+        serverEnemy.type === 'allied-serpent' ||
+        serverEnemy.type === 'allied-spider' ||
+        serverEnemy.type === 'player-zombie' ||
+        serverEnemy.type === 'vengeful-spirit';
       const dyingNonDummy =
         serverEnemy.isDying && serverEnemy.type !== 'training-dummy';
 
@@ -10611,6 +13207,25 @@ export function CoopGameScene({
           health.isDead = false;
           health.isInvulnerable = false;
           health.invulnerabilityTimer = 0;
+        }
+      }
+
+      // Sync server Concentrated Venom → ECS so VenomEffectManager can render the cloud.
+      if (!isCoopAlliedEnemy) {
+        const enemyComp = entity.getComponent(Enemy);
+        if (enemyComp) {
+          const prevStacks = enemyComp.concentratedVenomStacks;
+          const stacks = serverEnemy.concentratedVenomStacks ?? 0;
+          const expireAt = serverEnemy.concentratedVenomExpireAt;
+          enemyComp.concentratedVenomStacks = stacks;
+          enemyComp.concentratedVenomEndTime =
+            stacks > 0 && typeof expireAt === 'number' && expireAt > 0 ? expireAt / 1000 : 0;
+          if (prevStacks <= 0 && stacks > 0) {
+            const pos = ecsTransform?.position ?? entity.getComponent(Transform)?.position;
+            if (pos) {
+              addGlobalVenomousEnemy(entity.id.toString(), pos);
+            }
+          }
         }
       }
 
@@ -11155,33 +13770,18 @@ export function CoopGameScene({
           throneInteractKeyPrevRef.current = xDown;
 
           if (xEdge && !pedestalXHandled && !throneAbilityModalOpenRef.current) {
-            const devPortalR2 =
-              THRONE_DEV_BOSS_PORTAL_INTERACT_RADIUS * THRONE_DEV_BOSS_PORTAL_INTERACT_RADIUS;
-            const devPortalsAll = [
-              { camp: 'dev_boss' as const, p: THRONE_DEV_BOSS_PORTAL_POSITION },
-              { camp: 'dev_boss2' as const, p: THRONE_DEV_BOSS2_PORTAL_POSITION },
-              { camp: 'dev_boss3' as const, p: THRONE_DEV_BOSS3_PORTAL_POSITION },
-            ].map(({ camp, p }) => {
-              const dx = px - p.x;
-              const dz = pz - p.z;
-              return { camp, d2: dx * dx + dz * dz };
-            });
-            const inRangeDev = devPortalsAll.filter((e) => e.d2 <= devPortalR2);
-            inRangeDev.sort((a, b) => a.d2 - b.d2);
-            const bestDev =
-              COOP_DEV_LOCALHOST_FEATURES ? inRangeDev[0]?.camp ?? null : null;
-
-            if (bestDev && !portalUseSentRef.current) {
-              portalUseSentRef.current = true;
-              enterCombatArena(bestDev);
-            } else {
               type ThroneXTarget =
                 | { kind: 'weapon'; d2: number; weapon: WeaponType }
+                | { kind: 'aspect'; d2: number; weapon: WeaponType }
                 | { kind: 'archetype'; d2: number; archetype: Archetype }
                 | { kind: 'portal'; d2: number; chosen: string };
               const candidates: ThroneXTarget[] = [];
-              if (bestWeapon && cur !== undefined && bestWeapon.weapon !== cur) {
-                candidates.push({ kind: 'weapon', d2: bestWeapon.d2, weapon: bestWeapon.weapon });
+              if (bestWeapon && cur !== undefined) {
+                if (bestWeapon.weapon !== cur) {
+                  candidates.push({ kind: 'weapon', d2: bestWeapon.d2, weapon: bestWeapon.weapon });
+                } else if (canCycleWeaponAspectRef.current) {
+                  candidates.push({ kind: 'aspect', d2: bestWeapon.d2, weapon: bestWeapon.weapon });
+                }
               }
               const curArchetype = selectedArchetypeRef.current;
               if (
@@ -11255,10 +13855,30 @@ export function CoopGameScene({
               const pick = candidates[0];
               if (pick?.kind === 'weapon') {
                 const w = pick.weapon;
+                const nextAspect = defaultWeaponAspect(w);
                 setSelectedWeapons({ primary: w, secondary: w });
-                setAbilityLoadout(getDefaultLoadoutForWeapon(w));
+                rememberWeaponAspect(w, nextAspect);
+                setAbilityLoadout(getDefaultLoadoutForWeapon(w, nextAspect));
                 updatePlayerWeapon(w, defaultSubclassForThroneWeapon(w));
                 onThroneWeaponEquippedRef.current?.(w);
+                if ((window as any).audioSystem?.playUISelectionSound) {
+                  (window as any).audioSystem.playUISelectionSound();
+                }
+              } else if (pick?.kind === 'aspect') {
+                const nextAspect = cycleWeaponAspect(
+                  pick.weapon,
+                  selectedWeaponAspectRef.current,
+                );
+                rememberWeaponAspect(pick.weapon, nextAspect);
+                updatePlayerWeaponAspect(nextAspect);
+                if (pick.weapon === WeaponType.BOW) {
+                  const currentLoadout = abilityLoadoutRef.current ?? getDefaultLoadoutForWeapon(WeaponType.BOW, nextAspect);
+                  setAbilityLoadout(syncBowLoadoutRForAspect(currentLoadout, nextAspect));
+                } else if (pick.weapon === WeaponType.RUNEBLADE) {
+                  const currentLoadout = abilityLoadoutRef.current ?? getDefaultLoadoutForWeapon(WeaponType.RUNEBLADE, nextAspect);
+                  setAbilityLoadout(syncRunebladeLoadoutRForAspect(currentLoadout, nextAspect));
+                }
+                onWeaponAspectCycledRef.current?.(nextAspect);
                 if ((window as any).audioSystem?.playUISelectionSound) {
                   (window as any).audioSystem.playUISelectionSound();
                 }
@@ -11279,7 +13899,6 @@ export function CoopGameScene({
                   (window as any).audioSystem.playUISelectionSound();
                 }
               }
-            }
           }
 
           if (throneDevTalentShortcutEnabledRef.current && onRequestThroneTalentModalRef.current) {
@@ -11360,9 +13979,23 @@ export function CoopGameScene({
             || coopCurrentRoomKindRef.current === 'deep_sanctum'
             || coopCurrentRoomKindRef.current === 'sunken_temple';
           const inIntroRoom = coopCurrentRoomKindRef.current === 'intro';
+          const inFaeRealmRoom = coopCurrentRoomKindRef.current === 'fae_realm';
           const inSunkenRoom = coopCurrentRoomKindRef.current === 'sunken_temple';
+          const inEternityRoom = coopCurrentRoomKindRef.current === 'eternity_palace';
 
-          if (xEdge && inIntroRoom && !portalUseSentRef.current) {
+          if (xEdge && inFaeRealmRoom && !portalUseSentRef.current) {
+            if (coopFaeRealmPortalOpenRef.current) {
+              const rPortal = VOID_PORTAL_INTERACT_RADIUS;
+              const d2 = px * px + pz * pz;
+              if (d2 < rPortal * rPortal) {
+                portalUseSentRef.current = true;
+                enterCombatArena();
+                if ((window as any).audioSystem?.playUISelectionSound) {
+                  (window as any).audioSystem.playUISelectionSound();
+                }
+              }
+            }
+          } else if (xEdge && inIntroRoom && !portalUseSentRef.current) {
             if (coopIntroFountainPhaseRef.current) {
               if (!coopIntroAllyChoiceMadeRef.current) {
                 const recruitKind = findNearestSelectableAllyCandidate(
@@ -11391,8 +14024,8 @@ export function CoopGameScene({
                   if (offer.length >= 2) {
                     let bestI = 0;
                     let bestD2 = Infinity;
-                    for (let i = 0; i < MAIN_COMBAT_CHOICE_PORTAL_POSITIONS.length; i++) {
-                      const pos = MAIN_COMBAT_CHOICE_PORTAL_POSITIONS[i]!;
+                    for (let i = 0; i < CASTLE_ROOM_CHOICE_PORTAL_POSITIONS.length; i++) {
+                      const pos = CASTLE_ROOM_CHOICE_PORTAL_POSITIONS[i]!;
                       const dx = px - pos.x;
                       const dz = pz - pos.z;
                       const d2 = dx * dx + dz * dz;
@@ -11457,8 +14090,8 @@ export function CoopGameScene({
                   if (offer.length >= 2) {
                     let bestI = 0;
                     let bestD2 = Infinity;
-                    for (let i = 0; i < MAIN_COMBAT_CHOICE_PORTAL_POSITIONS.length; i++) {
-                      const pos = MAIN_COMBAT_CHOICE_PORTAL_POSITIONS[i]!;
+                    for (let i = 0; i < CASTLE_ROOM_CHOICE_PORTAL_POSITIONS.length; i++) {
+                      const pos = CASTLE_ROOM_CHOICE_PORTAL_POSITIONS[i]!;
                       const dx = px - pos.x;
                       const dz = pz - pos.z;
                       const d2 = dx * dx + dz * dz;
@@ -11479,6 +14112,72 @@ export function CoopGameScene({
                 }
               }
             } else if (coopSunkenPortalOpenRef.current) {
+              const rPortal = VOID_PORTAL_INTERACT_RADIUS;
+              const d2 = px * px + pz * pz;
+              if (d2 < rPortal * rPortal) {
+                portalUseSentRef.current = true;
+                enterCombatArena();
+                if ((window as any).audioSystem?.playUISelectionSound) {
+                  (window as any).audioSystem.playUISelectionSound();
+                }
+              }
+            }
+          } else if (xEdge && inEternityRoom && !portalUseSentRef.current) {
+            if (coopEternityFountainPhaseRef.current) {
+              const localPlayerId = socket?.id;
+              const localHasClaimed =
+                !!localPlayerId
+                && coopEternityLootClaimedPlayerIdsRef.current.includes(localPlayerId);
+              if (!coopEternityLootPhaseCompleteRef.current && !localHasClaimed) {
+                if (
+                  isEternityPalaceLootSelectable(
+                    px,
+                    pz,
+                    eternityPalaceEncounterRef.current,
+                  )
+                ) {
+                  onEternityPalaceArchitectInteractRef.current?.();
+                  if ((window as any).audioSystem?.playUISelectionSound) {
+                    (window as any).audioSystem.playUISelectionSound();
+                  }
+                }
+              } else if (coopEternityLootPhaseCompleteRef.current) {
+                const fountainR2 = HEALING_FOUNTAIN_INTERACT_RADIUS * HEALING_FOUNTAIN_INTERACT_RADIUS;
+                const fountainD2 = px * px + pz * pz;
+                if (!coopEternityFountainUsedRef.current && fountainD2 < fountainR2) {
+                  useCoopFountainRef.current();
+                  if ((window as any).audioSystem?.playFountainSound) {
+                    (window as any).audioSystem.playFountainSound();
+                  }
+                } else if (coopEternityFountainUsedRef.current) {
+                  const offer = thronePortalOfferRef.current;
+                  const rPortal = VOID_PORTAL_INTERACT_RADIUS;
+                  const r2 = rPortal * rPortal;
+                  if (offer.length >= 2) {
+                    let bestI = 0;
+                    let bestD2 = Infinity;
+                    for (let i = 0; i < CASTLE_ROOM_CHOICE_PORTAL_POSITIONS.length; i++) {
+                      const pos = CASTLE_ROOM_CHOICE_PORTAL_POSITIONS[i]!;
+                      const dx = px - pos.x;
+                      const dz = pz - pos.z;
+                      const d2 = dx * dx + dz * dz;
+                      if (d2 < bestD2) {
+                        bestD2 = d2;
+                        bestI = i;
+                      }
+                    }
+                    if (bestD2 < r2) {
+                      portalUseSentRef.current = true;
+                      const chosen = offer[bestI] ?? offer[0];
+                      enterCombatArena(chosen);
+                      if ((window as any).audioSystem?.playUISelectionSound) {
+                        (window as any).audioSystem.playUISelectionSound();
+                      }
+                    }
+                  }
+                }
+              }
+            } else if (coopEternityPortalOpenRef.current) {
               const rPortal = VOID_PORTAL_INTERACT_RADIUS;
               const d2 = px * px + pz * pz;
               if (d2 < rPortal * rPortal) {
@@ -11638,6 +14337,7 @@ export function CoopGameScene({
                   const stockId = getMerchantShopStockId(
                     bestShop.slot,
                     merchantInventoryRef.current,
+                    merchantPurchaseStateRef.current,
                   );
                   if (stockId) {
                     purchaseMerchantItemRef.current(stockId);
@@ -11682,6 +14382,8 @@ export function CoopGameScene({
             xEdge &&
             !inCastleRoom &&
             coopCurrentRoomKindRef.current !== 'merchant' &&
+            coopCurrentRoomKindRef.current !== 'fae_realm' &&
+            coopCurrentRoomKindRef.current !== 'eternity_palace' &&
             pedestalBoonReadyRef.current &&
             pedDx * pedDx + pedDz * pedDz < pedR2
           ) {
@@ -11741,6 +14443,18 @@ export function CoopGameScene({
                 }
               }
             } else if (
+              phase === 'pick_eternity_entry' || phase === 'pick_eternity_late_entry'
+            ) {
+              const voidD2 = px * px + pz * pz;
+              const voidR2 = VOID_PORTAL_INTERACT_RADIUS * VOID_PORTAL_INTERACT_RADIUS;
+              if (voidD2 < voidR2) {
+                portalUseSentRef.current = true;
+                enterCombatArena('void');
+                if ((window as any).audioSystem?.playUISelectionSound) {
+                  (window as any).audioSystem.playUISelectionSound();
+                }
+              }
+            } else if (
               (phase === 'pick_boss' || phase === 'pre_boss_merchant') &&
               offer.length >= 1 &&
               String(offer[0]).toLowerCase() === 'boss'
@@ -11760,6 +14474,7 @@ export function CoopGameScene({
             let nearestBossItem: { id: string; d2: number } | null = null;
             droppedItemsRef.current.forEach((item) => {
               if (item.category !== 'boss_drop') return;
+              if (!canLocalPlayerAcquireBossDrop(item, inventorySnapshotRef.current)) return;
               const dx = px - item.position.x;
               const dz = pz - item.position.z;
               const d2 = dx * dx + dz * dz;
@@ -12260,7 +14975,8 @@ export function CoopGameScene({
               const weaponInteractH = !!(
                 bestW &&
                 curHint !== undefined &&
-                bestW.weapon !== curHint
+                (bestW.weapon !== curHint ||
+                  (bestW.weapon === curHint && canCycleWeaponAspectRef.current))
               );
               const archetypeInteractH = !!(
                 bestArchetypeH &&
@@ -12284,8 +15000,15 @@ export function CoopGameScene({
               }
             } else if (!inThroneRoom && combatArenaActiveRef.current) {
               const inIntroRoomHint = coopCurrentRoomKindRef.current === 'intro';
+              const inFaeRealmRoomHint = coopCurrentRoomKindRef.current === 'fae_realm';
               const inSunkenRoomHint = coopCurrentRoomKindRef.current === 'sunken_temple';
-              if (inIntroRoomHint && coopIntroFountainPhaseRef.current) {
+              const inEternityRoomHint = coopCurrentRoomKindRef.current === 'eternity_palace';
+              if (inFaeRealmRoomHint && coopFaeRealmPortalOpenRef.current) {
+                const rPortal = VOID_PORTAL_INTERACT_RADIUS;
+                if (px * px + pz * pz < rPortal * rPortal) {
+                  nextHint = COOP_INTERACT_HINT_TEXT;
+                }
+              } else if (inIntroRoomHint && coopIntroFountainPhaseRef.current) {
                 if (!coopIntroAllyChoiceMadeRef.current) {
                   const recruitKind = findNearestSelectableAllyCandidate(
                     px,
@@ -12302,7 +15025,7 @@ export function CoopGameScene({
                   } else if (coopIntroFountainUsedRef.current) {
                     const rPortal = VOID_PORTAL_INTERACT_RADIUS;
                     const r2 = rPortal * rPortal;
-                    for (const pos of MAIN_COMBAT_CHOICE_PORTAL_POSITIONS) {
+                    for (const pos of CASTLE_ROOM_CHOICE_PORTAL_POSITIONS) {
                       const d2 = (px - pos.x) * (px - pos.x) + (pz - pos.z) * (pz - pos.z);
                       if (d2 < r2) {
                         nextHint = COOP_INTERACT_HINT_TEXT;
@@ -12338,7 +15061,7 @@ export function CoopGameScene({
                   } else if (coopSunkenFountainUsedRef.current) {
                     const rPortal = VOID_PORTAL_INTERACT_RADIUS;
                     const r2 = rPortal * rPortal;
-                    for (const pos of MAIN_COMBAT_CHOICE_PORTAL_POSITIONS) {
+                    for (const pos of CASTLE_ROOM_CHOICE_PORTAL_POSITIONS) {
                       const d2 = (px - pos.x) * (px - pos.x) + (pz - pos.z) * (pz - pos.z);
                       if (d2 < r2) {
                         nextHint = COOP_INTERACT_HINT_TEXT;
@@ -12348,6 +15071,42 @@ export function CoopGameScene({
                   }
                 }
               } else if (inSunkenRoomHint && coopSunkenPortalOpenRef.current) {
+                const rPortal = VOID_PORTAL_INTERACT_RADIUS;
+                if (px * px + pz * pz < rPortal * rPortal) {
+                  nextHint = COOP_INTERACT_HINT_TEXT;
+                }
+              } else if (inEternityRoomHint && coopEternityFountainPhaseRef.current) {
+                const localPlayerId = socket?.id;
+                const localHasClaimed =
+                  !!localPlayerId
+                  && coopEternityLootClaimedPlayerIdsRef.current.includes(localPlayerId);
+                if (!coopEternityLootPhaseCompleteRef.current && !localHasClaimed) {
+                  if (
+                    isEternityPalaceLootSelectable(
+                      px,
+                      pz,
+                      eternityPalaceEncounterRef.current,
+                    )
+                  ) {
+                    nextHint = COOP_INTERACT_HINT_TEXT;
+                  }
+                } else if (coopEternityLootPhaseCompleteRef.current) {
+                  const fountainR2 = HEALING_FOUNTAIN_INTERACT_RADIUS * HEALING_FOUNTAIN_INTERACT_RADIUS;
+                  if (!coopEternityFountainUsedRef.current && px * px + pz * pz < fountainR2) {
+                    nextHint = COOP_INTERACT_HINT_TEXT;
+                  } else if (coopEternityFountainUsedRef.current) {
+                    const rPortal = VOID_PORTAL_INTERACT_RADIUS;
+                    const r2 = rPortal * rPortal;
+                    for (const pos of CASTLE_ROOM_CHOICE_PORTAL_POSITIONS) {
+                      const d2 = (px - pos.x) * (px - pos.x) + (pz - pos.z) * (pz - pos.z);
+                      if (d2 < r2) {
+                        nextHint = COOP_INTERACT_HINT_TEXT;
+                        break;
+                      }
+                    }
+                  }
+                }
+              } else if (inEternityRoomHint && coopEternityPortalOpenRef.current) {
                 const rPortal = VOID_PORTAL_INTERACT_RADIUS;
                 if (px * px + pz * pz < rPortal * rPortal) {
                   nextHint = COOP_INTERACT_HINT_TEXT;
@@ -12422,6 +15181,7 @@ export function CoopGameScene({
                   nextHint = getMerchantShopHintLabel(
                     bestShopHint.slot,
                     merchantInventoryRef.current,
+                    merchantPurchaseStateRef.current,
                   );
                 } else if (
                   portalsUnlockedRef.current &&
@@ -12478,6 +15238,8 @@ export function CoopGameScene({
                 nextHint = COOP_INTERACT_HINT_TEXT;
               } else if (
                 !inIntroRoomHint &&
+                coopCurrentRoomKindRef.current !== 'fae_realm' &&
+                coopCurrentRoomKindRef.current !== 'eternity_palace' &&
                 pedestalBoonReadyRef.current &&
                 pdx * pdx + pdz * pdz < pedR * pedR
               ) {
@@ -12513,6 +15275,9 @@ export function CoopGameScene({
                 } else if (phase === 'pick_sunken_entry') {
                   const voidR2 = VOID_PORTAL_INTERACT_RADIUS * VOID_PORTAL_INTERACT_RADIUS;
                   portalClose = px * px + pz * pz < voidR2;
+                } else if (phase === 'pick_eternity_entry' || phase === 'pick_eternity_late_entry') {
+                  const voidR2 = VOID_PORTAL_INTERACT_RADIUS * VOID_PORTAL_INTERACT_RADIUS;
+                  portalClose = px * px + pz * pz < voidR2;
                 } else if (
                   (phase === 'pick_boss' || phase === 'pre_boss_merchant') &&
                   offer.length >= 1 &&
@@ -12532,6 +15297,7 @@ export function CoopGameScene({
                 droppedItemsRef.current.forEach((item) => {
                   if (nextHint) return;
                   if (item.category !== 'boss_drop') return;
+                  if (!canLocalPlayerAcquireBossDrop(item, inventorySnapshotRef.current)) return;
                   const dx = px - item.position.x;
                   const dz = pz - item.position.z;
                   if (dx * dx + dz * dz <= rPick2) {
@@ -12751,11 +15517,13 @@ export function CoopGameScene({
         talentLoadoutRef.current,
         abilityLoadoutRef.current,
       );
+      const casterAspect = selectedWeaponAspectRef.current;
       const summonTotemExtraData =
-        totemBoltVariant != null || superconductor
+        totemBoltVariant != null || superconductor || casterAspect != null
           ? {
               ...(totemBoltVariant != null ? { totemBoltVariant } : {}),
               ...(superconductor ? { superconductor } : {}),
+              ...(casterAspect != null ? { weaponAspect: casterAspect } : {}),
             }
           : undefined;
       broadcastPlayerAbility(
@@ -12778,6 +15546,8 @@ export function CoopGameScene({
           socket.id,
           totemBoltVariant,
           superconductor,
+          undefined,
+          casterAspect,
         );
       }
     });
@@ -13013,6 +15783,7 @@ export function CoopGameScene({
         talentLoadoutRef.current,
         abilityLoadoutRef.current,
       );
+      const smiteAspect = selectedWeaponAspectRef.current;
       const strikes: Array<{ pos: Vector3; delaySec: number }> = [
         { pos: position.clone(), delaySec: 0 },
         ...(meta?.extraStrikes?.map((s) => ({ pos: s.position.clone(), delaySec: s.delaySec })) ?? []),
@@ -13024,6 +15795,7 @@ export function CoopGameScene({
           staggeringSmite,
           infernalSmite,
           vengeanceSmite,
+          weaponAspect: smiteAspect,
         });
       }
 
@@ -13032,6 +15804,7 @@ export function CoopGameScene({
         staggeringSmite,
         infernalSmite,
         vengeanceSmite,
+        weaponAspect: smiteAspect,
         trinityExtras: meta?.extraStrikes?.map((s) => ({
           position: { x: s.position.x, y: s.position.y, z: s.position.z },
           delaySec: s.delaySec,
@@ -13081,7 +15854,13 @@ export function CoopGameScene({
             enemy.type === 'allied-phantom' ||
             enemy.type === 'allied-demon' ||
             enemy.type === 'allied-enchantress' ||
-            enemy.type === 'allied-healer' || enemy.type === 'player-zombie') return false;
+            enemy.type === 'allied-healer' ||
+            enemy.type === 'allied-tiger' ||
+            enemy.type === 'allied-wolf' ||
+            enemy.type === 'allied-bear' ||
+            enemy.type === 'allied-serpent' ||
+            enemy.type === 'allied-spider' ||
+            enemy.type === 'player-zombie' || enemy.type === 'vengeful-spirit') return false;
         const ePos = new Vector3(enemy.position.x, enemy.position.y, enemy.position.z);
         return ePos.distanceTo(position) <= lightningRange;
       });
@@ -13196,6 +15975,12 @@ export function CoopGameScene({
     if (talentLoadout) {
       controlSystem.setTalentLoadout(talentLoadout);
     }
+    controlSystem.setWeaponAspect(
+      normalizeWeaponAspect(
+        selectedWeaponAspectRef.current,
+        controlSystem.getCurrentWeapon?.() ?? WeaponType.RUNEBLADE,
+      ),
+    );
 
     // Cleanup function
     return () => {
@@ -13258,6 +16043,20 @@ export function CoopGameScene({
     controlSystemRef.current.setUseArchetypeShiftRouting(gameMode === 'coop');
     controlSystemRef.current.setPlayerArchetype(selectedArchetype ?? ARCHETYPE_NONE);
   }, [gameMode, selectedArchetype, engineReady]);
+
+  // Sync throne weapon aspect → ControlSystem (Runeblade fire rate / R ability)
+  useEffect(() => {
+    if (!controlSystemRef.current) return;
+    const weapon =
+      controlSystemRef.current.getCurrentWeapon?.() ??
+      selectedWeapons?.primary ??
+      WeaponType.NONE;
+    controlSystemRef.current.setWeaponAspect(
+      normalizeWeaponAspect(selectedWeaponAspect, weapon),
+      weapon,
+    );
+    applyPlayerMaxDashCharges();
+  }, [selectedWeaponAspect, selectedWeapons?.primary, engineReady, applyPlayerMaxDashCharges]);
 
   // Sync skill point data with control system when it changes
   useEffect(() => {
@@ -13345,6 +16144,7 @@ export function CoopGameScene({
                 coopClearedRoomColor={coopClearedRoomColor}
                 equippedWeapon={selectedWeapons?.primary ?? WeaponType.NONE}
                 selectedArchetype={selectedArchetype ?? ARCHETYPE_NONE}
+                weaponAspectByWeapon={weaponAspectByWeapon}
                 playerPositionRef={realTimePlayerPositionRef}
                 voidPortalOpen={throneVoidPortalOpen}
                 voidPortalOpenProgress={throneVoidPortalOpenProgress}
@@ -13384,6 +16184,10 @@ export function CoopGameScene({
               isIntroCastleRoom={isIntroCastleRoom}
               hexArenaVariant={hexArenaVariant}
               coopCombatArenaEnterSeq={coopCombatArenaEnterSeq}
+              coopDeepSanctumLevel={coopDeepSanctumLevel}
+              coopSunkenRoomIndex={coopSunkenRoomIndex}
+              coopFaeRealmRoomIndex={coopFaeRealmRoomIndex}
+              coopEternityRoomIndex={coopEternityRoomIndex}
               coopTerrainTheme={coopTerrainTheme}
               campTypes={campTypes}
               coopCurrentRoomKind={coopCurrentRoomKind}
@@ -13399,14 +16203,20 @@ export function CoopGameScene({
               coopIntroFountainPhase={coopIntroFountainPhase}
               coopIntroFountainUsed={coopIntroFountainUsed}
               coopIntroAllyChoiceMade={coopIntroAllyChoiceMade}
+              coopFaeRealmPortalOpen={coopFaeRealmPortalOpen}
               coopSunkenPortalOpen={coopSunkenPortalOpen}
               coopSunkenFountainPhase={coopSunkenFountainPhase}
               coopSunkenFountainUsed={coopSunkenFountainUsed}
               coopSunkenLootPhaseComplete={coopSunkenLootPhaseComplete}
+              coopEternityPortalOpen={coopEternityPortalOpen}
+              coopEternityFountainPhase={coopEternityFountainPhase}
+              coopEternityFountainUsed={coopEternityFountainUsed}
+              coopEternityLootPhaseComplete={coopEternityLootPhaseComplete}
               coopAllyOffer={coopAllyOffer}
               coopAllyKind={coopAllyKind}
               introAllyChoiceEncounterRef={introAllyChoiceEncounterRef}
               sunkenSentinelEncounterRef={sunkenSentinelEncounterRef}
+              eternityPalaceEncounterRef={eternityPalaceEncounterRef}
               coopVoidPortalOffered={coopVoidPortalOffered}
               deepSanctumRewardKind={deepSanctumRewardKind}
               coopEdenFountainUsed={coopEdenFountainUsed}
@@ -13538,6 +16348,9 @@ export function CoopGameScene({
             controlSystemRef.current?.tryManaShieldOnDashChargeExpended(consumed)
           }
           giantKillerReapingTalons={shouldApplyGiantKillerTalent(talentLoadout, abilityLoadout ?? null)}
+          getTerminalVelocityBonus={(horizontalDistance) =>
+            controlSystemRef.current?.getTerminalVelocityBonusAtRange?.(horizontalDistance) ?? 0
+          }
           explosiveTalons={shouldApplyExplosiveTalonsTalent(talentLoadout, abilityLoadout ?? null)}
           wyvernTalons={shouldApplyWyvernTalonsTalent(talentLoadout, abilityLoadout ?? null)}
           staggeringTalonsActive={shouldApplyStaggeringTalonsTalent(talentLoadout, abilityLoadout ?? null)}
@@ -13565,15 +16378,29 @@ export function CoopGameScene({
           getRunebladeTitansGripLmbFlatBonus={() =>
             controlSystemRef.current?.getRunebladeTitansGripLmbFlatBonus() ?? 0
           }
+          getVicegripRunebladeComboFlatBonus={() =>
+            controlSystemRef.current?.getVicegripRunebladeComboFlatBonus() ?? 0
+          }
           crusaderBladeThemeActive={
             controlSystemRef.current?.isRunebladeCrusaderBuffActive() || false
           }
           titansGripBladeThemeActive={shouldApplyTitansGripTalent(talentLoadout)}
           psionicBladesBladeThemeActive={shouldApplyPsionicBladesTalent(talentLoadout)}
+          weaponAspect={selectedWeaponAspect}
           onRunebladeTitansGripHit={(targetId) => {
             const pos = controlSystemRef.current?.tryTitansGripStunProcFromRunebladeHit(targetId);
             if (pos && !isInRoom) {
               spawnTitansGripStunLightning(pos);
+            }
+          }}
+          onRunebladeDeathdealerThirdHit={(targetId) => {
+            const result =
+              controlSystemRef.current?.tryDeathdealerStaggerProcFromRunebladeThirdHit(targetId);
+            if (!result) return;
+            if (isInRoom && result.serverEnemyId) {
+              triggerDeathdealerStaggerProc(result.serverEnemyId);
+            } else if (!isInRoom) {
+              spawnDeathdealerStaggerLightning(result.position);
             }
           }}
           getRunebladeBlizzardTalentActive={
@@ -13819,6 +16646,11 @@ export function CoopGameScene({
                 currentSubclass={
                   livePlayer.weapon === WeaponType.NONE ? undefined : livePlayer.subclass
                 }
+                weaponAspect={
+                  livePlayer.weapon === WeaponType.NONE
+                    ? undefined
+                    : normalizeWeaponAspect(livePlayer.weaponAspect, livePlayer.weapon)
+                }
                 isCharging={playerState.isCharging}
                 chargeProgress={playerState.chargeProgress}
                 isSwinging={playerState.isSwinging}
@@ -13978,6 +16810,34 @@ export function CoopGameScene({
         );
       })}
 
+      {/* Destiny — dragon boss (Co-op) */}
+      {(enemiesByType.get('destiny') ?? []).map(enemy => {
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        const isTaunted = isEnemyTaunted(enemy.id);
+
+        return (
+          <group key={enemy.id}>
+            <React.Suspense fallback={null}>
+              <DestinyRenderer
+                id={enemy.id}
+                position={enemy.position}
+                rotation={enemy.rotation || 0}
+                health={enemy.health}
+                maxHealth={enemy.maxHealth}
+                isDying={!!enemy.isDying}
+                staggerBuildup={enemy.staggerBuildup ?? 0}
+                destinyPhase={enemy.destinyPhase}
+              />
+            </React.Suspense>
+            {isTaunted && (
+              <TauntEffectIndicator
+                position={enemy.position} yOffset={6.5}
+              />
+            )}
+          </group>
+        );
+      })}
+
       <CoopEnemyRenderLayer
         enemiesByType={enemiesByType}
         isCoopEnemyVisibleForRender={isCoopEnemyVisibleForRender}
@@ -14080,9 +16940,13 @@ export function CoopGameScene({
         world={engineRef.current?.getWorld() ?? null}
         playerEntity={playerEntity}
         players={players}
+        weaponAspect={selectedWeaponAspect}
         realTimePlayerPositionRef={realTimePlayerPositionRef}
         getLiveCoopEnemyData={getLiveCoopEnemyData}
         getEnemyType={getCoopEnemyTypeById}
+        isDeathGraspPullImmuneEnemy={isDeathGraspPullImmuneEnemy}
+        getDeathGraspPulledEnemyPosition={getDeathGraspPulledEnemyPosition}
+        onDeathGraspEnemyPullFrame={onDeathGraspEnemyPullFrame}
         onSmiteHitEnemy={onPvpSmiteHitEnemy}
         onDeathGraspHitEnemy={onPvpDeathGraspHitEnemy}
         onLightningStormHitEnemy={onPvpLightningStormHitEnemy}
@@ -14130,6 +16994,15 @@ export function CoopGameScene({
             getParticleSpawnMultiplier={getArcticBlizzardParticleMultiplier}
             hasMonsoon={shouldApplyMonsoonTalent(talentLoadout)}
           />
+          <AvalancheEffectManager
+            world={engineRef.current.getWorld()}
+            getDamagePerTick={getArcticBlizzardDamagePerTick}
+            hasMonsoon={shouldApplyMonsoonTalent(talentLoadout)}
+          />
+          <FrostQueenPlayerIceStormManager
+            socket={socket}
+            getPlayerPositions={getEntangledPlayerPositions}
+          />
           <StunManager world={engineRef.current.getWorld()} />
           <EntangleManager
             world={engineRef.current.getWorld()}
@@ -14145,6 +17018,7 @@ export function CoopGameScene({
             onDamage={handleSummonTotemDamage}
             onTotemFloatingDamage={addTotemFloatingDamage}
             totemBoltVariant={getTotemBoltVariantFromTalentLoadout(talentLoadout)}
+            weaponAspect={selectedWeaponAspect}
             superconductor={shouldApplySuperconductorTalent(talentLoadout, abilityLoadout)}
             allowPlayerTargets={gameMode !== 'coop'}
             resolveTotemEnemyFrozen={resolveTotemEnemyFrozen}
@@ -14172,6 +17046,19 @@ export function CoopGameScene({
                   maxHealth: enemy.maxHealth,
                 };
               })}
+            enemyTargets={Array.from(enemies.values())
+              .filter(enemy => !enemy.isDying && enemy.health > 0
+                && enemy.type !== 'allied-knight' && enemy.alliedUnit !== true
+                && enemy.type !== 'player-zombie' && enemy.type !== 'vengeful-spirit')
+              .map(enemy => {
+                const live = enemyTransformsRef.current.get(enemy.id);
+                const p = live?.position ?? enemy.position;
+                return {
+                  id: enemy.id,
+                  position: new Vector3(p.x, p.y, p.z),
+                  health: enemy.health,
+                };
+              })}
             onPlayerHealed={(playerId, healAmount, position) => {
               if (socket && currentRoomId) {
                 broadcastPlayerHealing(healAmount, 'rejuvenating_shot', position, playerId);
@@ -14180,6 +17067,26 @@ export function CoopGameScene({
             onAlliedHealed={(enemyId, healAmount, position) => {
               if (socket && currentRoomId) {
                 broadcastAlliedHealing(healAmount, 'rejuvenating_shot', position, enemyId);
+              }
+            }}
+            onEnemyEntangled={(enemyId, position) => {
+              if (socket && currentRoomId) {
+                damageEnemy(enemyId, 0, socket.id, {
+                  damageType: 'rejuvenating_shot',
+                  rejuvenatingShotEntangle: true,
+                });
+              } else if (engineRef.current) {
+                // Local PvE fallback — apply entangle on ECS enemy directly
+                const world = engineRef.current.getWorld();
+                const currentTime = Date.now() / 1000;
+                for (const entity of world.getAllEntities()) {
+                  const sid = entity.userData?.serverEnemyId as string | undefined;
+                  if (sid !== enemyId && String(entity.id) !== enemyId) continue;
+                  const enemy = entity.getComponent(Enemy);
+                  if (!enemy) continue;
+                  enemy.entangle(ENTANGLEMENT_DURATION_MS / 1000, currentTime);
+                  break;
+                }
               }
             }}
           />

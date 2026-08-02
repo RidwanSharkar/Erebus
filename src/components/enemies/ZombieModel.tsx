@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
-import { Group, LoopRepeat, LoopOnce, AnimationAction } from 'three';
+import { Group, AnimationAction, AnimationClip } from 'three';
+import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { loadGltfAnimationClips, preloadSkinnedIdleAndAnimationClips } from '@/utils/gltfAnimationLoader';
 import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 import { getCachedEnemyAnimationClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
 
@@ -14,16 +16,25 @@ interface ZombieModelProps {
   isDying: boolean;
 }
 
+const ZOMBIE_IDLE_PATH = '/models/zombie_idle.glb';
+
 const ZOMBIE_MODEL_PATHS = [
-  '/models/zombie_idle.glb',
+  ZOMBIE_IDLE_PATH,
   '/models/zombie_walk.glb',
   '/models/zombie_attack.glb',
   '/models/zombie_summon.glb',
   '/models/zombie_death.glb',
 ];
 
+const ZOMBIE_DEFERRED_PATHS = {
+  Walk: '/models/zombie_walk.glb',
+  Attack: '/models/zombie_attack.glb',
+  Summon: '/models/zombie_summon.glb',
+  Death: '/models/zombie_death.glb',
+} as const;
+
 export function preloadZombieModels(): void {
-  ZOMBIE_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+  preloadSkinnedIdleAndAnimationClips(ZOMBIE_IDLE_PATH, ZOMBIE_MODEL_PATHS, useGLTF.preload);
 }
 
 const SCALE = 0.0125;
@@ -31,12 +42,30 @@ const SCALE = 0.0125;
 export default React.memo(function ZombieModel({ isWalking, isAttacking, isSummoning, isDying }: ZombieModelProps) {
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
+  const [extraAnims, setExtraAnims] = useState<Record<string, AnimationClip[]>>({});
 
-  const { scene, animations: idleAnims } = useGLTF('/models/zombie_idle.glb');
-  const { animations: walkAnims } = useGLTF('/models/zombie_walk.glb');
-  const { animations: attackAnims } = useGLTF('/models/zombie_attack.glb');
-  const { animations: summonAnims } = useGLTF('/models/zombie_summon.glb');
-  const { animations: deathAnims } = useGLTF('/models/zombie_death.glb');
+  const { scene, animations: idleAnims } = useGLTF(ZOMBIE_IDLE_PATH);
+
+  useEffect(() => {
+    let cancelled = false;
+    const entries = Object.entries(ZOMBIE_DEFERRED_PATHS);
+    void Promise.all(
+      entries.map(async ([name, path]) => {
+        const clips = await loadGltfAnimationClips(path);
+        return [name, clips] as const;
+      }),
+    )
+      .then((loaded) => {
+        if (cancelled) return;
+        setExtraAnims(Object.fromEntries(loaded));
+      })
+      .catch((error) => {
+        console.warn('Failed to load zombie animations:', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const clonedScene = useMemo(() => {
     const clone = SkeletonUtils.clone(scene) as Group;
@@ -55,22 +84,25 @@ export default React.memo(function ZombieModel({ isWalking, isAttacking, isSummo
 
   useDisposeClonedMaterials(clonedScene);
 
-  const animations = useMemo(
-    () =>
-      getCachedEnemyAnimationClips('zombie', () => [
-        ...renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ),
-        ...renameAnimationClips(walkAnims, 'Walk').map(stripRootMotionXZ),
-        ...renameAnimationClips(attackAnims, 'Attack'),
-        ...renameAnimationClips(summonAnims, 'Summon'),
-        ...renameAnimationClips(deathAnims, 'Death'),
-      ]),
-    [idleAnims, walkAnims, attackAnims, summonAnims, deathAnims],
-  );
+  const animations = useMemo(() => {
+    const idleClips = renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ);
+    const hasAllDeferred = Object.keys(ZOMBIE_DEFERRED_PATHS).every((key) => extraAnims[key]?.length);
+    if (!hasAllDeferred) return idleClips;
+    return getCachedEnemyAnimationClips('zombie', () => [
+      ...idleClips,
+      ...renameAnimationClips(extraAnims.Walk, 'Walk').map(stripRootMotionXZ),
+      ...renameAnimationClips(extraAnims.Attack, 'Attack'),
+      ...renameAnimationClips(extraAnims.Summon, 'Summon'),
+      ...renameAnimationClips(extraAnims.Death, 'Death'),
+    ]);
+  }, [idleAnims, extraAnims]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
   const getAction = (name: 'Idle' | 'Walk' | 'Attack' | 'Summon' | 'Death'): AnimationAction | null =>
     actions[name] ?? null;
+
+  const posed = useEnemyIdlePose({ actions, mixer, currentActionRef });
 
   useEffect(() => {
     if (!actions) return;
@@ -85,48 +117,23 @@ export default React.memo(function ZombieModel({ isWalking, isAttacking, isSummo
             ? getAction('Walk')
             : getAction('Idle');
 
-    if (!nextAction || nextAction === currentActionRef.current) return;
-
-    currentActionRef.current?.fadeOut(0.2);
-
-    if (isDying) {
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = true;
-      nextAction.reset().fadeIn(0.15).play();
-    } else if (isSummoning || isAttacking) {
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = true;
-      nextAction.reset().fadeIn(0.2).play();
-    } else {
-      nextAction.enabled = true;
-      nextAction.setLoop(LoopRepeat, Infinity);
-      nextAction.fadeIn(0.2).play();
-    }
-
-    currentActionRef.current = nextAction;
-  }, [isWalking, isAttacking, isSummoning, isDying, actions]);
+    playEnemyAction(nextAction, currentActionRef, mixer, {
+      loopOnce: !!(isDying || isSummoning || isAttacking),
+      clampWhenFinished: !!(isDying || isSummoning || isAttacking),
+      fadeIn: isDying ? 0.15 : 0.2,
+    });
+  }, [isWalking, isAttacking, isSummoning, isDying, actions, mixer]);
 
   useEffect(() => {
     if (!mixer || isDying) return;
-
-    const blendToWalkOrIdle = () => {
-      if (isDying) return;
-      const fallback = isWalking ? getAction('Walk') : getAction('Idle');
-      if (fallback) {
-        fallback.enabled = true;
-        fallback.setLoop(LoopRepeat, Infinity);
-        currentActionRef.current?.fadeOut(0.15);
-        fallback.fadeIn(0.15).play();
-        currentActionRef.current = fallback;
-      }
-    };
 
     const handleFinish = (e: { action: AnimationAction }) => {
       if (isDying) return;
       const name = e.action.getClip().name;
       if (name === 'Death') return;
       if (name === 'Summon' || name === 'Attack') {
-        blendToWalkOrIdle();
+        const fallback = isWalking ? getAction('Walk') : getAction('Idle');
+        playEnemyAction(fallback, currentActionRef, mixer, { fadeIn: 0.15, fadeOut: 0.15 });
       }
     };
 
@@ -135,11 +142,10 @@ export default React.memo(function ZombieModel({ isWalking, isAttacking, isSummo
   }, [mixer, isDying, isWalking, actions]);
 
   return (
-    <group ref={sceneGroupRef}>
+    <group ref={sceneGroupRef} visible={posed}>
       <group scale={[SCALE, SCALE, SCALE]}>
         <primitive object={clonedScene} />
       </group>
     </group>
   );
 });
-

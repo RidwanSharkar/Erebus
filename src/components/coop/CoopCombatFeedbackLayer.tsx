@@ -13,6 +13,7 @@ import BowShotImpact from '@/components/weapons/BowShotImpact';
 import EntropicBoltImpact from '@/components/weapons/EntropicBoltImpact';
 import SabreImpactEffect from '@/components/weapons/SabreImpactEffect';
 import CrescentSlashEffect from '@/components/weapons/CrescentSlashEffect';
+import MeleeContactGash from '@/components/weapons/MeleeContactGash';
 import MortalStrikeEffect from '@/components/weapons/MortalStrikeEffect';
 import WraithStrikeEffect from '@/components/weapons/WraithStrikeEffect';
 import PsionicBladeSliceEffect from '@/components/weapons/PsionicBladeSliceEffect';
@@ -20,6 +21,7 @@ import PlayerHitBurst from '@/components/weapons/PlayerHitBurst';
 import type { ImpactEffectEvent } from '@/utils/ImpactEffectManager';
 import type { PlayerHitBurstState } from '@/components/coop/coopVfxLayerTypes';
 import type { World } from '@/ecs/World';
+import { getCrescentSlashAspectPalette } from '@/utils/weaponAspects';
 
 export type CoopCombatFeedbackLayerHandle = {
   clearAll: () => void;
@@ -28,6 +30,8 @@ export type CoopCombatFeedbackLayerHandle = {
   flushPendingImpacts: () => boolean;
   removeImpact: (id: string) => void;
   mountImpacts: () => void;
+  /** Mount immediately — bypasses the 100ms throttle for hit-reaction VFX. */
+  mountImpactsNow: () => void;
 };
 
 type CoopCombatFeedbackLayerProps = {
@@ -84,6 +88,11 @@ const CoopCombatFeedbackLayer = memo(forwardRef<CoopCombatFeedbackLayerHandle, C
       setImpactEffectsEpoch((epoch) => epoch + 1);
     }, []);
 
+    const mountImpactsNow = useCallback(() => {
+      lastImpactEffectsMountRef.current = Date.now();
+      setImpactEffectsEpoch((epoch) => epoch + 1);
+    }, []);
+
     useImperativeHandle(ref, () => ({
       clearAll,
       addPlayerHitBurst,
@@ -91,6 +100,7 @@ const CoopCombatFeedbackLayer = memo(forwardRef<CoopCombatFeedbackLayerHandle, C
       flushPendingImpacts,
       removeImpact,
       mountImpacts,
+      mountImpactsNow,
     }), [
       clearAll,
       addPlayerHitBurst,
@@ -98,6 +108,7 @@ const CoopCombatFeedbackLayer = memo(forwardRef<CoopCombatFeedbackLayerHandle, C
       flushPendingImpacts,
       removeImpact,
       mountImpacts,
+      mountImpactsNow,
     ]);
 
     return (
@@ -136,29 +147,24 @@ const CoopCombatFeedbackLayer = memo(forwardRef<CoopCombatFeedbackLayerHandle, C
               />
             );
           }
+          if (e.type === 'melee-contact-gash') {
+            return (
+              <MeleeContactGash
+                key={e.id}
+                position={e.position}
+                direction={e.direction}
+                weightClass={e.weightClass}
+                onComplete={onImpactDone}
+              />
+            );
+          }
           if (e.type === 'crescent-slash-effect') {
             return (
               <CrescentSlashEffect
                 key={e.id}
                 position={e.position}
                 direction={e.direction}
-                onComplete={onImpactDone}
-              />
-            );
-          }
-          if (e.type === 'spectre-spin-land-effect') {
-            return (
-              <CrescentSlashEffect
-                key={e.id}
-                position={e.position}
-                direction={e.direction}
-                scale={0.55}
-                palette={{
-                  core: '#a8d4ff',
-                  edge: '#4da6ff',
-                  flash: '#d4ecff',
-                  ring: '#b55cff',
-                }}
+                palette={getCrescentSlashAspectPalette(e.weaponAspect)}
                 onComplete={onImpactDone}
               />
             );

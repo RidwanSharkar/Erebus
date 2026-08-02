@@ -182,3 +182,100 @@ export function applySelfIllumination(
     }
   });
 }
+
+/** Player weapon item GLBs — match procedural sabre/runeblade vivid emissive. */
+export const WEAPON_ITEM_EMISSIVE_INTENSITY = 2;
+/** Mats that already had emissiveMap — boost harder so baked glow still pops. */
+export const WEAPON_ITEM_EMISSIVE_INTENSITY_GLOW = 4;
+
+export interface WeaponItemGlowOptions {
+  intensity?: number;
+  /** Boost existing emissiveMap materials instead of skipping them. Default true. */
+  force?: boolean;
+  tint?: ColorRepresentation;
+}
+
+type WeaponGlowMaterial = {
+  map?: unknown;
+  color?: { copy: (color: unknown) => unknown };
+  emissive?: {
+    set: (color: ColorRepresentation) => unknown;
+    copy: (color: unknown) => unknown;
+  };
+  emissiveMap?: unknown;
+  emissiveIntensity?: number;
+  metalness?: number;
+  roughness?: number;
+  toneMapped?: boolean;
+  needsUpdate?: boolean;
+};
+
+function applyWeaponItemGlowToMaterial(
+  mat: WeaponGlowMaterial,
+  intensity: number,
+  glowIntensity: number,
+  force: boolean,
+  tint: ColorRepresentation,
+): void {
+  if (!mat.emissive) return;
+
+  const hadGlow = hasMeaningfulEmissiveGlow(mat);
+  if (hadGlow && !force) return;
+
+  if (mat.map) {
+    mat.emissiveMap = mat.map;
+    mat.emissive.set(tint);
+  } else if (mat.color) {
+    mat.emissive.copy(mat.color);
+  } else {
+    mat.emissive.set(tint);
+  }
+
+  mat.emissiveIntensity = hadGlow ? glowIntensity : intensity;
+  mat.toneMapped = false;
+  if (typeof mat.metalness === 'number') {
+    mat.metalness = Math.min(mat.metalness, 0.35);
+  }
+  if (typeof mat.roughness === 'number') {
+    mat.roughness = Math.min(mat.roughness, 0.2);
+  }
+  mat.needsUpdate = true;
+}
+
+/**
+ * High-emissive pass for player weapon item GLBs (sabres / runeblade).
+ * Unlike unit self-illumination, this boosts (not skips) materials with baked emissiveMaps
+ * and disables tone mapping so blades read as vivid as procedural weapons.
+ * Call only on per-instance cloned materials.
+ */
+export function applyWeaponItemGlow(
+  root: THREE.Object3D,
+  options: WeaponItemGlowOptions = {},
+): void {
+  const intensity = options.intensity ?? WEAPON_ITEM_EMISSIVE_INTENSITY;
+  const glowIntensity = WEAPON_ITEM_EMISSIVE_INTENSITY_GLOW;
+  const force = options.force !== false;
+  const tint = options.tint ?? 0xffffff;
+
+  root.traverse((child) => {
+    const mesh = child as {
+      isMesh?: boolean;
+      material?: unknown;
+    };
+    if (!mesh.isMesh || !mesh.material) return;
+
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+      if (typeof material !== 'object' || material === null || !('emissive' in material)) {
+        continue;
+      }
+      applyWeaponItemGlowToMaterial(
+        material as WeaponGlowMaterial,
+        intensity,
+        glowIntensity,
+        force,
+        tint,
+      );
+    }
+  });
+}

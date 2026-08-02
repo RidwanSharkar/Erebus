@@ -2,10 +2,17 @@
  * Main co-op combat arena (not the throne prep room).
  * Colored enemy rooms use a circular footprint at this radius; stat/trial
  * HexCombatArena stays hex at `HEX_ARENA_RADIUS`.
+ * Sized CASTLE_ROOM_HALF_SIZE (14) + 2.
  */
-export const MAIN_ARENA_HEX_RADIUS = 20;
+export const MAIN_ARENA_HEX_RADIUS = 16;
+/** Floor disc inset from playable edge — preserves prior visual proportions (15.875 / 18). */
+export const MAIN_ARENA_FLOOR_INSET = 2.125;
+/** Visible ThroneOuterFloor radius for colored combat rooms. */
+export const MAIN_ARENA_FLOOR_RADIUS = MAIN_ARENA_HEX_RADIUS - MAIN_ARENA_FLOOR_INSET;
 /** Stat/trial hex combat arena — must match `HexCombatArena.tsx`. */
-export const HEX_ARENA_RADIUS = 20;
+export const HEX_ARENA_RADIUS = 18;
+/** Fae Realm pre-intro hex arena — slightly larger than Inner Sanctum (r=14). */
+export const FAE_REALM_HEX_RADIUS = 15;
 /** Intro castle rooms — must match `backend/coopArenaLayout.js` CASTLE_ROOM_HALF_SIZE. */
 export const CASTLE_ROOM_HALF_SIZE = 14;
 export const CASTLE_ROOM_BOUNDS: MainArenaBounds = {
@@ -21,6 +28,12 @@ export const SUNKEN_TEMPLE_BOUNDS: MainArenaBounds = {
 export const MAIN_ARENA_HEX_FLOOR_MARGIN = 1.4;
 export const MAIN_ARENA_HEX_INNER_APOTHEM =
   MAIN_ARENA_HEX_RADIUS * Math.cos(Math.PI / 6) - MAIN_ARENA_HEX_FLOOR_MARGIN;
+/** Eternity's Palace hex — same footprint as HexCombatArena. */
+export const ETERNITY_PALACE_HEX_RADIUS = HEX_ARENA_RADIUS;
+export const ETERNITY_PALACE_HEX_INNER_APOTHEM =
+  ETERNITY_PALACE_HEX_RADIUS * Math.cos(Math.PI / 6) - MAIN_ARENA_HEX_FLOOR_MARGIN;
+/** Center seal scaled from throne seal (8.75 @ r=15) to hex combat size. */
+export const ETERNITY_PALACE_CENTER_SEAL_RADIUS = 8.75 * (ETERNITY_PALACE_HEX_RADIUS / 15);
 
 /** Bounding extents for systems that still allocate square textures/fields around the hex. */
 export const MAIN_MAP_HALF_X = MAIN_ARENA_HEX_RADIUS;
@@ -159,8 +172,8 @@ export function clampToPentagonArenaXZ(
   return { x: cx, z: cz };
 }
 
-function isStatTrialArenaRadius(radius: number): boolean {
-  return radius === HEX_ARENA_RADIUS;
+function isHexCombatArenaRadius(radius: number): boolean {
+  return radius === HEX_ARENA_RADIUS || radius === FAE_REALM_HEX_RADIUS;
 }
 
 /** True if (x, z) lies inside the playable main arena. Explicit bounds keep legacy rectangle behavior. */
@@ -174,7 +187,7 @@ export function isInsideMainArenaXZ(
     return isInsideCircleArenaXZ(x, z);
   }
   if (typeof boundsOrHalfX === 'number' && halfZ === undefined) {
-    if (isStatTrialArenaRadius(boundsOrHalfX)) {
+    if (isHexCombatArenaRadius(boundsOrHalfX)) {
       return isInsideHexArenaXZ(x, z, boundsOrHalfX);
     }
     if (boundsOrHalfX === PENTAGON_ARENA_RADIUS) {
@@ -197,7 +210,7 @@ export function clampToMainArenaXZ(
     return clampToCircleArenaXZ(x, z, MAIN_ARENA_HEX_RADIUS, inset);
   }
   if (typeof boundsOrHalfX === 'number') {
-    if (isStatTrialArenaRadius(boundsOrHalfX)) {
+    if (isHexCombatArenaRadius(boundsOrHalfX)) {
       return clampToHexArenaXZ(x, z, boundsOrHalfX, inset);
     }
     if (boundsOrHalfX === PENTAGON_ARENA_RADIUS) {

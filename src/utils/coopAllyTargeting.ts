@@ -28,10 +28,16 @@ export function isCoopPlayerAllyEntity(entity: {
   if (entity.userData?.isCoopAlliedUnit === true) return true;
   const t = entity.userData?.coopServerEnemyType;
   return t === 'player-zombie'
+    || t === 'vengeful-spirit'
     || t === 'allied-knight'
     || t === 'allied-huntress'
     || t === 'allied-phantom'
     || t === 'allied-demon'
     || t === 'allied-enchantress'
-    || t === 'allied-healer';
+    || t === 'allied-healer'
+    || t === 'allied-tiger'
+    || t === 'allied-wolf'
+    || t === 'allied-bear'
+    || t === 'allied-serpent'
+    || t === 'allied-spider';
 }

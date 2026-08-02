@@ -1,15 +1,16 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { Archetype } from '@/utils/archetypes';
 import {
   BAR_FRAME_GRADIENT,
   BAR_HEIGHT,
   BAR_TRACK_GRADIENT,
+  buildResourceBarClipPath,
   getResourceBarTheme,
+  getResourceBarWidthTaperPx,
   HEX_PATTERN_BG,
-  RESOURCE_BAR_CLIP,
-  RESOURCE_BAR_TRACK_CLIP,
   TICKS,
   type ResourceBarKind,
+  type ResourceBarSlot,
 } from './hudChrome';
 
 interface ResourceBarProps {
@@ -17,13 +18,57 @@ interface ResourceBarProps {
   max: number;
   kind: ResourceBarKind;
   archetype?: Archetype;
+  /** Stack index when sitting beside the integrated LevelBadge (0=shield, 1=health, 2=energy). */
+  barSlot?: ResourceBarSlot;
+  /** Concave left edge hugging the LevelBadge. Defaults true when barSlot is set. */
+  integrated?: boolean;
 }
 
-export default function ResourceBar({ current, max, kind, archetype }: ResourceBarProps) {
+export default function ResourceBar({
+  current,
+  max,
+  kind,
+  archetype,
+  barSlot,
+  integrated,
+}: ResourceBarProps) {
   const { gradientFrom, gradientTo, glowColor } = getResourceBarTheme(kind, archetype);
   const pct = Math.max(0, Math.min(100, max > 0 ? (current / max) * 100 : 0));
   const isLow = pct < 30;
   const isCritical = pct < 15;
+
+  const isIntegrated = integrated ?? barSlot !== undefined;
+  const taperPx = getResourceBarWidthTaperPx({ barSlot, kind });
+  const outerClip = useMemo(
+    () =>
+      buildResourceBarClipPath({
+        barSlot,
+        integrated: isIntegrated,
+        inset: 0,
+      }),
+    [barSlot, isIntegrated],
+  );
+  // Track/fill use height-scaled slices so the tip angle matches the frame border.
+  const trackClip = useMemo(
+    () =>
+      buildResourceBarClipPath({
+        barSlot,
+        integrated: isIntegrated,
+        inset: 0,
+        height: BAR_HEIGHT,
+      }),
+    [barSlot, isIntegrated],
+  );
+  const fillClip = useMemo(
+    () =>
+      buildResourceBarClipPath({
+        barSlot,
+        integrated: isIntegrated,
+        inset: 0,
+        height: BAR_HEIGHT - 6, // track minus CSS inset: 3 on each side
+      }),
+    [barSlot, isIntegrated],
+  );
 
   const prevPctRef = useRef(pct);
   const drainTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -53,14 +98,24 @@ export default function ResourceBar({ current, max, kind, archetype }: ResourceB
     };
   }, []);
 
+  // Arc-hugging left edge eats into the bar — pad values clear of the clip.
+  // Middle/lower slots need more because the badge circle bites deeper there.
+  const valuePadLeft = isIntegrated
+    ? barSlot === 1
+      ? 52
+      : barSlot === 2
+        ? 48
+        : 32
+    : 15;
+
   return (
-    <div style={{ width: '100%', minWidth: 0 }}>
+    <div style={{ width: taperPx > 0 ? `calc(100% - ${taperPx}px)` : '100%', minWidth: 0 }}>
       <div
         style={{
           position: 'relative',
           padding: '2px',
           background: BAR_FRAME_GRADIENT,
-          clipPath: RESOURCE_BAR_CLIP,
+          clipPath: outerClip,
           boxShadow: `0 0 14px ${glowColor}22, inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.6)`,
         }}
       >
@@ -69,7 +124,7 @@ export default function ResourceBar({ current, max, kind, archetype }: ResourceB
             position: 'relative',
             height: `${BAR_HEIGHT}px`,
             background: BAR_TRACK_GRADIENT,
-            clipPath: RESOURCE_BAR_CLIP,
+            clipPath: trackClip,
             overflow: 'hidden',
           }}
         >
@@ -90,7 +145,7 @@ export default function ResourceBar({ current, max, kind, archetype }: ResourceB
             style={{
               position: 'absolute',
               inset: 3,
-              clipPath: RESOURCE_BAR_TRACK_CLIP,
+              clipPath: fillClip,
             }}
           >
             <div
@@ -109,7 +164,7 @@ export default function ResourceBar({ current, max, kind, archetype }: ResourceB
             style={{
               position: 'absolute',
               inset: 3,
-              clipPath: RESOURCE_BAR_TRACK_CLIP,
+              clipPath: fillClip,
             }}
           >
             <div
@@ -199,7 +254,7 @@ export default function ResourceBar({ current, max, kind, archetype }: ResourceB
               position: 'absolute',
               inset: 0,
               border: `1px solid ${glowColor}${isLow ? 'bb' : '35'}`,
-              clipPath: RESOURCE_BAR_CLIP,
+              clipPath: trackClip,
               boxShadow: isLow ? `inset 0 0 12px ${glowColor}33` : 'inset 0 1px 0 rgba(255,255,255,0.06)',
               animation: 'hb-border-pulse 1s ease-in-out infinite',
               animationPlayState: isLow ? 'running' : 'paused',
@@ -216,7 +271,7 @@ export default function ResourceBar({ current, max, kind, archetype }: ResourceB
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-start',
-              paddingLeft: 15,
+              paddingLeft: valuePadLeft,
               pointerEvents: 'none',
               zIndex: 6,
             }}
@@ -224,7 +279,7 @@ export default function ResourceBar({ current, max, kind, archetype }: ResourceB
             <span
               style={{
                 fontSize: '11px',
-                fontWeight: 800,
+                fontWeight: 625,
                 fontVariantNumeric: 'tabular-nums',
                 color: 'rgba(255,255,255,0.96)',
                 textShadow: `0 1px 4px rgba(0,0,0,1), 0 0 10px ${glowColor}55`,

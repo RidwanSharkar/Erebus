@@ -1,12 +1,8 @@
-import { useRef, useEffect, memo, useMemo } from 'react';
-import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
-import { Group, Vector3, Shape, ExtrudeGeometry, MeshStandardMaterial, DoubleSide, PointLight } from '@/utils/three-exports';
+import { useRef, useEffect, memo } from 'react';
+import { Group } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
-import { Color } from 'three';
-import { WeaponType, WeaponSubclass } from '../dragon/weapons';
-
-const SPEAR_GOLD = new Color(0xE8CD57);
-const SPEAR_GOLD_HEX = '#E8CD57';
+import { WeaponSubclass } from '../dragon/weapons';
+import SpearMeshVisual from './SpearMeshVisual';
 
 interface SpearProps {
   isSwinging: boolean;
@@ -316,59 +312,10 @@ const SpearComponent = memo(function Spear({
 
   });
 
-  const bladeShape = useMemo(() => {
-    const shape = new Shape();
-    shape.moveTo(0, 0);
-    shape.lineTo(0.4, -0.130);
-    shape.bezierCurveTo(
-      0.6, 0.2,
-      1.33, 0.5,
-      1.65, 1.515
-    );
-    shape.lineTo(1.125, 0.75);
-    shape.bezierCurveTo(
-      0.45, 0.2,
-      0.225, 0.0,
-      0.1, 0.7
-    );
-    shape.lineTo(0, 0);
-    return shape;
-  }, []);
-
-  const innerBladeShape = useMemo(() => {
-    const shape = new Shape();
-    shape.moveTo(0, 0);
-
-    shape.lineTo(0, 0.06);
-    shape.lineTo(0.15, 0.15);
-    shape.quadraticCurveTo(1.2, 0.12, 1.5, 0.15);
-    shape.quadraticCurveTo(2.0, 0.08, 2.15, 0);
-    shape.quadraticCurveTo(2.0, -0.08, 1.5, -0.15);
-    shape.quadraticCurveTo(1.2, -0.12, 0.15, -0.15);
-    shape.lineTo(0, -0.05);
-    shape.lineTo(0, 0);
-
-    return shape;
-  }, []);
-
-  const bladeExtrudeSettings = {
-    steps: 2,
-    depth: 0.05,
-    bevelEnabled: true,
-    bevelThickness: 0.014,
-    bevelSize: 0.02,
-    bevelOffset: 0.04,
-    bevelSegments: 2
-  };
-
-  const innerBladeExtrudeSettings = {
-    ...bladeExtrudeSettings,
-    depth: 0.06,
-    bevelThickness: 0.02,
-    bevelSize: 0.02,
-    bevelOffset: 0,
-    bevelSegments: 6
-  };
+  // Charge glow boost (throw + whirlwind charge use the same emissive ladder)
+  const emissiveBoost =
+    (isThrowSpearCharging ? throwSpearChargeProgress : 0) +
+    (isWhirlwindCharging ? whirlwindChargeProgress : 0);
 
   return (
     <>
@@ -383,189 +330,10 @@ const SpearComponent = memo(function Spear({
         rotation={[Math.PI/2, 0, 0]}
         scale={[0.8, 0.8, 0.7]}
       >
-        <group position={[-0.025, -0.55, 0.35]} rotation={[0, 0, -Math.PI]}>
-          <mesh>
-            <cylinderGeometry args={[0.03, 0.04, 2.2, 12]} />
-            <meshStandardMaterial color="#2a3b4c" roughness={0.7} />
-          </mesh>
-
-          {[...Array(12)].map((_, i) => (
-            <mesh key={i} position={[0, 1.0 - i * 0.18, 0]} rotation={[Math.PI / 2, 0, 0]}>
-              <torusGeometry args={[0.045, 0.016, 8, 16]} />
-              <meshStandardMaterial color="#1a2b3c" metalness={0.6} roughness={0.4} />
-            </mesh>
-          ))}
-        </group>
-
-        <group position={[-0.025, .35, 0.35]} rotation={[Math.PI,1, Math.PI]}>
-          <mesh>
-            <torusGeometry args={[0.185, 0.07, 16, 32]} />
-            <meshStandardMaterial
-              color="#4a5b6c"
-              metalness={0.9}
-              roughness={0.1}
-            />
-          </mesh>
-
-          {[...Array(8)].map((_, i) => (
-            <mesh
-              key={`spike-${i}`}
-              position={[
-                0.25 * Math.cos(i * Math.PI / 4),
-                0.25 * Math.sin(i * Math.PI / 4),
-                0
-              ]}
-              rotation={[0, 0, i * Math.PI / 4 - Math.PI / 4]}
-            >
-              <coneGeometry args={[0.06250, 0.25, 3]} />
-              <meshStandardMaterial
-                color="#4a5b6c"
-                metalness={0.9}
-                roughness={0.1}
-              />
-            </mesh>
-          ))}
-
-          <mesh>
-            <sphereGeometry args={[0.155, 16, 16]} />
-            <meshStandardMaterial
-              color={SPEAR_GOLD}         // Greyish silver
-              emissive={new Color(0xE8CD57)}      // Greyish silver emission
-              emissiveIntensity={1 + (isThrowSpearCharging ? throwSpearChargeProgress * 20 : 0) + (isWhirlwindCharging ? whirlwindChargeProgress * 20 : 0)}
-              transparent
-              opacity={1}
-            />
-          </mesh>
-
-          <mesh>
-            <sphereGeometry args={[0.1, 16, 16]} />
-            <meshStandardMaterial
-              color={SPEAR_GOLD}
-              emissive={SPEAR_GOLD}
-              emissiveIntensity={40 + (isThrowSpearCharging ? throwSpearChargeProgress * 60 : 0) + (isWhirlwindCharging ? whirlwindChargeProgress * 60 : 0)}
-              transparent
-              opacity={0.8}
-            />
-          </mesh>
-
-          <mesh>
-            <sphereGeometry args={[0.145, 16, 16]} />
-            <meshStandardMaterial
-              color={SPEAR_GOLD}
-              emissive={SPEAR_GOLD}
-              emissiveIntensity={35 + (isThrowSpearCharging ? throwSpearChargeProgress * 50 : 0) + (isWhirlwindCharging ? whirlwindChargeProgress * 50 : 0)}
-              transparent
-              opacity={0.6}
-            />
-          </mesh>
-
-          <mesh>
-            <sphereGeometry args={[.175, 16, 16]} />
-            <meshStandardMaterial
-              color={SPEAR_GOLD}
-              emissive={SPEAR_GOLD}
-              emissiveIntensity={30 + (isThrowSpearCharging ? throwSpearChargeProgress * 40 : 0) + (isWhirlwindCharging ? whirlwindChargeProgress * 40 : 0)}
-              transparent
-              opacity={0.4}
-            />
-          </mesh>
-
-          <PooledEffectLight
-            color={SPEAR_GOLD}
-            intensity={2 + (isThrowSpearCharging ? throwSpearChargeProgress * 15 : 0) + (isWhirlwindCharging ? whirlwindChargeProgress * 15 : 0)}
-            distance={0.5}
-            decay={2}
-          />
-        </group>
-
-        <group position={[0, 0.55, 0.35]}>
-          <group rotation={[0, 0, 0]}>
-            <group rotation={[0, 0, 0.7]} scale={[0.4, 0.4, -0.4]}>
-              <mesh>
-                <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
-                <meshStandardMaterial
-                  color={SPEAR_GOLD_HEX}
-                  emissive={new Color('#E8CD57')}
-                  emissiveIntensity={1.55}
-                  metalness={0.8}
-                  roughness={0.1}
-                  opacity={0.8}
-                  transparent
-                  side={DoubleSide}
-                />
-              </mesh>
-            </group>
-          </group>
-
-          <group rotation={[0, (2 * Math.PI) / 3, Math.PI/2]}>
-            <group rotation={[0, 0., 5.33]} scale={[0.4, 0.4, -0.4]}>
-              <mesh>
-                <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
-                <meshStandardMaterial
-                  color={SPEAR_GOLD_HEX}
-                  emissive={new Color('#E8CD57')}
-                  emissiveIntensity={1.55}
-                  metalness={0.8}
-                  roughness={0.1}
-                  opacity={0.8}
-                  transparent
-                  side={DoubleSide}
-                />
-              </mesh>
-            </group>
-          </group>
-
-          <group rotation={[0, (4 * Math.PI) / 3, Math.PI/2]}>
-            <group rotation={[0, 0, 5.33]} scale={[0.4, 0.4, -0.4]}>
-              <mesh>
-                <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
-                <meshStandardMaterial
-                  color={SPEAR_GOLD_HEX}
-                  emissive={new Color('#E8CD57')}
-                  emissiveIntensity={1.55}
-                  metalness={0.8}
-                  roughness={0.1}
-                  opacity={0.8}
-                  transparent
-                  side={DoubleSide}
-                />
-              </mesh>
-            </group>
-          </group>
-        </group>
-
-        <group
-          ref={innerBladeRef}
-          position={[0, 0.475, 0.35]}
-          rotation={[0, -Math.PI / 6, Math.PI / 2]}
-          scale={[0.725, 0.5125, 0.75]}
-        >
-          <mesh>
-            <extrudeGeometry args={[innerBladeShape, bladeExtrudeSettings]} />
-            <meshStandardMaterial
-              color={SPEAR_GOLD}
-              emissive={SPEAR_GOLD}
-              emissiveIntensity={1.25}
-              metalness={0.3}
-              roughness={0.1}
-            />
-          </mesh>
-
-          <mesh>
-            <extrudeGeometry args={[innerBladeShape, innerBladeExtrudeSettings]} />
-            <meshStandardMaterial
-              color={new Color(0xC0C0C0)}
-              emissive={new Color(0xC0C0C0)}
-              emissiveIntensity={1.25}
-              metalness={0.2}
-              roughness={0.1}
-              opacity={0.8}
-              transparent
-            />
-          </mesh>
-
-        </group>
-
+        <SpearMeshVisual
+          innerBladeRef={innerBladeRef}
+          emissiveBoost={emissiveBoost}
+        />
       </group>
     </group>
     </>

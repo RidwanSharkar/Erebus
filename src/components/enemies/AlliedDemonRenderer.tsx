@@ -34,6 +34,7 @@ function AlliedDemonRenderer({
       staggerBuildup={staggerBuildup}
       campType="ally-yellow"
       skipSummon
+      soulType="yellow"
     />
   );
 }

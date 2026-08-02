@@ -10,10 +10,14 @@ import {
   Vector3,
 } from '@/utils/three-exports';
 import type { CrossentropyVisualTheme } from '@/utils/talents';
+import {
+  getCrossentropyBlitzAspectPalette,
+  type CrossentropyBlitzAspectKey,
+} from '@/utils/weaponAspects';
 
 const FIRE_PARTICLE_GEOMETRY = new SphereGeometry(0.12, 6, 6);
-const MAX_PARTICLES = 48;
-const SPAWN_SKIP_CHANCE = 0.45;
+const MAX_PARTICLES = 56;
+const SPAWN_SKIP_CHANCE = 0.175;
 const RISE_PER_SEC = 0.5;
 const TRAIL_Y_BIAS = -0.3;
 const TRAIL_BACK_OFFSET = 0.35;
@@ -40,7 +44,11 @@ function createSlots(): Slot[] {
   return slots;
 }
 
-function trailPalette(theme: CrossentropyVisualTheme, reaper: boolean) {
+function trailPalette(
+  theme: CrossentropyVisualTheme,
+  reaper: boolean,
+  aspectKey: CrossentropyBlitzAspectKey,
+) {
   if (reaper) {
     return { color: '#9944FF', emissive: '#B866FF' };
   }
@@ -56,7 +64,8 @@ function trailPalette(theme: CrossentropyVisualTheme, reaper: boolean) {
   if (theme === 'plague') {
     return { color: '#44FF88', emissive: '#88FFAA' };
   }
-  return { color: '#FF5500', emissive: '#FF8833' };
+  const palette = getCrossentropyBlitzAspectPalette(aspectKey);
+  return { color: palette.trail, emissive: palette.trailEmissive };
 }
 
 export interface BlitzFireTrailProps {
@@ -64,6 +73,7 @@ export interface BlitzFireTrailProps {
   directionRef: React.RefObject<Vector3 | null> | React.MutableRefObject<Vector3>;
   isActiveRef?: React.RefObject<boolean>;
   visualTheme?: CrossentropyVisualTheme;
+  aspectKey?: CrossentropyBlitzAspectKey;
   reaperPurple?: boolean;
   yOffset?: number;
 }
@@ -74,6 +84,7 @@ const BlitzFireTrail = React.memo(
     directionRef,
     isActiveRef,
     visualTheme = 'default',
+    aspectKey = 'archmage',
     reaperPurple = false,
     yOffset = 0,
   }: BlitzFireTrailProps) => {
@@ -86,8 +97,8 @@ const BlitzFireTrail = React.memo(
     const tmpBack = useRef(new Vector3());
 
     const { color, emissive } = useMemo(
-      () => trailPalette(visualTheme, reaperPurple),
-      [visualTheme, reaperPurple],
+      () => trailPalette(visualTheme, reaperPurple, aspectKey),
+      [visualTheme, reaperPurple, aspectKey],
     );
 
     const material = useMemo(

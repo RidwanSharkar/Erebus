@@ -10,6 +10,7 @@ type TelegraphPayload = {
   origin?: { x: number; z: number };
   targetPositions?: Vec3Like[];
   knightId?: string;
+  assassinId?: string;
   alliedKnightId?: string;
   ghoulId?: string;
   titanId?: string;
@@ -28,6 +29,7 @@ type TelegraphPayload = {
 
 const ENEMY_ID_KEYS = [
   'knightId',
+  'assassinId',
   'alliedKnightId',
   'ghoulId',
   'titanId',
@@ -115,6 +117,7 @@ const KNIGHT_BLOCK_TELEGRAPH_EVENTS = ['knight-block-telegraph'] as const;
 /** High-impact windups only — Knight spin, Warlock casts. */
 const TELEGRAPH_EVENTS = [
   'knight-spin-charge',
+  'assassin-spin-charge',
   'warlock-attack-telegraph',
   'warlock-archon-shock',
 ] as const;

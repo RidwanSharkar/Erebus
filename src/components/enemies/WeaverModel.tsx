@@ -1,10 +1,12 @@
 'use client';
 
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
-import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
+import { Group, LoopRepeat, AnimationAction, AnimationClip } from 'three';
+import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { loadGltfAnimationClips, preloadSkinnedIdleAndAnimationClips } from '@/utils/gltfAnimationLoader';
 import { filterAnimationClipsForRoot, getCachedEnemyAnimationClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
 
 interface WeaverModelProps {
@@ -21,8 +23,10 @@ interface WeaverModelProps {
   onImpactFinished?: () => void;
 }
 
+const WEAVER_IDLE_PATH = '/models/weaver_idle.glb';
+
 const WEAVER_MODEL_PATHS = [
-  '/models/weaver_idle.glb',
+  WEAVER_IDLE_PATH,
   '/models/weaver_walk.glb',
   '/models/weaver_castheal.glb',
   '/models/weaver_castsummon.glb',
@@ -30,8 +34,16 @@ const WEAVER_MODEL_PATHS = [
   '/models/weaver_impact.glb',
 ];
 
+const WEAVER_DEFERRED_PATHS = {
+  Walk: '/models/weaver_walk.glb',
+  CastHeal: '/models/weaver_castheal.glb',
+  CastSummon: '/models/weaver_castsummon.glb',
+  Death: '/models/weaver_death.glb',
+  Impact: '/models/weaver_impact.glb',
+} as const;
+
 export function preloadWeaverModels(): void {
-  WEAVER_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+  preloadSkinnedIdleAndAnimationClips(WEAVER_IDLE_PATH, WEAVER_MODEL_PATHS, useGLTF.preload);
 }
 
 const SCALE = 0.01235;
@@ -50,13 +62,30 @@ export default React.memo(function WeaverModel({
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
   const lastImpactPlayKeyRef = useRef(-1);
+  const [extraAnims, setExtraAnims] = useState<Record<string, AnimationClip[]>>({});
 
-  const { scene, animations: idleAnims }    = useGLTF('/models/weaver_idle.glb');
-  const { animations: walkAnims }           = useGLTF('/models/weaver_walk.glb');
-  const { animations: castHealAnims }       = useGLTF('/models/weaver_castheal.glb');
-  const { animations: castSummonAnims }     = useGLTF('/models/weaver_castsummon.glb');
-  const { animations: deathAnims }          = useGLTF('/models/weaver_death.glb');
-  const { animations: impactAnims }         = useGLTF('/models/weaver_impact.glb');
+  const { scene, animations: idleAnims } = useGLTF(WEAVER_IDLE_PATH);
+
+  useEffect(() => {
+    let cancelled = false;
+    const entries = Object.entries(WEAVER_DEFERRED_PATHS);
+    void Promise.all(
+      entries.map(async ([name, path]) => {
+        const clips = await loadGltfAnimationClips(path);
+        return [name, clips] as const;
+      }),
+    )
+      .then((loaded) => {
+        if (cancelled) return;
+        setExtraAnims(Object.fromEntries(loaded));
+      })
+      .catch((error) => {
+        console.warn('Failed to load weaver animations:', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const clonedScene = useMemo(() => {
     const clone = SkeletonUtils.clone(scene) as Group;
@@ -75,21 +104,24 @@ export default React.memo(function WeaverModel({
 
   useDisposeClonedMaterials(clonedScene);
 
-  const animations = useMemo(
-    () =>
-      filterAnimationClipsForRoot(
-        clonedScene,
-        getCachedEnemyAnimationClips('weaver', () => [
-          ...renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ),
-          ...renameAnimationClips(walkAnims, 'Walk').map(stripRootMotionXZ),
-          ...renameAnimationClips(castHealAnims, 'CastHeal'),
-          ...renameAnimationClips(castSummonAnims, 'CastSummon'),
-          ...renameAnimationClips(deathAnims, 'Death'),
-          ...renameAnimationClips(impactAnims, 'Impact'),
-        ]),
-      ),
-    [idleAnims, walkAnims, castHealAnims, castSummonAnims, deathAnims, impactAnims, clonedScene],
-  );
+  const animations = useMemo(() => {
+    const idleClips = renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ);
+    const hasAllDeferred = Object.keys(WEAVER_DEFERRED_PATHS).every((key) => extraAnims[key]?.length);
+    if (!hasAllDeferred) {
+      return filterAnimationClipsForRoot(clonedScene, idleClips);
+    }
+    return filterAnimationClipsForRoot(
+      clonedScene,
+      getCachedEnemyAnimationClips('weaver', () => [
+        ...idleClips,
+        ...renameAnimationClips(extraAnims.Walk, 'Walk').map(stripRootMotionXZ),
+        ...renameAnimationClips(extraAnims.CastHeal, 'CastHeal'),
+        ...renameAnimationClips(extraAnims.CastSummon, 'CastSummon'),
+        ...renameAnimationClips(extraAnims.Death, 'Death'),
+        ...renameAnimationClips(extraAnims.Impact, 'Impact'),
+      ]),
+    );
+  }, [idleAnims, extraAnims, clonedScene]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
@@ -97,6 +129,8 @@ export default React.memo(function WeaverModel({
 
   const getAction = (name: 'Idle' | 'Walk' | 'CastHeal' | 'CastSummon' | 'Death' | 'Impact'): AnimationAction | null =>
     actions[name] ?? null;
+
+  const posed = useEnemyIdlePose({ actions, mixer, currentActionRef });
 
   // Priority: Death > CastSummon > CastHeal > Impact > Walk > Idle
   useEffect(() => {
@@ -117,8 +151,9 @@ export default React.memo(function WeaverModel({
     if (!nextAction) return;
 
     const sameClip = nextAction === currentActionRef.current;
-    if (sameClip) {
-      const retriggerImpact = isImpacting && impactPlayKey !== lastImpactPlayKeyRef.current;
+    const sameAndAlive = sameClip && nextAction.isRunning() && nextAction.getEffectiveWeight() > 0;
+    const retriggerImpact = isImpacting && impactPlayKey !== lastImpactPlayKeyRef.current;
+    if (sameAndAlive) {
       if (isCastingHeal && castHealHoldEnd && getAction('CastHeal') === nextAction) {
         return;
       }
@@ -131,58 +166,44 @@ export default React.memo(function WeaverModel({
       if (!retriggerImpact) return;
     }
 
-    currentActionRef.current?.fadeOut(0.2);
-
-    if (isDying) {
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = true;
-      nextAction.reset().fadeIn(0.15).play();
-    } else if (isCastingSummon) {
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = true;
-      nextAction.reset().fadeIn(0.2).play();
-    } else if (isCastingHeal) {
-      if (castHealHoldEnd) {
-        nextAction.setLoop(LoopOnce, 1);
-        nextAction.clampWhenFinished = true;
-      } else if (castHealLoop) {
-        nextAction.setLoop(LoopRepeat, Infinity);
-        nextAction.clampWhenFinished = false;
-      } else {
-        nextAction.setLoop(LoopOnce, 1);
-        nextAction.clampWhenFinished = true;
-      }
-      nextAction.reset().fadeIn(0.2).play();
-    } else if (isImpacting) {
+    if (isImpacting) {
       lastImpactPlayKeyRef.current = impactPlayKey;
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = true;
-      nextAction.reset().fadeIn(0.2).play();
     } else {
-      if (!isImpacting) lastImpactPlayKeyRef.current = -1;
-      nextAction.enabled = true;
-      nextAction.setLoop(LoopRepeat, Infinity);
-      nextAction.fadeIn(0.2).play();
+      lastImpactPlayKeyRef.current = -1;
     }
 
-    currentActionRef.current = nextAction;
-  }, [isWalking, isCastingHeal, castHealLoop, castHealHoldEnd, isCastingSummon, isDying, isImpacting, impactPlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (isDying) {
+      playEnemyAction(nextAction, currentActionRef, mixer, {
+        loopOnce: true,
+        clampWhenFinished: true,
+        fadeIn: 0.15,
+        forceRestart: retriggerImpact,
+      });
+    } else if (isCastingSummon) {
+      playEnemyAction(nextAction, currentActionRef, mixer, {
+        loopOnce: true,
+        clampWhenFinished: true,
+        forceRestart: retriggerImpact,
+      });
+    } else if (isCastingHeal) {
+      playEnemyAction(nextAction, currentActionRef, mixer, {
+        loopOnce: !castHealLoop,
+        clampWhenFinished: castHealHoldEnd || !castHealLoop,
+        forceRestart: retriggerImpact,
+      });
+    } else if (isImpacting) {
+      playEnemyAction(nextAction, currentActionRef, mixer, {
+        loopOnce: true,
+        clampWhenFinished: true,
+        forceRestart: retriggerImpact,
+      });
+    } else {
+      playEnemyAction(nextAction, currentActionRef, mixer);
+    }
+  }, [isWalking, isCastingHeal, castHealLoop, castHealHoldEnd, isCastingSummon, isDying, isImpacting, impactPlayKey, actions, mixer]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // After one-shot (impact, cast) finishes, blend back to Walk or Idle.
   useEffect(() => {
     if (!mixer || isDying) return;
-
-    const blendToWalkOrIdle = () => {
-      if (isDying) return;
-      const fallback = isWalking ? getAction('Walk') : getAction('Idle');
-      if (fallback) {
-        fallback.enabled = true;
-        fallback.setLoop(LoopRepeat, Infinity);
-        currentActionRef.current?.fadeOut(0.15);
-        fallback.fadeIn(0.15).play();
-        currentActionRef.current = fallback;
-      }
-    };
 
     const handleFinish = (e: { action: AnimationAction }) => {
       if (isDying) return;
@@ -191,12 +212,14 @@ export default React.memo(function WeaverModel({
       if (name === 'Impact') {
         onImpactFinished?.();
         lastImpactPlayKeyRef.current = -1;
-        blendToWalkOrIdle();
+        const fallback = isWalking ? getAction('Walk') : getAction('Idle');
+        playEnemyAction(fallback, currentActionRef, mixer, { fadeIn: 0.15, fadeOut: 0.15 });
         return;
       }
       if (name === 'CastHeal' || name === 'CastSummon') {
         if (name === 'CastHeal' && (castHealLoop || castHealHoldEnd)) return;
-        blendToWalkOrIdle();
+        const fallback = isWalking ? getAction('Walk') : getAction('Idle');
+        playEnemyAction(fallback, currentActionRef, mixer, { fadeIn: 0.15, fadeOut: 0.15 });
       }
     };
 
@@ -205,11 +228,10 @@ export default React.memo(function WeaverModel({
   }, [mixer, isDying, isWalking, isCastingHeal, castHealLoop, castHealHoldEnd, actions, onImpactFinished]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <group ref={sceneGroupRef}>
+    <group ref={sceneGroupRef} visible={posed}>
       <group scale={[SCALE, SCALE, SCALE]}>
         <primitive object={clonedScene} />
       </group>
     </group>
   );
 });
-

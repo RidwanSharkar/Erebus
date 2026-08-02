@@ -5,6 +5,13 @@ import type { Entity } from '@/ecs/Entity';
 import { Shield } from '@/ecs/components/Shield';
 import type { PlayerStats } from '@/utils/StatSystem';
 import type { CoopAllyKind } from '@/utils/coopAllyTargeting';
+import {
+  FIRE_AFFINITY_SKYFALL_BASE_DAMAGE,
+  FIRE_AFFINITY_SKYFALL_DAMAGE_PER_STAT_POINT,
+  getDraconicEntropicBoltFireRateReductionSec,
+  type WeaponAspect,
+} from '@/utils/weaponAspects';
+import { getAspectDefaultWraithStrikeTheme } from '@/utils/wraithStrikeColorThemes';
 
 export const TALENT_WRATH_STRIKE = 'WRATH_STRIKE' as const;
 export const TALENT_INFESTED_STRIKE = 'INFESTED_STRIKE' as const;
@@ -584,10 +591,10 @@ export const GIANTKILLER_MAX_HP_DAMAGE_FRAC_BOSS = 0.1;
  */
 export const HEALING_STREAM_HP_PER_SEC_PER_TOTEM = 2;
 
-/** Crossentropy (`SCYTHE_R`) base hit damage before Reaper stack bonus. */
-export const CROSSENTROPY_BASE_DAMAGE = 335;
+/** Crossentropy (`SCYTHE_R`) base hit damage before Reaper stack bonus (Blitz Cannon baseline). */
+export const CROSSENTROPY_BASE_DAMAGE = 225;
 /** PLAGUE boon: Crossentropy base hit damage before Reaper stack bonus. */
-export const CROSSENTROPY_PLAGUE_DAMAGE = 500;
+export const CROSSENTROPY_PLAGUE_DAMAGE = 340;
 /** PLAGUE Crossentropy — ground venom-style VFX at explosion (matches VenomEffect one-shot ms). */
 export const CROSSENTROPY_PLAGUE_VENOM_MS = 2000;
 /** PLAGUE Crossentropy — Concentrated Venom stacks applied per direct hit (Wyvern Bite uses 1). */
@@ -705,7 +712,7 @@ export function shouldEntropicFragmentationChain(fragmentHop: number): boolean {
 /** Reaper: +1 base damage per enemy kill (session). */
 export const CROSSENTROPY_REAPER_DAMAGE_PER_KILL = 5;
 /** Killstreak (Sabres): +base Backstab damage per Backstab kill this session (server-synced in co-op). */
-export const BACKSTAB_KILLSTREAK_DAMAGE_PER_KILL = 25;
+export const BACKSTAB_KILLSTREAK_DAMAGE_PER_KILL = 20;
 /** Relentless (Sabres): base HP healed when Backstab kills an enemy. */
 export const RELENTLESS_BACKSTAB_KILL_BASE = 30;
 /** Relentless (Sabres): additional HP healed per point of Stamina (all sources). */
@@ -772,7 +779,7 @@ export const CROSSENTROPY_REAPER_HIT_HEAL = 2;
 export const CROSSENTROPY_MAX_TRAVEL_DISTANCE = 20;
 
 /** Arctic Shards — Entropic hit chance to spawn concentrated blizzard. */
-export const ARCTIC_SHARDS_PROC_CHANCE = 0.175;
+export const ARCTIC_SHARDS_PROC_CHANCE = 0.2;
 /** Arctic Shards — fixed entropic bolt damage (purple room LMB line). */
 export const ARCTIC_ENTROPIC_BOLT_DAMAGE = 47;
 /** Arctic / Glacial ground blizzard — duration at fixed point (seconds). */
@@ -1207,12 +1214,12 @@ export function getTitansGripLmbFlatBonus(effectiveStrength: number): number {
 }
 
 /** Mortal Strike — Runeblade class talent: every Nth LMB swing fires a forward arc slash. */
-export const MORTAL_STRIKE_BASE_DAMAGE = 120;
+export const MORTAL_STRIKE_BASE_DAMAGE = 145;
 export const MORTAL_STRIKE_ATTACK_INTERVAL = 4;
 export const MORTAL_STRIKE_RANGE = 4.75;
 export const MORTAL_STRIKE_ARC_ANGLE = Math.PI / 2;
 export const MORTAL_STRIKE_WRATHFUL_CRIT_CHANCE_ADD = 0.5;
-export const MORTAL_STRIKE_STAGGERING_DAMAGE = 135;
+export const MORTAL_STRIKE_STAGGERING_DAMAGE = 160;
 export const MORTAL_STRIKE_STAGGERING_STAGGER = 35;
 export const MORTAL_STRIKE_INFESTED_DAMAGE = 185;
 export const MORTAL_STRIKE_GUARD_DAMAGE = 240;
@@ -1225,7 +1232,7 @@ export type WraithStrikeTheme = 'default' | 'wrathful' | 'infested' | 'guard' | 
 export const STAGGERING_STRIKE_WRAITH_STAGGER_ADD = 80;
 /** Non-boss PvE: stagger needed for lightning proc + stun (co-op server must match). */
 export const STAGGER_MAX = 100;
-/** Co-op bosses (`boss`, `boss2`, `boss3`): same proc at this buildup (see `backend/gameRoom.js`). */
+/** Co-op bosses (`boss`, `boss2`, `boss3`, `destiny`): same proc at this buildup (see `backend/gameRoom.js`). */
 export const STAGGER_MAX_BOSS = 300;
 export const STAGGER_PROC_DAMAGE = 150;
 export const STAGGER_PROC_STUN_SECONDS = 1.25;
@@ -1292,22 +1299,22 @@ export const TEMPEST_BURST_ARCTIC_STING_PROC_CHANCE = 0.15;
 export const TEMPEST_BURST_WYVERN_STING_PROC_CHANCE = 0.15;
 
 /** Wrathful Entropic — bolts + beam additive crit (crit damage multiplier unchanged). */
-export const WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD = 0.25;
+export const WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD = 0.3;
 export const WRATHFUL_ENTROPIC_BEAM_CRIT_CHANCE_ADD = 0.3;
 /** Staggering Entropic — bolt hit stagger and beam tick stagger (same cap/proc as other stagger talents). */
 export const STAGGERING_ENTROPIC_BOLT_STAGGER = 15;
 export const STAGGERING_ENTROPIC_BEAM_STAGGER_PER_TICK = 5;
 /** Infesting Entropic — bolt base damage when talent active; beam heal on kill. */
-export const INFESTING_ENTROPIC_BOLT_DAMAGE = 53;
+export const INFESTING_ENTROPIC_BOLT_DAMAGE = 89;
 export const INFESTED_ENTROPIC_BEAM_KILL_HEAL = 5;
 /** Scythe LMB — wind-up before first bolt/beam in a hold stream (seconds). */
 export const SCYTHE_LMB_WINDUP_SEC = 0.25;
 /** Blitz Cannon — Crossentropy charge duration (matches Entropic Bolt wind-up). */
 export const BLITZ_CANNON_CHARGE_MS = Math.round(SCYTHE_LMB_WINDUP_SEC * 1000);
 /** Blitz Cannon — constant rocket travel speed. */
-export const BLITZ_CANNON_ROCKET_SPEED = 18;
+export const BLITZ_CANNON_ROCKET_SPEED = 21.5;
 /** Blitz Cannon — reduced max travel distance (Reaper keeps full range). */
-export const BLITZ_CANNON_MAX_TRAVEL_DISTANCE = 10;
+export const BLITZ_CANNON_MAX_TRAVEL_DISTANCE = 12;
 /** Blitz Cannon — max stored Crossentropy uses. */
 export const BLITZ_CANNON_MAX_CHARGES = 2;
 /** Blitz Cannon — minimum gap between spending charges. */
@@ -2421,11 +2428,12 @@ export const fragmentationTalentDefinition: TalentDefinition = {
   modifiesAbilityId: 'Entropic Bolts (Left-click) and Crossentropy (E)',
 };
 
+/** Baseline Crossentropy behavior for all Scythe aspects — kept for back-compat / rulebook refs; no longer offered as a pick. */
 export const blitzCannonTalentDefinition: TalentDefinition = {
   id: TALENT_BLITZ_CANNON,
   name: 'Blitz Cannon',
   description:
-    `Crossentropy now charges in ${BLITZ_CANNON_CHARGE_MS / 1000}s and fires a fast explosive rocket (${BLITZ_CANNON_MAX_TRAVEL_DISTANCE} range) that detonates on the first enemy hit. Holds ${BLITZ_CANNON_MAX_CHARGES} charges.`,
+    `Crossentropy charges in ${BLITZ_CANNON_CHARGE_MS / 1000}s and fires a fast explosive rocket (${BLITZ_CANNON_MAX_TRAVEL_DISTANCE} range) that detonates on the first enemy hit. Holds ${BLITZ_CANNON_MAX_CHARGES} charges.`,
   modifiesAbilityId: 'Crossentropy (E)',
 };
 
@@ -3480,6 +3488,20 @@ export function getFireAffinityStormDamage(
   return FIRE_AFFINITY_STORM_BASE_DAMAGE + FIRE_AFFINITY_STORM_DAMAGE_PER_STAT_POINT * total;
 }
 
+/** Fire Affinity aspect — Divebomb / Skyfall: 125 + 1 per STR/AGI/STA/INT (effective stats). */
+export function getFireAffinitySkyfallDamage(
+  stats: PlayerStats,
+  talentLoadout?: TalentLoadout | null,
+  abilityLoadout?: AbilityLoadout | null,
+): number {
+  const total =
+    Math.max(0, getEffectiveStrengthWithTalentBonuses(stats, talentLoadout, abilityLoadout)) +
+    Math.max(0, getEffectiveAgilityWithTalentBonuses(stats, talentLoadout, abilityLoadout)) +
+    Math.max(0, getEffectiveStaminaWithTalentBonuses(stats, talentLoadout, abilityLoadout)) +
+    Math.max(0, getEffectiveIntellectWithTalentBonuses(stats, talentLoadout, abilityLoadout));
+  return FIRE_AFFINITY_SKYFALL_BASE_DAMAGE + FIRE_AFFINITY_SKYFALL_DAMAGE_PER_STAT_POINT * total;
+}
+
 export function getLightningBoltRoomDamage(
   stats: PlayerStats,
   talentLoadout?: TalentLoadout | null,
@@ -3865,11 +3887,12 @@ export function resolveCrossentropyVisualTheme(
   return 'default';
 }
 
+/** Blitz Cannon is baseline Crossentropy for all Scythe aspects (talent flag is legacy no-op). */
 export function shouldApplyBlitzCannonTalent(
-  talentLoadout: TalentLoadout | null | undefined,
+  _talentLoadout: TalentLoadout | null | undefined,
   abilityLoadout: AbilityLoadout | null | undefined,
 ): boolean {
-  return !!talentLoadout?.blitzCannon && isCrossentropyInLoadout(abilityLoadout);
+  return isCrossentropyInLoadout(abilityLoadout);
 }
 
 export function getCrossentropyChargeDurationMs(
@@ -3916,10 +3939,12 @@ export function shouldApplyArcaneSynergyTalent(
 
 export function getEntropicBoltFireRateSec(
   talentLoadout: TalentLoadout | null | undefined,
+  weaponAspect?: WeaponAspect | null,
 ): number {
-  return shouldApplyArcaneSynergyTalent(talentLoadout)
+  const base = shouldApplyArcaneSynergyTalent(talentLoadout)
     ? ARCANE_SYNERGY_ENTROPIC_BOLT_FIRE_RATE_SEC
     : ENTROPIC_BOLT_FIRE_RATE_SEC;
+  return base - getDraconicEntropicBoltFireRateReductionSec(weaponAspect);
 }
 
 export function getArcaneSynergyEntropicBoltFlatDamageBonus(
@@ -4225,26 +4250,31 @@ export type MortalStrikeDamageBundle = {
 export function resolveWraithStrikeTheme(
   talentLoadout: TalentLoadout | null | undefined,
   abilityLoadout?: AbilityLoadout | null,
+  aspect?: WeaponAspect | null,
 ): WraithStrikeTheme {
-  if (!isWraithStrikeInLoadout(abilityLoadout)) return 'default';
+  const aspectDefault = getAspectDefaultWraithStrikeTheme(aspect);
+  if (!isWraithStrikeInLoadout(abilityLoadout)) return aspectDefault;
   if (talentLoadout?.wrathStrike) return 'wrathful';
   if (talentLoadout?.infestedStrike) return 'infested';
   if (talentLoadout?.wraithGuard) return 'guard';
   if (talentLoadout?.staggeringStrike) return 'staggering';
-  return 'default';
+  return aspectDefault;
 }
 
-export function resolveWraithStrikeThemeFromMeta(meta?: {
-  wrathfulStrike?: boolean;
-  infestedStrike?: boolean;
-  wraithGuard?: boolean;
-  staggeringStrike?: boolean;
-}): WraithStrikeTheme {
+export function resolveWraithStrikeThemeFromMeta(
+  meta?: {
+    wrathfulStrike?: boolean;
+    infestedStrike?: boolean;
+    wraithGuard?: boolean;
+    staggeringStrike?: boolean;
+  },
+  aspect?: WeaponAspect | null,
+): WraithStrikeTheme {
   if (meta?.wrathfulStrike) return 'wrathful';
   if (meta?.infestedStrike) return 'infested';
   if (meta?.wraithGuard) return 'guard';
   if (meta?.staggeringStrike) return 'staggering';
-  return 'default';
+  return getAspectDefaultWraithStrikeTheme(aspect);
 }
 
 export function resolveMortalStrikeDamageBundle(
@@ -4602,7 +4632,6 @@ export function buildScytheClassBoonPool(): TalentId[] {
     TALENT_HEALING_STREAM,
     TALENT_METEOR,
     TALENT_FRAGMENTATION,
-    TALENT_BLITZ_CANNON,
   ];
 }
 
@@ -5869,7 +5898,7 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.reaper) out.push(TALENT_REAPER);
   if (loadout.meteor) out.push(TALENT_METEOR);
   if (loadout.fragmentation) out.push(TALENT_FRAGMENTATION);
-  if (loadout.blitzCannon) out.push(TALENT_BLITZ_CANNON);
+  // BLITZ_CANNON is baseline Crossentropy — legacy loadout flag is a no-op (not listed as owned).
   if (loadout.frostPath) out.push(TALENT_FROSTPATH);
   if (loadout.solarRecharge) out.push(TALENT_SOLAR_RECHARGE);
   if (loadout.arcaneSynergy) out.push(TALENT_ARCANE_SYNERGY);

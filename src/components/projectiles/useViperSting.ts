@@ -16,6 +16,9 @@ import {
 import { spawnArcticGroundBlizzardAtFromReact } from '@/components/weapons/Blizzard/arcticBlizzardSpawnBridge';
 import type { ViperExplosionTarget } from './viperExplosionTargets';
 
+/** Reaping Talons base hit damage (forward / return). Keep in sync with PVP manager. */
+export const REAPING_TALONS_BASE_DAMAGE = 91;
+
 const _viperProj2D = new Vector3();
 const _viperEnemy2D = new Vector3();
 const _viperReturnDir = new Vector3();
@@ -112,6 +115,8 @@ interface UseViperStingProps {
   onExplosiveTalonsDetonate?: (position: Vector3) => void;
   /** Live ECS AoE query for Explosive Talons detonation (co-op). */
   queryExplosionTargets?: (cx: number, cz: number, radius: number) => ViperExplosionTarget[];
+  /** Sniper Terminal Velocity — flat bonus when horizontal shot-origin→target distance > 10. */
+  getTerminalVelocityBonus?: (horizontalDistance: number) => number;
 }
 
 export function useViperSting({
@@ -135,6 +140,7 @@ export function useViperSting({
   glacialTalonsTheme = false,
   onExplosiveTalonsDetonate,
   queryExplosionTargets,
+  getTerminalVelocityBonus,
 }: UseViperStingProps) {
   const projectilePool = useRef<ViperStingProjectile[]>([]);
   const [soulStealEffects, setSoulStealEffects] = useState<SoulStealEffect[]>([]);
@@ -146,7 +152,7 @@ export function useViperSting({
   const SHOT_COOLDOWN = 2000;
   const PROJECTILE_SPEED = 0.9375;
   const PROJECTILE_RETURN_SPEED = 0.7875;
-  const DAMAGE = 91;
+  const DAMAGE = REAPING_TALONS_BASE_DAMAGE;
   const FADE_DURATION = 350;
   const SOUL_STEAL_DURATION = 1250;
 
@@ -312,6 +318,14 @@ export function useViperSting({
                   forwardDamage = DAMAGE + bonus;
                 }
 
+                if (getTerminalVelocityBonus) {
+                  const horiz = Math.hypot(
+                    enemy.position.x - projectile.startPosition.x,
+                    enemy.position.z - projectile.startPosition.z,
+                  );
+                  forwardDamage += getTerminalVelocityBonus(horiz);
+                }
+
                 onHit(enemy.id, forwardDamage, undefined, undefined, undefined, 'forward');
 
                 if (applyDoT) {
@@ -406,10 +420,19 @@ export function useViperSting({
               if (_viperProj2D.distanceTo(_viperEnemy2D) < 1.3) {
                 projectile.returnHitEnemies.add(enemy.id);
 
-                let returnDamage = DAMAGE;
+                let returnBase = DAMAGE;
+                if (getTerminalVelocityBonus) {
+                  const horiz = Math.hypot(
+                    enemy.position.x - projectile.startPosition.x,
+                    enemy.position.z - projectile.startPosition.z,
+                  );
+                  returnBase += getTerminalVelocityBonus(horiz);
+                }
+
+                let returnDamage = returnBase;
                 let returnIsCritical: boolean | undefined = undefined;
                 if (projectile.wrathfulTalonsReturnCrit) {
-                  const r = calculateDamage(DAMAGE, WeaponType.BOW, {
+                  const r = calculateDamage(returnBase, WeaponType.BOW, {
                     critChanceAdd: WRATHFUL_TALONS_RETURN_CRIT_CHANCE_ADD,
                     critDamageMultAdd: WRATHFUL_TALONS_RETURN_CRIT_DAMAGE_MULT_ADD,
                   });
@@ -454,7 +477,7 @@ export function useViperSting({
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [enemyData, onHit, createSoulStealEffect, parentRef, createBeamEffect, applyDoT, localSocketId, players, onExecuteFirstForwardHit, giantKiller, glacialTalonsTheme, onExplosiveTalonsDetonate, queryExplosionTargets]);
+  }, [enemyData, onHit, createSoulStealEffect, parentRef, createBeamEffect, applyDoT, localSocketId, players, onExecuteFirstForwardHit, giantKiller, glacialTalonsTheme, onExplosiveTalonsDetonate, queryExplosionTargets, getTerminalVelocityBonus]);
 
   return {
     shootViperSting,

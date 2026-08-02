@@ -1,19 +1,18 @@
 import { useRef, memo, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { TubeGeometry, MeshStandardMaterial } from 'three';
+import { TubeGeometry } from 'three';
 import {
   Group,
   Vector3,
-  CatmullRomCurve3,
   CubicBezierCurve3,
-  Shape,
-  DoubleSide,
   Mesh,
   MeshBasicMaterial,
 } from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import { isBowPerfectShotProgress } from '@/utils/bowConstants';
+import type { WeaponAspect } from '@/utils/weaponAspects';
+import BowItemMeshVisual from './BowItemMeshVisual';
 
 type ControlSystemDrawReader = {
   isCobraShotChargingActive(): boolean;
@@ -69,14 +68,14 @@ interface EtherealBowProps {
   tempestBurstShotSeq?: number;
   /** When true, read draw progress from controlSystemRef in useFrame (local player only). */
   isLocalPlayer?: boolean;
+  /** Throne weapon aspect — Sniper / Druid / Beastmaster GLB body. */
+  weaponAspect?: WeaponAspect;
 }
 
 const EtherBowComponent = memo(function EtherealBow({
   chargeProgress,
   isCharging,
   onRelease,
-  currentSubclass,
-  hasInstantPowershot = false,
   isAbilityBowAnimation = false,
   isViperStingCharging = false,
   viperStingChargeProgress = 0,
@@ -88,6 +87,7 @@ const EtherBowComponent = memo(function EtherealBow({
   rejuvenatingShotChargeProgress = 0,
   tempestBurstShotSeq = 0,
   isLocalPlayer = false,
+  weaponAspect,
 }: EtherealBowProps) {
   const bowRef = useRef<Group>(null);
   const muzzleMarkerRef = useRef<Group>(null);
@@ -95,6 +95,7 @@ const EtherBowComponent = memo(function EtherealBow({
   const stringMeshRef = useRef<Mesh>(null);
   const arrowGroupRef = useRef<Group>(null);
   const lastQuantizedDrawRef = useRef(-1);
+  const perfectShotPulseRef = useRef(0);
   const _muzzleWorldPos = useRef(new Vector3());
   const muzzleLight = useDynamicLight({ color: '#ff7722', distance: 3.5, decay: 1.2, priority: 1 });
   const tempestSeqRef = useRef(0);
@@ -105,14 +106,7 @@ const EtherBowComponent = memo(function EtherealBow({
   const prevIsCharging = useRef(isCharging);
   const isLocalPlayerRef = useRef(isLocalPlayer);
   isLocalPlayerRef.current = isLocalPlayer;
-  const basePosition = [-0.9, 0.075, 0.75] as const;  // Match other weapons' base positioning
-  const bowBodyMatRef = useRef<MeshStandardMaterial>(null);
-  const leftWingMatRef = useRef<MeshStandardMaterial>(null);
-  const rightWingMatRef = useRef<MeshStandardMaterial>(null);
-  const leftBladeMatRef = useRef<MeshStandardMaterial>(null);
-  const rightBladeMatRef = useRef<MeshStandardMaterial>(null);
-  const perfectShotMatRefs = [bowBodyMatRef, leftWingMatRef, rightWingMatRef, leftBladeMatRef, rightBladeMatRef];
-  const isPerfectShotWindow = isBowPerfectShotProgress(chargeProgress);
+  const basePosition = [-0.9, 0.075, 0.75] as const;
 
   const propDrawProgress = isCobraShotCharging
     ? cobraShotChargeProgress
@@ -150,7 +144,7 @@ const EtherBowComponent = memo(function EtherealBow({
     }
   };
 
-  // Perfect-window pulse (R3F clock) + charge release: only real bow draw, not ability animations
+  // Perfect-window pulse + charge release: only real bow draw, not ability animations
   useFrame((state, delta) => {
     const seq = tempestSeqRef.current;
     if (seq > prevTempestSeqRef.current) {
@@ -181,10 +175,9 @@ const EtherBowComponent = memo(function EtherealBow({
     const livePerfectShotWindow = isBowPerfectShotProgress(liveDrawProgress);
 
     if (livePerfectShotWindow) {
-      const pulse = 4.0 + Math.sin(state.clock.elapsedTime * 20) * 2.0;
-      for (const matRef of perfectShotMatRefs) {
-        if (matRef.current) matRef.current.emissiveIntensity = pulse;
-      }
+      perfectShotPulseRef.current = 4.0 + Math.sin(state.clock.elapsedTime * 20) * 2.0;
+    } else {
+      perfectShotPulseRef.current = 0;
     }
 
     const quantizedDraw = Math.round(liveDrawProgress * 20) / 20;
@@ -195,60 +188,38 @@ const EtherBowComponent = memo(function EtherealBow({
       arrowGroup.position.z = 0.8 - liveDrawProgress * maxDrawDistance;
     }
 
-    const actualIsCharging = isCharging && !isAbilityBowAnimation && !isViperStingCharging && !isBarrageCharging && !isCobraShotCharging && !isRejuvenatingShotCharging;
+    const actualIsCharging =
+      isCharging &&
+      !isAbilityBowAnimation &&
+      !isViperStingCharging &&
+      !isBarrageCharging &&
+      !isCobraShotCharging &&
+      !isRejuvenatingShotCharging;
 
-    if (prevIsCharging.current && !actualIsCharging && !isViperStingCharging && !isBarrageCharging && !isCobraShotCharging && !isRejuvenatingShotCharging) {
+    if (
+      prevIsCharging.current &&
+      !actualIsCharging &&
+      !isViperStingCharging &&
+      !isBarrageCharging &&
+      !isCobraShotCharging &&
+      !isRejuvenatingShotCharging
+    ) {
       onRelease(liveDrawProgress, isBowPerfectShotProgress(liveDrawProgress));
     }
 
     prevIsCharging.current = actualIsCharging;
   });
 
-  const bowCurve = useMemo(
-    () =>
-      new CatmullRomCurve3([
-        new Vector3(-0.875, 0, 0),
-        new Vector3(-0.85, 0.2, 0),
-        new Vector3(-0.25, 0.5, 0),
-        new Vector3(-0.4, 0.35, 0),
-        new Vector3(0.4, 0.35, 0),
-        new Vector3(0.25, 0.5, 0),
-        new Vector3(0.85, 0.2, 0),
-        new Vector3(0.875, 0, 0),
-      ]),
-    [],
-  );
-
-  const bladeShape = useMemo(() => {
-    const shape = new Shape();
-    shape.moveTo(0, 0);
-    shape.lineTo(0.4, -0.130);
-    shape.bezierCurveTo(0.8, 0.22, 1.33, 0.5, 1.6, 0.515);
-    shape.lineTo(1.125, 0.75);
-    shape.bezierCurveTo(0.5, 0.2, 0.225, 0.0, 0.1, 0.7);
-    shape.lineTo(0, 0);
-    return shape;
-  }, []);
-
-  const bladeExtrudeSettings = useMemo(
-    () => ({ steps: 1, depth: 0.03, bevelEnabled: false }),
-    [],
-  );
-
   return (
     <group
       position={[0.6, 1.0, 1.375]}
-      rotation={[-Math.PI/2.0, -Math.PI/2,  -Math.PI/1.95]}   // Reset base rotation
+      rotation={[-Math.PI / 2.0, -Math.PI / 2, -Math.PI / 1.95]}
       scale={[0.875, 0.8, 0.8]}
     >
       <group
         ref={bowRef}
         position={[basePosition[0], basePosition[1], basePosition[2]]}
-        rotation={[
-          Math.PI,
-          Math.PI/2,
-          0
-        ]}
+        rotation={[Math.PI, Math.PI / 2, 0]}
       >
         <group ref={muzzleMarkerRef} position={[0, 0, 0.45]} />
         {/* Unlit muzzle pop — always visible (not dependent on scene lighting) */}
@@ -262,51 +233,17 @@ const EtherBowComponent = memo(function EtherealBow({
             toneMapped={false}
           />
         </mesh>
-        {/* Bow body with dynamic color for instant powershot, charging, and perfect shot timing */}
-        <mesh rotation={[Math.PI/2, 0, 0]}>
-          <tubeGeometry args={[bowCurve, 64, 0.035, 8, false]} />
-          <meshStandardMaterial 
-            ref={bowBodyMatRef}
-            color={
-              isPerfectShotWindow ? "#ffffff" : // Flash white during perfect shot window
-              isBarrageCharging ? `rgb(${Math.floor(0 + barrageChargeProgress * 136)}, ${Math.floor(136 + barrageChargeProgress * 119)}, ${Math.floor(255)})` : // Light blue Barrage colors
-              isCobraShotCharging ? `rgb(${Math.floor(0 + cobraShotChargeProgress * 255)}, ${Math.floor(255)}, ${Math.floor(64 + cobraShotChargeProgress * 32)})` : // Green cobra colors
-              isViperStingCharging ? `rgb(${Math.floor(193 + viperStingChargeProgress * 62)}, ${Math.floor(68 - viperStingChargeProgress * 68)}, ${Math.floor(0)})` : // Reddish-orange Viper Sting colors (#ff4400)
-              isRejuvenatingShotCharging ? `rgb(${Math.floor(0)}, ${Math.floor(128 + rejuvenatingShotChargeProgress * 127)}, ${Math.floor(128 + rejuvenatingShotChargeProgress * 127)})` : // Teal/cyan Rejuvenating Shot colors
-              currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? "#00ff40" :
-              currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ?
-                `rgb(${Math.floor(193 + chargeProgress * 62)}, ${Math.floor(140 - chargeProgress * 140)}, ${Math.floor(75 - chargeProgress * 75)})` :
-              "#C18C4B"
-            }
-            emissive={
-              isPerfectShotWindow ? "#ffffff" : // Flash white during perfect shot window
-              isBarrageCharging ? `rgb(${Math.floor(0 + barrageChargeProgress * 100)}, ${Math.floor(100 + barrageChargeProgress * 100)}, ${Math.floor(200 + barrageChargeProgress * 55)})` : // Light blue Barrage emissive
-              isCobraShotCharging ? `rgb(${Math.floor(0 + cobraShotChargeProgress * 170)}, ${Math.floor(170 + cobraShotChargeProgress * 85)}, ${Math.floor(32 + cobraShotChargeProgress * 32)})` : // Green cobra emissive
-              isViperStingCharging ? `rgb(${Math.floor(193 + viperStingChargeProgress * 62)}, ${Math.floor(68 - viperStingChargeProgress * 68)}, ${Math.floor(0)})` : // Reddish-orange Viper Sting colors (#ff4400)
-              isRejuvenatingShotCharging ? `rgb(${Math.floor(0)}, ${Math.floor(85 + rejuvenatingShotChargeProgress * 85)}, ${Math.floor(85 + rejuvenatingShotChargeProgress * 85)})` : // Teal/cyan Rejuvenating Shot emissive
-              currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? "#00aa20" :
-              currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ?
-                `rgb(${Math.floor(193 + chargeProgress * 62)}, ${Math.floor(140 - chargeProgress * 140)}, ${Math.floor(75 - chargeProgress * 75)})` :
-              "#C18C4B"
-            }
-            emissiveIntensity={
-              isPerfectShotWindow ? 4 : // Pulsing effect driven via material ref in useFrame
-              isBarrageCharging ? 2.0 + barrageChargeProgress * 2.0 : // Barrage charging glow
-              isCobraShotCharging ? 2.0 + cobraShotChargeProgress * 2.0 : // Cobra Shot charging glow
-              isViperStingCharging ? 2.0 + viperStingChargeProgress * 2.0 : // Viper Sting charging glow
-              isRejuvenatingShotCharging ? 2.0 + rejuvenatingShotChargeProgress * 2.0 : // Rejuvenating Shot charging glow
-              currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? 2.5 :
-              currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ? 1.5 + chargeProgress * 1.5 :
-              1.5
-            }
-            transparent
-            opacity={0.8}
-          />
-        </mesh>
+
+        {/* Aspect GLB body — Sniper / Druid / Beastmaster */}
+        <BowItemMeshVisual
+          key={weaponAspect ?? 'SNIPER'}
+          aspect={weaponAspect}
+          perfectShotPulseRef={perfectShotPulseRef}
+        />
 
         {/* Bow string — draw driven imperatively in useFrame (no React re-renders per step) */}
         <mesh ref={stringMeshRef} geometry={initialStringGeo}>
-          <meshStandardMaterial 
+          <meshStandardMaterial
             color="#ffffff"
             emissive="#ffffff"
             emissiveIntensity={1}
@@ -315,202 +252,72 @@ const EtherBowComponent = memo(function EtherealBow({
           />
         </mesh>
 
-        {/* Decorative wing elements */}
-        <group>
-          {/* Left wing */}
-          <mesh position={[-0.4, 0, 0.475]} rotation={[Math.PI/2, 0, Math.PI/6]}>
-            <boxGeometry args={[0.6, 0.02, 0.05]} />
-            <meshStandardMaterial 
-              ref={leftWingMatRef}
-              color={
-                isPerfectShotWindow ? "#ffffff" : // Flash white during perfect shot window
-                isBarrageCharging ? `rgb(${Math.floor(0 + barrageChargeProgress * 136)}, ${Math.floor(136 + barrageChargeProgress * 119)}, ${Math.floor(255)})` : // Light blue Barrage colors
-                isCobraShotCharging ? `rgb(${Math.floor(0 + cobraShotChargeProgress * 255)}, ${Math.floor(255)}, ${Math.floor(64 + cobraShotChargeProgress * 32)})` : // Green cobra colors
-                isViperStingCharging ? `rgb(${Math.floor(193 + viperStingChargeProgress * 62)}, ${Math.floor(68 - viperStingChargeProgress * 68)}, ${Math.floor(0)})` : // Reddish-orange Viper Sting colors (#ff4400)
-                isRejuvenatingShotCharging ? `rgb(${Math.floor(0)}, ${Math.floor(128 + rejuvenatingShotChargeProgress * 127)}, ${Math.floor(128 + rejuvenatingShotChargeProgress * 127)})` : // Teal/cyan Rejuvenating Shot colors
-                currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? "#00ff40" :
-                currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ? 
-                  `rgb(${Math.floor(193 + chargeProgress * 62)}, ${Math.floor(140 - chargeProgress * 140)}, ${Math.floor(75 - chargeProgress * 75)})` :
-                "#C18C4B"
-              }
-              emissive={
-                isPerfectShotWindow ? "#ffffff" : // Flash white during perfect shot window
-                isBarrageCharging ? `rgb(${Math.floor(0 + barrageChargeProgress * 100)}, ${Math.floor(100 + barrageChargeProgress * 100)}, ${Math.floor(200 + barrageChargeProgress * 55)})` : // Light blue Barrage emissive
-                isCobraShotCharging ? `rgb(${Math.floor(0 + cobraShotChargeProgress * 170)}, ${Math.floor(170 + cobraShotChargeProgress * 85)}, ${Math.floor(32 + cobraShotChargeProgress * 32)})` : // Green cobra emissive
-                isViperStingCharging ? `rgb(${Math.floor(193 + viperStingChargeProgress * 62)}, ${Math.floor(68 - viperStingChargeProgress * 68)}, ${Math.floor(0)})` : // Reddish-orange Viper Sting colors (#ff4400)
-                isRejuvenatingShotCharging ? `rgb(${Math.floor(0)}, ${Math.floor(85 + rejuvenatingShotChargeProgress * 85)}, ${Math.floor(85 + rejuvenatingShotChargeProgress * 85)})` : // Teal/cyan Rejuvenating Shot emissive
-                currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? "#00aa20" :
-                currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ? 
-                  `rgb(${Math.floor(193 + chargeProgress * 62)}, ${Math.floor(140 - chargeProgress * 140)}, ${Math.floor(75 - chargeProgress * 75)})` :
-                "#C18C4B"
-              }
-              emissiveIntensity={
-                isPerfectShotWindow ? 4 : // Pulsing effect driven via material ref in useFrame
-                isCobraShotCharging ? 2.0 + cobraShotChargeProgress * 2.0 : // Cobra Shot charging glow
-                isViperStingCharging ? 2.0 + viperStingChargeProgress * 2.0 : // Viper Sting charging glow
-                currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? 2.5 :
-                currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ? 1.5 + chargeProgress * 1.5 :
-                1.5
-              }
-              transparent
-              opacity={0.8}
-            />
-          </mesh>
-
-          {/* Right wing */}
-          <mesh position={[0.4, 0, 0.475]} rotation={[Math.PI/2, 0, -Math.PI/6]}>
-            <boxGeometry args={[0.6, 0.02, 0.05]} />
-            <meshStandardMaterial 
-              ref={rightWingMatRef}
-              color={
-                isPerfectShotWindow ? "#ffffff" : // Flash white during perfect shot window
-                isBarrageCharging ? `rgb(${Math.floor(0 + barrageChargeProgress * 136)}, ${Math.floor(136 + barrageChargeProgress * 119)}, ${Math.floor(255)})` : // Light blue Barrage colors
-                isCobraShotCharging ? `rgb(${Math.floor(0 + cobraShotChargeProgress * 255)}, ${Math.floor(255)}, ${Math.floor(64 + cobraShotChargeProgress * 32)})` : // Green cobra colors
-                isViperStingCharging ? `rgb(${Math.floor(193 + viperStingChargeProgress * 62)}, ${Math.floor(68 - viperStingChargeProgress * 68)}, ${Math.floor(0)})` : // Reddish-orange Viper Sting colors (#ff4400)
-                isRejuvenatingShotCharging ? `rgb(${Math.floor(0)}, ${Math.floor(128 + rejuvenatingShotChargeProgress * 127)}, ${Math.floor(128 + rejuvenatingShotChargeProgress * 127)})` : // Teal/cyan Rejuvenating Shot colors
-                currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? "#00ff40" :
-                currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ? 
-                  `rgb(${Math.floor(193 + chargeProgress * 62)}, ${Math.floor(140 - chargeProgress * 140)}, ${Math.floor(75 - chargeProgress * 75)})` :
-                "#C18C4B"
-              }
-              emissive={
-                isPerfectShotWindow ? "#ffffff" : // Flash white during perfect shot window
-                isBarrageCharging ? `rgb(${Math.floor(0 + barrageChargeProgress * 100)}, ${Math.floor(100 + barrageChargeProgress * 100)}, ${Math.floor(200 + barrageChargeProgress * 55)})` : // Light blue Barrage emissive
-                isCobraShotCharging ? `rgb(${Math.floor(0 + cobraShotChargeProgress * 170)}, ${Math.floor(170 + cobraShotChargeProgress * 85)}, ${Math.floor(32 + cobraShotChargeProgress * 32)})` : // Green cobra emissive
-                isViperStingCharging ? `rgb(${Math.floor(193 + viperStingChargeProgress * 62)}, ${Math.floor(68 - viperStingChargeProgress * 68)}, ${Math.floor(0)})` : // Reddish-orange Viper Sting colors (#ff4400)
-                isRejuvenatingShotCharging ? `rgb(${Math.floor(0)}, ${Math.floor(85 + rejuvenatingShotChargeProgress * 85)}, ${Math.floor(85 + rejuvenatingShotChargeProgress * 85)})` : // Teal/cyan Rejuvenating Shot emissive
-                currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? "#00aa20" :
-                currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ? 
-                  `rgb(${Math.floor(193 + chargeProgress * 62)}, ${Math.floor(140 - chargeProgress * 140)}, ${Math.floor(75 - chargeProgress * 75)})` :
-                "#C18C4B"
-              }
-              emissiveIntensity={
-                isPerfectShotWindow ? 4 : // Pulsing effect driven via material ref in useFrame
-                isCobraShotCharging ? 2.0 + cobraShotChargeProgress * 2.0 : // Cobra Shot charging glow
-                isViperStingCharging ? 2.0 + viperStingChargeProgress * 2.0 : // Viper Sting charging glow
-                currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? 2.5 :
-                currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ? 1.5 + chargeProgress * 1.5 :
-                1.5
-              }
-              transparent
-              opacity={0.8}
-            />
-          </mesh>
-        </group>
-
-        {/* Custom blade elements at bow ends */}
-        <group>
-          {/* Left blade */}
-          <mesh position={[-1, 0, -0.2]} rotation={[Math.PI/2, 0, Math.PI/2]} scale={[0.4, -0.4, 0.4]}>
-            <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
-            <meshStandardMaterial 
-              ref={leftBladeMatRef}
-              color={
-                isPerfectShotWindow ? "#ffffff" : // Flash white during perfect shot window
-                isBarrageCharging ? `rgb(${Math.floor(0 + barrageChargeProgress * 136)}, ${Math.floor(136 + barrageChargeProgress * 119)}, ${Math.floor(255)})` : // Light blue Barrage colors
-                isCobraShotCharging ? `rgb(${Math.floor(0 + cobraShotChargeProgress * 255)}, ${Math.floor(255)}, ${Math.floor(64 + cobraShotChargeProgress * 32)})` : // Green cobra colors
-                isViperStingCharging ? `rgb(${Math.floor(193 + viperStingChargeProgress * 62)}, ${Math.floor(68 - viperStingChargeProgress * 68)}, ${Math.floor(0)})` : // Reddish-orange Viper Sting colors (#ff4400)
-                isRejuvenatingShotCharging ? `rgb(${Math.floor(0)}, ${Math.floor(128 + rejuvenatingShotChargeProgress * 127)}, ${Math.floor(128 + rejuvenatingShotChargeProgress * 127)})` : // Teal/cyan Rejuvenating Shot colors
-                currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? "#00ff40" :
-                currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ? 
-                  `rgb(${Math.floor(193 + chargeProgress * 62)}, ${Math.floor(140 - chargeProgress * 140)}, ${Math.floor(75 - chargeProgress * 75)})` :
-                "#C18C4B"
-              }
-              emissive={
-                isPerfectShotWindow ? "#ffffff" : // Flash white during perfect shot window
-                isBarrageCharging ? `rgb(${Math.floor(0 + barrageChargeProgress * 100)}, ${Math.floor(100 + barrageChargeProgress * 100)}, ${Math.floor(200 + barrageChargeProgress * 55)})` : // Light blue Barrage emissive
-                isCobraShotCharging ? `rgb(${Math.floor(0 + cobraShotChargeProgress * 170)}, ${Math.floor(170 + cobraShotChargeProgress * 85)}, ${Math.floor(32 + cobraShotChargeProgress * 32)})` : // Green cobra emissive
-                isViperStingCharging ? `rgb(${Math.floor(193 + viperStingChargeProgress * 62)}, ${Math.floor(68 - viperStingChargeProgress * 68)}, ${Math.floor(0)})` : // Reddish-orange Viper Sting colors (#ff4400)
-                isRejuvenatingShotCharging ? `rgb(${Math.floor(0)}, ${Math.floor(85 + rejuvenatingShotChargeProgress * 85)}, ${Math.floor(85 + rejuvenatingShotChargeProgress * 85)})` : // Teal/cyan Rejuvenating Shot emissive
-                currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? "#00aa20" :
-                currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ? 
-                  `rgb(${Math.floor(193 + chargeProgress * 62)}, ${Math.floor(140 - chargeProgress * 140)}, ${Math.floor(75 - chargeProgress * 75)})` :
-                "#C18C4B"
-              }
-              emissiveIntensity={
-                isPerfectShotWindow ? 4 : // Pulsing effect driven via material ref in useFrame
-                isCobraShotCharging ? 2.0 + cobraShotChargeProgress * 2.0 : // Cobra Shot charging glow
-                isViperStingCharging ? 2.0 + viperStingChargeProgress * 2.0 : // Viper Sting charging glow
-                currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? 2.5 :
-                currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ? 1.5 + chargeProgress * 1.5 :
-                1.5
-              }
-              metalness={0.8}
-              roughness={0.1}
-              transparent
-              opacity={0.8}
-              side={DoubleSide}
-            />
-          </mesh>
-
-          {/* Right blade */}
-          <mesh position={[1.0, 0, -0.2]} rotation={[Math.PI/2, 0, Math.PI/2]} scale={[0.4, 0.4, 0.4]}>
-            <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
-            <meshStandardMaterial 
-              ref={rightBladeMatRef}
-              color={
-                isPerfectShotWindow ? "#ffffff" : // Flash white during perfect shot window
-                isBarrageCharging ? `rgb(${Math.floor(0 + barrageChargeProgress * 136)}, ${Math.floor(136 + barrageChargeProgress * 119)}, ${Math.floor(255)})` : // Light blue Barrage colors
-                isCobraShotCharging ? `rgb(${Math.floor(0 + cobraShotChargeProgress * 255)}, ${Math.floor(255)}, ${Math.floor(64 + cobraShotChargeProgress * 32)})` : // Green cobra colors
-                isViperStingCharging ? `rgb(${Math.floor(193 + viperStingChargeProgress * 62)}, ${Math.floor(68 - viperStingChargeProgress * 68)}, ${Math.floor(0)})` : // Reddish-orange Viper Sting colors (#ff4400)
-                isRejuvenatingShotCharging ? `rgb(${Math.floor(0)}, ${Math.floor(128 + rejuvenatingShotChargeProgress * 127)}, ${Math.floor(128 + rejuvenatingShotChargeProgress * 127)})` : // Teal/cyan Rejuvenating Shot colors
-                currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? "#00ff40" :
-                currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ? 
-                  `rgb(${Math.floor(193 + chargeProgress * 62)}, ${Math.floor(140 - chargeProgress * 140)}, ${Math.floor(75 - chargeProgress * 75)})` :
-                "#C18C4B"
-              }
-              emissive={
-                isPerfectShotWindow ? "#ffffff" : // Flash white during perfect shot window
-                isBarrageCharging ? `rgb(${Math.floor(0 + barrageChargeProgress * 100)}, ${Math.floor(100 + barrageChargeProgress * 100)}, ${Math.floor(200 + barrageChargeProgress * 55)})` : // Light blue Barrage emissive
-                isCobraShotCharging ? `rgb(${Math.floor(0 + cobraShotChargeProgress * 170)}, ${Math.floor(170 + cobraShotChargeProgress * 85)}, ${Math.floor(32 + cobraShotChargeProgress * 32)})` : // Green cobra emissive
-                isViperStingCharging ? `rgb(${Math.floor(193 + viperStingChargeProgress * 62)}, ${Math.floor(68 - viperStingChargeProgress * 68)}, ${Math.floor(0)})` : // Reddish-orange Viper Sting colors (#ff4400)
-                isRejuvenatingShotCharging ? `rgb(${Math.floor(0)}, ${Math.floor(85 + rejuvenatingShotChargeProgress * 85)}, ${Math.floor(85 + rejuvenatingShotChargeProgress * 85)})` : // Teal/cyan Rejuvenating Shot emissive
-                currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? "#00aa20" :
-                currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ? 
-                  `rgb(${Math.floor(193 + chargeProgress * 62)}, ${Math.floor(140 - chargeProgress * 140)}, ${Math.floor(75 - chargeProgress * 75)})` :
-                "#C18C4B"
-              }
-              emissiveIntensity={
-                isPerfectShotWindow ? 4 : // Pulsing effect driven via material ref in useFrame
-                isCobraShotCharging ? 2.0 + cobraShotChargeProgress * 2.0 : // Cobra Shot charging glow
-                isViperStingCharging ? 2.0 + viperStingChargeProgress * 2.0 : // Viper Sting charging glow
-                currentSubclass === WeaponSubclass.VENOM && hasInstantPowershot ? 2.5 :
-                currentSubclass === WeaponSubclass.ELEMENTAL && isCharging ? 1.5 + chargeProgress * 1.5 :
-                1.5
-              }
-              metalness={0.8}
-              roughness={0.1}
-              transparent
-              opacity={0.8}
-              side={DoubleSide}
-            />
-          </mesh>
-        </group>
-
-        {/* Arrow  */}
-        {(isCharging || isViperStingCharging || isBarrageCharging || isCobraShotCharging || isRejuvenatingShotCharging) && (
+        {/* Arrow */}
+        {(isCharging ||
+          isViperStingCharging ||
+          isBarrageCharging ||
+          isCobraShotCharging ||
+          isRejuvenatingShotCharging) && (
           <group
             ref={arrowGroupRef}
             position={[0, 0, 0.8]}
-            rotation={[Math.PI/2, 0, 0]}
+            rotation={[Math.PI / 2, 0, 0]}
           >
-            {/* Arrow shaft - increased length from 0.5 to 0.7 */}
             <mesh>
               <cylinderGeometry args={[0.015, 0.02, 0.9, 8]} />
               <meshStandardMaterial
-                color={isCobraShotCharging ? "#00ff40" : isBarrageCharging ? "#88BBFF" : isViperStingCharging ? "#ff4400" : isRejuvenatingShotCharging ? "#00FFFF" : "#00ffff"}
-                emissive={isCobraShotCharging ? "#00ff40" : isBarrageCharging ? "#88BBFF" : isViperStingCharging ? "#ff4400" : isRejuvenatingShotCharging ? "#00FFFF" : "#00ffff"}
+                color={
+                  isCobraShotCharging
+                    ? '#00ff40'
+                    : isBarrageCharging
+                      ? '#88BBFF'
+                      : isViperStingCharging
+                        ? '#ff4400'
+                        : isRejuvenatingShotCharging
+                          ? '#00FFFF'
+                          : '#00ffff'
+                }
+                emissive={
+                  isCobraShotCharging
+                    ? '#00ff40'
+                    : isBarrageCharging
+                      ? '#88BBFF'
+                      : isViperStingCharging
+                        ? '#ff4400'
+                        : isRejuvenatingShotCharging
+                          ? '#00FFFF'
+                          : '#00ffff'
+                }
                 emissiveIntensity={3}
                 transparent
                 opacity={0.9}
               />
             </mesh>
-            {/* Arrow head - adjusted position for longer shaft */}
             <mesh position={[0, 0.35, 0]}>
               <coneGeometry args={[0.03, 0.175, 8]} />
               <meshStandardMaterial
-                color={isCobraShotCharging ? "#00ff40" : isBarrageCharging ? "#88BBFF" : isViperStingCharging ? "#ff4400" : isRejuvenatingShotCharging ? "#00FFFF" : "#00ffff"}
-                emissive={isCobraShotCharging ? "#00ff40" : isBarrageCharging ? "#88BBFF" : isViperStingCharging ? "#ff4400" : isRejuvenatingShotCharging ? "#00FFFF" : "#00ffff"}
+                color={
+                  isCobraShotCharging
+                    ? '#00ff40'
+                    : isBarrageCharging
+                      ? '#88BBFF'
+                      : isViperStingCharging
+                        ? '#ff4400'
+                        : isRejuvenatingShotCharging
+                          ? '#00FFFF'
+                          : '#00ffff'
+                }
+                emissive={
+                  isCobraShotCharging
+                    ? '#00ff40'
+                    : isBarrageCharging
+                      ? '#88BBFF'
+                      : isViperStingCharging
+                        ? '#ff4400'
+                        : isRejuvenatingShotCharging
+                          ? '#00FFFF'
+                          : '#00ffff'
+                }
                 emissiveIntensity={3}
                 transparent
                 opacity={0.9}
@@ -518,12 +325,10 @@ const EtherBowComponent = memo(function EtherealBow({
             </mesh>
           </group>
         )}
-
       </group>
     </group>
   );
 }, (prevProps, nextProps) => {
-  // Custom comparison function for performance optimization
   return (
     prevProps.chargeProgress === nextProps.chargeProgress &&
     prevProps.isCharging === nextProps.isCharging &&
@@ -540,6 +345,7 @@ const EtherBowComponent = memo(function EtherealBow({
     prevProps.rejuvenatingShotChargeProgress === nextProps.rejuvenatingShotChargeProgress &&
     prevProps.tempestBurstShotSeq === nextProps.tempestBurstShotSeq &&
     prevProps.isLocalPlayer === nextProps.isLocalPlayer &&
+    prevProps.weaponAspect === nextProps.weaponAspect &&
     (!prevProps.position || !nextProps.position || prevProps.position.equals(nextProps.position)) &&
     (!prevProps.direction || !nextProps.direction || prevProps.direction.equals(nextProps.direction))
   );

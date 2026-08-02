@@ -1,25 +1,38 @@
 import React, { useMemo } from 'react';
 import type { RoomBorderTheme } from './SimpleBorderEffects';
-import CustomSky from './CustomSky';
+import CustomSky, { GATE_SKY_PRESET_BY_THEME } from './CustomSky';
 import PillarCollision from './PillarCollision';
 import InstancedForest from './InstancedForest';
 import ArenaFallingSnow from './ArenaFallingSnow';
 import InstancedMountains from './InstancedMountains';
 import InstancedEmbers from './InstancedEmbers';
 import InstancedDebris from './InstancedDebris';
-import InstancedMushrooms from './InstancedMushrooms';
-import ThroneCenterSeal from './ThroneCenterSeal';
 import ThroneOuterFloor from './ThroneOuterFloor';
+import SanctumIncinerationRuneDisc from './SanctumIncinerationRuneDisc';
 import { generateBorderMountains } from '@/utils/MountainGenerator';
-import { MAIN_ARENA_HEX_RADIUS } from '@/utils/mapConstants';
+import {
+  CASTLE_ROOM_HALF_SIZE,
+  MAIN_ARENA_FLOOR_RADIUS,
+  MAIN_ARENA_HEX_RADIUS,
+} from '@/utils/mapConstants';
 import { World } from '@/ecs/World';
 import { PerspectiveCamera } from '@/utils/three-exports';
+
+const MAIN_ARENA_RUNE_DISC_SCALE =
+  MAIN_ARENA_HEX_RADIUS / (CASTLE_ROOM_HALF_SIZE + 0.55);
 
 const SEAL_TEXTURE_BY_THEME: Record<RoomBorderTheme, string> = {
   red: '/center_infernal.png',
   purple: '/center_abyssal.png',
   green: '/center_eldritch.png',
   blue: '/center_tempest.png',
+};
+
+const OUTER_TEXTURE_BY_THEME: Record<RoomBorderTheme, string> = {
+  purple: '/outer0.png',
+  red: '/outer1.png',
+  green: '/outer2.png',
+  blue: '/outer3.png',
 };
 
 interface EnvironmentProps {
@@ -39,8 +52,6 @@ interface EnvironmentProps {
   coopTerrainTheme?: RoomBorderTheme;
   /** When set to `delirium_gate`, forces yellow-red grass + warm red sky. */
   coopCurrentRoomKind?: string | null;
-  /** Co-op: destroyed mushroom instance indices (hide instanced meshes). */
-  mushroomHiddenIndices?: ReadonlySet<number>;
   /** When false, sky cloud FBM stops updating (combat LOD). */
   animateClouds?: boolean;
 }
@@ -64,7 +75,6 @@ const Environment: React.FC<EnvironmentProps> = ({
   campTypes = [],
   coopTerrainTheme,
   coopCurrentRoomKind,
-  mushroomHiddenIndices,
   animateClouds = true,
 }) => {
   // Define pillar positions - use PVP positions if provided, otherwise default triangle
@@ -94,6 +104,10 @@ const Environment: React.FC<EnvironmentProps> = ({
     coopCurrentRoomKind === 'delirium_gate' ? 'red' : roomArchetype;
 
   const centerSealTexture = SEAL_TEXTURE_BY_THEME[sealTheme];
+  const outerFloorTexture =
+    coopCurrentRoomKind === 'delirium_gate'
+      ? '/outer2.png'
+      : OUTER_TEXTURE_BY_THEME[sealTheme];
 
   // Instanced mountain range that surrounds the playable disc (replaces castle
   // walls in the colored combat rooms). Seeded per room so each color gets a
@@ -115,24 +129,27 @@ const Environment: React.FC<EnvironmentProps> = ({
     <group name="environment">
 
       {enableSky && (
-        <CustomSky roomTheme={visualRoomTheme} animateClouds={animateClouds} />
-      )}
-
-      <ThroneOuterFloor
-        radius={MAIN_ARENA_HEX_RADIUS}
-        texturePath="/outer0.png"
-        position={[0, 0.12, 0]}
-      />
-      {sealTheme !== 'blue' && (
-        <ThroneCenterSeal
-          key={centerSealTexture}
-          texturePath={centerSealTexture}
-          position={[0.4, 0.15, 0.4]}
+        <CustomSky
+          skyPreset={GATE_SKY_PRESET_BY_THEME[sealTheme]}
+          animateClouds={animateClouds}
         />
       )}
 
-      
+      <ThroneOuterFloor
+        radius={MAIN_ARENA_FLOOR_RADIUS}
+        texturePath={outerFloorTexture}
+        position={[0, 0.12, 0]}
+        rotateSpeed={roomArchetype === 'green' ? 0.04 : undefined}
+      />
 
+      <SanctumIncinerationRuneDisc
+        scale={MAIN_ARENA_RUNE_DISC_SCALE}
+        innerSpinScale={0.45}
+        outerSpinScale={0.45}
+        position={[0, -0.0, 0]}
+      />
+
+   
 
       {visualRoomTheme === 'blue' && <ArenaFallingSnow />}
 
@@ -151,10 +168,8 @@ const Environment: React.FC<EnvironmentProps> = ({
       <InstancedEmbers campTypes={campTypes} />
 
       {/* Scattered rubble, rocks and stone chunks across the arena       <InstancedDebris /> */}
-
-
-      {/* Bioluminescent mushrooms near the forest ring */}
-      <InstancedMushrooms hiddenIndices={mushroomHiddenIndices} />
+      {/* Surrounding mountain range — instanced bases + snow peaks (replaces the
+          castle walls in colored combat rooms). Fixed handful of draw calls. */}
 
       {/* Procedural crack decals on stone paths LOOKS MESSY */}
 

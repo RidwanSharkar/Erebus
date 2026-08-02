@@ -2,7 +2,8 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAnimations, useGLTF } from '@react-three/drei';
-import { AnimationAction, AnimationClip, Group, LoopOnce, LoopRepeat, VectorKeyframeTrack } from 'three';
+import { AnimationAction, AnimationClip, Group, VectorKeyframeTrack } from 'three';
+import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
 import { GLTFLoader } from 'three-stdlib';
 import { peek as suspendPeek } from 'suspend-react';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
@@ -160,6 +161,8 @@ export default function AlliedHealerModel({ isWalking, isDying, abilityClip }: A
 
   const getAction = (name: AlliedHealerClip): AnimationAction | null => actions[name] ?? null;
 
+  const posed = useEnemyIdlePose({ actions, mixer, currentActionRef });
+
   useEffect(() => {
     if (!actions) return;
     const nextAction = isDying
@@ -169,20 +172,12 @@ export default function AlliedHealerModel({ isWalking, isDying, abilityClip }: A
         : isWalking
           ? getAction('Walk')
           : getAction('Idle');
-    if (!nextAction || nextAction === currentActionRef.current) return;
-
-    currentActionRef.current?.fadeOut(0.2);
-    if (isDying || abilityClip) {
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = true;
-      nextAction.reset().fadeIn(0.15).play();
-    } else {
-      nextAction.enabled = true;
-      nextAction.setLoop(LoopRepeat, Infinity);
-      nextAction.reset().fadeIn(0.2).play();
-    }
-    currentActionRef.current = nextAction;
-  }, [actions, abilityClip, isDying, isWalking]); // eslint-disable-line react-hooks/exhaustive-deps
+    playEnemyAction(nextAction, currentActionRef, mixer, {
+      loopOnce: !!(isDying || abilityClip),
+      clampWhenFinished: !!(isDying || abilityClip),
+      fadeIn: isDying || abilityClip ? 0.15 : 0.2,
+    });
+  }, [actions, abilityClip, isDying, isWalking, mixer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!mixer || isDying) return;
@@ -190,18 +185,14 @@ export default function AlliedHealerModel({ isWalking, isDying, abilityClip }: A
       const name = e.action.getClip().name;
       if (name !== 'Cast' && name !== 'HealCast' && name !== 'Launch') return;
       const fallback = isWalking ? getAction('Walk') : getAction('Idle');
-      if (!fallback) return;
-      fallback.setLoop(LoopRepeat, Infinity);
-      currentActionRef.current?.fadeOut(0.15);
-      fallback.reset().fadeIn(0.15).play();
-      currentActionRef.current = fallback;
+      playEnemyAction(fallback, currentActionRef, mixer, { fadeIn: 0.15, fadeOut: 0.15 });
     };
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
   }, [mixer, isDying, isWalking, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <group ref={sceneGroupRef}>
+    <group ref={sceneGroupRef} visible={posed}>
       <group scale={[SCALE, SCALE, SCALE]}>
         <primitive object={clonedScene} />
       </group>

@@ -7,6 +7,8 @@ import RejuvenatingShot from './RejuvenatingShot';
 import RejuvenatingShotHealingEffect from './RejuvenatingShotHealingEffect';
 import { World } from '@/ecs/World';
 import { getRejuvenatingShotHealAmount } from '@/utils/bowConstants';
+import { ENTANGLEMENT_DURATION_MS } from '@/utils/talents';
+import { addGlobalEntangledEnemy } from '@/components/weapons/EntangleManager';
 
 export interface RejuvenatingShotProjectile {
   id: number;
@@ -37,12 +39,21 @@ interface HealTarget {
   maxHealth: number;
 }
 
+interface EnemyTarget {
+  id: string;
+  position: Vector3;
+  health: number;
+}
+
 interface RejuvenatingShotManagerProps {
   world: World;
   playerPositions?: HealTarget[];
   alliedTargets?: HealTarget[];
+  /** Hostile enemies — Druid Rejuvenating Shot can Entangle these. */
+  enemyTargets?: EnemyTarget[];
   onPlayerHealed?: (playerId: string, healAmount: number, position: Vector3) => void;
   onAlliedHealed?: (enemyId: string, healAmount: number, position: Vector3) => void;
+  onEnemyEntangled?: (enemyId: string, position: Vector3) => void;
 }
 
 let globalRejuvenatingShotTrigger: ((
@@ -77,15 +88,19 @@ interface HealingEffectData {
   startTime: number;
 }
 
-function findHealTarget(
+type HitResult =
+  | { kind: 'player' | 'ally'; target: HealTarget; distance: number }
+  | { kind: 'enemy'; target: EnemyTarget; distance: number };
+
+function findClosestHit(
   projectilePosition: Vector3,
   playerPositions: HealTarget[],
   alliedTargets: HealTarget[],
-): { kind: 'player' | 'ally'; target: HealTarget } | null {
-  type ClosestHit = { kind: 'player' | 'ally'; target: HealTarget; distance: number };
-  let closest: ClosestHit | null = null;
+  enemyTargets: EnemyTarget[],
+): HitResult | null {
+  let closest: HitResult | null = null;
 
-  const consider = (kind: 'player' | 'ally', target: HealTarget) => {
+  const considerHeal = (kind: 'player' | 'ally', target: HealTarget) => {
     if (target.health >= target.maxHealth) return;
     const distance = projectilePosition.distanceTo(target.position);
     if (distance > HEALING_RANGE) return;
@@ -94,24 +109,36 @@ function findHealTarget(
     }
   };
 
+  const considerEnemy = (target: EnemyTarget) => {
+    if (target.health <= 0) return;
+    const distance = projectilePosition.distanceTo(target.position);
+    if (distance > HEALING_RANGE) return;
+    if (!closest || distance < closest.distance) {
+      closest = { kind: 'enemy', target, distance };
+    }
+  };
+
   for (const player of playerPositions) {
-    consider('player', player);
+    considerHeal('player', player);
   }
   for (const ally of alliedTargets) {
-    consider('ally', ally);
+    considerHeal('ally', ally);
+  }
+  for (const enemy of enemyTargets) {
+    considerEnemy(enemy);
   }
 
-  if (!closest) return null;
-  const hit: ClosestHit = closest;
-  return { kind: hit.kind, target: hit.target };
+  return closest;
 }
 
 export default function RejuvenatingShotManager({
   world,
   playerPositions = [],
   alliedTargets = [],
+  enemyTargets = [],
   onPlayerHealed,
   onAlliedHealed,
+  onEnemyEntangled,
 }: RejuvenatingShotManagerProps) {
   const projectilePool = useRef<RejuvenatingShotProjectile[]>([]);
   const nextProjectileId = useRef(0);
@@ -119,6 +146,7 @@ export default function RejuvenatingShotManager({
   const nextHealingEffectId = useRef(0);
   const playerPositionsRef = useRef(playerPositions);
   const alliedTargetsRef = useRef(alliedTargets);
+  const enemyTargetsRef = useRef(enemyTargets);
 
   useEffect(() => {
     playerPositionsRef.current = playerPositions;
@@ -127,6 +155,10 @@ export default function RejuvenatingShotManager({
   useEffect(() => {
     alliedTargetsRef.current = alliedTargets;
   }, [alliedTargets]);
+
+  useEffect(() => {
+    enemyTargetsRef.current = enemyTargets;
+  }, [enemyTargets]);
   
   const POOL_SIZE = 3;
   const PROJECTILE_SPEED = 1.0;
@@ -221,13 +253,28 @@ export default function RejuvenatingShotManager({
       }
 
       if (!projectile.hasHealed && projectile.authoritative) {
-        const hit = findHealTarget(
+        const hit = findClosestHit(
           projectile.position,
           playerPositionsRef.current,
           alliedTargetsRef.current,
+          enemyTargetsRef.current,
         );
 
         if (hit && hit.target.id !== projectile.healedTargetId) {
+          if (hit.kind === 'enemy') {
+            const entanglePos = hit.target.position.clone();
+            addGlobalEntangledEnemy(hit.target.id, entanglePos.clone(), ENTANGLEMENT_DURATION_MS);
+            if (onEnemyEntangled) {
+              onEnemyEntangled(hit.target.id, entanglePos);
+            }
+            projectile.hasHealed = true;
+            projectile.healedTargetId = hit.target.id;
+            projectile.active = false;
+            projectile.opacity = 1;
+            projectile.fadeStartTime = null;
+            return;
+          }
+
           const healingEffectPosition = hit.target.position.clone();
           healingEffectPosition.y += 0;
 

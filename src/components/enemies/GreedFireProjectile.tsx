@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Vector3, Group, Mesh, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
+import { Vector3, Group, Mesh, MeshBasicMaterial, Color, AdditiveBlending, DoubleSide } from 'three';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import EntropicBoltTrail from '@/components/projectiles/EntropicBoltTrail';
 
@@ -11,25 +11,35 @@ export interface GreedFireProjectileProps {
   startPosition: Vector3;
   targetPosition: Vector3;
   onComplete: () => void;
+  /** Air-to-ground destiny fly volley — larger trail + ground impact telegraph. */
+  fromAir?: boolean;
 }
 
 const SPEED = 11; // matches backend GREED_FIREBALL_SPEED
 const trailColor = new Color('#ff5500');
 const trailAccent = new Color('#ffcc55');
+const telegraphColor = new Color('#ff4400');
 
 export default function GreedFireProjectile({
   startPosition,
   targetPosition,
   onComplete,
+  fromAir = false,
 }: GreedFireProjectileProps) {
   const groupRef = useRef<Group>(null);
   const coreRef = useRef<Mesh>(null);
   const spinRef = useRef<Group>(null);
+  const telegraphRef = useRef<Mesh>(null);
   const timeRef = useRef(0);
   const doneRef = useRef(false);
   const dirRef = useRef(new Vector3(0, 0, -1));
 
-  const fireLight = useDynamicLight({ color: '#ff6a00', distance: 6.5, priority: 1, intensity: 0 });
+  const fireLight = useDynamicLight({
+    color: '#ff6a00',
+    distance: fromAir ? 9.5 : 6.5,
+    priority: 1,
+    intensity: 0,
+  });
 
   const maxLifetimeRef = useRef(1);
 
@@ -58,13 +68,23 @@ export default function GreedFireProjectile({
     blending: AdditiveBlending, depthWrite: false,
   }), []);
 
+  const telegraphMat = useMemo(() => new MeshBasicMaterial({
+    color: telegraphColor,
+    transparent: true,
+    opacity: 0.35,
+    blending: AdditiveBlending,
+    depthWrite: false,
+    side: DoubleSide,
+  }), []);
+
   useEffect(() => {
     return () => {
       coreMat.dispose();
       midMat.dispose();
       auraMat.dispose();
+      telegraphMat.dispose();
     };
-  }, [coreMat, midMat, auraMat]);
+  }, [coreMat, midMat, auraMat, telegraphMat]);
 
   useEffect(() => {
     if (!groupRef.current) return;
@@ -84,10 +104,17 @@ export default function GreedFireProjectile({
 
     const gp = groupRef.current.position;
     fireLight.current?.setPosition(gp.x, gp.y, gp.z);
-    fireLight.current?.setIntensity(16);
+    fireLight.current?.setIntensity(fromAir ? 22 : 16);
 
     const pulse = 0.85 + 0.15 * Math.sin(t * 20);
-    if (coreRef.current) coreRef.current.scale.setScalar(pulse);
+    if (coreRef.current) coreRef.current.scale.setScalar(pulse * (fromAir ? 1.25 : 1));
+
+    if (fromAir && telegraphRef.current) {
+      const lifeT = Math.min(1, t / Math.max(0.01, maxLifetimeRef.current));
+      telegraphMat.opacity = 0.2 + 0.35 * lifeT;
+      const ringScale = 0.7 + 0.5 * lifeT;
+      telegraphRef.current.scale.set(ringScale, ringScale, ringScale);
+    }
 
     if (t >= maxLifetimeRef.current) {
       doneRef.current = true;
@@ -96,26 +123,40 @@ export default function GreedFireProjectile({
     }
   });
 
+  const coreRadius = fromAir ? 0.3 : 0.24;
+  const midRadius = fromAir ? 0.52 : 0.4;
+  const auraRadius = fromAir ? 0.8 : 0.62;
+
   return (
     <>
       <EntropicBoltTrail
         color={trailColor}
         accentColor={trailAccent}
-        size={0.0675}
+        size={fromAir ? 0.1 : 0.0675}
         meshRef={groupRef}
         opacity={0.95}
         flightDirectionRef={dirRef}
       />
+      {fromAir && (
+        <mesh
+          ref={telegraphRef}
+          position={[targetPosition.x, 0.05, targetPosition.z]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          material={telegraphMat}
+        >
+          <ringGeometry args={[0.55, 1.15, 28]} />
+        </mesh>
+      )}
       <group ref={groupRef} position={startPosition.clone()}>
         <group ref={spinRef}>
           <mesh ref={coreRef} material={coreMat}>
-            <sphereGeometry args={[0.24, 10, 10]} />
+            <sphereGeometry args={[coreRadius, 10, 10]} />
           </mesh>
           <mesh material={midMat}>
-            <sphereGeometry args={[0.4, 10, 10]} />
+            <sphereGeometry args={[midRadius, 10, 10]} />
           </mesh>
           <mesh material={auraMat}>
-            <sphereGeometry args={[0.62, 8, 8]} />
+            <sphereGeometry args={[auraRadius, 8, 8]} />
           </mesh>
         </group>
       </group>

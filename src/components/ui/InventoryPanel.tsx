@@ -5,28 +5,48 @@ import { InventoryItem } from '@/contexts/MultiplayerContext';
 import { ITEM_RARITY_COLORS, formatRarityLabel, isItemRarity } from '@/utils/itemRarity';
 import { StatSystem, type StatKey } from '@/utils/StatSystem';
 import {
+  ARCHMAGE_SET_TYPES,
   DREAM_LAYER_ITEM_META,
   EXODIA_ARMOR_TYPES,
+  HEXMETAL_SET_TYPES,
+  getArchmageSetCount,
   getDreamLayerItemDescription,
   getExodiaSetCount,
+  getHexmetalSetCount,
 } from '@/utils/dreamLayerItems';
+import { BOSS_RELIC_ICON_PATHS } from '@/utils/bossRelicItems';
 
 interface InventoryPanelProps {
   inventory?: InventoryItem[];
 }
 
-const MAX_SLOTS = 8;
+const MAX_SLOTS = 7;
 const WARDING_PENDANT_ICON = '/icons/items/wardingPendant.svg';
 
-const BOSS_ITEM_ICON_PATHS: Record<string, string> = Object.fromEntries(
-  Object.entries(DREAM_LAYER_ITEM_META).map(([type, meta]) => [type, meta.iconPath]),
-);
+const WARD_ICON_BY_TYPE: Record<string, string> = {
+  HUNTERS_MARK: '/icons/items/huntersMark.svg',
+  SOUL_WARD: '/icons/items/soulWard.svg',
+};
 
-const BOSS_ITEM_EMOJI_FALLBACK: Record<string, string> = {
-  MANA_SHIELD: '✨',
-  COLOSSUS_LUNGS: '🫁',
-  REAPER_CLAWS: '⚔️',
-  TITAN_HEART: '💪',
+function getWardIconPath(ward: InventoryItem): string {
+  if (ward.iconPath) return ward.iconPath;
+  if (WARD_ICON_BY_TYPE[ward.type]) return WARD_ICON_BY_TYPE[ward.type];
+  const metaIcon = DREAM_LAYER_ITEM_META[ward.type]?.iconPath;
+  if (metaIcon) return metaIcon;
+  return WARDING_PENDANT_ICON;
+}
+
+function getWardTooltip(ward: InventoryItem): string {
+  const meta = DREAM_LAYER_ITEM_META[ward.type];
+  if (meta) return `${meta.label}: ${meta.description}`;
+  return ward.label;
+}
+
+const BOSS_ITEM_ICON_PATHS: Record<string, string> = {
+  ...Object.fromEntries(
+    Object.entries(DREAM_LAYER_ITEM_META).map(([type, meta]) => [type, meta.iconPath]),
+  ),
+  ...BOSS_RELIC_ICON_PATHS,
 };
 
 interface SlotItem {
@@ -42,7 +62,7 @@ interface SlotItem {
 function getBossItemIcon(type: string): { icon: string; iconIsImage: boolean } {
   const path = BOSS_ITEM_ICON_PATHS[type];
   if (path) return { icon: path, iconIsImage: true };
-  return { icon: BOSS_ITEM_EMOJI_FALLBACK[type] || '👑', iconIsImage: false };
+  return { icon: '👑', iconIsImage: false };
 }
 
 function bossDropsToSlots(bossDrops: InventoryItem[]): SlotItem[] {
@@ -128,12 +148,28 @@ export default function InventoryPanel({ inventory = [] }: InventoryPanelProps) 
   }, []);
 
   const exodiaCount = getExodiaSetCount(inventory);
+  const hexmetalCount = getHexmetalSetCount(inventory);
+  const archmageCount = getArchmageSetCount(inventory);
 
   return (
     <div className="select-none" data-block-game-input>
-      {exodiaCount > 0 && (
-        <div className="text-[10px] text-orange-300/80 px-2 pb-1 tracking-wide">
-          Exodia {exodiaCount}/{EXODIA_ARMOR_TYPES.length}
+      {(exodiaCount > 0 || hexmetalCount > 0 || archmageCount > 0) && (
+        <div className="flex items-center gap-3 px-2 pb-1 tracking-wide">
+          {exodiaCount > 0 && (
+            <div className="text-[10px] text-orange-300/80">
+              Exodia {exodiaCount}/{EXODIA_ARMOR_TYPES.length}
+            </div>
+          )}
+          {hexmetalCount > 0 && (
+            <div className="text-[10px] text-cyan-300/80">
+              Hexmetal {hexmetalCount}/{HEXMETAL_SET_TYPES.length}
+            </div>
+          )}
+          {archmageCount > 0 && (
+            <div className="text-[10px] text-violet-300/80">
+              Archmage {archmageCount}/{ARCHMAGE_SET_TYPES.length}
+            </div>
+          )}
         </div>
       )}
       <div
@@ -219,7 +255,7 @@ export default function InventoryPanel({ inventory = [] }: InventoryPanelProps) 
               key={ward.id}
               className="relative flex-shrink-0"
               style={{ width: 32, height: 32 }}
-              title={ward.label}
+              title={getWardTooltip(ward)}
             >
               <div
                 className="w-full h-full flex items-center justify-center"
@@ -230,7 +266,7 @@ export default function InventoryPanel({ inventory = [] }: InventoryPanelProps) 
                 }}
               >
                 <img
-                  src={WARDING_PENDANT_ICON}
+                  src={getWardIconPath(ward)}
                   alt=""
                   className="h-5 w-5 object-contain"
                   aria-hidden

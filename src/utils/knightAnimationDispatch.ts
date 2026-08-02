@@ -25,8 +25,25 @@ export type KnightBlockTelegraphPayload = {
   timestamp?: number;
 };
 
+/** Enriched melee telegraph (optional timing fields from server). */
+export type KnightAttackTelegraphPayload = {
+  knightId: string;
+  hitDelayMs?: number;
+  swingLockMs?: number;
+  attackRange?: number;
+  arcDeg?: number;
+  facing?: number;
+  weightClass?: string;
+  timestamp?: number;
+};
+
+export type KnightAttackWhiffPayload = {
+  knightId: string;
+};
+
 export type KnightAnimationHandlers = {
-  onAttackTelegraph?: (data: { knightId: string }) => void;
+  onAttackTelegraph?: (data: KnightAttackTelegraphPayload) => void;
+  onAttackWhiff?: (data: KnightAttackWhiffPayload) => void;
   onDash?: (data: KnightDashPayload) => void;
   onSpinCharge?: (data: KnightSpinChargePayload) => void;
   onSpinDash?: (data: KnightSpinDashPayload) => void;
@@ -64,8 +81,11 @@ function dispatch<K extends keyof KnightAnimationHandlers>(
 
 /** One socket listener per knight animation event; routes to per-knight handlers by id. */
 export function registerKnightAnimationSocketListeners(socket: Socket): () => void {
-  const onAttackTelegraph = (data: { knightId: string }) => {
+  const onAttackTelegraph = (data: KnightAttackTelegraphPayload) => {
     dispatch(data.knightId, 'onAttackTelegraph', data);
+  };
+  const onAttackWhiff = (data: KnightAttackWhiffPayload) => {
+    dispatch(data.knightId, 'onAttackWhiff', data);
   };
   const onDash = (data: KnightDashPayload) => {
     dispatch(data.knightId, 'onDash', data);
@@ -101,6 +121,8 @@ export function registerKnightAnimationSocketListeners(socket: Socket): () => vo
 
   socket.on('knight-attack-telegraph', onAttackTelegraph);
   socket.on('allied-knight-attack-telegraph', onAttackTelegraph);
+  socket.on('knight-attack-whiff', onAttackWhiff);
+  socket.on('allied-knight-attack-whiff', onAttackWhiff);
   socket.on('knight-dash', onDash);
   socket.on('knight-spin-charge', onSpinCharge);
   socket.on('knight-spin-dash', onSpinDash);
@@ -115,6 +137,8 @@ export function registerKnightAnimationSocketListeners(socket: Socket): () => vo
   return () => {
     socket.off('knight-attack-telegraph', onAttackTelegraph);
     socket.off('allied-knight-attack-telegraph', onAttackTelegraph);
+    socket.off('knight-attack-whiff', onAttackWhiff);
+    socket.off('allied-knight-attack-whiff', onAttackWhiff);
     socket.off('knight-dash', onDash);
     socket.off('knight-spin-charge', onSpinCharge);
     socket.off('knight-spin-dash', onSpinDash);

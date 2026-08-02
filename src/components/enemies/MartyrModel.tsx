@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
-import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
+import { Group, AnimationAction, AnimationClip } from 'three';
+import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { loadGltfAnimationClips, preloadSkinnedIdleAndAnimationClips } from '@/utils/gltfAnimationLoader';
 import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 import { getCachedEnemyAnimationClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
 
@@ -12,14 +14,21 @@ interface MartyrModelProps {
   isDying: boolean;
 }
 
+const MARTYR_IDLE_PATH = '/models/martyr_idle.glb';
+
 const MARTYR_MODEL_PATHS = [
-  '/models/martyr_idle.glb',
+  MARTYR_IDLE_PATH,
   '/models/martyr_run.glb',
   '/models/martyr_death.glb',
 ];
 
+const MARTYR_DEFERRED_PATHS = {
+  Run: '/models/martyr_run.glb',
+  Death: '/models/martyr_death.glb',
+} as const;
+
 export function preloadMartyrModels(): void {
-  MARTYR_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+  preloadSkinnedIdleAndAnimationClips(MARTYR_IDLE_PATH, MARTYR_MODEL_PATHS, useGLTF.preload);
 }
 
 const SCALE = 0.008;
@@ -27,10 +36,30 @@ const SCALE = 0.008;
 export default React.memo(function MartyrModel({ isWalking, isDying }: MartyrModelProps) {
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
+  const [extraAnims, setExtraAnims] = useState<Record<string, AnimationClip[]>>({});
 
-  const { scene, animations: idleAnims } = useGLTF('/models/martyr_idle.glb');
-  const { animations: runAnims } = useGLTF('/models/martyr_run.glb');
-  const { animations: deathAnims } = useGLTF('/models/martyr_death.glb');
+  const { scene, animations: idleAnims } = useGLTF(MARTYR_IDLE_PATH);
+
+  useEffect(() => {
+    let cancelled = false;
+    const entries = Object.entries(MARTYR_DEFERRED_PATHS);
+    void Promise.all(
+      entries.map(async ([name, path]) => {
+        const clips = await loadGltfAnimationClips(path);
+        return [name, clips] as const;
+      }),
+    )
+      .then((loaded) => {
+        if (cancelled) return;
+        setExtraAnims(Object.fromEntries(loaded));
+      })
+      .catch((error) => {
+        console.warn('Failed to load martyr animations:', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const clonedScene = useMemo(() => {
     const clone = SkeletonUtils.clone(scene) as Group;
@@ -49,19 +78,22 @@ export default React.memo(function MartyrModel({ isWalking, isDying }: MartyrMod
 
   useDisposeClonedMaterials(clonedScene);
 
-  const animations = useMemo(
-    () =>
-      getCachedEnemyAnimationClips('martyr', () => [
-        ...renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ),
-        ...renameAnimationClips(runAnims, 'Run').map(stripRootMotionXZ),
-        ...renameAnimationClips(deathAnims, 'Death').map(stripRootMotionXZ),
-      ]),
-    [idleAnims, runAnims, deathAnims],
-  );
+  const animations = useMemo(() => {
+    const idleClips = renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ);
+    const hasAllDeferred = Object.keys(MARTYR_DEFERRED_PATHS).every((key) => extraAnims[key]?.length);
+    if (!hasAllDeferred) return idleClips;
+    return getCachedEnemyAnimationClips('martyr', () => [
+      ...idleClips,
+      ...renameAnimationClips(extraAnims.Run, 'Run').map(stripRootMotionXZ),
+      ...renameAnimationClips(extraAnims.Death, 'Death').map(stripRootMotionXZ),
+    ]);
+  }, [idleAnims, extraAnims]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
   const getAction = (name: 'Idle' | 'Run' | 'Death'): AnimationAction | null => actions[name] ?? null;
+
+  const posed = useEnemyIdlePose({ actions, mixer, currentActionRef });
 
   // Priority: Death > Run (or Idle when priming) > Idle
   useEffect(() => {
@@ -73,30 +105,18 @@ export default React.memo(function MartyrModel({ isWalking, isDying }: MartyrMod
         ? getAction('Run')
         : getAction('Idle');
 
-    if (!nextAction) return;
-    if (nextAction === currentActionRef.current) return;
-
-    currentActionRef.current?.fadeOut(0.2);
-
-    if (isDying) {
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = true;
-      nextAction.reset().fadeIn(0.15).play();
-    } else {
-      nextAction.enabled = true;
-      nextAction.setLoop(LoopRepeat, Infinity);
-      nextAction.fadeIn(0.2).play();
-    }
-
-    currentActionRef.current = nextAction;
-  }, [isWalking, isDying, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+    playEnemyAction(nextAction, currentActionRef, mixer, {
+      loopOnce: isDying,
+      clampWhenFinished: isDying,
+      fadeIn: isDying ? 0.15 : 0.2,
+    });
+  }, [isWalking, isDying, actions, mixer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <group ref={sceneGroupRef}>
+    <group ref={sceneGroupRef} visible={posed}>
       <group scale={[SCALE, SCALE, SCALE]}>
         <primitive object={clonedScene} />
       </group>
     </group>
   );
 });
-

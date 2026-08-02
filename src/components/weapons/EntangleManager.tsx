@@ -12,6 +12,7 @@ interface EntangledEnemyData {
   position: Vector3;
   startTime: number;
   duration: number;
+  theme?: 'default' | 'spider';
 }
 
 interface EntangledPlayerData {
@@ -27,7 +28,12 @@ interface EntangleManagerProps {
 }
 
 let globalEntangleManager: {
-  addEntangledEnemy: (enemyId: string, position: Vector3, duration?: number) => void;
+  addEntangledEnemy: (
+    enemyId: string,
+    position: Vector3,
+    duration?: number,
+    theme?: 'default' | 'spider',
+  ) => void;
   addEntangledPlayer: (playerId: string, position: Vector3, duration?: number) => void;
   getActiveEntangledEnemies: () => EntangledEnemyData[];
 } | null = null;
@@ -39,9 +45,10 @@ export const addGlobalEntangledEnemy = (
   enemyId: string,
   position: Vector3,
   duration: number = 5000,
+  theme: 'default' | 'spider' = 'default',
 ): boolean => {
   if (globalEntangleManager) {
-    globalEntangleManager.addEntangledEnemy(enemyId, position, duration);
+    globalEntangleManager.addEntangledEnemy(enemyId, position, duration, theme);
     return true;
   }
   return false;
@@ -99,7 +106,12 @@ export default function EntangleManager({ world, getPlayerPositions }: EntangleM
     }
   }, []);
 
-  const addEntangledEnemy = useCallback((enemyId: string, position: Vector3, duration: number = 5000) => {
+  const addEntangledEnemy = useCallback((
+    enemyId: string,
+    position: Vector3,
+    duration: number = 5000,
+    theme: 'default' | 'spider' = 'default',
+  ) => {
     playEntangleSound(position);
 
     setEntangledEnemies(prev => {
@@ -111,6 +123,7 @@ export default function EntangleManager({ world, getPlayerPositions }: EntangleM
           position: position.clone(),
           startTime: Date.now(),
           duration,
+          theme,
         },
       ];
     });
@@ -201,6 +214,7 @@ export default function EntangleManager({ world, getPlayerPositions }: EntangleM
           startTime={entangledEnemy.startTime}
           enemyId={entangledEnemy.enemyId}
           enemyData={enemyData}
+          theme={entangledEnemy.theme ?? 'default'}
           onComplete={() => {
             setEntangledEnemies(prev => prev.filter(entangled => entangled.enemyId !== entangledEnemy.enemyId));
           }}

@@ -18,6 +18,13 @@ const TEMPLAR_CREST_COLORS = {
   emissive: '#ff2a3c',
 } as const;
 
+/** Three stacked tiers per wing: top largest, bottom smallest, all angled downward-outward. */
+const WING_TIERS = [
+  { localY: 0.3, localZ: 0.02, scaleMul: 1.0, rotZOffset: 0.12 },
+  { localY: 0, localZ: -0.02, scaleMul: 0.82, rotZOffset: 0 },
+  { localY: -0.3, localZ: -0.06, scaleMul: 0.66, rotZOffset: -0.1 },
+] as const;
+
 interface TemplarSoulCrestProps {
   position?: [number, number, number];
   scale?: number;
@@ -116,30 +123,40 @@ export default function TemplarSoulCrest({
     rightBladeOff = mirrorWingEuler(leftBladeOff);
   }
 
-  const baseLeftAnchor: WingEuler = [Math.PI / 3.5, 0, Math.PI / 1.25];
-  const baseRightAnchor: WingEuler = [Math.PI / 3.5, 0, -Math.PI / 1.25];
-  const baseLeftBlade: WingEuler = [Math.PI, Math.PI / 1.85 + 0.375, -Math.PI / 8 + 0.25];
-  const baseRightBlade: WingEuler = [Math.PI, Math.PI / 2.15 - 0.375, -Math.PI / 8 + 0.25];
+  // Pitch anchors more forward/down so the 3-tier stack reads as downward wings
+  const baseLeftAnchor: WingEuler = [Math.PI / 2.8, 0, Math.PI / 1.25];
+  const baseRightAnchor: WingEuler = [Math.PI / 2.8, 0, -Math.PI / 1.25];
+  // Blade Z tuned for downward-outward fan (~45°) rather than upward crest
+  const baseLeftBlade: WingEuler = [Math.PI, Math.PI / 1.85 + 0.375, -Math.PI / 5];
+  const baseRightBlade: WingEuler = [Math.PI, Math.PI / 2.15 - 0.375, -Math.PI / 5];
 
   const createWingHalf = (isLeft: boolean) => {
     const anchorOff = isLeft ? leftAnchorOff : rightAnchorOff;
     const bladeOff = isLeft ? leftBladeOff : rightBladeOff;
     const anchorRot = addEuler(isLeft ? baseLeftAnchor : baseRightAnchor, anchorOff);
     const bladeRot = addEuler(isLeft ? baseLeftBlade : baseRightBlade, bladeOff);
+    const bladeX = isLeft ? 1.125 * wingSpread : -1.125 * wingSpread;
+    const sideSign = isLeft ? 1 : -1;
 
     return (
       <group
         ref={isLeft ? leftWingRef : rightWingRef}
-        position={[isLeft ? 0.25 * wingSpread : -0.25 * wingSpread, 0.675, -0.455]}
+        position={[isLeft ? 0.25 * wingSpread : -0.25 * wingSpread, 0.72, -0.455]}
         rotation={anchorRot}
       >
-        <group
-          position={[isLeft ? 1.125 * wingSpread : -1.125 * wingSpread, -0.3, 0.15]}
-          rotation={bladeRot}
-          scale={[0.75, -0.375, 0.375]}
-        >
-          <mesh geometry={geometries.blade} material={materials.bladeCore} />
-        </group>
+        {WING_TIERS.map((tier, i) => {
+          const s = tier.scaleMul;
+          return (
+            <group
+              key={i}
+              position={[bladeX, -0.3 + tier.localY, 0.15 + tier.localZ]}
+              rotation={addEuler(bladeRot, [0, 0, tier.rotZOffset * sideSign])}
+              scale={[0.75 * s, -0.375 * s, 0.375 * s]}
+            >
+              <mesh geometry={geometries.blade} material={materials.bladeCore} />
+            </group>
+          );
+        })}
       </group>
     );
   };

@@ -3,6 +3,7 @@ import { Group, Mesh } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { WeaponType } from '@/components/dragon/weapons';
 import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
+import type { WeaponAspect } from '@/utils/weaponAspects';
 
 interface AuraPalette {
   outer: string;
@@ -24,35 +25,27 @@ const ROYAL_DEFAULT: AuraPalette = {
   glow: '#d4af37',
 };
 
-const WEAPON_PALETTES: Partial<Record<WeaponType, AuraPalette>> = {
-  [WeaponType.BOW]: {
-    outer: '#22c55e',
-    plane: '#fde047',
-    innerColor: '#15803d',
-    streamColor: '#14532d',
-    streamEmissive: '#eab308',
-    ambient: '#86efac',
-    glow: '#22c55e',
-  },
-  [WeaponType.SABRES]: {
-    outer: '#FF4444',
-    plane: '#FF4444',
-    innerColor: '#FF4444',
-    streamColor: '#FF4444',
-    streamEmissive: '#FF4444',
-    ambient: '#FD6464',
-    glow: '#FF4444',
-  },
-  [WeaponType.SCYTHE]: {
-    outer: '#FF6224',
-    plane: '#FF5E00',
-    innerColor: '#FF6224',
-    streamColor: '#FF5E00',
-    streamEmissive: '#FF5E00',
-    ambient: '#FF5E00',
-    glow: '#FF5E00',
-  },
-  [WeaponType.RUNEBLADE]: {
+/** Mono-hue palette helper — matches prior sabres/runeblade shape. */
+function solidPalette(hex: string, ambient?: string, stream?: string): AuraPalette {
+  return {
+    outer: hex,
+    plane: hex,
+    innerColor: hex,
+    streamColor: stream ?? hex,
+    streamEmissive: hex,
+    ambient: ambient ?? hex,
+    glow: hex,
+  };
+}
+
+/**
+ * Selection-circle colors keyed by equipped weapon aspect.
+ * Unequipped pedestals keep ROYAL_DEFAULT gold.
+ */
+const ASPECT_AURA_PALETTES: Record<WeaponAspect, AuraPalette> = {
+  // Runeblade
+  BLADEMASTER: {
+    // Keep prior runeblade sky-blue
     outer: '#38bdf8',
     plane: '#38bdf8',
     innerColor: '#38bdf8',
@@ -61,15 +54,71 @@ const WEAPON_PALETTES: Partial<Record<WeaponType, AuraPalette>> = {
     ambient: '#38bdf8',
     glow: '#38bdf8',
   },
+  LEGIONNAIRE: solidPalette('#2dd4bf', '#5eead4', '#0f766e'),
+  ROYAL_GUARD: solidPalette('#f97316', '#fdba74', '#9a3412'),
+  DEATHDEALER: solidPalette('#c0c0c0', '#e5e5e5', '#6b7280'),
+  // Scythe
+  NECROMANCER: {
+    // Same green as the original bow aura
+    outer: '#22c55e',
+    plane: '#fde047',
+    innerColor: '#15803d',
+    streamColor: '#14532d',
+    streamEmissive: '#eab308',
+    ambient: '#86efac',
+    glow: '#22c55e',
+  },
+  ARCHMAGE: {
+    // Original scythe orange
+    outer: '#FF6224',
+    plane: '#FF5E00',
+    innerColor: '#FF6224',
+    streamColor: '#FF5E00',
+    streamEmissive: '#FF5E00',
+    ambient: '#FF5E00',
+    glow: '#FF5E00',
+  },
+  DRACONIC: solidPalette('#a855f7', '#d8b4fe', '#6b21a8'),
+  // Sabres
+  FIRE_AFFINITY: {
+    // Original sabres red
+    outer: '#FF4444',
+    plane: '#FF4444',
+    innerColor: '#FF4444',
+    streamColor: '#FF4444',
+    streamEmissive: '#FF4444',
+    ambient: '#FD6464',
+    glow: '#FF4444',
+  },
+  FROST_AFFINITY: solidPalette('#7dd3fc', '#bae6fd', '#0369a1'),
+  WARLORD: solidPalette('#22c55e', '#86efac', '#14532d'),
+  // Bow
+  SNIPER: solidPalette('#f97316', '#fdba74', '#9a3412'),
+  BEASTMASTER: solidPalette('#38bdf8', '#7dd3fc', '#0c4a6e'),
+  DRUID: {
+    outer: '#22c55e',
+    plane: '#fde047',
+    innerColor: '#15803d',
+    streamColor: '#14532d',
+    streamEmissive: '#eab308',
+    ambient: '#86efac',
+    glow: '#22c55e',
+  },
 };
 
 interface ThronePedestalAuraProps {
   weapon: WeaponType;
   equippedWeapon: WeaponType;
+  weaponAspect: WeaponAspect;
   position: [number, number, number];
 }
 
-function ThronePedestalAura({ weapon, equippedWeapon, position }: ThronePedestalAuraProps) {
+function ThronePedestalAura({
+  weapon,
+  equippedWeapon,
+  weaponAspect,
+  position,
+}: ThronePedestalAuraProps) {
   const auraRef = useRef<Group>(null);
 
   // Animated mesh refs
@@ -79,10 +128,10 @@ function ThronePedestalAura({ weapon, equippedWeapon, position }: ThronePedestal
 
   const pal = useMemo<AuraPalette>(() => {
     if (equippedWeapon === weapon) {
-      return WEAPON_PALETTES[weapon] ?? ROYAL_DEFAULT;
+      return ASPECT_AURA_PALETTES[weaponAspect] ?? ROYAL_DEFAULT;
     }
     return ROYAL_DEFAULT;
-  }, [equippedWeapon, weapon]);
+  }, [equippedWeapon, weapon, weaponAspect]);
 
   const isActive = equippedWeapon === weapon;
   const someOtherEquipped = equippedWeapon !== WeaponType.NONE && !isActive;

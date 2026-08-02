@@ -19,9 +19,17 @@ const CAMP_ORB_COLOR: Record<CoopPortalKind, string> = {
 /** Shared stone cylinder + cap used by combat boon pedestals and throne archetype pedestals. */
 export function ArenaRewardPedestalBase({
   position = [0, 0, 0],
+  glowColor,
+  glowIntensity = 1,
 }: {
   position?: [number, number, number];
+  /** When set, paints an additive disc on the cap and a short-range point light. */
+  glowColor?: string;
+  /** 0–1 multiplier for disc / emissive / cap light (selected vs idle). */
+  glowIntensity?: number;
 }) {
+  const g = Math.max(0, Math.min(1, glowIntensity));
+
   return (
     <group position={position}>
       <mesh castShadow receiveShadow>
@@ -30,8 +38,47 @@ export function ArenaRewardPedestalBase({
       </mesh>
       <mesh position={[0, 0.99, 0]} castShadow receiveShadow>
         <cylinderGeometry args={[0.55, 0.45, 0.24, 12]} />
-        <meshStandardMaterial color="#b8b0a4" roughness={0.7} metalness={0.2} />
+        <meshStandardMaterial
+          color="#b8b0a4"
+          roughness={0.7}
+          metalness={0.2}
+          {...(glowColor
+            ? { emissive: glowColor, emissiveIntensity: 0.28 * g }
+            : {})}
+        />
       </mesh>
+      {glowColor && g > 0.01 ? (
+        <>
+          {/* Flat additive disc — reads as colored cap even under dim throne ambient */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 1.12, 0]}>
+            <circleGeometry args={[0.48, 24]} />
+            <meshBasicMaterial
+              color={glowColor}
+              transparent
+              opacity={0.28 * g}
+              depthWrite={false}
+              blending={AdditiveBlending}
+            />
+          </mesh>
+          <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 1.115, 0]}>
+            <ringGeometry args={[0.42, 0.52, 32]} />
+            <meshBasicMaterial
+              color={glowColor}
+              transparent
+              opacity={0.18 * g}
+              depthWrite={false}
+              blending={AdditiveBlending}
+            />
+          </mesh>
+          <PooledEffectLight
+            color={glowColor}
+            intensity={0.75 * g}
+            distance={2.2}
+            decay={2}
+            position={[0, 1.05, 0]}
+          />
+        </>
+      ) : null}
     </group>
   );
 }

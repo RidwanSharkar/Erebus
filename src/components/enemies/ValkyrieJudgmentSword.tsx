@@ -12,15 +12,22 @@ import {
 } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { Group } from '@/utils/three-exports';
-import SwordMeshVisual, { getSwordThemeForSoulType } from '@/components/weapons/SwordMeshVisual';
+import { useGLTF } from '@react-three/drei';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import { applyWeaponItemGlow, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 import {
   VALKYRIE_JUDGMENT_FALL_MS,
   VALKYRIE_JUDGMENT_HOVER_MS,
   VALKYRIE_JUDGMENT_IMPACT_BURST_MS,
   VALKYRIE_JUDGMENT_SKY_HEIGHT,
+  VALKYRIE_JUDGMENT_MODEL_PATH,
+  VALKYRIE_JUDGMENT_MODEL_POSITION,
+  VALKYRIE_JUDGMENT_MODEL_SCALE,
   VALKYRIE_JUDGMENT_SWORD_ROTATION,
 } from '@/utils/valkyrieJudgmentConstants';
+
+useGLTF.preload(VALKYRIE_JUDGMENT_MODEL_PATH);
 
 const IMPACT_PALETTE = {
   ring: '#7f0505',
@@ -53,7 +60,15 @@ export default function ValkyrieJudgmentSword({
   const shockRingRef = useRef<Mesh>(null);
   const flashDiscRef = useRef<Mesh>(null);
   const doneRef = useRef(false);
-  const theme = useMemo(() => getSwordThemeForSoulType('red'), []);
+  const { scene: swordScene } = useGLTF(VALKYRIE_JUDGMENT_MODEL_PATH);
+
+  const clonedSwordScene = useMemo(() => {
+    const clone = SkeletonUtils.clone(swordScene) as Group;
+    applyWeaponItemGlow(clone);
+    return clone;
+  }, [swordScene]);
+
+  useDisposeClonedMaterials(clonedSwordScene);
 
   const fallStart = strikeAt - fallMs;
   const appearAt = fallStart - hoverMs;
@@ -159,8 +174,12 @@ export default function ValkyrieJudgmentSword({
   return (
     <group>
       <group ref={swordRef} visible={false}>
-        <group rotation={VALKYRIE_JUDGMENT_SWORD_ROTATION}>
-          <SwordMeshVisual theme={theme} />
+        <group
+          position={VALKYRIE_JUDGMENT_MODEL_POSITION}
+          rotation={VALKYRIE_JUDGMENT_SWORD_ROTATION}
+          scale={VALKYRIE_JUDGMENT_MODEL_SCALE}
+        >
+          <primitive object={clonedSwordScene} />
         </group>
       </group>
 

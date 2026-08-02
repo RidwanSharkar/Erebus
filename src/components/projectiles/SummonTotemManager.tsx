@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import { Vector3 } from '@/utils/three-exports';
 import type { EnemyDamageMeta } from '@/contexts/MultiplayerContext';
 import type { TotemBoltVariant } from '@/utils/talents';
+import type { WeaponAspect } from '@/utils/weaponAspects';
 import SummonedTotem from './SummonedTotem';
 
 export type SummonTotemDamageHandler = (
@@ -66,6 +67,7 @@ interface SummonTotemData {
   casterId?: string;
   localSocketId?: string;
   totemBoltVariant?: TotemBoltVariant;
+  weaponAspect?: WeaponAspect | null;
   superconductor?: boolean;
   allowPlayerTargets?: boolean;
 }
@@ -179,6 +181,7 @@ export interface SummonTotemManagerRef {
     totemBoltVariant?: TotemBoltVariant,
     superconductor?: boolean,
     allowPlayerTargets?: boolean,
+    weaponAspect?: WeaponAspect | null,
   ) => number;
 }
 
@@ -244,6 +247,7 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
     totemBoltVariantProp?: TotemBoltVariant,
     superconductor: boolean = false,
     allowPlayerTargetsForTotem: boolean = allowPlayerTargets,
+    weaponAspectProp?: WeaponAspect | null,
   ) => {
     const totemId = totemIdCounter.current++;
     const startTime = Date.now();
@@ -282,6 +286,7 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
       casterId: casterId,
       localSocketId,
       totemBoltVariant: totemBoltVariantProp,
+      weaponAspect: weaponAspectProp,
       superconductor,
       allowPlayerTargets: allowPlayerTargetsForTotem,
     };
@@ -319,6 +324,7 @@ const SummonTotemManager = forwardRef<SummonTotemManagerRef, SummonTotemManagerP
           casterId={totem.casterId}
           allowPlayerTargets={totem.allowPlayerTargets}
           totemBoltVariant={totem.totemBoltVariant}
+          weaponAspect={totem.weaponAspect}
           superconductor={totem.superconductor}
           resolveTotemEnemyFrozen={resolveTotemEnemyFrozen}
         />
@@ -344,6 +350,7 @@ export type SummonTotemTriggerCallback = (
   totemBoltVariant?: TotemBoltVariant,
   superconductor?: boolean,
   allowPlayerTargets?: boolean,
+  weaponAspect?: WeaponAspect | null,
 ) => void;
 
 let globalSummonTotemTriggerCallback: SummonTotemTriggerCallback | null = null;
@@ -364,6 +371,7 @@ export const triggerGlobalSummonTotem = (
   totemBoltVariant?: TotemBoltVariant,
   superconductor?: boolean,
   allowPlayerTargets?: boolean,
+  weaponAspect?: WeaponAspect | null,
 ) => {
   if (globalSummonTotemTriggerCallback) {
     globalSummonTotemTriggerCallback(
@@ -378,6 +386,7 @@ export const triggerGlobalSummonTotem = (
       totemBoltVariant,
       superconductor,
       allowPlayerTargets,
+      weaponAspect,
     );
   }
 };

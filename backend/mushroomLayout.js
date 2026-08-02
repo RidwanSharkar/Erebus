@@ -1,7 +1,7 @@
 /**
  * Deterministic mushroom ring — must stay in sync with `src/utils/mushroomLayout.ts` (MUSHROOM_LAYOUT_SEED).
  */
-const MAIN_ARENA_HEX_RADIUS = 20;
+const MAIN_ARENA_HEX_RADIUS = 16;
 const MAIN_MAP_HALF_X = MAIN_ARENA_HEX_RADIUS;
 const MAIN_MAP_HALF_Z = MAIN_ARENA_HEX_RADIUS;
 

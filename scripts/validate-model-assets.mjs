@@ -1,10 +1,17 @@
 import { execFile } from 'node:child_process';
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { Logger, NodeIO, Verbosity } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import {
+  formatBytes,
+  isBaseScene,
+  isWowModel,
+  listAllModelGlbs,
+  toModelsRelativePath,
+} from './model-asset-config.mjs';
 
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
@@ -15,40 +22,6 @@ const io = new NodeIO()
 const threeLoader = new GLTFLoader();
 
 globalThis.self ??= globalThis;
-
-const BASE_SCENE_FILES = new Set([
-  'ally_idle.glb',
-  'boss_idle.glb',
-  'character_idle.glb',
-  'ghoul_idle.glb',
-  'knight_idle.glb',
-  'martyr_idle.glb',
-  'nemesis_idle.glb',
-  'sentinel_idle.glb',
-  'shade_idle.glb',
-  'spectre_idle.glb',
-  'templar_idle.glb',
-  'titan_walk.glb',
-  'valkyrie_idle.glb',
-  'viper_idle.glb',
-  'warlock_idle.glb',
-  'weaver_idle.glb',
-  'wraith_idle.glb',
-  'zombie_idle.glb',
-]);
-
-function formatBytes(bytes) {
-  const mb = bytes / 1024 / 1024;
-  return `${mb.toFixed(mb >= 10 ? 1 : 2)} MB`;
-}
-
-async function listGlbs(dir) {
-  const entries = await readdir(dir, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.glb'))
-    .map((entry) => path.join(dir, entry.name))
-    .sort();
-}
 
 function animationDuration(animation) {
   let duration = 0;
@@ -63,13 +36,19 @@ function animationDuration(animation) {
 }
 
 function collectDocumentStats(document) {
-  const root = document.getRoot();
-  const animations = root.listAnimations();
+  const docRoot = document.getRoot();
+  const animations = docRoot.listAnimations();
   return {
     animations: animations.length,
     channels: animations.reduce((sum, animation) => sum + animation.listChannels().length, 0),
     durations: animations.map(animationDuration),
-    meshes: root.listMeshes().length,
+    /** name → duration for animations that still have channels (prune may drop empty stubs). */
+    namedDurations: Object.fromEntries(
+      animations
+        .filter((animation) => animation.listChannels().length > 0)
+        .map((animation) => [animation.getName() || '', animationDuration(animation)]),
+    ),
+    meshes: docRoot.listMeshes().length,
   };
 }
 
@@ -155,7 +134,7 @@ function hasAssimpLegTrack(tracks) {
   return tracks.some((track) => track.name.startsWith('mixamorigLeftUpLeg_$AssimpFbx$_Rotation.'));
 }
 
-function assertAssimpMixamoAnimationClip(filename, clip) {
+function assertAssimpMixamoAnimationClip(filename, clip, { wowExempt = false } = {}) {
   if (!clip?.tracks?.length) {
     throw new Error(`${filename} should contain an animation clip`);
   }
@@ -167,7 +146,8 @@ function assertAssimpMixamoAnimationClip(filename, clip) {
 
   if (!hasAssimpRotationHelpers(tracks)) {
     // Wraith uses a flat Mixamo skeleton without Assimp helpers — validated separately.
-    if (filename.startsWith('wraith_')) return;
+    // WoW models use bone_* skeletons (not Mixamo/Assimp).
+    if (filename.startsWith('wraith_') || wowExempt) return;
     throw new Error(`${filename} animation should target Assimp rotation helper bones`);
   }
 
@@ -177,7 +157,7 @@ function assertAssimpMixamoAnimationClip(filename, clip) {
 }
 
 function idlePrefixFromFilename(filename) {
-  const match = filename.match(/^(.+?)_(?:idle|walk|run|sprint|attack|attack2|melee|melee2|death|cast|holdCast|throwUp|spin|smite|aggro|impact|launch|block|startblock|idleblock|castheal|castsummon|summon|fastwalk)\.glb$/);
+  const match = filename.match(/^(.+?)_(?:idle|walk|run|sprint|attack|attack0|attack1|attack2|attack3|attack4|melee|melee2|death|cast|holdCast|throwUp|spin|smite|aggro|impact|launch|block|startblock|idleblock|castheal|castsummon|summon|fastwalk|whirlwind)\.glb$/);
   return match?.[1] ?? null;
 }
 
@@ -214,9 +194,11 @@ async function getIdleTrackNames(prefix) {
   }
 }
 
-async function assertAnimationCompatibleWithIdle(filename, threeGltf) {
+async function assertAnimationCompatibleWithIdle(filename, threeGltf, { wowExempt = false } = {}) {
   const prefix = idlePrefixFromFilename(filename);
   if (!prefix) return;
+  // WoW clips intentionally omit idle-only bone tracks; runtime uses filterAnimationTracksForRoot.
+  if (wowExempt || prefix === 'paladin') return;
 
   const idleTracks = await getIdleTrackNames(prefix);
   if (!idleTracks?.size) return;
@@ -230,23 +212,25 @@ async function assertAnimationCompatibleWithIdle(filename, threeGltf) {
   }
 }
 
-function assertIdleSceneAnimationClip(filename, threeGltf) {
+function assertIdleSceneAnimationClip(filename, threeGltf, { wowExempt = false } = {}) {
   const clip = threeGltf.animations[0];
   if (!clip) return;
 
-  if (filename.startsWith('wraith_')) return;
+  if (filename.startsWith('wraith_') || wowExempt) return;
 
-  assertAssimpMixamoAnimationClip(filename, clip);
+  assertAssimpMixamoAnimationClip(filename, clip, { wowExempt });
 }
 
-const files = await listGlbs(modelsDir);
+const files = await listAllModelGlbs(modelsDir);
 let beforeTotal = 0;
 let afterTotal = 0;
 
 for (const filePath of files) {
   const filename = path.basename(filePath);
-  const relativePath = path.relative(root, filePath).replaceAll(path.sep, '/');
-  const isBaseScene = BASE_SCENE_FILES.has(filename);
+  const modelsRel = toModelsRelativePath(modelsDir, filePath);
+  const relativePath = path.relative(root, filePath).split(path.sep).join('/');
+  const baseScene = isBaseScene(modelsDir, filePath);
+  const wowExempt = isWowModel(modelsDir, filePath);
 
   const original = await readOriginalDocument(relativePath, filePath);
   const optimizedDocument = await io.read(filePath);
@@ -258,32 +242,47 @@ for (const filePath of files) {
   beforeTotal += originalBytes;
   afterTotal += afterBytes;
 
-  assertEqual(optimizedStats.animations, originalStats.animations, `${filename} animation count`);
-  assertEqual(optimizedStats.channels, originalStats.channels, `${filename} animation channel count`);
-  optimizedStats.durations.forEach((duration, index) => {
-    assertDurationClose(duration, originalStats.durations[index], `${filename} animation ${index} duration`);
-  });
+  // Prune may drop empty animation stubs (0 channels); channel totals and named clips must match.
+  assertEqual(optimizedStats.channels, originalStats.channels, `${modelsRel} animation channel count`);
+  if (optimizedStats.animations === originalStats.animations) {
+    optimizedStats.durations.forEach((duration, index) => {
+      assertDurationClose(duration, originalStats.durations[index], `${modelsRel} animation ${index} duration`);
+    });
+  } else {
+    if (optimizedStats.animations > originalStats.animations) {
+      throw new Error(
+        `${modelsRel} animation count increased: expected <= ${originalStats.animations}, received ${optimizedStats.animations}`,
+      );
+    }
+    for (const [name, duration] of Object.entries(optimizedStats.namedDurations)) {
+      const originalDuration = originalStats.namedDurations[name];
+      if (originalDuration === undefined) {
+        throw new Error(`${modelsRel} unexpected animation after optimize: "${name}"`);
+      }
+      assertDurationClose(duration, originalDuration, `${modelsRel} animation "${name}" duration`);
+    }
+  }
 
-  if (isBaseScene) {
-    if (optimizedStats.meshes <= 0) throw new Error(`${filename} should retain renderable scene meshes`);
+  if (baseScene) {
+    if (optimizedStats.meshes <= 0) throw new Error(`${modelsRel} should retain renderable scene meshes`);
     const threeGltf = await parseWithThree(filePath);
-    assertIdleSceneAnimationClip(filename, threeGltf);
+    assertIdleSceneAnimationClip(filename, threeGltf, { wowExempt });
   } else {
     const threeGltf = await parseWithThree(filePath);
     const threeMeshCount = countThreeMeshes(threeGltf.scene);
-    assertEqual(threeGltf.animations.length, originalStats.animations, `${filename} Three.js animation count`);
-    assertEqual(threeMeshCount, 0, `${filename} renderable mesh count`);
+    assertEqual(threeGltf.animations.length, optimizedStats.animations, `${modelsRel} Three.js animation count`);
+    assertEqual(threeMeshCount, 0, `${modelsRel} renderable mesh count`);
     assertKnightAnimationClip(filename, threeGltf);
     if (!filename.startsWith('wraith_')) {
-      assertAssimpMixamoAnimationClip(filename, threeGltf.animations[0]);
-      await assertAnimationCompatibleWithIdle(filename, threeGltf);
+      assertAssimpMixamoAnimationClip(filename, threeGltf.animations[0], { wowExempt });
+      await assertAnimationCompatibleWithIdle(filename, threeGltf, { wowExempt });
     }
   }
 
   console.log(
     [
-      filename.padEnd(32),
-      (isBaseScene ? 'scene' : 'animation').padEnd(9),
+      modelsRel.padEnd(42),
+      (baseScene ? 'scene' : 'animation').padEnd(9),
       `${formatBytes(originalBytes)} -> ${formatBytes(afterBytes)}`.padEnd(25),
       `anim ${optimizedStats.animations}`,
       `channels ${optimizedStats.channels}`,

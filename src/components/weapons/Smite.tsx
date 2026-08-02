@@ -23,17 +23,22 @@ import { INFERNAL_SMITE_CRIT_CHANCE_ADD, STAGGERING_SMITE_BEAM_STAGGER } from '@
 import { createBeamCylinderAdditiveMaterial } from '@/utils/beamCylinderAdditiveMaterial';
 import { addEnemyHitDamageNumber } from '@/utils/enemyDamageNumber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import {
+  getSmiteAspectDefaultColorPair,
+  type WeaponAspect,
+} from '@/utils/weaponAspects';
 
 const _hslScratch = { h: 0, s: 0, l: 0 };
 const _smiteBoltLightPos = new Vector3();
 
-/** Saturated, punchy smite colors (Three.js) per talent theme. */
+/** Saturated, punchy smite colors (Three.js) per talent theme; aspect is lowest priority. */
 function smiteVividColorPair(
   isCorrupted: boolean,
   infernal: boolean,
   infested: boolean,
   staggering: boolean,
   deflect: boolean,
+  aspect?: WeaponAspect | null,
 ): { primary: Color; secondary: Color } {
   const p = new Color();
   const s = new Color();
@@ -53,8 +58,9 @@ function smiteVividColorPair(
     p.set('#fbbf24');
     s.set('#fde68a');
   } else {
-    p.set('#ff8c00');
-    s.set('#ffe033');
+    const pair = getSmiteAspectDefaultColorPair(aspect);
+    p.set(pair.primary);
+    s.set(pair.secondary);
   }
   p.getHSL(_hslScratch);
   p.setHSL(
@@ -117,6 +123,8 @@ interface SmiteProps {
   baseDamageOverride?: number;
   /** Custom damage type for combat system and floating numbers. */
   damageTypeOverride?: string;
+  /** Runeblade aspect — drives default beam colors when no talent theme is active. */
+  weaponAspect?: WeaponAspect | null;
 }
 
 const SmiteComponent = memo(function Smite({
@@ -139,6 +147,7 @@ const SmiteComponent = memo(function Smite({
   deflectSmiteVisual = false,
   baseDamageOverride,
   damageTypeOverride,
+  weaponAspect,
 }: SmiteProps) {
   const lightningRef = useRef<Group>(null);
   const progressRef = useRef(0);
@@ -169,7 +178,7 @@ const SmiteComponent = memo(function Smite({
     burstCore: new CircleGeometry(0.58, 24),
   }), []);
 
-  // corrupted > Infernal > Infested > Staggering > default — vivid `Color` for materials + lights
+  // corrupted > Infernal > Infested > Staggering > Deflect > aspect default — vivid `Color` for materials + lights
   const { primary: primaryColor, secondary: secondaryColor } = useMemo(
     () => smiteVividColorPair(
       isCorruptedAuraActive,
@@ -177,8 +186,9 @@ const SmiteComponent = memo(function Smite({
       infestedSmiteVisual,
       staggeringSmiteVisual,
       deflectSmiteVisual,
+      weaponAspect,
     ),
-    [isCorruptedAuraActive, infernalSmiteVisual, infestedSmiteVisual, staggeringSmiteVisual, deflectSmiteVisual],
+    [isCorruptedAuraActive, infernalSmiteVisual, infestedSmiteVisual, staggeringSmiteVisual, deflectSmiteVisual, weaponAspect],
   );
 
   const burstPointColor = useMemo(
@@ -571,6 +581,8 @@ const SmiteComponent = memo(function Smite({
   if (prevProps.infestedSmiteVisual !== nextProps.infestedSmiteVisual) return false;
   if (prevProps.staggeringSmiteVisual !== nextProps.staggeringSmiteVisual) return false;
   if (prevProps.infernalSmiteVisual !== nextProps.infernalSmiteVisual) return false;
+  if (prevProps.deflectSmiteVisual !== nextProps.deflectSmiteVisual) return false;
+  if (prevProps.weaponAspect !== nextProps.weaponAspect) return false;
   if ((prevProps.sequenceDelaySec ?? 0) !== (nextProps.sequenceDelaySec ?? 0)) return false;
   if (prevProps.onBeamEnemyHit !== nextProps.onBeamEnemyHit) return false;
   if (!!prevProps.getVengeanceSmiteDamageMultiplier !== !!nextProps.getVengeanceSmiteDamageMultiplier) return false;

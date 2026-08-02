@@ -63,6 +63,14 @@ export interface WarlockProjectileState {
   warlockId: string;
 }
 
+export interface MedusaProjectileState {
+  id: string;
+  startPosition: Vector3;
+  targetPosition: Vector3;
+  damage: number;
+  medusaId: string;
+}
+
 export interface WarlockFlameStrikeState {
   id: string;
   position: Vector3;
@@ -135,6 +143,21 @@ export interface GreedFireballState {
   greedId: string;
 }
 
+export interface WyvernBreathFireboltState {
+  id: string;
+  startPosition: Vector3;
+  targetPosition: Vector3;
+  wyvernId: string;
+}
+
+export interface DestinyBreathFireboltState {
+  id: string;
+  startPosition: Vector3;
+  targetPosition: Vector3;
+  destinyId: string;
+  fromAir?: boolean;
+}
+
 export interface SentinelVoidOrbState {
   id: string;
   startPosition: Vector3;
@@ -142,11 +165,27 @@ export interface SentinelVoidOrbState {
   sentinelId: string;
 }
 
+export interface BoneSpiderEnsnaringShotState {
+  id: string;
+  startPosition: Vector3;
+  targetPosition: Vector3;
+  spiderId: string;
+  shotId?: string;
+}
+
 export interface EnchantressEarthShockState {
   id: string;
   startPosition: Vector3;
   targetPosition: Vector3;
   enchantressId: string;
+}
+
+export interface AlliedSpiderEnsnaringThreadsState {
+  id: string;
+  startPosition: Vector3;
+  targetPosition: Vector3;
+  spiderId: string;
+  shotId?: string;
 }
 
 export interface BossLeapTelegraphState {
@@ -332,6 +371,8 @@ export interface MistEffectState {
   id: string;
   position: Vector3;
   startTime: number;
+  /** Optional mist tint (defaults to sabre red). Dreamshroud uses green. */
+  color?: string;
 }
 
 export interface KnightDeathVortexState {
@@ -469,4 +510,8 @@ export interface TentacleSpineFxState {
   windSeq: number;
   slamSeq: number;
   dir: { x: number; z: number };
+  /** Server timestamp when windup started (clock-sync attack clip). */
+  windupAt?: number;
+  /** Server timestamp when slam lands (snap attack to 50% if late). */
+  slamAt?: number;
 }

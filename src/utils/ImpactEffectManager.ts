@@ -1,8 +1,10 @@
 import { Vector3 } from '@/utils/three-exports';
+import type { WeaponAspect } from '@/utils/weaponAspects';
+import type { MeleeWeightClass } from '@/components/enemies/EnemyMeleeAttackRangeRing';
 
 export interface ImpactEffectEvent {
   id: string;
-  type: 'bow-shot-impact' | 'entropic-bolt-impact' | 'sabre-impact-effect' | 'crescent-slash-effect' | 'mortal-strike-effect' | 'wraith-strike-effect' | 'psionic-blade-slice' | 'spectre-spin-land-effect';
+  type: 'bow-shot-impact' | 'entropic-bolt-impact' | 'sabre-impact-effect' | 'crescent-slash-effect' | 'mortal-strike-effect' | 'wraith-strike-effect' | 'psionic-blade-slice' | 'melee-contact-gash';
   position: Vector3;
   /** Normalized projectile velocity direction at point of impact. */
   direction: Vector3;
@@ -14,6 +16,10 @@ export interface ImpactEffectEvent {
   /** ECS entity id — effect follows this enemy each frame. */
   enemyEntityId?: string;
   bladeSide?: 'left' | 'right';
+  /** Sabres aspect — Crescent Blades slash palette. */
+  weaponAspect?: WeaponAspect;
+  /** Incoming melee weight class — drives MeleeContactGash silhouette. */
+  weightClass?: MeleeWeightClass;
 }
 
 export type AddImpactOptions = {
@@ -21,6 +27,8 @@ export type AddImpactOptions = {
   isCryoflame?: boolean;
   enemyEntityId?: string;
   bladeSide?: 'left' | 'right';
+  weaponAspect?: WeaponAspect;
+  weightClass?: MeleeWeightClass;
 };
 
 export class ImpactEffectManager {
@@ -43,6 +51,8 @@ export class ImpactEffectManager {
       ...(options?.isCryoflame ? { isCryoflame: options.isCryoflame } : {}),
       ...(options?.enemyEntityId ? { enemyEntityId: options.enemyEntityId } : {}),
       ...(options?.bladeSide ? { bladeSide: options.bladeSide } : {}),
+      ...(options?.weaponAspect ? { weaponAspect: options.weaponAspect } : {}),
+      ...(options?.weightClass ? { weightClass: options.weightClass } : {}),
     });
   }
 

@@ -1,67 +1,40 @@
-import { readdir, stat } from 'node:fs/promises';
+import { stat } from 'node:fs/promises';
 import path from 'node:path';
 import { Logger, NodeIO, Verbosity } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { dedup, prune, resample } from '@gltf-transform/functions';
+import {
+  formatBytes,
+  isBaseScene,
+  listAllModelGlbs,
+  toModelsRelativePath,
+} from './model-asset-config.mjs';
 
 const root = process.cwd();
 const modelsDir = path.join(root, 'public', 'models');
-
-const BASE_SCENE_FILES = new Set([
-  'ally_idle.glb',
-  'boss_idle.glb',
-  'character_idle.glb',
-  'ghoul_idle.glb',
-  'knight_idle.glb',
-  'martyr_idle.glb',
-  'nemesis_idle.glb',
-  'sentinel_idle.glb',
-  'shade_idle.glb',
-  'spectre_idle.glb',
-  'templar_idle.glb',
-  'titan_walk.glb',
-  'valkyrie_idle.glb',
-  'viper_idle.glb',
-  'warlock_idle.glb',
-  'weaver_idle.glb',
-  'wraith_idle.glb',
-  'zombie_idle.glb',
-]);
+const dryRun = process.argv.includes('--dry-run');
 
 const io = new NodeIO()
   .setLogger(new Logger(Verbosity.ERROR))
   .registerExtensions(ALL_EXTENSIONS);
 
-function formatBytes(bytes) {
-  const mb = bytes / 1024 / 1024;
-  return `${mb.toFixed(mb >= 10 ? 1 : 2)} MB`;
-}
-
-async function listGlbs(dir) {
-  const entries = await readdir(dir, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith('.glb'))
-    .map((entry) => path.join(dir, entry.name))
-    .sort();
-}
-
 function stripRenderablePayload(document) {
-  const root = document.getRoot();
+  const rootNode = document.getRoot();
   for (const node of document.getRoot().listNodes()) {
     node.setMesh(null);
     node.setSkin(null);
     node.setCamera(null);
   }
-  for (const mesh of root.listMeshes()) mesh.dispose();
-  for (const skin of root.listSkins()) skin.dispose();
-  for (const material of root.listMaterials()) material.dispose();
-  for (const texture of root.listTextures()) texture.dispose();
-  for (const camera of root.listCameras()) camera.dispose();
+  for (const mesh of rootNode.listMeshes()) mesh.dispose();
+  for (const skin of rootNode.listSkins()) skin.dispose();
+  for (const material of rootNode.listMaterials()) material.dispose();
+  for (const texture of rootNode.listTextures()) texture.dispose();
+  for (const camera of rootNode.listCameras()) camera.dispose();
 }
 
 function collectStats(document) {
-  const root = document.getRoot();
-  const animations = root.listAnimations();
+  const docRoot = document.getRoot();
+  const animations = docRoot.listAnimations();
   const animationChannels = animations.reduce(
     (sum, animation) => sum + animation.listChannels().length,
     0,
@@ -69,22 +42,22 @@ function collectStats(document) {
   return {
     animations: animations.length,
     animationChannels,
-    nodes: root.listNodes().length,
-    meshes: root.listMeshes().length,
-    materials: root.listMaterials().length,
-    textures: root.listTextures().length,
-    accessors: root.listAccessors().length,
+    nodes: docRoot.listNodes().length,
+    meshes: docRoot.listMeshes().length,
+    materials: docRoot.listMaterials().length,
+    textures: docRoot.listTextures().length,
+    accessors: docRoot.listAccessors().length,
   };
 }
 
 async function optimizeFile(filePath) {
-  const filename = path.basename(filePath);
+  const relPath = toModelsRelativePath(modelsDir, filePath);
   const beforeBytes = (await stat(filePath)).size;
   const document = await io.read(filePath);
   const before = collectStats(document);
-  const isBaseScene = BASE_SCENE_FILES.has(filename);
+  const baseScene = isBaseScene(modelsDir, filePath);
 
-  if (!isBaseScene) {
+  if (!baseScene) {
     stripRenderablePayload(document);
   }
 
@@ -98,16 +71,22 @@ async function optimizeFile(filePath) {
     }),
   );
 
-  await io.write(filePath, document);
+  let afterBytes;
+  if (dryRun) {
+    const binary = await io.writeBinary(document);
+    afterBytes = binary.byteLength;
+  } else {
+    await io.write(filePath, document);
+    afterBytes = (await stat(filePath)).size;
+  }
 
-  const afterBytes = (await stat(filePath)).size;
   const after = collectStats(document);
   const savedBytes = beforeBytes - afterBytes;
   const savedPct = beforeBytes > 0 ? (savedBytes / beforeBytes) * 100 : 0;
 
   return {
-    filename,
-    isBaseScene,
+    relPath,
+    isBaseScene: baseScene,
     beforeBytes,
     afterBytes,
     savedBytes,
@@ -117,7 +96,11 @@ async function optimizeFile(filePath) {
   };
 }
 
-const files = await listGlbs(modelsDir);
+if (dryRun) {
+  console.log('Dry run — no files will be written\n');
+}
+
+const files = await listAllModelGlbs(modelsDir);
 const results = [];
 
 for (const filePath of files) {
@@ -127,7 +110,7 @@ for (const filePath of files) {
   const mode = result.isBaseScene ? 'scene' : 'animation';
   console.log(
     [
-      result.filename.padEnd(32),
+      result.relPath.padEnd(42),
       mode.padEnd(9),
       `${formatBytes(result.beforeBytes)} -> ${formatBytes(result.afterBytes)}`.padEnd(25),
       `saved ${formatBytes(result.savedBytes)} (${result.savedPct.toFixed(1)}%)`,
@@ -142,7 +125,34 @@ const beforeTotal = results.reduce((sum, result) => sum + result.beforeBytes, 0)
 const afterTotal = results.reduce((sum, result) => sum + result.afterBytes, 0);
 const savedTotal = beforeTotal - afterTotal;
 
-console.log('\nSummary');
+// Per-folder summary for dry-run / reporting
+const byFolder = new Map();
+for (const result of results) {
+  const folder = result.relPath.includes('/')
+    ? result.relPath.slice(0, result.relPath.indexOf('/'))
+    : '(root)';
+  const entry = byFolder.get(folder) ?? { before: 0, after: 0, files: 0 };
+  entry.before += result.beforeBytes;
+  entry.after += result.afterBytes;
+  entry.files += 1;
+  byFolder.set(folder, entry);
+}
+
+console.log('\nPer-folder');
+for (const [folder, entry] of [...byFolder.entries()].sort((a, b) => b.before - a.before)) {
+  const saved = entry.before - entry.after;
+  const pct = entry.before > 0 ? (saved / entry.before) * 100 : 0;
+  console.log(
+    [
+      folder.padEnd(16),
+      `${entry.files} files`.padEnd(10),
+      `${formatBytes(entry.before)} -> ${formatBytes(entry.after)}`.padEnd(25),
+      `saved ${formatBytes(saved)} (${pct.toFixed(1)}%)`,
+    ].join('  '),
+  );
+}
+
+console.log(dryRun ? '\nSummary (dry run)' : '\nSummary');
 console.log(`Files: ${results.length}`);
 console.log(`Before: ${formatBytes(beforeTotal)}`);
 console.log(`After: ${formatBytes(afterTotal)}`);

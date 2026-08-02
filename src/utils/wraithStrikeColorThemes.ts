@@ -1,4 +1,9 @@
 import type { WraithStrikeTheme } from '@/utils/talents';
+import {
+  ASPECT_DEATHDEALER,
+  ASPECT_ROYAL_GUARD,
+  type WeaponAspect,
+} from '@/utils/weaponAspects';
 
 export type WraithStrikeColorPalette = {
   main: string;
@@ -9,6 +14,16 @@ export type WraithStrikeColorPalette = {
   light: string;
   flash: string;
 };
+
+/** Aspect fallback when no Wraith Strike talent theme is active. */
+export function getAspectDefaultWraithStrikeTheme(
+  aspect: WeaponAspect | null | undefined,
+): WraithStrikeTheme {
+  if (aspect === ASPECT_ROYAL_GUARD || aspect === ASPECT_DEATHDEALER) {
+    return 'guard';
+  }
+  return 'default';
+}
 
 const PALETTES: Record<WraithStrikeTheme, WraithStrikeColorPalette> = {
   default: {

@@ -17,9 +17,9 @@ export function isKnightBlocking(knightId: string, now: number = Date.now()): bo
   return !!until && now < until;
 }
 
-/** Ignite and venom bypass knight block (matches `gameRoom.damageEnemy`). */
+/** Ignite, shadowflame, and venom bypass knight block (matches `gameRoom.damageEnemy`). */
 export function knightBlockBypassesDamageType(damageType?: string): boolean {
-  return damageType === 'ignite' || damageType === 'venom';
+  return damageType === 'ignite' || damageType === 'shadowflame' || damageType === 'venom';
 }
 
 export function clearKnightBlock(knightId: string): void {

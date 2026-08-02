@@ -51,6 +51,7 @@ const ABILITY_DAMAGE_TYPES = new Set([
   'fan_of_knives',
   'mortal_strike',
   'skyfall',
+  'fire_affinity_skyfall',
   'charge',
   'viper_sting',
   'aftershock',
@@ -72,6 +73,9 @@ function getOutgoingDamageNumberClass(damageType?: string, isCritical?: boolean)
   }
   if (damageType === 'ignite') {
     return 'text-orange-500 text-lg font-bold drop-shadow-[0_0_6px_rgba(234,88,12,0.85)]';
+  }
+  if (damageType === 'shadowflame') {
+    return 'text-violet-400 text-lg font-bold drop-shadow-[0_0_6px_rgba(167,139,250,0.85)]';
   }
   if (damageType === 'cobra_shot' || damageType === 'venom' || damageType === 'entanglement') {
     return 'text-green-400 text-lg';
@@ -108,6 +112,9 @@ function getOutgoingDamageNumberClass(damageType?: string, isCritical?: boolean)
   if (damageType === 'player_zombie') {
     return 'text-lime-400 text-lg drop-shadow-[0_0_6px_rgba(163,230,53,0.75)]';
   }
+  if (damageType === 'vengeful_spirit') {
+    return 'text-green-400 text-lg font-bold drop-shadow-[0_0_6px_rgba(74,222,128,0.75)]';
+  }
   if (damageType === 'allied_knight') {
     return 'text-slate-300 text-lg drop-shadow-[0_0_6px_rgba(180,180,190,0.65)]';
   }
@@ -122,6 +129,24 @@ function getOutgoingDamageNumberClass(damageType?: string, isCritical?: boolean)
   }
   if (damageType === 'allied_enchantress' || damageType === 'allied_enchantress_entanglement') {
     return 'text-emerald-300 text-lg drop-shadow-[0_0_6px_rgba(52,211,153,0.75)]';
+  }
+  if (damageType === 'allied_tiger') {
+    return 'text-orange-300 text-lg drop-shadow-[0_0_6px_rgba(253,186,116,0.8)]';
+  }
+  if (damageType === 'allied_wolf') {
+    return 'text-slate-200 text-lg drop-shadow-[0_0_6px_rgba(203,213,225,0.7)]';
+  }
+  if (damageType === 'allied_bear') {
+    return 'text-amber-600 text-lg drop-shadow-[0_0_6px_rgba(180,83,9,0.75)]';
+  }
+  if (damageType === 'allied_serpent') {
+    return 'text-teal-300 text-lg drop-shadow-[0_0_6px_rgba(45,212,191,0.75)]';
+  }
+  if (damageType === 'allied_spider') {
+    return 'text-violet-300 text-lg drop-shadow-[0_0_6px_rgba(196,181,253,0.75)]';
+  }
+  if (damageType === 'hatemail') {
+    return 'text-amber-300 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(252,211,77,0.95)]';
   }
   if (damageType === 'psionic_blades' || damageType === 'locust') {
     return 'text-purple-300 text-lg drop-shadow-[0_0_8px_rgba(168,85,247,0.75)]';
@@ -140,8 +165,14 @@ function getDisplayTextClass(damageType?: string): string {
   if (damageType === 'dodge_blocked') {
     return 'text-emerald-200 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(52,211,153,0.95)] tracking-widest';
   }
+  if (damageType === 'soul_bond_blocked') {
+    return 'text-violet-200 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(167,139,250,0.95)] tracking-widest';
+  }
   if (damageType === 'knight_blocked') {
     return 'text-slate-200 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(203,213,225,0.95)] tracking-widest';
+  }
+  if (damageType === 'attack_missed') {
+    return 'text-slate-300 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(148,163,184,0.95)] tracking-widest';
   }
   return 'text-slate-200 text-lg font-bold';
 }

@@ -13,6 +13,7 @@ import {
   EXPLOSIVE_TALONS_EXPLOSION_RADIUS,
   REAPING_TALONS_RETURN_HEAL_PER_ORB,
 } from '@/utils/talents';
+import { REAPING_TALONS_BASE_DAMAGE } from '@/components/projectiles/useViperSting';
 
 // Define ViperStingProjectile interface for PVP collision detection
 interface ViperStingProjectile {
@@ -593,14 +594,21 @@ export function OptimizedPVPViperStingManager({
 
 
 
-              // Apply damage - Viper Sting damage is 73
-              onPlayerHit(player.id, 73);
+              // Apply damage — Reaping Talons base + Sniper Terminal Velocity (range)
+              const horiz = Math.hypot(
+                player.position.x - projectile.startPosition.x,
+                player.position.z - projectile.startPosition.z,
+              );
+              const cs = (window as any).controlSystemRef?.current;
+              const tvBonus = cs?.getTerminalVelocityBonusAtRange?.(horiz) ?? 0;
+              const hitDamage = REAPING_TALONS_BASE_DAMAGE + tvBonus;
+              onPlayerHit(player.id, hitDamage);
 
               // Create damage number for visual feedback
               if (damageNumberManager && damageNumberManager.addDamageNumber) {
                 const hitPosition = new Vector3(player.position.x, player.position.y + 1.5, player.position.z);
                 damageNumberManager.addDamageNumber(
-                  73, // Viper Sting damage
+                  hitDamage,
                   false, // Not critical
                   hitPosition,
                   'viper_sting' // Damage type for light purple styling
@@ -692,16 +700,20 @@ export function OptimizedPVPViperStingManager({
               if (!projectile.returnHitEnemies.has(player.id)) {
                 projectile.returnHitEnemies.add(player.id);
 
-   
-
-                // Apply damage - Viper Sting damage is 73
-                onPlayerHit(player.id, 73);
+                const horizReturn = Math.hypot(
+                  player.position.x - projectile.startPosition.x,
+                  player.position.z - projectile.startPosition.z,
+                );
+                const csReturn = (window as any).controlSystemRef?.current;
+                const tvReturn = csReturn?.getTerminalVelocityBonusAtRange?.(horizReturn) ?? 0;
+                const returnHitDamage = REAPING_TALONS_BASE_DAMAGE + tvReturn;
+                onPlayerHit(player.id, returnHitDamage);
 
                 // Create damage number for visual feedback
                 if (damageNumberManager && damageNumberManager.addDamageNumber) {
                   const hitPosition = new Vector3(player.position.x, player.position.y + 1.5, player.position.z);
                   damageNumberManager.addDamageNumber(
-                    73, // Viper Sting damage
+                    returnHitDamage,
                     false, // Not critical
                     hitPosition,
                     'viper_sting' // Damage type for light purple styling

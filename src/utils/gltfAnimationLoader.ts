@@ -23,6 +23,19 @@ export function preloadGltfAnimationClips(paths: readonly string[]): void {
   });
 }
 
+/** Preload the skinned idle mesh plus animation-only clips for all other GLBs. */
+export function preloadSkinnedIdleAndAnimationClips(
+  idlePath: string,
+  allPaths: readonly string[] | Record<string, string>,
+  preloadIdle: (path: string) => void,
+): void {
+  preloadIdle(idlePath);
+  const deferredPaths = Array.isArray(allPaths)
+    ? allPaths.filter((path) => path !== idlePath)
+    : Object.values(allPaths);
+  preloadGltfAnimationClips(deferredPaths);
+}
+
 export async function loadAllGltfAnimationClips<K extends string>(
   pathByKey: Record<K, string>,
 ): Promise<Record<K, AnimationClip[]>> {

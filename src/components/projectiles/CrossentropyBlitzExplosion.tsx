@@ -15,12 +15,17 @@ import {
 } from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import type { CrossentropyVisualTheme } from '@/utils/talents';
+import {
+  getCrossentropyBlitzAspectPalette,
+  type CrossentropyBlitzAspectKey,
+} from '@/utils/weaponAspects';
 
 interface CrossentropyBlitzExplosionProps {
   position: Vector3;
   chargeTime?: number;
   explosionStartTime: number | null;
   visualTheme?: CrossentropyVisualTheme;
+  aspectKey?: CrossentropyBlitzAspectKey;
   reaperPurple?: boolean;
   onComplete?: () => void;
 }
@@ -44,7 +49,11 @@ function setMatOpacity(mesh: Mesh | null, opacity: number, brightness = 1) {
   mat.opacity = Math.min(1, opacity * brightness);
 }
 
-function resolvePalette(theme: CrossentropyVisualTheme, reaper: boolean) {
+function resolvePalette(
+  theme: CrossentropyVisualTheme,
+  reaper: boolean,
+  aspectKey: CrossentropyBlitzAspectKey,
+) {
   if (reaper) {
     return {
       c1: '#6B2FA0',
@@ -82,9 +91,17 @@ function resolvePalette(theme: CrossentropyVisualTheme, reaper: boolean) {
       ringC: '#43A047', ringE: '#81C784', sparkMain: '#69F0AE', sparkMainE: '#C8E6C9', pl1: '#43A047',
     };
   }
+  const palette = getCrossentropyBlitzAspectPalette(aspectKey);
   return {
-    c1: '#FF4500', c1e: '#FF6600', c2: '#FF6600', c2e: '#FFA500',
-    ringC: '#FF4500', ringE: '#FF8833', sparkMain: '#FFCC66', sparkMainE: '#FFD700', pl1: '#FF5500',
+    c1: palette.c1,
+    c1e: palette.c1e,
+    c2: palette.c2,
+    c2e: palette.c2e,
+    ringC: palette.ringC,
+    ringE: palette.ringE,
+    sparkMain: palette.sparkMain,
+    sparkMainE: palette.sparkMainE,
+    pl1: palette.pl1,
   };
 }
 
@@ -93,6 +110,7 @@ export default function CrossentropyBlitzExplosion({
   chargeTime = 0.25,
   explosionStartTime: _explosionStartTime,
   visualTheme = 'default',
+  aspectKey = 'archmage',
   reaperPurple = false,
   onComplete,
 }: CrossentropyBlitzExplosionProps) {
@@ -114,8 +132,8 @@ export default function CrossentropyBlitzExplosion({
   const radius = BASE_RADIUS * (0.9 + Math.min(chargeTime / 4, 1) * 0.15);
 
   const { c1, c1e, c2, c2e, ringC, ringE, sparkMain, sparkMainE, pl1 } = useMemo(
-    () => resolvePalette(visualTheme, reaperPurple),
-    [visualTheme, reaperPurple],
+    () => resolvePalette(visualTheme, reaperPurple, aspectKey),
+    [visualTheme, reaperPurple, aspectKey],
   );
 
   const geometries = useMemo(() => {

@@ -14,16 +14,38 @@ import GreedRenderer from '@/components/enemies/GreedRenderer';
 import MartyrRenderer from '@/components/enemies/MartyrRenderer';
 import WraithRenderer from '@/components/enemies/WraithRenderer';
 import SpectreRenderer from '@/components/enemies/SpectreRenderer';
+import DeathKnightRenderer from '@/components/enemies/DeathKnightRenderer';
+import ShamanRenderer from '@/components/enemies/ShamanRenderer';
+import AssassinRenderer from '@/components/enemies/AssassinRenderer';
+import SerpentRenderer from '@/components/enemies/SerpentRenderer';
+import FrostQueenRenderer from '@/components/enemies/FrostQueenRenderer';
+import MedusaRenderer from '@/components/enemies/MedusaRenderer';
+import WyvernRenderer from '@/components/enemies/WyvernRenderer';
+import TerrorhawkRenderer from '@/components/enemies/TerrorhawkRenderer';
+import EnemyTigerRenderer from '@/components/enemies/EnemyTigerRenderer';
+import WolfRenderer from '@/components/enemies/WolfRenderer';
+import BearRenderer from '@/components/enemies/BearRenderer';
+import SkyRayRenderer from '@/components/enemies/SkyRayRenderer';
+import BoneSpiderRenderer from '@/components/enemies/BoneSpiderRenderer';
 import SentinelRenderer from '@/components/enemies/SentinelRenderer';
 import NemesisRenderer from '@/components/enemies/NemesisRenderer';
+import StoneGiantRenderer from '@/components/enemies/StoneGiantRenderer';
+import EternalOakRenderer from '@/components/enemies/EternalOakRenderer';
+import ColossusRenderer from '@/components/enemies/ColossusRenderer';
 import ValkyrieRenderer from '@/components/enemies/ValkyrieRenderer';
 import ZombieRenderer from '@/components/enemies/ZombieRenderer';
+import VengefulSpiritRenderer from '@/components/enemies/VengefulSpiritRenderer';
 import AlliedKnightRenderer from '@/components/enemies/AlliedKnightRenderer';
 import AlliedHealerRenderer from '@/components/enemies/AlliedHealerRenderer';
 import AlliedHuntressRenderer from '@/components/enemies/AlliedHuntressRenderer';
 import AlliedPhantomRenderer from '@/components/enemies/AlliedPhantomRenderer';
 import AlliedDemonRenderer from '@/components/enemies/AlliedDemonRenderer';
 import AlliedEnchantressRenderer from '@/components/enemies/AlliedEnchantressRenderer';
+import AlliedTigerRenderer from '@/components/enemies/AlliedTigerRenderer';
+import AlliedWolfRenderer from '@/components/enemies/AlliedWolfRenderer';
+import AlliedBearRenderer from '@/components/enemies/AlliedBearRenderer';
+import AlliedSerpentRenderer from '@/components/enemies/AlliedSerpentRenderer';
+import AlliedSpiderRenderer from '@/components/enemies/AlliedSpiderRenderer';
 import SummonedBossSkeleton from '@/components/enemies/SummonedBossSkeleton';
 
 type CoopEnemyRenderLayerProps = {
@@ -259,6 +281,101 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
         );
       })}
 
+      {(enemiesByType.get('allied-tiger') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <AlliedTigerRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+              tigerLocomotion={enemy.tigerLocomotion === 'run' ? 'run' : 'walk'}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('allied-wolf') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <AlliedWolfRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+              visualScale={enemy.visualScale ?? 1}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('allied-bear') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <AlliedBearRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+              visualScale={enemy.visualScale ?? 1}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('allied-serpent') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <AlliedSerpentRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+              visualScale={enemy.visualScale ?? 0.5}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('allied-spider') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <AlliedSpiderRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+              visualScale={enemy.visualScale ?? 0.33}
+            />
+          </React.Suspense>
+        );
+      })}
+
       {(enemiesByType.get('allied-enchantress') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
         if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
@@ -431,6 +548,260 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
         );
       })}
 
+      {(enemiesByType.get('death-knight') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <DeathKnightRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('shaman') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <ShamanRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('assassin') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <AssassinRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('serpent') ?? []).concat(enemiesByType.get('boss-serpent') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <SerpentRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+              visualScale={enemy.visualScale ?? 1}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('frost-queen') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <FrostQueenRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('medusa') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <MedusaRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('wyvern') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <WyvernRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('terrorhawk') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <TerrorhawkRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+              terrorhawkPhase={enemy.terrorhawkPhase}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('tiger') ?? []).concat(enemiesByType.get('boss-tiger') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <EnemyTigerRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              soulType={enemy.soulType as 'yellow' | 'green' | 'red' | 'blue' | 'purple' | 'orange' | undefined}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+              tigerLocomotion={enemy.tigerLocomotion === 'run' ? 'run' : 'walk'}
+              visualScale={enemy.visualScale ?? 1}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('wolf') ?? []).concat(enemiesByType.get('boss-wolf') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <WolfRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+              visualScale={enemy.visualScale ?? 1}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('bear') ?? []).concat(enemiesByType.get('boss-bear') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <BearRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+              visualScale={enemy.visualScale ?? 1}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('skyray') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <SkyRayRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('bone-spider') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <BoneSpiderRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
       {(enemiesByType.get('sentinel') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
         if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
@@ -456,6 +827,63 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <NemesisRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('stone-giant') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <StoneGiantRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('eternal-oak') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <EternalOakRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('colossus') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <ColossusRenderer
               id={enemy.id}
               position={enemy.position}
               rotation={enemy.rotation || 0}
@@ -556,6 +984,21 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
             isDying={enemy.isDying}
             staggerBuildup={enemy.staggerBuildup ?? 0}
             visualScale={enemy.zombieVariant === 'juggernaut' ? 1.45 : 1}
+          />
+        );
+      })}
+
+      {(enemiesByType.get('vengeful-spirit') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <VengefulSpiritRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={enemy.position}
+            rotation={enemy.rotation || 0}
+            isDying={enemy.isDying}
+            visualScale={enemy.visualScale ?? 1}
           />
         );
       })}

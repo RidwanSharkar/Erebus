@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useEffect, useMemo } from 'react';
-import { useLoader } from '@react-three/fiber';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { useFrame, useLoader } from '@react-three/fiber';
+import type { Group } from 'three';
 import {
   CircleGeometry,
   MeshLambertMaterial,
@@ -15,13 +16,17 @@ interface ThroneOuterFloorProps {
   radius: number;
   texturePath?: string;
   position?: [number, number, number];
+  /** Radians per second around Y. Omit for a static floor. */
+  rotateSpeed?: number;
 }
 
 function ThroneOuterFloor({
   radius,
   texturePath = DEFAULT_OUTER_TEXTURE_PATH,
   position = DEFAULT_POSITION,
+  rotateSpeed,
 }: ThroneOuterFloorProps) {
+  const groupRef = useRef<Group>(null);
   const texture = useLoader(TextureLoader, texturePath);
 
   const geometry = useMemo(
@@ -47,15 +52,21 @@ function ThroneOuterFloor({
     [geometry, material],
   );
 
+  useFrame((_, delta) => {
+    if (rotateSpeed == null || !groupRef.current) return;
+    groupRef.current.rotation.y += rotateSpeed * delta;
+  });
+
   return (
-    <mesh
-      name="throne-outer-floor"
-      rotation={[-Math.PI / 2, 0, 0]}
-      position={position}
-      geometry={geometry}
-      material={material}
-      receiveShadow
-    />
+    <group ref={groupRef} position={position}>
+      <mesh
+        name="throne-outer-floor"
+        rotation={[-Math.PI / 2, 0, 0]}
+        geometry={geometry}
+        material={material}
+        receiveShadow
+      />
+    </group>
   );
 }
 

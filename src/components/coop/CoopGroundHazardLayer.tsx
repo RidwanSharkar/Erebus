@@ -101,6 +101,7 @@ const CoopGroundHazardLayer = memo(forwardRef<CoopGroundHazardLayerHandle, objec
             key={effect.id}
             position={effect.position}
             duration={1000}
+            color={effect.color}
             onComplete={() => {
               // Effect cleanup is handled by the setTimeout in the callback
             }}

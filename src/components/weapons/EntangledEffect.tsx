@@ -9,6 +9,8 @@ interface EntangledEffectProps {
   enemyId?: string;
   followTargetId?: string;
   onComplete?: () => void;
+  /** 'default' = green vines; 'spider' = grey/white web. */
+  theme?: 'default' | 'spider';
   enemyData?: Array<{
     id: string;
     position: Vector3;
@@ -23,6 +25,27 @@ interface EntangledEffectProps {
   }>;
 }
 
+const THEME_COLORS = {
+  default: {
+    ground: '#2f7a26',
+    groundEmissive: '#33ff55',
+    vine: '#225c1d',
+    vineEmissive: '#1aff55',
+    orb: '#4bbf39',
+    orbEmissive: '#66ff66',
+    ring: '#33ff55',
+  },
+  spider: {
+    ground: '#9ca3af',
+    groundEmissive: '#e5e7eb',
+    vine: '#6b7280',
+    vineEmissive: '#f3f4f6',
+    orb: '#d1d5db',
+    orbEmissive: '#ffffff',
+    ring: '#e5e7eb',
+  },
+} as const;
+
 export default function EntangledEffect({
   position,
   duration = 5000,
@@ -32,7 +55,9 @@ export default function EntangledEffect({
   enemyData = [],
   followTargetData = [],
   onComplete,
+  theme = 'default',
 }: EntangledEffectProps) {
+  const colors = THEME_COLORS[theme] ?? THEME_COLORS.default;
   const rootRef = useRef<Group>(null);
   const groundMatRef = useRef<MeshStandardMaterial>(null);
   const groundMeshRef = useRef<Mesh>(null);
@@ -149,8 +174,8 @@ export default function EntangledEffect({
         <torusGeometry args={[0.68, 0.035, 8, 32]} />
         <meshStandardMaterial
           ref={groundMatRef}
-          color="#2f7a26"
-          emissive="#33ff55"
+          color={colors.ground}
+          emissive={colors.groundEmissive}
           emissiveIntensity={0.8}
           transparent
           opacity={0.55}
@@ -169,8 +194,8 @@ export default function EntangledEffect({
             <cylinderGeometry args={[0.035, 0.055, vine.height, 7]} />
             <meshStandardMaterial
               ref={(el) => { vineMatRefs.current[i] = el; }}
-              color="#225c1d"
-              emissive="#1aff55"
+              color={colors.vine}
+              emissive={colors.vineEmissive}
               emissiveIntensity={0.45}
               transparent
               opacity={0.78}
@@ -181,8 +206,8 @@ export default function EntangledEffect({
             <sphereGeometry args={[0.055, 8, 8]} />
             <meshStandardMaterial
               ref={(el) => { vineOrbMatRefs.current[i] = el; }}
-              color="#4bbf39"
-              emissive="#66ff66"
+              color={colors.orb}
+              emissive={colors.orbEmissive}
               emissiveIntensity={0.55}
               transparent
               opacity={0.65}
@@ -201,8 +226,8 @@ export default function EntangledEffect({
           <torusGeometry args={[1, 0.025, 8, 28]} />
           <meshStandardMaterial
             ref={(el) => { ringMatRefs.current[i] = el; }}
-            color="#3da435"
-            emissive="#55ff66"
+            color={colors.ring}
+            emissive={colors.ring}
             emissiveIntensity={0.65}
             transparent
             opacity={0.38 - i * 0.06}

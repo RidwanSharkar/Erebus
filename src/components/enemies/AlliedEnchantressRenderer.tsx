@@ -32,7 +32,7 @@ function AlliedEnchantressRenderer({
       maxHealth={maxHealth}
       isDying={isDying}
       staggerBuildup={staggerBuildup}
-      soulType="green"
+      soulType="yellow"
       campType="ally-green"
     />
   );

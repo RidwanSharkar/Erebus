@@ -32,11 +32,14 @@ function applyCenterSquareCrop(texture: Texture) {
 interface ThroneCenterSealProps {
   texturePath?: string;
   position?: [number, number, number];
+  /** Override world-space radius (defaults to throne prep seal size). */
+  radius?: number;
 }
 
 function ThroneCenterSeal({
   texturePath = DEFAULT_CENTER_TEXTURE_PATH,
   position = DEFAULT_POSITION,
+  radius = THRONE_CENTER_SEAL_RADIUS,
 }: ThroneCenterSealProps) {
   const texture = useLoader(TextureLoader, texturePath);
 
@@ -45,8 +48,8 @@ function ThroneCenterSeal({
   }, [texture]);
 
   const geometry = useMemo(
-    () => new CircleGeometry(THRONE_CENTER_SEAL_RADIUS, 64),
-    [],
+    () => new CircleGeometry(radius, 64),
+    [radius],
   );
 
   const material = useMemo(

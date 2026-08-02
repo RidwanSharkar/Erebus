@@ -13,18 +13,32 @@ import { getRuneCountForWeapon } from '@/utils/runeCount';
 import type { ItemRarity } from '@/utils/itemRarity';
 import { ITEM_RARITY_RANK, isItemRarity } from '@/utils/itemRarity';
 import { isUniqueDreamLayerItem, PERSEPHONE } from '@/utils/dreamLayerItems';
+import {
+  isUpgradeableBossRelic,
+  resolveBossRelicPickup,
+} from '@/utils/bossRelicItems';
 import { Vector3 } from '@/utils/three-exports';
 import { applyEnemyMoveBatch, type EnemyLiveTransform } from '@/utils/enemyLiveTransform';
 import { applyPlayerMove, type PlayerLiveTransform } from '@/utils/playerLiveTransform';
 import { parseCoopAllyKind, parseCoopAllyOffer, type CoopAllyKind } from '@/utils/coopAllyTargeting';
+import { parseFaeBeastCompanionKind, type FaeBeastCompanionKind } from '@/utils/faeBeastCompanion';
 
 import { patchEnemyRef, patchPlayerRef } from '@/utils/multiplayerRefPatch';
 import { buildMushroomInstances, getMushroomColliderCenter } from '@/utils/mushroomLayout';
 import { clearKnightBlock } from '@/utils/knightBlockState';
 import { installWebGlDiagnostics, recordMultiplayerDisconnect } from '@/utils/webglDiagnostics';
 import { type Archetype, ARCHETYPE_NONE, ARCHETYPE_ROGUE, normalizeArchetype } from '@/utils/archetypes';
+import {
+  type WeaponAspect,
+  type WeaponAspectByWeapon,
+  ASPECT_LEGIONNAIRE,
+  defaultWeaponAspect,
+  normalizeWeaponAspect,
+} from '@/utils/weaponAspects';
+import { cancelKnightStyleMiss, playKnightStyleHit } from '@/utils/knightStyleMeleeSound';
+import { playVengefulSpiritHitSound } from '@/utils/beastAudioSounds';
 
-export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'merchant' | 'boss' | 'intro' | 'deep_sanctum' | 'sunken_temple' | 'eden' | 'false_eden' | 'delirium_gate' | 'erebus_gate' | 'dream_layer';
+export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'merchant' | 'boss' | 'intro' | 'deep_sanctum' | 'sunken_temple' | 'eternity_palace' | 'eden' | 'false_eden' | 'delirium_gate' | 'erebus_gate' | 'dream_layer' | 'fae_realm';
 export type DeliriumStructureState = {
   hp: number;
   maxHp: number;
@@ -72,6 +86,8 @@ export interface Player {
   rotation: { x: number; y: number; z: number };
   weapon: WeaponType;
   subclass?: WeaponSubclass;
+  /** Co-op weapon aspect — throne visual/gameplay variant. */
+  weaponAspect?: WeaponAspect;
   /** Co-op archetype — determines Shift behavior (`NONE` until throne selection). */
   archetype?: Archetype;
   health: number;
@@ -96,6 +112,8 @@ export interface Player {
   venomedUntil?: number;
   // Character stat system
   stats?: PlayerStats;
+  /** Eternity Palace III Fae pet companion upgrade id. */
+  coopPetCompanionUpgrade?: string | null;
 }
 
 /** Optional metadata for co-op `enemy-damage` (Wraith Strike + Infested Strike spawn rules). */
@@ -160,12 +178,18 @@ export interface EnemyDamageMeta {
   glacialTalons?: boolean;
   /** Entanglement — Barrage hit roots and squeezes target on server. */
   entanglementBarrage?: boolean;
+  /** Druid Rejuvenating Shot — enemy hit applies Entanglement on server. */
+  rejuvenatingShotEntangle?: boolean;
   /** Tempest Rounds burst — Arctic Sting chill on hit. */
   tempestBurstArcticChill?: boolean;
   /** Tempest Rounds burst — Wyvern Sting zombie on kill. */
   tempestBurstWyvernZombie?: boolean;
   /** Explosive Talons end-of-range detonation (server validates AoE). */
   explosiveTalonsDetonation?: boolean;
+  /** Royal Guard Tempest Sweep — charged R Ignite (80% over 4s). */
+  tempestSweepIgnite?: boolean;
+  /** Archmage aspect — every 3rd Entropic Bolt Ignite (200% over 4s). */
+  archmageEntropicIgnite?: boolean;
 }
 
 /** Server enemy; `type` includes e.g. `knight`, `training-dummy` (throne prep). */
@@ -194,11 +218,28 @@ export interface Enemy {
   alliedGreaterHealCooldownUntil?: number;
   /** Allied knight Abyssal Initiate boon — use fast walk animation when true. */
   abyssalBoonApplied?: boolean;
+  /** Beastmaster / fae beast companion locomotion (server-authoritative). */
+  tigerLocomotion?: 'walk' | 'run';
+  /** Terrorhawk combat phase (server-authoritative fly/dive/melee loop). */
+  terrorhawkPhase?: 'takeoff' | 'hover' | 'approach' | 'dive' | 'land' | 'ground_melee';
+  /** Destiny dragon combat phase (server-authoritative ground/fly loop). */
+  destinyPhase?: 'ground' | 'takeoff' | 'fly_idle' | 'fly_approach' | 'fly_attack' | 'fly_return' | 'land';
+  /** Fae beast walk-in phase (`entering` until meet, then `active`). */
+  beastCompanionPhase?: 'entering' | 'active';
+  beastCompanionKind?: FaeBeastCompanionKind;
+  companionSlot?: 'beastmaster' | 'fae' | 'fae_pack';
+  /** Wolf pack howl intro window (server-authoritative ms timestamps). */
+  howlStartsAt?: number;
+  howlEndsAt?: number;
   expireAt?: number;
   /** Juggernaut Strain coop room boon — larger client model when `juggernaut`. */
   zombieVariant?: 'standard' | 'juggernaut';
   /** Staggering Strike buildup (0–100), server-authoritative. */
   staggerBuildup?: number;
+  /** Concentrated Venom stacks (server-authoritative; drives VenomEffect VFX). */
+  concentratedVenomStacks?: number;
+  /** Concentrated Venom expiry (ms since epoch). */
+  concentratedVenomExpireAt?: number;
   /** Client-side stun window expiry (ms since epoch) from `enemy-status-effect`. */
   stunnedUntilMs?: number;
   /** Client-side slow window expiry (ms since epoch) from `enemy-status-effect`. */
@@ -210,6 +251,8 @@ export interface Enemy {
   /** Titan Bladestorm — active at ≤40% HP until death. */
   bladestormActive?: boolean;
   bladestormStartTime?: number;
+  /** Alternate Boss1 encounter: elite knight (Death Grasp pull-immune). */
+  isBoss1EliteKnight?: boolean;
 }
 
 export interface ConfirmedEnemyDamageEvent {
@@ -242,6 +285,8 @@ export interface DroppedItem {
   rarity?: ItemRarity;
   /** Warding pendant: enemy type banned for the rest of the run */
   bannedEnemyType?: string;
+  /** Optional icon path for ward/pendant variants */
+  iconPath?: string;
 }
 
 export interface InventoryItem {
@@ -254,6 +299,8 @@ export interface InventoryItem {
   statBonus?: number;
   rarity?: ItemRarity;
   bannedEnemyType?: string;
+  /** Optional icon path for ward/pendant variants */
+  iconPath?: string;
 }
 
 export interface DreamLayerStockItem {
@@ -280,6 +327,8 @@ export interface MerchantStockItem {
   sold?: boolean;
   label?: string;
   description?: string;
+  /** When set, this boss_drop occupies a sold-out dash/talent pedestal. */
+  backfillSlot?: 'dash_charge' | 'weapon_talent';
   item?: Omit<DroppedItem, 'position' | 'droppedAt'> & Partial<Pick<DroppedItem, 'position' | 'droppedAt'>>;
 }
 
@@ -291,6 +340,8 @@ export interface MerchantPurchaseState {
   healPurchasedThisVisit: boolean;
   weaponTalentPurchasedThisVisit: boolean;
   utilityPurchasedThisVisit: boolean;
+  backfillDashPurchasedThisVisit: boolean;
+  backfillTalentPurchasedThisVisit: boolean;
 }
 
 export type MerchantPurchaseSuccessKind =
@@ -319,7 +370,7 @@ export interface DeepSanctumRewardClaimedPayload {
   timestamp?: number;
 }
 
-export type BossSlainLabel = 'hate' | 'knights' | 'envy' | 'fear' | 'trinity';
+export type BossSlainLabel = 'hate' | 'knights' | 'envy' | 'fear' | 'destiny' | 'trinity';
 
 export interface BossDefeatedPayload {
   bossId?: string;
@@ -446,6 +497,8 @@ interface MultiplayerContextType {
     | 'pick_boss'
     | 'pick_post_boss'
     | 'pick_sunken_entry'
+    | 'pick_eternity_entry'
+    | 'pick_eternity_late_entry'
     | 'eden_exit'
     | null;
   /** Co-op: act terrain theme, independent from the selected room color/reward kind. */
@@ -467,7 +520,7 @@ interface MultiplayerContextType {
    * Co-op: which boss the throne fight is (boss tier 1, Archon tier 2, or Weaver Nexus tier 3).
    * From `room-joined`, `combat-arena-entered`, `coop-main-arena-intermission`, `game-started`.
    */
-  coopThroneBossKind: 'boss' | 'boss2' | 'boss3' | 'boss_all' | null;
+  coopThroneBossKind: 'boss' | 'boss2' | 'boss3' | 'destiny' | 'boss_all' | null;
   /**
    * Full-screen loading overlay for portal transitions (throne → arena, wave picks, boss).
    * Set true on `combat-arena-entered`; clear via `endCoopPortalTransition` after the scene settles.
@@ -483,6 +536,10 @@ interface MultiplayerContextType {
   coopIntroIntermissionSeq: number;
   /** Increments on each `coop-sunken-intermission` (sunken temple room clear). */
   coopSunkenIntermissionSeq: number;
+  /** Increments on each `coop-eternity-intermission` (eternity palace room clear). */
+  coopEternityIntermissionSeq: number;
+  /** Increments on each `coop-fae-realm-intermission` (fae realm room clear). */
+  coopFaeRealmIntermissionSeq: number;
   /** Co-op intro: one-time 4-room sequence before the normal loop. */
   coopIntroPending: boolean;
   coopIntroActive: boolean;
@@ -491,6 +548,14 @@ interface MultiplayerContextType {
   coopIntroFountainPhase: boolean;
   coopIntroFountainUsed: boolean;
   coopIntroAllyChoiceMade: boolean;
+  /** Co-op Fae Realm: 3-room hex sequence between throne and Inner Sanctum. */
+  coopFaeRealmPending: boolean;
+  coopFaeRealmActive: boolean;
+  coopFaeRealmRoomIndex: number;
+  coopFaeRealmPortalOpen: boolean;
+  coopFaeRealmBossKind: FaeBeastCompanionKind | null;
+  coopFaeBeastCompanionGranted: boolean;
+  coopFaeBeastCompanionKind: FaeBeastCompanionKind | null;
   /** Co-op sunken temple: one-time 4-room sequence after Boss 1. */
   coopSunkenActive: boolean;
   coopSunkenRoomIndex: number;
@@ -502,6 +567,18 @@ interface MultiplayerContextType {
   coopSunkenLootClaimedPlayerIds: string[];
   coopSunkenLootPhaseComplete: boolean;
   coopSunkenCompleted: boolean;
+  /** Co-op eternity palace: one-time 3-room sequence after Boss 2. */
+  coopEternityActive: boolean;
+  coopEternityRoomIndex: number;
+  coopEternityPortalOpen: boolean;
+  coopEternityFountainPhase: boolean;
+  coopEternityFountainUsed: boolean;
+  coopEternityLootOffer: DreamLayerStockItem[];
+  coopEternityLootClaimedPlayerIds: string[];
+  coopEternityLootPhaseComplete: boolean;
+  /** Local player's chosen Eternity III pet companion upgrade id. */
+  coopPetCompanionUpgrade: string | null;
+  coopEternityCompleted: boolean;
   /** Chosen co-op ally for the rest of the run after intro room IV. */
   coopAllyKind: CoopAllyKind;
   /** Three random ally kinds offered at intro room IV (server-authoritative). */
@@ -572,6 +649,12 @@ interface MultiplayerContextType {
   /** Co-op throne-room archetype selection (local player). */
   selectedArchetype: Archetype;
 
+  /** Co-op throne-room weapon aspect selection (local player). */
+  selectedWeaponAspect: WeaponAspect;
+
+  /** Per-weapon last-chosen aspects for throne pedestal visuals. */
+  weaponAspectByWeapon: WeaponAspectByWeapon;
+
   // Skill point system state
   skillPointData: SkillPointData;
 
@@ -598,6 +681,8 @@ interface MultiplayerContextType {
   useCoopFountain: () => void;
   chooseCoopAlly: (allyKind: CoopAllyKind) => void;
   chooseSunkenTempleLoot: (stockId: string) => void;
+  chooseEternityPalaceLoot: (stockId: string) => void;
+  chooseEternityPetUpgrade: (upgradeId: string) => void;
   claimPreBossReward: () => void;
   claimDeepSanctumReward: () => void;
   finishPreBossMerchant: () => void;
@@ -606,6 +691,7 @@ interface MultiplayerContextType {
   updatePlayerPosition: (position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number }, movementDirection?: PlayerMovementDirection) => void;
   updatePlayerWeapon: (weapon: WeaponType, subclass?: WeaponSubclass) => void;
   updatePlayerArchetype: (archetype: Archetype) => void;
+  updatePlayerWeaponAspect: (aspect: WeaponAspect) => void;
   updatePlayerHealth: (health: number, maxHealth?: number) => void;
   broadcastPlayerAttack: (
     attackType: string,
@@ -632,6 +718,8 @@ interface MultiplayerContextType {
   detonateWyvernConcentratedVenom: (enemyId: string, cobraRemainingDamage?: number) => void;
   /** Co-op: Tyrant's Cloak counter-strike — server triggers stagger lightning bolt on attacker. */
   triggerTyrantsCloakStrike: (enemyId: string) => void;
+  /** Co-op: Deathdealer third-hit proc — server triggers stagger lightning bolt on target. */
+  triggerDeathdealerStaggerProc: (enemyId: string) => void;
   applyStatusEffect: (
     enemyId: string,
     effectType: string,
@@ -662,6 +750,9 @@ interface MultiplayerContextType {
   // Weapon selection actions
   setSelectedWeapons: (weapons: { primary: WeaponType; secondary: WeaponType }) => void;
   setSelectedArchetype: (archetype: Archetype) => void;
+  setSelectedWeaponAspect: (aspect: WeaponAspect) => void;
+  /** Remember aspect for a weapon (pedestal memory) and set it as the active aspect. */
+  rememberWeaponAspect: (weapon: WeaponType, aspect: WeaponAspect) => void;
 
   // Ability loadout
   abilityLoadout: AbilityLoadout | null;
@@ -752,12 +843,15 @@ export type MultiplayerActionsContextType = Pick<
   | 'useCoopFountain'
   | 'chooseCoopAlly'
   | 'chooseSunkenTempleLoot'
+  | 'chooseEternityPalaceLoot'
+  | 'chooseEternityPetUpgrade'
   | 'claimPreBossReward'
   | 'claimDeepSanctumReward'
   | 'finishPreBossMerchant'
   | 'updatePlayerPosition'
   | 'updatePlayerWeapon'
   | 'updatePlayerArchetype'
+  | 'updatePlayerWeaponAspect'
   | 'updatePlayerHealth'
   | 'broadcastPlayerAttack'
   | 'broadcastPlayerAbility'
@@ -775,6 +869,7 @@ export type MultiplayerActionsContextType = Pick<
   | 'subscribeEnemyDamage'
   | 'detonateWyvernConcentratedVenom'
   | 'triggerTyrantsCloakStrike'
+  | 'triggerDeathdealerStaggerProc'
   | 'applyStatusEffect'
   | 'damageMushroom'
   | 'updatePlayerExperience'
@@ -787,6 +882,8 @@ export type MultiplayerActionsContextType = Pick<
   | 'updatePlayerEnergy'
   | 'setSelectedWeapons'
   | 'setSelectedArchetype'
+  | 'setSelectedWeaponAspect'
+  | 'rememberWeaponAspect'
   | 'setAbilityLoadout'
   | 'setTalentLoadout'
   | 'unlockAbility'
@@ -866,7 +963,7 @@ interface MultiplayerProviderProps {
 }
 
 const VALID_CAMP_KEYS = new Set(['red', 'blue', 'green', 'purple']);
-const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'trial', 'merchant', 'boss', 'intro', 'deep_sanctum', 'sunken_temple', 'eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer']);
+const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'trial', 'merchant', 'boss', 'intro', 'deep_sanctum', 'sunken_temple', 'eternity_palace', 'eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer', 'fae_realm']);
 const VALID_COOP_TERRAIN_THEMES = new Set(['purple', 'blue', 'green']);
 
 function normalizeThronePortalLayout(v: unknown): 'rim' | 'center' {
@@ -881,6 +978,8 @@ function normalizeCoopMainArenaPhase(v: unknown):
   | 'pick_boss'
   | 'pick_post_boss'
   | 'pick_sunken_entry'
+  | 'pick_eternity_entry'
+  | 'pick_eternity_late_entry'
   | 'eden_exit'
   | null {
   if (
@@ -891,6 +990,8 @@ function normalizeCoopMainArenaPhase(v: unknown):
     || v === 'pick_boss'
     || v === 'pick_post_boss'
     || v === 'pick_sunken_entry'
+    || v === 'pick_eternity_entry'
+    || v === 'pick_eternity_late_entry'
     || v === 'eden_exit'
   ) {
     return v;
@@ -981,6 +1082,8 @@ function normalizeMerchantPurchaseState(v: unknown): MerchantPurchaseState {
       healPurchasedThisVisit: false,
       weaponTalentPurchasedThisVisit: false,
       utilityPurchasedThisVisit: false,
+      backfillDashPurchasedThisVisit: false,
+      backfillTalentPurchasedThisVisit: false,
     };
   }
   const s = v as MerchantPurchaseState;
@@ -992,6 +1095,8 @@ function normalizeMerchantPurchaseState(v: unknown): MerchantPurchaseState {
     healPurchasedThisVisit: !!s.healPurchasedThisVisit,
     weaponTalentPurchasedThisVisit: !!s.weaponTalentPurchasedThisVisit,
     utilityPurchasedThisVisit: !!s.utilityPurchasedThisVisit,
+    backfillDashPurchasedThisVisit: !!s.backfillDashPurchasedThisVisit,
+    backfillTalentPurchasedThisVisit: !!s.backfillTalentPurchasedThisVisit,
   };
 }
 
@@ -1015,9 +1120,10 @@ function normalizeCoopBossThroneArena(v: unknown): boolean {
   return v === true;
 }
 
-function normalizeCoopThroneBossKind(v: unknown): 'boss' | 'boss2' | 'boss3' | 'boss_all' | null {
+function normalizeCoopThroneBossKind(v: unknown): 'boss' | 'boss2' | 'boss3' | 'destiny' | 'boss_all' | null {
   const k = String(v || '').toLowerCase();
   if (k === 'boss_all') return 'boss_all';
+  if (k === 'destiny') return 'destiny';
   if (k === 'boss3') return 'boss3';
   if (k === 'boss2') return 'boss2';
   if (k === 'boss') return 'boss';
@@ -1076,6 +1182,13 @@ type CoopSessionSnapshotPayload = {
   coopIntroFountainPhase?: boolean;
   coopIntroFountainUsed?: boolean;
   coopIntroAllyChoiceMade?: boolean;
+  coopFaeRealmPending?: boolean;
+  coopFaeRealmActive?: boolean;
+  coopFaeRealmRoomIndex?: number;
+  coopFaeRealmPortalOpen?: boolean;
+  coopFaeRealmBossKind?: string | null;
+  coopFaeBeastCompanionGranted?: boolean;
+  coopFaeBeastCompanionKind?: string | null;
   coopSunkenActive?: boolean;
   coopSunkenRoomIndex?: number;
   coopSunkenPortalOpen?: boolean;
@@ -1086,6 +1199,15 @@ type CoopSessionSnapshotPayload = {
   coopSunkenLootClaimedPlayerIds?: string[];
   coopSunkenLootPhaseComplete?: boolean;
   coopSunkenCompleted?: boolean;
+  coopEternityActive?: boolean;
+  coopEternityRoomIndex?: number;
+  coopEternityPortalOpen?: boolean;
+  coopEternityFountainPhase?: boolean;
+  coopEternityFountainUsed?: boolean;
+  coopEternityLootOffer?: DreamLayerStockItem[];
+  coopEternityLootClaimedPlayerIds?: string[];
+  coopEternityLootPhaseComplete?: boolean;
+  coopEternityCompleted?: boolean;
   coopAllyKind?: string;
   coopAllyOffer?: string[];
   coopVoidPortalOffered?: boolean;
@@ -1120,13 +1242,15 @@ type CoopSnapshotSetters = {
       | 'pick_boss'
       | 'pick_post_boss'
       | 'pick_sunken_entry'
+      | 'pick_eternity_entry'
+      | 'pick_eternity_late_entry'
       | 'eden_exit'
       | null
     >
   >;
   setCoopBossThroneArena: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopThroneBossKind: React.Dispatch<
-    React.SetStateAction<'boss' | 'boss2' | 'boss3' | 'boss_all' | null>
+    React.SetStateAction<'boss' | 'boss2' | 'boss3' | 'destiny' | 'boss_all' | null>
   >;
   setCoopTerrainTheme: React.Dispatch<React.SetStateAction<CoopTerrainTheme>>;
   setCoopCurrentRoomKind: React.Dispatch<React.SetStateAction<CoopRoomKind | null>>;
@@ -1145,6 +1269,13 @@ type CoopSnapshotSetters = {
   setCoopIntroFountainPhase: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopIntroFountainUsed: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopIntroAllyChoiceMade: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopFaeRealmPending: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopFaeRealmActive: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopFaeRealmRoomIndex: React.Dispatch<React.SetStateAction<number>>;
+  setCoopFaeRealmPortalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopFaeRealmBossKind: React.Dispatch<React.SetStateAction<FaeBeastCompanionKind | null>>;
+  setCoopFaeBeastCompanionGranted: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopFaeBeastCompanionKind: React.Dispatch<React.SetStateAction<FaeBeastCompanionKind | null>>;
   setCoopSunkenActive: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopSunkenRoomIndex: React.Dispatch<React.SetStateAction<number>>;
   setCoopSunkenPortalOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -1155,6 +1286,15 @@ type CoopSnapshotSetters = {
   setCoopSunkenLootClaimedPlayerIds: React.Dispatch<React.SetStateAction<string[]>>;
   setCoopSunkenLootPhaseComplete: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopSunkenCompleted: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopEternityActive: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopEternityRoomIndex: React.Dispatch<React.SetStateAction<number>>;
+  setCoopEternityPortalOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopEternityFountainPhase: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopEternityFountainUsed: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopEternityLootOffer: React.Dispatch<React.SetStateAction<DreamLayerStockItem[]>>;
+  setCoopEternityLootClaimedPlayerIds: React.Dispatch<React.SetStateAction<string[]>>;
+  setCoopEternityLootPhaseComplete: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopEternityCompleted: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopAllyKind: React.Dispatch<React.SetStateAction<CoopAllyKind>>;
   setCoopAllyOffer: React.Dispatch<React.SetStateAction<CoopAllyKind[]>>;
   setCoopVoidPortalOffered: React.Dispatch<React.SetStateAction<boolean>>;
@@ -1215,6 +1355,39 @@ function applyIntroSnapshot(
   }
 }
 
+function applyFaeRealmSnapshot(
+  data: CoopSessionSnapshotPayload | null | undefined,
+  setters: Pick<
+    CoopSnapshotSetters,
+    | 'setCoopFaeRealmPending'
+    | 'setCoopFaeRealmActive'
+    | 'setCoopFaeRealmRoomIndex'
+    | 'setCoopFaeRealmPortalOpen'
+    | 'setCoopFaeRealmBossKind'
+    | 'setCoopFaeBeastCompanionGranted'
+    | 'setCoopFaeBeastCompanionKind'
+  >,
+) {
+  if (!data) return;
+  if ('coopFaeRealmPending' in data) setters.setCoopFaeRealmPending(!!data.coopFaeRealmPending);
+  if ('coopFaeRealmActive' in data) setters.setCoopFaeRealmActive(!!data.coopFaeRealmActive);
+  if ('coopFaeRealmRoomIndex' in data) {
+    setters.setCoopFaeRealmRoomIndex(Math.max(0, Number(data.coopFaeRealmRoomIndex) || 0));
+  }
+  if ('coopFaeRealmPortalOpen' in data) setters.setCoopFaeRealmPortalOpen(!!data.coopFaeRealmPortalOpen);
+  if ('coopFaeRealmBossKind' in data) {
+    setters.setCoopFaeRealmBossKind(parseFaeBeastCompanionKind(data.coopFaeRealmBossKind));
+  }
+  if ('coopFaeBeastCompanionGranted' in data || 'faeBeastCompanionGranted' in data) {
+    const granted = (data as any).coopFaeBeastCompanionGranted ?? (data as any).faeBeastCompanionGranted;
+    setters.setCoopFaeBeastCompanionGranted(!!granted);
+  }
+  if ('coopFaeBeastCompanionKind' in data || 'faeBeastCompanionKind' in data) {
+    const kind = (data as any).coopFaeBeastCompanionKind ?? (data as any).faeBeastCompanionKind;
+    setters.setCoopFaeBeastCompanionKind(parseFaeBeastCompanionKind(kind));
+  }
+}
+
 function parseCoopSunkenLootOffer(raw: unknown): DreamLayerStockItem[] {
   if (!Array.isArray(raw)) return [];
   return raw.filter((entry): entry is DreamLayerStockItem => {
@@ -1269,6 +1442,52 @@ function applySunkenSnapshot(
   if ('coopAllyOffer' in data) {
     setters.setCoopAllyOffer(parseCoopAllyOffer(data.coopAllyOffer));
   }
+}
+
+function parseCoopEternityLootOffer(raw: unknown): DreamLayerStockItem[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((entry): entry is DreamLayerStockItem => {
+    return entry != null && typeof entry === 'object' && typeof (entry as DreamLayerStockItem).id === 'string';
+  });
+}
+
+function applyEternitySnapshot(
+  data: CoopSessionSnapshotPayload | null | undefined,
+  setters: Pick<
+    CoopSnapshotSetters,
+    | 'setCoopEternityActive'
+    | 'setCoopEternityRoomIndex'
+    | 'setCoopEternityPortalOpen'
+    | 'setCoopEternityFountainPhase'
+    | 'setCoopEternityFountainUsed'
+    | 'setCoopEternityLootOffer'
+    | 'setCoopEternityLootClaimedPlayerIds'
+    | 'setCoopEternityLootPhaseComplete'
+    | 'setCoopEternityCompleted'
+  >,
+) {
+  if (!data) return;
+  if ('coopEternityActive' in data) setters.setCoopEternityActive(!!data.coopEternityActive);
+  if ('coopEternityRoomIndex' in data) {
+    setters.setCoopEternityRoomIndex(Math.max(0, Number(data.coopEternityRoomIndex) || 0));
+  }
+  if ('coopEternityPortalOpen' in data) setters.setCoopEternityPortalOpen(!!data.coopEternityPortalOpen);
+  if ('coopEternityFountainPhase' in data) setters.setCoopEternityFountainPhase(!!data.coopEternityFountainPhase);
+  if ('coopEternityFountainUsed' in data) setters.setCoopEternityFountainUsed(!!data.coopEternityFountainUsed);
+  if ('coopEternityLootOffer' in data) {
+    setters.setCoopEternityLootOffer(parseCoopEternityLootOffer(data.coopEternityLootOffer));
+  }
+  if ('coopEternityLootClaimedPlayerIds' in data) {
+    setters.setCoopEternityLootClaimedPlayerIds(
+      Array.isArray(data.coopEternityLootClaimedPlayerIds)
+        ? [...data.coopEternityLootClaimedPlayerIds]
+        : [],
+    );
+  }
+  if ('coopEternityLootPhaseComplete' in data) {
+    setters.setCoopEternityLootPhaseComplete(!!data.coopEternityLootPhaseComplete);
+  }
+  if ('coopEternityCompleted' in data) setters.setCoopEternityCompleted(!!data.coopEternityCompleted);
 }
 
 function applyDeepSanctumSnapshot(
@@ -1437,6 +1656,8 @@ function applyCoopSessionSnapshot(
       healPurchasedThisVisit: false,
       weaponTalentPurchasedThisVisit: false,
       utilityPurchasedThisVisit: false,
+      backfillDashPurchasedThisVisit: false,
+      backfillTalentPurchasedThisVisit: false,
     });
   }
   if (data?.mushroomState?.health && Array.isArray(data.mushroomState.health)) {
@@ -1446,7 +1667,9 @@ function applyCoopSessionSnapshot(
     });
   }
   applyIntroSnapshot(data, setters);
+  applyFaeRealmSnapshot(data, setters);
   applySunkenSnapshot(data, setters);
+  applyEternitySnapshot(data, setters);
   applyDeepSanctumSnapshot(data, setters);
   applyEdenSnapshot(data, setters);
 }
@@ -1535,6 +1758,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     | 'pick_boss'
     | 'pick_post_boss'
     | 'pick_sunken_entry'
+    | 'pick_eternity_entry'
+    | 'pick_eternity_late_entry'
     | 'eden_exit'
     | null
   >(null);
@@ -1543,7 +1768,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopColoredRoomVisitIndex, setCoopColoredRoomVisitIndex] = useState<number | null>(null);
   const [coopBossRoomVisitIndex, setCoopBossRoomVisitIndex] = useState<number | null>(null);
   const [coopBossThroneArena, setCoopBossThroneArena] = useState(false);
-  const [coopThroneBossKind, setCoopThroneBossKind] = useState<'boss' | 'boss2' | 'boss3' | 'boss_all' | null>(null);
+  const [coopThroneBossKind, setCoopThroneBossKind] = useState<'boss' | 'boss2' | 'boss3' | 'destiny' | 'boss_all' | null>(null);
   const [coopTerrainTheme, setCoopTerrainTheme] = useState<CoopTerrainTheme>('purple');
   const [coopTransitionOverlay, setCoopTransitionOverlay] = useState(false);
   const coopTransitionOverlayRef = useRef(false);
@@ -1562,6 +1787,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopMainArenaIntermissionSeq, setCoopMainArenaIntermissionSeq] = useState(0);
   const [coopIntroIntermissionSeq, setCoopIntroIntermissionSeq] = useState(0);
   const [coopSunkenIntermissionSeq, setCoopSunkenIntermissionSeq] = useState(0);
+  const [coopEternityIntermissionSeq, setCoopEternityIntermissionSeq] = useState(0);
+  const [coopFaeRealmIntermissionSeq, setCoopFaeRealmIntermissionSeq] = useState(0);
   const [coopIntroPending, setCoopIntroPending] = useState(false);
   const [coopIntroActive, setCoopIntroActive] = useState(false);
   const [coopIntroRoomIndex, setCoopIntroRoomIndex] = useState(0);
@@ -1569,6 +1796,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopIntroFountainPhase, setCoopIntroFountainPhase] = useState(false);
   const [coopIntroFountainUsed, setCoopIntroFountainUsed] = useState(false);
   const [coopIntroAllyChoiceMade, setCoopIntroAllyChoiceMade] = useState(false);
+  const [coopFaeRealmPending, setCoopFaeRealmPending] = useState(false);
+  const [coopFaeRealmActive, setCoopFaeRealmActive] = useState(false);
+  const [coopFaeRealmRoomIndex, setCoopFaeRealmRoomIndex] = useState(0);
+  const [coopFaeRealmPortalOpen, setCoopFaeRealmPortalOpen] = useState(false);
+  const [coopFaeRealmBossKind, setCoopFaeRealmBossKind] = useState<FaeBeastCompanionKind | null>(null);
+  const [coopFaeBeastCompanionGranted, setCoopFaeBeastCompanionGranted] = useState(false);
+  const [coopFaeBeastCompanionKind, setCoopFaeBeastCompanionKind] = useState<FaeBeastCompanionKind | null>(null);
   const [coopSunkenActive, setCoopSunkenActive] = useState(false);
   const [coopSunkenRoomIndex, setCoopSunkenRoomIndex] = useState(0);
   const [coopSunkenPortalOpen, setCoopSunkenPortalOpen] = useState(false);
@@ -1579,6 +1813,16 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopSunkenLootClaimedPlayerIds, setCoopSunkenLootClaimedPlayerIds] = useState<string[]>([]);
   const [coopSunkenLootPhaseComplete, setCoopSunkenLootPhaseComplete] = useState(false);
   const [coopSunkenCompleted, setCoopSunkenCompleted] = useState(false);
+  const [coopEternityActive, setCoopEternityActive] = useState(false);
+  const [coopEternityRoomIndex, setCoopEternityRoomIndex] = useState(0);
+  const [coopEternityPortalOpen, setCoopEternityPortalOpen] = useState(false);
+  const [coopEternityFountainPhase, setCoopEternityFountainPhase] = useState(false);
+  const [coopEternityFountainUsed, setCoopEternityFountainUsed] = useState(false);
+  const [coopEternityLootOffer, setCoopEternityLootOffer] = useState<DreamLayerStockItem[]>([]);
+  const [coopEternityLootClaimedPlayerIds, setCoopEternityLootClaimedPlayerIds] = useState<string[]>([]);
+  const [coopEternityLootPhaseComplete, setCoopEternityLootPhaseComplete] = useState(false);
+  const [coopPetCompanionUpgrade, setCoopPetCompanionUpgrade] = useState<string | null>(null);
+  const [coopEternityCompleted, setCoopEternityCompleted] = useState(false);
   const [coopAllyKind, setCoopAllyKind] = useState<CoopAllyKind>('knight');
   const [coopAllyOffer, setCoopAllyOffer] = useState<CoopAllyKind[]>([]);
   const [coopVoidPortalOffered, setCoopVoidPortalOffered] = useState(false);
@@ -1610,6 +1854,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     secondary: WeaponType.NONE,
   });
   const [selectedArchetype, setSelectedArchetypeState] = useState<Archetype>(ARCHETYPE_ROGUE);
+  const [selectedWeaponAspect, setSelectedWeaponAspectState] = useState<WeaponAspect>(ASPECT_LEGIONNAIRE);
+  const [weaponAspectByWeapon, setWeaponAspectByWeapon] = useState<WeaponAspectByWeapon>({});
   const [skillPointData, setSkillPointData] = useState<SkillPointData>(SkillPointSystem.getInitialSkillPointData());
   const [statPointData, setStatPointData] = useState<StatPointData>(StatSystem.getInitialStatPointData());
   const [abilityLoadout, setAbilityLoadoutState] = useState<AbilityLoadout | null>(() => getDefaultLoadout());
@@ -1634,6 +1880,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     healPurchasedThisVisit: false,
     weaponTalentPurchasedThisVisit: false,
     utilityPurchasedThisVisit: false,
+    backfillDashPurchasedThisVisit: false,
+    backfillTalentPurchasedThisVisit: false,
   });
   const [dreamLayerInventory, setDreamLayerInventory] = useState<DreamLayerStockItem[]>([]);
   const [dreamLayerPurchaseState, setDreamLayerPurchaseState] = useState<DreamLayerPurchaseState>({
@@ -1831,6 +2079,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         playersMap.set(player.id, player);
       });
       setPlayers(playersMap);
+      const localJoin = data.players.find((p: Player) => p.id === socket?.id);
+      if (localJoin && typeof (localJoin as any).coopPetCompanionUpgrade === 'string') {
+        setCoopPetCompanionUpgrade((localJoin as any).coopPetCompanionUpgrade);
+      }
 
       // Update enemies (only for multiplayer mode)
       // Co-op mode - initialize enemies
@@ -1995,9 +2247,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
 
     addEventHandler('player-weapon-changed', (data) => {
+      const weapon = data.weapon as WeaponType;
       patchPlayerRef(playersRef, data.playerId, {
-        weapon: data.weapon,
+        weapon,
         subclass: data.subclass,
+        ...(data.weaponAspect != null
+          ? { weaponAspect: normalizeWeaponAspect(data.weaponAspect, weapon) }
+          : { weaponAspect: defaultWeaponAspect(weapon) }),
       });
       bumpPlayerRosterMetaRev();
     });
@@ -2005,6 +2261,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     addEventHandler('player-archetype-changed', (data) => {
       patchPlayerRef(playersRef, data.playerId, {
         archetype: normalizeArchetype(data.archetype),
+      });
+      bumpPlayerRosterMetaRev();
+    });
+
+    addEventHandler('player-weapon-aspect-changed', (data) => {
+      const existing = playersRef.current.get(data.playerId);
+      const weapon = (existing?.weapon ?? WeaponType.NONE) as WeaponType;
+      patchPlayerRef(playersRef, data.playerId, {
+        weaponAspect: normalizeWeaponAspect(data.aspect, weapon),
       });
       bumpPlayerRosterMetaRev();
     });
@@ -2112,20 +2377,29 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       if (
         !skipDotFloating &&
         (data.damageType === 'ignite' ||
+          data.damageType === 'shadowflame' ||
           data.damageType === 'venom' ||
           data.damageType === 'entanglement' ||
           data.damageType === 'allied_enchantress_entanglement' ||
           data.damageType === 'wyvern_talons_detonate' ||
           data.damageType === 'player_zombie' ||
+          data.damageType === 'vengeful_spirit' ||
           data.damageType === 'zombie_explosion' ||
           data.damageType === 'allied_knight' ||
           data.damageType === 'allied_huntress' ||
           data.damageType === 'allied_phantom' ||
           data.damageType === 'allied_demon' ||
           data.damageType === 'allied_enchantress' ||
+          data.damageType === 'allied_tiger' ||
+          data.damageType === 'allied_wolf' ||
+          data.damageType === 'allied_bear' ||
+          data.damageType === 'allied_serpent' ||
+          data.damageType === 'allied_spider' ||
+          data.damageType === 'hatemail' ||
           data.damageType === 'mushroom_eruption' ||
           data.damageType === 'prime_materia' ||
           data.damageType === 'incineration' ||
+          data.damageType === 'archmage_flame_pillar' ||
           (data.damageType === 'crossentropy' && data.crossentropyMeteorDamage === true) ||
           (data.damageType === 'cloudkill' && data.cloudkillDamage === true)) &&
         typeof data.damage === 'number' &&
@@ -2146,6 +2420,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
                   ? 'cloudkill'
                   : data.damageType === 'player_zombie' || data.damageType === 'zombie_explosion'
                   ? 'player_zombie'
+                  : data.damageType === 'vengeful_spirit'
+                  ? 'vengeful_spirit'
                   : data.damageType === 'allied_knight'
                   ? 'allied_knight'
                   : data.damageType === 'allied_huntress'
@@ -2156,14 +2432,62 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
                   ? 'allied_demon'
                   : data.damageType === 'allied_enchantress'
                   ? 'allied_enchantress'
+                  : data.damageType === 'allied_tiger'
+                  ? 'allied_tiger'
+                  : data.damageType === 'allied_wolf'
+                  ? 'allied_wolf'
+                  : data.damageType === 'allied_bear'
+                  ? 'allied_bear'
+                  : data.damageType === 'allied_serpent'
+                  ? 'allied_serpent'
+                  : data.damageType === 'allied_spider'
+                  ? 'allied_spider'
+                  : data.damageType === 'hatemail'
+                  ? 'hatemail'
                   : data.damageType === 'mushroom_eruption'
                   ? 'mushroom_eruption'
                   : data.damageType === 'prime_materia'
                   ? 'prime_materia'
                   : data.damageType === 'incineration'
                   ? 'incineration'
+                  : data.damageType === 'archmage_flame_pillar'
+                  ? 'ignite'
+                  : data.damageType === 'shadowflame'
+                  ? 'shadowflame'
                   : 'ignite';
           mgr.addDamageNumber(data.damage, !!data.isCritical, pos, dt);
+        }
+      }
+
+      // Allied knight / demon / player-zombie melee hit SFX (cancel pending miss whoosh)
+      if (
+        typeof data.damage === 'number' &&
+        data.damage > 0 &&
+        data.position &&
+        (data.damageType === 'allied_knight' ||
+          data.damageType === 'allied_demon' ||
+          data.damageType === 'player_zombie' ||
+          data.damageType === 'vengeful_spirit')
+      ) {
+        const hitPos = {
+          x: data.position.x,
+          y: data.position.y ?? 0,
+          z: data.position.z,
+        };
+        if (data.damageType === 'allied_knight') {
+          // Only play knight-style hit when a melee miss was pending (smite has its own SFX)
+          if (cancelKnightStyleMiss(data.sourceAlliedUnitId)) {
+            playKnightStyleHit(hitPos);
+          }
+        } else if (data.damageType === 'allied_demon') {
+          cancelKnightStyleMiss(data.sourceAlliedUnitId);
+          playKnightStyleHit(hitPos);
+        } else if (data.damageType === 'player_zombie') {
+          cancelKnightStyleMiss(data.sourceZombieId);
+          playKnightStyleHit(hitPos);
+        } else if (data.damageType === 'vengeful_spirit') {
+          cancelKnightStyleMiss(data.sourceAlliedUnitId);
+          playVengefulSpiritHitSound(hitPos);
         }
       }
 
@@ -2235,6 +2559,19 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       patchEnemyRef(enemiesRef, data.enemyId, { staggerBuildup: data.stagger });
     });
 
+    addEventHandler('enemy-concentrated-venom-updated', (data: {
+      enemyId: string;
+      stacks: number;
+      expireAt?: number | null;
+    }) => {
+      if (!data.enemyId) return;
+      patchEnemyRef(enemiesRef, data.enemyId, {
+        concentratedVenomStacks: typeof data.stacks === 'number' ? data.stacks : 0,
+        concentratedVenomExpireAt:
+          typeof data.expireAt === 'number' && data.expireAt > 0 ? data.expireAt : undefined,
+      });
+    });
+
     addEventHandler('enemy-status-effect', (data: {
       enemyId: string;
       effectType: string;
@@ -2283,7 +2620,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
 
     // Batched movement updates: ref-only — avoids ~30 Hz React re-renders of the full scene tree.
-    addEventHandler('enemies-moved', (data: { moves: Array<{ enemyId: string; position: { x: number; y: number; z: number }; rotation: number }>; timestamp: number }) => {
+    addEventHandler('enemies-moved', (data: { moves: Array<{ enemyId: string; position: { x: number; y: number; z: number }; rotation: number; tigerLocomotion?: 'walk' | 'run'; terrorhawkPhase?: 'takeoff' | 'hover' | 'approach' | 'dive' | 'land' | 'ground_melee'; destinyPhase?: 'ground' | 'takeoff' | 'fly_idle' | 'fly_approach' | 'fly_attack' | 'fly_return' | 'land' }>; timestamp: number }) => {
       if (!data.moves || data.moves.length === 0) return;
       applyEnemyMoveBatch(enemyTransformsRef, enemiesRef, data.moves);
     });
@@ -2336,7 +2673,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         next.delete(data.itemId);
         return next;
       });
-      // Grant stat only to the player who picked it up
+      // Grant / upgrade only for the player who picked it up
       if (newSocket.id && data.playerId === newSocket.id) {
         const isAmuletPickup =
           typeof data.item.type === 'string' && data.item.type.startsWith('AMULET_OF');
@@ -2348,34 +2685,72 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
             }));
           }
         }
-        if (data.item.stat != null) {
-          const bonus = data.item.statBonus;
-          if (bonus != null && bonus > 0) {
-            setStatPointData(prev => StatSystem.grantItemStat(prev, data.item.stat!, bonus));
-          } else if (bonus == null) {
-            setStatPointData(prev => StatSystem.grantItemStat(prev, data.item.stat!));
+
+        const invSnapshot = inventoryRef.current;
+        const existing = invSnapshot.find((i) => i.type === data.item.type);
+        let pickupOutcome: 'new' | 'upgrade' | 'discard' = 'new';
+
+        if (data.item.category === 'boss_drop' && data.item.type) {
+          if (isUpgradeableBossRelic(data.item.type)) {
+            pickupOutcome = resolveBossRelicPickup(existing?.rarity, data.item.rarity);
+          } else if (isUniqueDreamLayerItem(data.item.type) && existing) {
+            pickupOutcome = 'discard';
+          } else if (existing && data.item.category === 'boss_drop') {
+            // Any other boss_drop type is unique — one copy only
+            pickupOutcome = 'discard';
           }
         }
-        setInventory((prev) => {
-          if (isUniqueDreamLayerItem(data.item.type) && prev.some((i) => i.type === data.item.type)) {
-            return prev;
+
+        if (pickupOutcome === 'discard') {
+          return;
+        }
+
+        if (data.item.stat != null) {
+          if (pickupOutcome === 'upgrade' && existing) {
+            const delta = StatSystem.getBossRelicStatDelta(existing.statBonus, data.item.statBonus);
+            if (delta > 0) {
+              setStatPointData(prev => StatSystem.grantItemStat(prev, data.item.stat!, delta));
+            }
+          } else {
+            const bonus = data.item.statBonus;
+            if (bonus != null && bonus > 0) {
+              setStatPointData(prev => StatSystem.grantItemStat(prev, data.item.stat!, bonus));
+            } else if (bonus == null) {
+              setStatPointData(prev => StatSystem.grantItemStat(prev, data.item.stat!));
+            }
           }
-          const next = [
-            ...prev,
-            {
-              id: data.itemId,
-              type: data.item.type,
-              stat: data.item.stat,
-              label: data.item.label,
-              category: data.item.category,
-              statBonus: data.item.statBonus,
-              rarity: data.item.rarity,
-              bannedEnemyType: data.item.bannedEnemyType,
-              pickedUpAt: Date.now(),
-            },
-          ];
+        }
+
+        setInventory((prev) => {
+          const incoming = {
+            id: data.itemId,
+            type: data.item.type,
+            stat: data.item.stat,
+            label: data.item.label,
+            category: data.item.category,
+            statBonus: data.item.statBonus,
+            rarity: data.item.rarity,
+            bannedEnemyType: data.item.bannedEnemyType,
+            iconPath: data.item.iconPath,
+            pickedUpAt: Date.now(),
+          };
+
+          let next: InventoryItem[];
+          if (pickupOutcome === 'upgrade') {
+            next = prev.map((i) => (i.type === data.item.type ? incoming : i));
+          } else {
+            // Belt-and-suspenders: never keep two of the same boss_drop type
+            if (
+              data.item.category === 'boss_drop'
+              && prev.some((i) => i.type === data.item.type)
+            ) {
+              return prev;
+            }
+            next = [...prev, incoming];
+          }
+
           const bossDrops = next.filter((item) => item.category === 'boss_drop');
-          if (bossDrops.length <= 8) return next;
+          if (bossDrops.length <= 7) return next;
 
           const sorted = [...bossDrops].sort((a, b) => {
             const rankA = a.rarity && isItemRarity(a.rarity) ? ITEM_RARITY_RANK[a.rarity] : -1;
@@ -2383,7 +2758,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
             if (rankA !== rankB) return rankA - rankB;
             return (a.pickedUpAt ?? 0) - (b.pickedUpAt ?? 0);
           });
-          const discardIds = new Set(sorted.slice(0, bossDrops.length - 8).map((item) => item.id));
+          const discardIds = new Set(sorted.slice(0, bossDrops.length - 7).map((item) => item.id));
           return next.filter((item) => item.category !== 'boss_drop' || !discardIds.has(item.id));
         });
         if (data.item.category === 'boss_drop') {
@@ -2393,6 +2768,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           }));
         }
       }
+    });
+
+    addEventHandler('item-pickup-discarded', (data: { itemId: string; playerId?: string; item?: DroppedItem }) => {
+      setDroppedItems(prev => {
+        const next = new Map(prev);
+        next.delete(data.itemId);
+        return next;
+      });
     });
 
     addEventHandler('item-expired', (data: { itemId: string }) => {
@@ -2523,6 +2906,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           setCoopIntroFountainPhase,
           setCoopIntroFountainUsed,
           setCoopIntroAllyChoiceMade,
+          setCoopFaeRealmPending,
+          setCoopFaeRealmActive,
+          setCoopFaeRealmRoomIndex,
+          setCoopFaeRealmPortalOpen,
+          setCoopFaeRealmBossKind,
+          setCoopFaeBeastCompanionGranted,
+          setCoopFaeBeastCompanionKind,
           setCoopSunkenActive,
           setCoopSunkenRoomIndex,
           setCoopSunkenPortalOpen,
@@ -2533,6 +2923,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           setCoopSunkenLootClaimedPlayerIds,
           setCoopSunkenLootPhaseComplete,
           setCoopSunkenCompleted,
+          setCoopEternityActive,
+          setCoopEternityRoomIndex,
+          setCoopEternityPortalOpen,
+          setCoopEternityFountainPhase,
+          setCoopEternityFountainUsed,
+          setCoopEternityLootOffer,
+          setCoopEternityLootClaimedPlayerIds,
+          setCoopEternityLootPhaseComplete,
+          setCoopEternityCompleted,
           setCoopAllyKind,
           setCoopAllyOffer,
           setCoopVoidPortalOffered,
@@ -2581,6 +2980,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           setCoopIntroFountainPhase,
           setCoopIntroFountainUsed,
           setCoopIntroAllyChoiceMade,
+          setCoopFaeRealmPending,
+          setCoopFaeRealmActive,
+          setCoopFaeRealmRoomIndex,
+          setCoopFaeRealmPortalOpen,
+          setCoopFaeRealmBossKind,
+          setCoopFaeBeastCompanionGranted,
+          setCoopFaeBeastCompanionKind,
           setCoopSunkenActive,
           setCoopSunkenRoomIndex,
           setCoopSunkenPortalOpen,
@@ -2591,6 +2997,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           setCoopSunkenLootClaimedPlayerIds,
           setCoopSunkenLootPhaseComplete,
           setCoopSunkenCompleted,
+          setCoopEternityActive,
+          setCoopEternityRoomIndex,
+          setCoopEternityPortalOpen,
+          setCoopEternityFountainPhase,
+          setCoopEternityFountainUsed,
+          setCoopEternityLootOffer,
+          setCoopEternityLootClaimedPlayerIds,
+          setCoopEternityLootPhaseComplete,
+          setCoopEternityCompleted,
           setCoopAllyKind,
           setCoopAllyOffer,
           setCoopVoidPortalOffered,
@@ -2648,6 +3063,52 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopIntroAllyChoiceMade,
         setCoopAllyKind,
         setCoopAllyOffer,
+      });
+      if (data?.players && Array.isArray(data.players)) {
+        setPlayers((prev) => {
+          const next = new Map(prev);
+          for (const p of data.players as Player[]) {
+            const old = next.get(p.id);
+            next.set(p.id, old ? { ...old, ...p } : p);
+          }
+          return next;
+        });
+      }
+      if (data?.enemies && Array.isArray(data.enemies)) {
+        setEnemies(() => {
+          const m = new Map<string, Enemy>();
+          for (const e of data.enemies as Enemy[]) {
+            m.set(e.id, { ...e, staggerBuildup: e.staggerBuildup ?? 0 });
+          }
+          return m;
+        });
+      }
+    });
+
+    addEventHandler('coop-fae-realm-intermission', (data: any) => {
+      cancelPendingEnemyRemovals();
+      setCoopFaeRealmIntermissionSeq((s) => s + 1);
+      if (data && 'combatArenaActive' in data) {
+        setCombatArenaActive(!!data.combatArenaActive);
+      }
+      if (Array.isArray(data?.thronePortalOffer)) {
+        setThronePortalOffer([...data.thronePortalOffer]);
+      }
+      setCoopMainArenaPortalPhase(null);
+      if (data && 'coopCurrentRoomKind' in data) {
+        setCoopCurrentRoomKind(normalizeCoopRoomKind(data.coopCurrentRoomKind));
+      }
+      if (data && 'coopClearedRoomKind' in data) {
+        setCoopClearedRoomKind(normalizeCoopRoomKind(data.coopClearedRoomKind));
+      }
+      applyFaeRealmSnapshot(data, {
+        setCoopFaeRealmPending,
+        setCoopFaeRealmActive,
+        setCoopFaeRealmRoomIndex,
+        setCoopFaeRealmPortalOpen,
+        setCoopFaeRealmBossKind,
+        setCoopFaeBeastCompanionGranted,
+        setCoopFaeBeastCompanionKind,
       });
       if (data?.players && Array.isArray(data.players)) {
         setPlayers((prev) => {
@@ -2734,6 +3195,99 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
 
     addEventHandler('coop-sunken-loot-failed', () => {
+      (window as any).audioSystem?.playUIInterface4Sound?.();
+    });
+
+    addEventHandler('coop-eternity-intermission', (data: any) => {
+      cancelPendingEnemyRemovals();
+      setCoopEternityIntermissionSeq((s) => s + 1);
+      if (data && 'combatArenaActive' in data) {
+        setCombatArenaActive(!!data.combatArenaActive);
+      }
+      if (Array.isArray(data?.thronePortalOffer)) {
+        setThronePortalOffer([...data.thronePortalOffer]);
+      }
+      setCoopMainArenaPortalPhase(null);
+      if (data && 'coopCurrentRoomKind' in data) {
+        setCoopCurrentRoomKind(normalizeCoopRoomKind(data.coopCurrentRoomKind));
+      }
+      if (data && 'coopClearedRoomKind' in data) {
+        setCoopClearedRoomKind(normalizeCoopRoomKind(data.coopClearedRoomKind));
+      }
+      applyEternitySnapshot(data, {
+        setCoopEternityActive,
+        setCoopEternityRoomIndex,
+        setCoopEternityPortalOpen,
+        setCoopEternityFountainPhase,
+        setCoopEternityFountainUsed,
+        setCoopEternityLootOffer,
+        setCoopEternityLootClaimedPlayerIds,
+        setCoopEternityLootPhaseComplete,
+        setCoopEternityCompleted,
+      });
+      if (data?.players && Array.isArray(data.players)) {
+        setPlayers((prev) => {
+          const next = new Map(prev);
+          for (const p of data.players as Player[]) {
+            const old = next.get(p.id);
+            next.set(p.id, old ? { ...old, ...p } : p);
+          }
+          return next;
+        });
+      }
+      if (data?.enemies && Array.isArray(data.enemies)) {
+        setEnemies(() => {
+          const m = new Map<string, Enemy>();
+          for (const e of data.enemies as Enemy[]) {
+            m.set(e.id, { ...e, staggerBuildup: e.staggerBuildup ?? 0 });
+          }
+          return m;
+        });
+      }
+    });
+
+    addEventHandler('coop-eternity-loot-chosen', (data: {
+      coopEternityLootClaimedPlayerIds?: string[];
+      coopEternityLootPhaseComplete?: boolean;
+    }) => {
+      if (Array.isArray(data?.coopEternityLootClaimedPlayerIds)) {
+        setCoopEternityLootClaimedPlayerIds([...data.coopEternityLootClaimedPlayerIds]);
+      }
+      if ('coopEternityLootPhaseComplete' in (data ?? {})) {
+        setCoopEternityLootPhaseComplete(!!data.coopEternityLootPhaseComplete);
+      }
+    });
+
+    addEventHandler('coop-eternity-pet-upgrade-chosen', (data: {
+      upgradeId?: string;
+      coopEternityLootClaimedPlayerIds?: string[];
+      coopEternityLootPhaseComplete?: boolean;
+    }) => {
+      if (typeof data?.upgradeId === 'string') {
+        setCoopPetCompanionUpgrade(data.upgradeId);
+      }
+      if (Array.isArray(data?.coopEternityLootClaimedPlayerIds)) {
+        setCoopEternityLootClaimedPlayerIds([...data.coopEternityLootClaimedPlayerIds]);
+      }
+      if ('coopEternityLootPhaseComplete' in (data ?? {})) {
+        setCoopEternityLootPhaseComplete(!!data.coopEternityLootPhaseComplete);
+      }
+    });
+
+    addEventHandler('coop-pet-companion-upgrade-synced', (data: {
+      playerId?: string;
+      upgradeId?: string;
+    }) => {
+      if (data?.playerId && data.playerId === socket?.id && typeof data.upgradeId === 'string') {
+        setCoopPetCompanionUpgrade(data.upgradeId);
+      }
+    });
+
+    addEventHandler('coop-eternity-loot-failed', () => {
+      (window as any).audioSystem?.playUIInterface4Sound?.();
+    });
+
+    addEventHandler('coop-eternity-pet-upgrade-failed', () => {
       (window as any).audioSystem?.playUIInterface4Sound?.();
     });
 
@@ -2914,6 +3468,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopAllyKind,
         setCoopAllyOffer,
       });
+      applyFaeRealmSnapshot(data, {
+        setCoopFaeRealmPending,
+        setCoopFaeRealmActive,
+        setCoopFaeRealmRoomIndex,
+        setCoopFaeRealmPortalOpen,
+        setCoopFaeRealmBossKind,
+        setCoopFaeBeastCompanionGranted,
+        setCoopFaeBeastCompanionKind,
+      });
       applySunkenSnapshot(data, {
         setCoopSunkenActive,
         setCoopSunkenRoomIndex,
@@ -2927,6 +3490,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopSunkenCompleted,
         setCoopAllyKind,
         setCoopAllyOffer,
+      });
+      applyEternitySnapshot(data, {
+        setCoopEternityActive,
+        setCoopEternityRoomIndex,
+        setCoopEternityPortalOpen,
+        setCoopEternityFountainPhase,
+        setCoopEternityFountainUsed,
+        setCoopEternityLootOffer,
+        setCoopEternityLootClaimedPlayerIds,
+        setCoopEternityLootPhaseComplete,
+        setCoopEternityCompleted,
       });
       applyDeepSanctumSnapshot(data, {
         setCoopVoidPortalOffered,
@@ -3287,6 +3861,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
     setSelectedWeaponsState({ primary: WeaponType.NONE, secondary: WeaponType.NONE });
     setSelectedArchetypeState(ARCHETYPE_ROGUE);
+    setSelectedWeaponAspectState(ASPECT_LEGIONNAIRE);
+    setWeaponAspectByWeapon({});
     setAbilityLoadoutState(getDefaultLoadout());
     }
   }, [socket]);
@@ -3337,6 +3913,18 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const chooseSunkenTempleLoot = useCallback((stockId: string) => {
     if (socket && currentRoomId) {
       socket.emit('coop-choose-sunken-loot', { roomId: currentRoomId, stockId });
+    }
+  }, [socket, currentRoomId]);
+
+  const chooseEternityPalaceLoot = useCallback((stockId: string) => {
+    if (socket && currentRoomId) {
+      socket.emit('coop-choose-eternity-loot', { roomId: currentRoomId, stockId });
+    }
+  }, [socket, currentRoomId]);
+
+  const chooseEternityPetUpgrade = useCallback((upgradeId: string) => {
+    if (socket && currentRoomId) {
+      socket.emit('coop-choose-eternity-pet-upgrade', { roomId: currentRoomId, upgradeId });
     }
   }, [socket, currentRoomId]);
 
@@ -3463,6 +4051,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
+  const updatePlayerWeaponAspect = useCallback((aspect: WeaponAspect) => {
+    if (socket && currentRoomId) {
+      socket.emit('weapon-aspect-changed', {
+        roomId: currentRoomId,
+        aspect,
+      });
+    }
+  }, [socket, currentRoomId]);
+
   const updatePlayerHealth = useCallback((health: number, maxHealth?: number) => {
     if (socket && currentRoomId) {
       socket.emit('player-health-changed', {
@@ -3564,9 +4161,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ...(meta?.glacialBiteChill ? { glacialBiteChill: true } : {}),
         ...(meta?.glacialTalons ? { glacialTalons: true } : {}),
         ...(meta?.entanglementBarrage ? { entanglementBarrage: true } : {}),
+        ...(meta?.rejuvenatingShotEntangle ? { rejuvenatingShotEntangle: true } : {}),
         ...(meta?.tempestBurstArcticChill ? { tempestBurstArcticChill: true } : {}),
         ...(meta?.tempestBurstWyvernZombie ? { tempestBurstWyvernZombie: true } : {}),
         ...(meta?.explosiveTalonsDetonation ? { explosiveTalonsDetonation: true } : {}),
+        ...(meta?.tempestSweepIgnite ? { tempestSweepIgnite: true } : {}),
+        ...(meta?.archmageEntropicIgnite ? { archmageEntropicIgnite: true } : {}),
       });
     }
   }, [socket, currentRoomId]);
@@ -3590,6 +4190,18 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     (enemyId: string) => {
       if (socket && currentRoomId) {
         socket.emit('tyrants-cloak-strike', {
+          roomId: currentRoomId,
+          enemyId,
+        });
+      }
+    },
+    [socket, currentRoomId],
+  );
+
+  const triggerDeathdealerStaggerProc = useCallback(
+    (enemyId: string) => {
+      if (socket && currentRoomId) {
+        socket.emit('deathdealer-stagger-proc', {
           roomId: currentRoomId,
           enemyId,
         });
@@ -3832,6 +4444,16 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
   const setSelectedArchetype = useCallback((archetype: Archetype) => {
     setSelectedArchetypeState(archetype);
+  }, []);
+
+  const setSelectedWeaponAspect = useCallback((aspect: WeaponAspect) => {
+    setSelectedWeaponAspectState(aspect);
+  }, []);
+
+  const rememberWeaponAspect = useCallback((weapon: WeaponType, aspect: WeaponAspect) => {
+    const normalized = normalizeWeaponAspect(aspect, weapon);
+    setWeaponAspectByWeapon((prev) => ({ ...prev, [weapon]: normalized }));
+    setSelectedWeaponAspectState(normalized);
   }, []);
 
   const setAbilityLoadout = useCallback((loadout: AbilityLoadout | null) => {
@@ -4198,6 +4820,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     coopMainArenaIntermissionSeq,
     coopIntroIntermissionSeq,
     coopSunkenIntermissionSeq,
+    coopEternityIntermissionSeq,
+    coopFaeRealmIntermissionSeq,
     coopIntroPending,
     coopIntroActive,
     coopIntroRoomIndex,
@@ -4205,6 +4829,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     coopIntroFountainPhase,
     coopIntroFountainUsed,
     coopIntroAllyChoiceMade,
+    coopFaeRealmPending,
+    coopFaeRealmActive,
+    coopFaeRealmRoomIndex,
+    coopFaeRealmPortalOpen,
+    coopFaeRealmBossKind,
+    coopFaeBeastCompanionGranted,
+    coopFaeBeastCompanionKind,
     coopSunkenActive,
     coopSunkenRoomIndex,
     coopSunkenPortalOpen,
@@ -4215,6 +4846,16 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     coopSunkenLootClaimedPlayerIds,
     coopSunkenLootPhaseComplete,
     coopSunkenCompleted,
+    coopEternityActive,
+    coopEternityRoomIndex,
+    coopEternityPortalOpen,
+    coopEternityFountainPhase,
+    coopEternityFountainUsed,
+    coopEternityLootOffer,
+    coopEternityLootClaimedPlayerIds,
+    coopEternityLootPhaseComplete,
+    coopPetCompanionUpgrade,
+    coopEternityCompleted,
     coopAllyKind,
     coopAllyOffer,
     coopVoidPortalOffered,
@@ -4253,12 +4894,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     useCoopFountain,
     chooseCoopAlly,
     chooseSunkenTempleLoot,
+    chooseEternityPalaceLoot,
+    chooseEternityPetUpgrade,
     claimPreBossReward,
     claimDeepSanctumReward,
     finishPreBossMerchant,
     updatePlayerPosition,
     updatePlayerWeapon,
     updatePlayerArchetype,
+    updatePlayerWeaponAspect,
     updatePlayerHealth,
     broadcastPlayerAttack,
     broadcastPlayerAbility,
@@ -4277,6 +4921,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     damageMushroom,
     detonateWyvernConcentratedVenom,
     triggerTyrantsCloakStrike,
+    triggerDeathdealerStaggerProc,
     applyStatusEffect,
     mushroomState,
     updatePlayerExperience,
@@ -4289,8 +4934,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     updatePlayerEnergy,
     selectedWeapons,
     selectedArchetype,
+    selectedWeaponAspect,
+    weaponAspectByWeapon,
     setSelectedWeapons,
     setSelectedArchetype,
+    setSelectedWeaponAspect,
+    rememberWeaponAspect,
     abilityLoadout,
     setAbilityLoadout,
     talentLoadout,
@@ -4333,7 +4982,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     closeChat,
     setPlayers
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, playerRosterMetaRev, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, lateJoinCombatLoadout, clearLateJoinCombatLoadout, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, leaveRoom, previewRoom, clearPreview, startGame, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerArchetype, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastAlliedHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, selectedArchetype, setSelectedWeapons, setSelectedArchetype, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, registerMerchantNpcGreetHandler, registerPlayerGoldChangedHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
+  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, playerRosterMetaRev, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, lateJoinCombatLoadout, clearLateJoinCombatLoadout, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, leaveRoom, previewRoom, clearPreview, startGame, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerArchetype, updatePlayerWeaponAspect, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastAlliedHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, selectedArchetype, selectedWeaponAspect, weaponAspectByWeapon, setSelectedWeapons, setSelectedArchetype, setSelectedWeaponAspect, rememberWeaponAspect, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, registerMerchantNpcGreetHandler, registerPlayerGoldChangedHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
 
   const actionsValue: MultiplayerActionsContextType = useMemo(
     () => ({
@@ -4352,12 +5001,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       useCoopFountain,
       chooseCoopAlly,
       chooseSunkenTempleLoot,
+      chooseEternityPalaceLoot,
+    chooseEternityPetUpgrade,
       claimPreBossReward,
       claimDeepSanctumReward,
       finishPreBossMerchant,
       updatePlayerPosition,
       updatePlayerWeapon,
       updatePlayerArchetype,
+      updatePlayerWeaponAspect,
       updatePlayerHealth,
       broadcastPlayerAttack,
       broadcastPlayerAbility,
@@ -4375,6 +5027,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       subscribeEnemyDamage,
       detonateWyvernConcentratedVenom,
       triggerTyrantsCloakStrike,
+      triggerDeathdealerStaggerProc,
       applyStatusEffect,
       damageMushroom,
       updatePlayerExperience,
@@ -4387,6 +5040,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       updatePlayerEnergy,
       setSelectedWeapons,
       setSelectedArchetype,
+      setSelectedWeaponAspect,
+      rememberWeaponAspect,
       setAbilityLoadout,
       setTalentLoadout,
       unlockAbility,
@@ -4437,12 +5092,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       useCoopFountain,
       chooseCoopAlly,
       chooseSunkenTempleLoot,
+      chooseEternityPalaceLoot,
+    chooseEternityPetUpgrade,
       claimPreBossReward,
       claimDeepSanctumReward,
       finishPreBossMerchant,
       updatePlayerPosition,
       updatePlayerWeapon,
       updatePlayerArchetype,
+      updatePlayerWeaponAspect,
       updatePlayerHealth,
       broadcastPlayerAttack,
       broadcastPlayerAbility,
@@ -4460,6 +5118,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       subscribeEnemyDamage,
       detonateWyvernConcentratedVenom,
       triggerTyrantsCloakStrike,
+      triggerDeathdealerStaggerProc,
       applyStatusEffect,
       damageMushroom,
       updatePlayerExperience,
@@ -4472,6 +5131,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       updatePlayerEnergy,
       setSelectedWeapons,
       setSelectedArchetype,
+      setSelectedWeaponAspect,
+      rememberWeaponAspect,
       setAbilityLoadout,
       setTalentLoadout,
       unlockAbility,
@@ -4545,6 +5206,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopMainArenaIntermissionSeq,
       coopIntroIntermissionSeq,
       coopSunkenIntermissionSeq,
+      coopEternityIntermissionSeq,
+      coopFaeRealmIntermissionSeq,
       coopIntroPending,
       coopIntroActive,
       coopIntroRoomIndex,
@@ -4552,6 +5215,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopIntroFountainPhase,
       coopIntroFountainUsed,
       coopIntroAllyChoiceMade,
+      coopFaeRealmPending,
+      coopFaeRealmActive,
+      coopFaeRealmRoomIndex,
+      coopFaeRealmPortalOpen,
+      coopFaeRealmBossKind,
+      coopFaeBeastCompanionGranted,
+      coopFaeBeastCompanionKind,
       coopSunkenActive,
       coopSunkenRoomIndex,
       coopSunkenPortalOpen,
@@ -4562,6 +5232,16 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopSunkenLootClaimedPlayerIds,
       coopSunkenLootPhaseComplete,
       coopSunkenCompleted,
+      coopEternityActive,
+      coopEternityRoomIndex,
+      coopEternityPortalOpen,
+      coopEternityFountainPhase,
+      coopEternityFountainUsed,
+      coopEternityLootOffer,
+      coopEternityLootClaimedPlayerIds,
+      coopEternityLootPhaseComplete,
+    coopPetCompanionUpgrade,
+      coopEternityCompleted,
       coopAllyKind,
       coopAllyOffer,
       coopVoidPortalOffered,
@@ -4585,6 +5265,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       isChatOpen,
       selectedWeapons,
       selectedArchetype,
+      selectedWeaponAspect,
+      weaponAspectByWeapon,
       skillPointData,
       statPointData,
       abilityLoadout,
@@ -4628,12 +5310,24 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopCombatArenaEnterSeq,
       coopMainArenaIntermissionSeq,
       coopIntroIntermissionSeq,
+      coopSunkenIntermissionSeq,
+      coopEternityIntermissionSeq,
+      coopFaeRealmIntermissionSeq,
       coopIntroPending,
       coopIntroActive,
       coopIntroRoomIndex,
       coopIntroPortalOpen,
       coopIntroFountainPhase,
       coopIntroFountainUsed,
+      coopIntroAllyChoiceMade,
+      coopFaeRealmPending,
+      coopFaeRealmActive,
+      coopFaeRealmRoomIndex,
+      coopFaeRealmPortalOpen,
+      coopFaeRealmBossKind,
+      coopFaeBeastCompanionGranted,
+      coopFaeBeastCompanionKind,
+      coopPetCompanionUpgrade,
       coopEdenFountainUsed,
       coopEdenResumeKind,
       coopEdenIntermissionSeq,
@@ -4651,6 +5345,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       isChatOpen,
       selectedWeapons,
       selectedArchetype,
+      selectedWeaponAspect,
+      weaponAspectByWeapon,
       skillPointData,
       statPointData,
       abilityLoadout,

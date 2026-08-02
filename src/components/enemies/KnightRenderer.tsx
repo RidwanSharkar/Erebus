@@ -9,6 +9,7 @@ import KnightModel, { type KnightAbilityClip } from './KnightModel';
 import KnightBlockShield from './KnightBlockShield';
 import KnightSoulEffect from './KnightSoulEffect';
 import EnemyMeleeAttackRangeRing, { KNIGHT_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
+import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type MeleeTelegraphVisual } from '@/utils/meleeTelegraphVisual';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyAbilityChargeTelegraph from './EnemyAbilityChargeTelegraph';
 import { registerKnightAnimationHandlers } from '@/utils/knightAnimationDispatch';
@@ -126,6 +127,7 @@ function KnightRenderer({
   const hpTextRef = useRef<any>(null);
 
   const [isAttacking, setIsAttacking] = useState(false);
+  const [meleeTelegraph, setMeleeTelegraph] = useState<MeleeTelegraphVisual | null>(null);
   const [isWalking, setIsWalking] = useState(false);
   const isWalkingRef = useRef(false);
   const [attackVariant, setAttackVariant] = useState<1 | 2>(1);
@@ -284,7 +286,16 @@ function KnightRenderer({
 
   // Animation telegraphs — registered centrally via knightAnimationDispatch (one socket listener per event).
   useEffect(() => {
-    const handleKnightTelegraph = () => {
+    const handleKnightTelegraph = (data: {
+      knightId: string;
+      hitDelayMs?: number;
+      swingLockMs?: number;
+      attackRange?: number;
+      arcDeg?: number;
+      facing?: number;
+      weightClass?: string;
+      timestamp?: number;
+    }) => {
       if (alternateAttackVariants) {
         const variant = nextAttackVariantRef.current;
         nextAttackVariantRef.current = variant === 1 ? 2 : 1;
@@ -292,14 +303,22 @@ function KnightRenderer({
       } else {
         setAttackVariant(Math.random() < attackVariantOneChance ? 1 : 2);
       }
+      const visual = parseMeleeTelegraphPayload(data, KNIGHT_MELEE_ATTACK_RANGE, ATTACK_DURATION);
+      setMeleeTelegraph(visual);
       setIsAttacking(true);
       isAttackingRef.current = true;
       if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
+      const duration = meleeAttackDurationFromTelegraph(visual, ATTACK_DURATION);
       attackTimerRef.current = setTimeout(() => {
         setIsAttacking(false);
+        setMeleeTelegraph(null);
         isAttackingRef.current = false;
         attackTimerRef.current = null;
-      }, ATTACK_DURATION);
+      }, duration);
+    };
+
+    const handleKnightWhiff = (_data: { knightId: string }) => {
+      setMeleeTelegraph((prev) => (prev ? { ...prev, whiffed: true } : prev));
     };
 
     const handleKnightDash = (data: {
@@ -499,6 +518,7 @@ function KnightRenderer({
 
     return registerKnightAnimationHandlers(id, {
       onAttackTelegraph: handleKnightTelegraph,
+      onAttackWhiff: handleKnightWhiff,
       onDash: handleKnightDash,
       onSpinCharge: handleKnightSpinCharge,
       onSpinDash: handleKnightSpinDash,
@@ -637,6 +657,20 @@ function KnightRenderer({
         active={abilityClip === 'IdleBlock' && !isDying}
         visualScale={visualScale}
       />
+
+      {showMeleeRangeRing && isAttacking && !isDying && (
+        <EnemyMeleeAttackRangeRing
+          radius={meleeTelegraph?.attackRange ?? KNIGHT_MELEE_ATTACK_RANGE}
+          hitDelayMs={meleeTelegraph?.hitDelayMs}
+          swingLockMs={meleeTelegraph?.swingLockMs}
+          arcDeg={meleeTelegraph?.arcDeg}
+          facing={meleeTelegraph?.facing}
+          weightClass={meleeTelegraph?.weightClass}
+          whiffed={meleeTelegraph?.whiffed}
+          startedAtMs={meleeTelegraph?.startedAtMs}
+          commitAtMs={meleeTelegraph?.commitAtMs}
+        />
+      )}
 
       {/* Glowing soul orb floating above the knight */}
       {showSoulEffect && soulType && !isDying && (

@@ -1,41 +1,56 @@
 'use client';
 
-import React, { useRef, useEffect, useLayoutEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
-import { Group, LoopRepeat, LoopOnce, AnimationAction } from 'three';
+import { Group, AnimationAction, AnimationClip } from 'three';
+import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { loadGltfAnimationClips, preloadSkinnedIdleAndAnimationClips } from '@/utils/gltfAnimationLoader';
 import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
-import { filterAnimationTracksForRoot, getCachedEnemyAnimationClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
+import {
+  filterAnimationTracksForRoot,
+  getCachedEnemyAnimationClips,
+  invalidateEnemyAnimationClipCache,
+  peekEnemyAnimationClipCache,
+  renameAnimationClips,
+  stripRootMotionXZ,
+} from '@/utils/enemyAnimationClipCache';
 
 export type SentinelAbilityClip = 'ThrowUp' | 'HoldCast';
 
 interface SentinelModelProps {
   isWalking: boolean;
-  isSprinting: boolean;
   isStunned?: boolean;
   isSlowed?: boolean;
   abilityClip: SentinelAbilityClip | null;
   isDying: boolean;
 }
 
+const SENTINEL_IDLE_PATH = '/models/sentinel_idle.glb';
+
 const SENTINEL_MODEL_PATHS = [
-  '/models/sentinel_idle.glb',
+  SENTINEL_IDLE_PATH,
   '/models/sentinel_walk.glb',
-  '/models/sentinel_sprint.glb',
   '/models/sentinel_throwUp.glb',
   '/models/sentinel_holdCast.glb',
   '/models/sentinel_death.glb',
 ];
 
+const SENTINEL_DEFERRED_PATHS = {
+  Walk: '/models/sentinel_walk.glb',
+  ThrowUp: '/models/sentinel_throwUp.glb',
+  HoldCast: '/models/sentinel_holdCast.glb',
+  Death: '/models/sentinel_death.glb',
+} as const;
+
 export function preloadSentinelModels(): void {
-  SENTINEL_MODEL_PATHS.forEach((path) => useGLTF.preload(path));
+  preloadSkinnedIdleAndAnimationClips(SENTINEL_IDLE_PATH, SENTINEL_MODEL_PATHS, useGLTF.preload);
 }
 
-const SCALE = 0.014;
+const SCALE = 0.012;
 
 export default React.memo(function SentinelModel({
   isWalking,
-  isSprinting,
   isStunned = false,
   isSlowed = false,
   abilityClip,
@@ -43,14 +58,30 @@ export default React.memo(function SentinelModel({
 }: SentinelModelProps) {
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
-  const hasKickedIdleRef = useRef(false);
+  const [extraAnims, setExtraAnims] = useState<Record<string, AnimationClip[]>>({});
 
-  const { scene, animations: idleAnims } = useGLTF('/models/sentinel_idle.glb');
-  const { animations: walkAnims } = useGLTF('/models/sentinel_walk.glb');
-  const { animations: sprintAnims } = useGLTF('/models/sentinel_sprint.glb');
-  const { animations: throwUpAnims } = useGLTF('/models/sentinel_throwUp.glb');
-  const { animations: holdCastAnims } = useGLTF('/models/sentinel_holdCast.glb');
-  const { animations: deathAnims } = useGLTF('/models/sentinel_death.glb');
+  const { scene, animations: idleAnims } = useGLTF(SENTINEL_IDLE_PATH);
+
+  useEffect(() => {
+    let cancelled = false;
+    const entries = Object.entries(SENTINEL_DEFERRED_PATHS);
+    void Promise.all(
+      entries.map(async ([name, path]) => {
+        const clips = await loadGltfAnimationClips(path);
+        return [name, clips] as const;
+      }),
+    )
+      .then((loaded) => {
+        if (cancelled) return;
+        setExtraAnims(Object.fromEntries(loaded));
+      })
+      .catch((error) => {
+        console.warn('Failed to load sentinel animations:', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const clonedScene = useMemo(() => {
     const clone = SkeletonUtils.clone(scene) as Group;
@@ -69,37 +100,35 @@ export default React.memo(function SentinelModel({
 
   useDisposeClonedMaterials(clonedScene);
 
-  const processedClips = useMemo(
-    () =>
-      getCachedEnemyAnimationClips('sentinel', () => [
-        ...renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ),
-        ...renameAnimationClips(walkAnims, 'Walk').map(stripRootMotionXZ),
-        ...renameAnimationClips(sprintAnims, 'Sprint').map(stripRootMotionXZ),
-        ...renameAnimationClips(throwUpAnims, 'ThrowUp'),
-        ...renameAnimationClips(holdCastAnims, 'HoldCast'),
-        ...renameAnimationClips(deathAnims, 'Death'),
-      ]),
-    [idleAnims, walkAnims, sprintAnims, throwUpAnims, holdCastAnims, deathAnims],
-  );
+  const animations = useMemo(() => {
+    const idleClips = renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ);
+    const hasAllDeferred = Object.keys(SENTINEL_DEFERRED_PATHS).every(
+      (key) => extraAnims[key]?.length,
+    );
+    if (!hasAllDeferred) {
+      return idleClips.map((clip) => filterAnimationTracksForRoot(clonedScene, clip));
+    }
 
-  const animations = useMemo(
-    () => processedClips.map((clip) => filterAnimationTracksForRoot(clonedScene, clip)),
-    [processedClips, clonedScene],
-  );
+    // Recover from a session cache that was poisoned before Walk/ThrowUp/etc. loaded.
+    const cached = peekEnemyAnimationClipCache('sentinel-walk-only');
+    if (cached && !cached.some((clip) => clip.name === 'Walk')) {
+      invalidateEnemyAnimationClipCache('sentinel-walk-only');
+    }
+
+    return getCachedEnemyAnimationClips('sentinel-walk-only', () => [
+      ...idleClips,
+      ...renameAnimationClips(extraAnims.Walk, 'Walk').map(stripRootMotionXZ),
+      ...renameAnimationClips(extraAnims.ThrowUp, 'ThrowUp'),
+      ...renameAnimationClips(extraAnims.HoldCast, 'HoldCast'),
+      ...renameAnimationClips(extraAnims.Death, 'Death'),
+    ]).map((clip) => filterAnimationTracksForRoot(clonedScene, clip));
+  }, [idleAnims, extraAnims, clonedScene]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
-  const getAction = (name: 'Idle' | 'Walk' | 'Sprint' | 'ThrowUp' | 'HoldCast' | 'Death'): AnimationAction | null =>
+  const getAction = (name: 'Idle' | 'Walk' | 'ThrowUp' | 'HoldCast' | 'Death'): AnimationAction | null =>
     actions[name] ?? null;
 
-  useLayoutEffect(() => {
-    const idle = actions?.Idle;
-    if (!idle || hasKickedIdleRef.current) return;
-    hasKickedIdleRef.current = true;
-    idle.enabled = true;
-    idle.setLoop(LoopRepeat, Infinity);
-    idle.play();
-    currentActionRef.current = idle;
-  }, [actions]);
+  const posed = useEnemyIdlePose({ actions, mixer, currentActionRef });
 
   useEffect(() => {
     if (!actions) return;
@@ -107,29 +136,19 @@ export default React.memo(function SentinelModel({
       ? 'Idle'
       : isSlowed
         ? (isWalking ? 'Walk' : 'Idle')
-        : isSprinting
-          ? 'Sprint'
-          : isWalking
-            ? 'Walk'
-            : 'Idle';
+        : isWalking
+          ? 'Walk'
+          : 'Idle';
     const nextAction = isDying
       ? getAction('Death')
       : abilityClip
         ? getAction(abilityClip)
         : getAction(locomotion);
-    if (!nextAction || nextAction === currentActionRef.current) return;
-    currentActionRef.current?.fadeOut(0.2);
-    if (isDying || abilityClip) {
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = isDying;
-      nextAction.reset().fadeIn(0.2).play();
-    } else {
-      nextAction.enabled = true;
-      nextAction.setLoop(LoopRepeat, Infinity);
-      nextAction.reset().fadeIn(0.2).play();
-    }
-    currentActionRef.current = nextAction;
-  }, [actions, isDying, isWalking, isSprinting, isStunned, isSlowed, abilityClip]);
+    playEnemyAction(nextAction, currentActionRef, mixer, {
+      loopOnce: !!(isDying || abilityClip),
+      clampWhenFinished: isDying,
+    });
+  }, [actions, isDying, isWalking, isStunned, isSlowed, abilityClip, mixer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!mixer) return;
@@ -140,27 +159,18 @@ export default React.memo(function SentinelModel({
           ? 'Idle'
           : isSlowed
             ? (isWalking ? 'Walk' : 'Idle')
-            : isSprinting
-              ? 'Sprint'
-              : isWalking
-                ? 'Walk'
-                : 'Idle';
-        const next = getAction(loc);
-        if (next) {
-          currentActionRef.current?.fadeOut(0.2);
-          next.enabled = true;
-          next.setLoop(LoopRepeat, Infinity);
-          next.reset().fadeIn(0.2).play();
-          currentActionRef.current = next;
-        }
+            : isWalking
+              ? 'Walk'
+              : 'Idle';
+        playEnemyAction(getAction(loc), currentActionRef, mixer);
       }
     };
     mixer.addEventListener('finished', onFinished);
     return () => mixer.removeEventListener('finished', onFinished);
-  }, [mixer, isWalking, isSprinting, isStunned, isSlowed, isDying]);
+  }, [mixer, isWalking, isStunned, isSlowed, isDying, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <group ref={sceneGroupRef}>
+    <group ref={sceneGroupRef} visible={posed}>
       <group scale={SCALE}>
         <primitive object={clonedScene} />
       </group>

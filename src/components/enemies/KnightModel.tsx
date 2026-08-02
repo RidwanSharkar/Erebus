@@ -1,14 +1,15 @@
 'use client';
 
-import React, { useRef, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
-import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
+import { Group, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
 import { GLTFLoader } from 'three-stdlib';
 import { peek as suspendPeek } from 'suspend-react';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadGltfAnimationClips, preloadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
 import { applySelfIllumination, KNIGHT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 import { filterAnimationTracksForRoot, getCachedProcessedClips } from '@/utils/enemyAnimationClipCache';
+import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
 
 export type KnightAbilityClip = 'Smite' | 'Aggro' | 'Cast' | 'Spin' | 'StartBlock' | 'IdleBlock';
 
@@ -153,7 +154,6 @@ export default React.memo(function KnightModel({
   const isMountedRef = useRef(true);
   const lastImpactPlayKeyRef = useRef(-1);
   const lastAbilityPlayKeyRef = useRef(-1);
-  const hasKickedIdleRef = useRef(false);
   const requestedDeferredStatesRef = useRef<Set<KnightDeferredAnimationName>>(new Set());
   const [deferredAnimationClips, setDeferredAnimationClips] = useState<
     Partial<Record<KnightDeferredAnimationName, AnimationClip[]>>
@@ -296,16 +296,13 @@ export default React.memo(function KnightModel({
   const getAction = (name: 'Idle' | 'Walk' | 'Attack' | 'Attack2' | 'Death' | 'Smite' | 'Aggro' | 'Cast' | 'Spin' | 'StartBlock' | 'IdleBlock' | 'Impact1' | 'Impact2'): AnimationAction | null =>
     idleActions[name] ?? extraActionsRef.current[name] ?? null;
 
-  // Kick Idle before first paint so the knight never flashes T-pose on spawn.
-  useLayoutEffect(() => {
-    const idle = idleActions.Idle;
-    if (!idle || hasKickedIdleRef.current) return;
-    hasKickedIdleRef.current = true;
-    idle.enabled = true;
-    idle.setLoop(LoopRepeat, Infinity);
-    idle.play();
-    currentActionRef.current = idle;
-  }, [idleActions]);
+  const resolveIdle = useCallback(() => getAction('Idle'), [idleActions]); // eslint-disable-line react-hooks/exhaustive-deps
+  const posed = useEnemyIdlePose({
+    actions: idleActions,
+    mixer,
+    currentActionRef,
+    resolveIdle,
+  });
 
   // Transition to the right animation clip when state changes.
   // Priority: Death > Attack > Ability > Impact > Walk > Idle
@@ -331,72 +328,63 @@ export default React.memo(function KnightModel({
     // of freezing in the T-pose bind pose while it waits.
     const usingFallback = !desiredAction;
     const nextAction = desiredAction ?? getAction('Idle');
-
     if (!nextAction) return;
-    if (nextAction === currentActionRef.current) {
-      // Block clips must not restart when impactPlayKey changes — abilityClip outranks impact
-      // and the renderer clears isImpacting on block, but guard here to avoid reset().play().
-      const retriggerImpact =
-        !isBlockAbilityClip(abilityClip) &&
-        isImpacting &&
-        impactPlayKey !== lastImpactPlayKeyRef.current;
-      const retriggerAbility =
-        !!abilityClip &&
-        !isBlockAbilityClip(abilityClip) &&
-        abilityPlayKey !== lastAbilityPlayKeyRef.current;
-      if (!retriggerImpact && !retriggerAbility) return;
-    }
 
-    currentActionRef.current?.fadeOut(0.2);
+    // Block clips must not restart when impactPlayKey changes — abilityClip outranks impact
+    // and the renderer clears isImpacting on block, but guard here to avoid reset().play().
+    const retriggerImpact =
+      !usingFallback &&
+      !isBlockAbilityClip(abilityClip) &&
+      isImpacting &&
+      impactPlayKey !== lastImpactPlayKeyRef.current;
+    const retriggerAbility =
+      !usingFallback &&
+      !!abilityClip &&
+      !isBlockAbilityClip(abilityClip) &&
+      abilityPlayKey !== lastAbilityPlayKeyRef.current;
 
     if (usingFallback) {
       if (!isImpacting) lastImpactPlayKeyRef.current = -1;
-      nextAction.enabled = true;
-      nextAction.setLoop(LoopRepeat, Infinity);
-      nextAction.fadeIn(0.2).play();
-    } else if (isDying) {
-      // Death is a one-shot that clamps on its last frame (corpse pose).
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = true;
-      nextAction.reset().fadeIn(0.15).play();
-    } else if (abilityClip === 'StartBlock') {
-      // Raise-shield one-shot — IdleBlock follows via onBlockStartFinished.
-      lastImpactPlayKeyRef.current = impactPlayKey;
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = false;
-      nextAction.reset().fadeIn(0.2).play();
-    } else if (abilityClip === 'IdleBlock') {
-      // Hold shield idly for the remainder of the block window.
-      lastImpactPlayKeyRef.current = impactPlayKey;
-      nextAction.enabled = true;
-      nextAction.setLoop(LoopRepeat, Infinity);
-      nextAction.reset().fadeIn(0.2).play();
-    } else if (isAttacking || abilityClip) {
-      // Attack and ability animations are one-shot — always restart from frame 0.
-      if (abilityClip) {
-        lastAbilityPlayKeyRef.current = abilityPlayKey;
-      }
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = true;
-      nextAction.reset().fadeIn(0.2).play();
-    } else if (isImpacting) {
-      lastImpactPlayKeyRef.current = impactPlayKey;
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = true;
-      nextAction.reset().fadeIn(0.2).play();
-    } else {
-      // Walk / Idle are continuous loops.
-      // Re-enable explicitly: Three.js auto-disables actions whose weight reaches 0
-      // after a fadeOut (_updateWeight sets enabled=false).
-      if (!isImpacting) lastImpactPlayKeyRef.current = -1;
-      if (!abilityClip) lastAbilityPlayKeyRef.current = -1;
-      nextAction.enabled = true;
-      nextAction.setLoop(LoopRepeat, Infinity);
-      nextAction.fadeIn(0.2).play();
+      playEnemyAction(nextAction, currentActionRef, mixer);
+      return;
     }
 
-    currentActionRef.current = nextAction;
-  }, [isWalking, isAttacking, isDying, attackVariant, abilityClip, abilityPlayKey, isImpacting, impactVariant, impactPlayKey, idleActions, deferredAnimationClips]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (isDying) {
+      playEnemyAction(nextAction, currentActionRef, mixer, {
+        loopOnce: true,
+        clampWhenFinished: true,
+        fadeIn: 0.15,
+      });
+    } else if (abilityClip === 'StartBlock') {
+      lastImpactPlayKeyRef.current = impactPlayKey;
+      playEnemyAction(nextAction, currentActionRef, mixer, {
+        loopOnce: true,
+        clampWhenFinished: false,
+        forceRestart: true,
+      });
+    } else if (abilityClip === 'IdleBlock') {
+      lastImpactPlayKeyRef.current = impactPlayKey;
+      playEnemyAction(nextAction, currentActionRef, mixer, { forceRestart: true });
+    } else if (isAttacking || abilityClip) {
+      if (abilityClip) lastAbilityPlayKeyRef.current = abilityPlayKey;
+      playEnemyAction(nextAction, currentActionRef, mixer, {
+        loopOnce: true,
+        clampWhenFinished: true,
+        forceRestart: retriggerAbility,
+      });
+    } else if (isImpacting) {
+      lastImpactPlayKeyRef.current = impactPlayKey;
+      playEnemyAction(nextAction, currentActionRef, mixer, {
+        loopOnce: true,
+        clampWhenFinished: true,
+        forceRestart: retriggerImpact,
+      });
+    } else {
+      if (!isImpacting) lastImpactPlayKeyRef.current = -1;
+      if (!abilityClip) lastAbilityPlayKeyRef.current = -1;
+      playEnemyAction(nextAction, currentActionRef, mixer);
+    }
+  }, [isWalking, isAttacking, isDying, attackVariant, abilityClip, abilityPlayKey, isImpacting, impactVariant, impactPlayKey, idleActions, deferredAnimationClips, mixer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // After a one-shot animation (impact, attack, or ability) finishes, blend back to Walk or Idle.
   // Do not run for Death — the corpse should stay in the last pose.
@@ -406,13 +394,7 @@ export default React.memo(function KnightModel({
     const blendToWalkOrIdle = () => {
       if (isDying) return;
       const fallback = isWalking ? getAction('Walk') : getAction('Idle');
-      if (fallback) {
-        fallback.enabled = true;
-        fallback.setLoop(LoopRepeat, Infinity);
-        currentActionRef.current?.fadeOut(0.15);
-        fallback.fadeIn(0.15).play();
-        currentActionRef.current = fallback;
-      }
+      playEnemyAction(fallback, currentActionRef, mixer, { fadeIn: 0.15, fadeOut: 0.15 });
     };
 
     const handleFinish = (e: { action: AnimationAction }) => {
@@ -441,7 +423,7 @@ export default React.memo(function KnightModel({
   return (
     // sceneGroupRef wraps the clone so the AnimationMixer can traverse into the
     // bone hierarchy. The scale group converts cm → game units.
-    <group ref={sceneGroupRef}>
+    <group ref={sceneGroupRef} visible={posed}>
       <group scale={[SCALE * scaleMultiplier, SCALE * scaleMultiplier, SCALE * scaleMultiplier]}>
         <primitive object={clonedScene} />
       </group>

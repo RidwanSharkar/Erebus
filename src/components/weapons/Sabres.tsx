@@ -1,7 +1,9 @@
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Shape, Vector3 } from '@/utils/three-exports';
+import { Group, Vector3 } from '@/utils/three-exports';
 import Blizzard from './Blizzard/Blizzard';
+import SabreItemMeshVisual from './SabreItemMeshVisual';
+import type { WeaponAspect } from '@/utils/weaponAspects';
 
 const lerp = (start: number, end: number, t: number) => {
   return start * (1 - t) + end * t;
@@ -23,6 +25,8 @@ interface SabresProps {
   subclass?: string;
   /** Psionic Blades talent — permanent purple blade palette. */
   psionicBladesBladeThemeActive?: boolean;
+  /** Throne weapon aspect — Fire / Frost / Warlord GLB blades. */
+  weaponAspect?: WeaponAspect;
   enemyData?: Array<{
     id: string;
     position: Vector3;
@@ -44,8 +48,9 @@ export default function Sabres({
   isInvisible = false,
   onBackstabComplete = () => {},
   onSunderComplete = () => {},
-  subclass = 'FROST',
+  subclass: _subclass = 'FROST',
   psionicBladesBladeThemeActive = false,
+  weaponAspect,
   enemyData = [],
   onHit
 }: SabresProps) {
@@ -529,135 +534,6 @@ export default function Sabres({
     }
   });
 
-  const bladeShape = useMemo(() => {
-    const shape = new Shape();
-
-    // Start at center
-    shape.moveTo(0, 0);
-
-    // Ornate guard shape
-    shape.lineTo(-0.15, 0.1);
-    shape.lineTo(-0.2, 0);  // Deeper notch
-    shape.lineTo(-0.2, -0.05);
-    shape.lineTo(0, 0);
-
-    // Mirror for right side of guard
-    shape.lineTo(0.15, 0.1);
-    shape.lineTo(0.2, 0);   // Deeper notch
-    shape.lineTo(0.3, 0.0);
-    shape.lineTo(0, 0);
-
-    // Elegant curved blade shape
-    shape.lineTo(0, 0.05);
-    // Graceful curve up
-    shape.quadraticCurveTo(0.3, 0.15, 0.5, 0.2);
-    shape.quadraticCurveTo(0.7, 0.25, 0.9, 0.15);
-    // Sharp elegant tip
-    shape.quadraticCurveTo(1.0, 0.1, 1.1, 0);
-    // Sweeping bottom curve with notch
-    shape.quadraticCurveTo(1.0, -0.0, 0.8, -0.1);
-    // Distinctive notch
-    shape.lineTo(0.7, -0.15);
-    shape.lineTo(0.65, -0.1);
-    // Continue curve to handle
-    shape.quadraticCurveTo(0.4, -0.08, 0.2, -0.05);
-    shape.quadraticCurveTo(0.4, -0.02, 0, 0);
-
-    return shape;
-  }, []);
-
-  const innerBladeShape = useMemo(() => {
-    const shape = new Shape();
-
-    // Start at center
-    shape.moveTo(0, 0);
-
-    // Ornate guard shape (slightly smaller)
-    shape.lineTo(-0.13, 0.08);
-    shape.lineTo(-0.18, 0);
-    shape.lineTo(-0.08, -0.04);
-    shape.lineTo(0, 0);
-
-    // Mirror for right side
-    shape.lineTo(0.13, 0.08);
-    shape.lineTo(0.18, 0);
-    shape.lineTo(0.08, 0.04);
-    shape.lineTo(0, 0);
-
-    // Elegant curved blade shape (slightly smaller)
-    shape.lineTo(0, 0.04);
-    // Graceful curve up
-    shape.quadraticCurveTo(0.28, 0.13, 0.48, 0.18);
-    shape.quadraticCurveTo(0.68, 0.23, 0.88, 0.13);
-    // Sharp elegant tip
-    shape.quadraticCurveTo(0.98, 0.08, 1.08, 0);
-    // Sweeping bottom curve with notch
-    shape.quadraticCurveTo(0.98, 0.04, 0.78, -0.08);
-    // Distinctive notch
-    shape.lineTo(0.68, -0.14);
-    shape.lineTo(0.7, -0.08);
-    // Continue curve to handle
-    shape.quadraticCurveTo(0.38, -0.04, 0, -0.04);
-    shape.quadraticCurveTo(0.08, -0.04, 0, -0.04);
-
-    return shape;
-  }, []);
-
-  // Update blade extrude settings for an even thinner blade
-  const bladeExtrudeSettings = {
-    steps: 2,
-    depth: 0.02, 
-    bevelEnabled: true,
-    bevelThickness: 0.004,
-    bevelSize: 0.01,
-    bevelSegments: 3,
-  };
-
-  const innerBladeExtrudeSettings = {
-    ...bladeExtrudeSettings,
-    depth: 0.025,
-    bevelThickness: 0.003,
-    bevelSize: 0.004,
-    bevelOffset: 0,
-  };
-
-  // Get colors based on subclass (Psionic Blades overrides to purple)
-  const getBladeColors = () => {
-    if (psionicBladesBladeThemeActive) {
-      return {
-        primary: '#a855f7',
-        emissive: '#c084fc',
-        secondary: '#7c3aed',
-        secondaryEmissive: '#e879f9',
-      };
-    }
-    switch (subclass) {
-      case 'FROST':
-        return {
-          primary: '#ff0000',
-          emissive: '#ff2200',
-          secondary: '#cc0000',
-          secondaryEmissive: '#ff0000'
-        };
-      case 'ASSASSIN':
-        return {
-          primary: '#8b0000',
-          emissive: '#ff0000',
-          secondary: '#4b0000',
-          secondaryEmissive: '#cc0000'
-        };
-      default:
-        return {
-          primary: '#ff0000',
-          emissive: '#ff2200',
-          secondary: '#cc0000',
-          secondaryEmissive: '#ff0000'
-        };
-    }
-  };
-
-  const colors = getBladeColors();
-
   return (
     <group 
       position={[0, -0.35, 0.5]} 
@@ -671,56 +547,12 @@ export default function Sabres({
         rotation={[0, 0, Math.PI]}
         scale={[1, 1, 0.875]}
       >
-        {/* Handle */}
-        <group position={[0.2, -0.125, 0]} rotation={[0, 0, -Math.PI]}>
-          <mesh>
-            <cylinderGeometry args={[0.015, 0.02, 0.45, 12]} />
-            <meshStandardMaterial color="#2a3b4c" roughness={0.7} />
-          </mesh>
-          
-          {/* Handle wrappings */}
-          {[...Array(4)].map((_, i) => (
-            <mesh key={i} position={[0, 0.175 - i * 0.065, 0]}>
-              <torusGeometry args={[0.0225, 0.004, 8, 16]} />
-              <meshStandardMaterial color="#1a2b3c" metalness={0.6} roughness={0.4} />
-            </mesh>
-          ))}
-        </group>
-        
-        {/* Blade */}
-        <group position={[0.2, 0.3, 0.0]} rotation={[0, Math.PI / 2, Math.PI / 2]}>
-          {/* Base blade */}
-          <mesh>
-            <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
-            <meshStandardMaterial 
-              color={colors.primary}
-              emissive={colors.emissive}
-              emissiveIntensity={3}
-              metalness={0.9}
-              roughness={0.2}
-              opacity={0.9}
-              transparent
-            />
-          </mesh>
-          
-          {/* Outer ethereal glow */}
-          <mesh position={[0, 0, -0.02]}>
-            <extrudeGeometry args={[innerBladeShape, {
-              ...innerBladeExtrudeSettings,
-              depth: 0.06
-            }]} />
-            <meshStandardMaterial 
-              color={colors.secondary}
-              emissive={colors.secondaryEmissive}
-              emissiveIntensity={8}
-              metalness={0.7}
-              roughness={0.1}
-              opacity={0.4}
-              transparent
-            />
-          </mesh>
-          
-        </group>
+        <SabreItemMeshVisual
+          key={`left-${weaponAspect ?? 'FIRE_AFFINITY'}`}
+          hand="left"
+          aspect={weaponAspect}
+          psionicTint={psionicBladesBladeThemeActive}
+        />
       </group>
 
       {/* Right Sabre */}
@@ -730,57 +562,12 @@ export default function Sabres({
         rotation={[0, 0, Math.PI]}
         scale={[1, 1, 0.875]}
       >
-        {/* Handle */}
-        <group position={[-0.2, -0.125, 0]} rotation={[0, 0, -Math.PI]}>
-          <mesh>
-            <cylinderGeometry args={[0.015, 0.02, 0.45, 12]} />
-            <meshStandardMaterial color="#2a3b4c" roughness={0.7} />
-          </mesh>
-          
-          {/* Handle wrappings */}
-          {[...Array(4)].map((_, i) => (
-            <mesh key={i} position={[0, 0.175 - i * 0.065, 0]}>
-              <torusGeometry args={[0.0225, 0.004, 8, 16]} />
-              <meshStandardMaterial color="#1a2b3c" metalness={0.6} roughness={0.4} />
-            </mesh>
-          ))}
-        </group>
-        
-        {/* Blade */}
-        <group position={[-0.2, 0.3, 0.]} rotation={[0, Math.PI / 2, Math.PI / 2]}>
-          {/* Base blade */}
-          <mesh>
-            <extrudeGeometry args={[bladeShape, bladeExtrudeSettings]} />
-            <meshStandardMaterial 
-              color={colors.primary}
-              emissive={colors.emissive}
-              emissiveIntensity={2}
-              metalness={0.9}
-              roughness={0.2}
-              opacity={0.9}
-              transparent
-            />
-          </mesh>
-          
-          {/* Outer ethereal glow */}
-          <mesh position={[0, 0, -0.02]}>
-            <extrudeGeometry args={[innerBladeShape, {
-              ...innerBladeExtrudeSettings,
-              depth: 0.06
-            }]} />
-            <meshStandardMaterial 
-              color={colors.secondary}
-              emissive={colors.secondaryEmissive}
-              emissiveIntensity={3.5}
-              metalness={0.7}
-              roughness={0.1}
-              opacity={0.4}
-              transparent
-            />
-          </mesh>
-          
-
-        </group>
+        <SabreItemMeshVisual
+          key={`right-${weaponAspect ?? 'FIRE_AFFINITY'}`}
+          hand="right"
+          aspect={weaponAspect}
+          psionicTint={psionicBladesBladeThemeActive}
+        />
       </group>
 
       {/* Blizzard effect during stealth */}

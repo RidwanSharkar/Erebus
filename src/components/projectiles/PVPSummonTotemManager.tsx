@@ -6,6 +6,7 @@ import SummonTotemManager, {
 } from './SummonTotemManager';
 import { Vector3 } from '@/utils/three-exports';
 import type { TotemBoltVariant } from '@/utils/talents';
+import type { WeaponAspect } from '@/utils/weaponAspects';
 
 interface PVPSummonTotemManagerProps {
   enemyData?: Array<{ id: string; position: Vector3; health: number }>;
@@ -58,6 +59,8 @@ interface PVPSummonTotemManagerProps {
   onTotemFloatingDamage?: (damage: number, isCritical: boolean, position: Vector3) => void;
   /** Local player's Mantra bolt talent (remote totems supply variant via `triggerGlobalSummonTotem`). */
   totemBoltVariant?: TotemBoltVariant;
+  /** Local player's Scythe aspect for default bolt colors. */
+  weaponAspect?: WeaponAspect | null;
   superconductor?: boolean;
   allowPlayerTargets?: boolean;
   resolveTotemEnemyFrozen?: (enemyId: string) => boolean;
@@ -74,6 +77,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
   nextDamageNumberId,
   onTotemFloatingDamage,
   totemBoltVariant,
+  weaponAspect,
   superconductor = false,
   allowPlayerTargets = false,
   resolveTotemEnemyFrozen,
@@ -84,6 +88,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
   const playersRef = React.useRef(players);
   const enemyDataRef = React.useRef(enemyData);
   const totemBoltVariantRef = React.useRef(totemBoltVariant);
+  const weaponAspectRef = React.useRef(weaponAspect);
   const superconductorRef = React.useRef(superconductor);
 
   // Update refs when props change
@@ -98,6 +103,10 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
   React.useEffect(() => {
     totemBoltVariantRef.current = totemBoltVariant;
   }, [totemBoltVariant]);
+
+  React.useEffect(() => {
+    weaponAspectRef.current = weaponAspect;
+  }, [weaponAspect]);
 
   React.useEffect(() => {
     superconductorRef.current = superconductor;
@@ -116,6 +125,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
       totemBoltVariantParam,
       superconductorParam,
       allowPlayerTargetsParam,
+      weaponAspectParam,
     ) => {
       const canTargetPlayers = allowPlayerTargetsParam ?? allowPlayerTargets;
 
@@ -151,6 +161,10 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
 
         const boltVariantResolved = totemBoltVariantParam ?? totemBoltVariantRef.current;
         const superconductorResolved = superconductorParam ?? superconductorRef.current;
+        const weaponAspectResolved =
+          weaponAspectParam ??
+          (casterId ? playersRef.current?.get(casterId)?.weaponAspect : undefined) ??
+          weaponAspectRef.current;
 
         managerRef.current.createTotem(
           position,
@@ -165,6 +179,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
           boltVariantResolved ?? undefined,
           superconductorResolved,
           canTargetPlayers,
+          weaponAspectResolved ?? undefined,
         );
       }
     });
@@ -172,7 +187,7 @@ const PVPSummonTotemManager: React.FC<PVPSummonTotemManagerProps> = ({
     return () => {
       setGlobalSummonTotemTrigger(() => {});
     };
-  }, [onDamage, setActiveEffects, activeEffects, setDamageNumbers, nextDamageNumberId, onTotemFloatingDamage, enemyData, players, localSocketId, totemBoltVariant, superconductor, allowPlayerTargets]);
+  }, [onDamage, setActiveEffects, activeEffects, setDamageNumbers, nextDamageNumberId, onTotemFloatingDamage, enemyData, players, localSocketId, totemBoltVariant, weaponAspect, superconductor, allowPlayerTargets]);
 
   return (
     <SummonTotemManager

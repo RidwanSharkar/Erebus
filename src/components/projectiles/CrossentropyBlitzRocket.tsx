@@ -1,24 +1,46 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useEffect } from 'react';
 import { AdditiveBlending, ConeGeometry, CylinderGeometry } from '@/utils/three-exports';
-import { Mesh, Vector3, Color, Group } from 'three';
+import { Mesh, Vector3, Color, Group, MeshStandardMaterial } from 'three';
 import { useFrame } from '@react-three/fiber';
+import { useGLTF } from '@react-three/drei';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import {
+  applyWeaponItemGlow,
+  useDisposeClonedMaterials,
+} from '@/utils/disposeObject3D';
 import type { CrossentropyVisualTheme } from '@/utils/talents';
+import {
+  getCrossentropyBlitzAspectPalette,
+  type CrossentropyBlitzAspectKey,
+} from '@/utils/weaponAspects';
 import BlitzFireTrail from './BlitzFireTrail';
 
 const ROCKET_SCALE = 2.1;
 const ROCKET_BODY_GEO = new CylinderGeometry(0.08, 0.14, 0.55, 8);
 const ROCKET_NOSE_GEO = new ConeGeometry(0.14, 0.28, 8);
 
+export const BLITZ_BOLT_MODEL_PATH = '/models/trinket/blitzBoltProjectile.glb';
+/** Tune after in-game look test */
+export const BLITZ_BOLT_MODEL_SCALE = 0.24;
+const BLITZ_BOLT_SPIN_RAD_PER_SEC = 12;
+
+useGLTF.preload(BLITZ_BOLT_MODEL_PATH);
+
 interface CrossentropyBlitzRocketProps {
   id: number;
   position: Vector3;
   direction: Vector3;
   visualTheme?: CrossentropyVisualTheme;
+  aspectKey?: CrossentropyBlitzAspectKey;
   reaperEcsDriven?: boolean;
 }
 
-function themeColors(theme: CrossentropyVisualTheme, reaper: boolean) {
+function themeColors(
+  theme: CrossentropyVisualTheme,
+  reaper: boolean,
+  aspectKey: CrossentropyBlitzAspectKey,
+) {
   if (reaper) {
     return {
       body: '#6B2FA0',
@@ -59,11 +81,12 @@ function themeColors(theme: CrossentropyVisualTheme, reaper: boolean) {
       light: new Color('#55FF99'),
     };
   }
+  const palette = getCrossentropyBlitzAspectPalette(aspectKey);
   return {
-    body: '#CC3300',
-    emissive: '#FF6600',
-    trail: new Color('#FF4500'),
-    light: new Color('#FF5500'),
+    body: palette.body,
+    emissive: palette.emissive,
+    trail: new Color(palette.trail),
+    light: new Color(palette.light),
   };
 }
 
@@ -71,11 +94,13 @@ export default function CrossentropyBlitzRocket({
   position,
   direction,
   visualTheme = 'default',
+  aspectKey = 'archmage',
   reaperEcsDriven = false,
 }: CrossentropyBlitzRocketProps) {
   const outerGroupRef = useRef<Group>(null);
   const rocketGroupRef = useRef<Group>(null);
   const exhaustRef = useRef<Mesh>(null);
+  const boltSpinRef = useRef<Group>(null);
   const currentPosition = useRef(position.clone());
   const directionRef = useRef(direction.clone());
   const time = useRef(0);
@@ -85,11 +110,57 @@ export default function CrossentropyBlitzRocket({
   const _scratchFwd = useRef(new Vector3());
 
   const { body, emissive, trail, light } = useMemo(
-    () => themeColors(visualTheme, reaperEcsDriven),
-    [visualTheme, reaperEcsDriven],
+    () => themeColors(visualTheme, reaperEcsDriven, aspectKey),
+    [visualTheme, reaperEcsDriven, aspectKey],
   );
 
+  const bodyColor = useMemo(() => new Color(body), [body]);
+  const emissiveColor = useMemo(() => new Color(emissive), [emissive]);
+
   const rocketLight = useDynamicLight({ color: light, distance: 10, priority: 2 });
+
+  const { scene } = useGLTF(BLITZ_BOLT_MODEL_PATH);
+
+  const { clonedScene, themeMats } = useMemo(() => {
+    const clone = SkeletonUtils.clone(scene) as Group;
+    clone.traverse((child) => {
+      const mesh = child as Mesh;
+      if (!mesh.isMesh) return;
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      mesh.frustumCulled = true;
+      mesh.material = Array.isArray(mesh.material)
+        ? mesh.material.map((m) => m.clone())
+        : mesh.material.clone();
+    });
+    applyWeaponItemGlow(clone);
+
+    const mats: MeshStandardMaterial[] = [];
+    clone.traverse((child) => {
+      const mesh = child as Mesh;
+      if (!mesh.isMesh) return;
+      const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const mat of list) {
+        const std = mat as MeshStandardMaterial;
+        if (!std?.emissive) continue;
+        mats.push(std);
+      }
+    });
+    return { clonedScene: clone, themeMats: mats };
+  }, [scene]);
+
+  useDisposeClonedMaterials(clonedScene);
+
+  useEffect(() => {
+    for (const mat of themeMats) {
+      if (mat.color) {
+        mat.color.copy(bodyColor);
+      }
+      mat.emissive.copy(emissiveColor);
+      mat.emissiveIntensity = Math.max(mat.emissiveIntensity ?? 0, 3.5);
+      mat.needsUpdate = true;
+    }
+  }, [themeMats, bodyColor, emissiveColor]);
 
   useFrame((_, delta) => {
     if (!outerGroupRef.current || !rocketGroupRef.current) return;
@@ -116,6 +187,10 @@ export default function CrossentropyBlitzRocket({
       exhaustRef.current.scale.set(1, 0.6 + pulse * 0.5, 1);
     }
 
+    if (boltSpinRef.current) {
+      boltSpinRef.current.rotation.y += delta * BLITZ_BOLT_SPIN_RAD_PER_SEC;
+    }
+
     rocketLight.current?.setPosition(pos.x, pos.y, pos.z);
     rocketLight.current?.setIntensity(4.5);
   });
@@ -126,6 +201,7 @@ export default function CrossentropyBlitzRocket({
         worldPositionRef={currentPosition}
         directionRef={directionRef}
         visualTheme={visualTheme}
+        aspectKey={aspectKey}
         reaperPurple={reaperEcsDriven}
       />
       <group ref={outerGroupRef}>
@@ -139,15 +215,7 @@ export default function CrossentropyBlitzRocket({
             opacity={0.92}
           />
         </mesh>
-        <mesh geometry={ROCKET_NOSE_GEO} position={[0, 0.36, 1]}>
-          <meshStandardMaterial
-            color={body}
-            emissive={emissive}
-            emissiveIntensity={2.5}
-            transparent
-            opacity={0.95}
-          />
-        </mesh>
+
         <mesh ref={exhaustRef} position={[0, -0.42, 0]}>
           <coneGeometry args={[0.12, 0.42, 6]} />
           <meshStandardMaterial
@@ -172,6 +240,12 @@ export default function CrossentropyBlitzRocket({
             depthWrite={false}
           />
         </mesh>
+
+        <group ref={boltSpinRef} position={[0, -0.38, 0.125]}>
+          <group scale={BLITZ_BOLT_MODEL_SCALE * 0.75}>
+            <primitive object={clonedScene} />
+          </group>
+        </group>
         </group>
       </group>
     </>

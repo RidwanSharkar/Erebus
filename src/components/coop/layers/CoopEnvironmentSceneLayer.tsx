@@ -7,7 +7,9 @@ import HexCombatArena from '@/components/environment/HexCombatArena';
 import CastleRoom from '@/components/environment/CastleRoom';
 import ErebusGateRoom from '@/components/environment/ErebusGateRoom';
 import SunkenTempleRoom from '@/components/environment/SunkenTempleRoom';
-import CastleWallCollision from '@/components/environment/CastleWallCollision';
+import EternityPalaceRoom from '@/components/environment/EternityPalaceRoom';
+import FaeRealmRoom from '@/components/environment/FaeRealmRoom';
+import SpecialMapCenterDecor from '@/components/environment/SpecialMapCenterDecor';
 import { CoopMainArenaPortals } from '@/components/environment/CoopMainArenaPortals';
 import CombatArenaPedestal from '@/components/environment/CombatArenaPedestal';
 import MerchantNpcRenderer from '@/components/environment/MerchantNpcRenderer';
@@ -19,14 +21,16 @@ import HealingFountain from '@/components/environment/HealingFountain';
 import DeliriumStructure from '@/components/environment/DeliriumStructure';
 import IntroAllyChoiceEncounter from '@/components/coop/IntroAllyChoiceEncounter';
 import SunkenSentinelEncounter from '@/components/coop/SunkenSentinelEncounter';
+import EternityPalaceLootEncounter from '@/components/coop/EternityPalaceLootEncounter';
 import type { IntroAllyChoiceEncounterRef } from '@/utils/coopAllyChoice';
 import type { SunkenSentinelEncounterRef } from '@/utils/sunkenSentinelEncounter';
+import type { EternityPalaceEncounterRef } from '@/utils/eternityPalaceEncounter';
 import type { CoopAllyKind } from '@/utils/coopAllyTargeting';
 import {
   ThronePortalRing,
   normalizeCoopPortalKind,
   MAIN_COMBAT_BOSS_PORTAL_POSITION,
-  MAIN_COMBAT_CHOICE_PORTAL_POSITIONS,
+  CASTLE_ROOM_CHOICE_PORTAL_POSITIONS,
 } from '@/components/environment/ThroneRoom';
 import type { CoopTerrainTheme, DeliriumStructureState, DreamLayerPurchaseState, DreamLayerStockItem, MerchantPurchaseState, MerchantStockItem } from '@/contexts/MultiplayerContext';
 import type { World } from '@/ecs/World';
@@ -37,8 +41,12 @@ type CoopEnvironmentSceneLayerProps = {
   inBossThroneArena: boolean;
   isHexCombatArena: boolean;
   isIntroCastleRoom: boolean;
-  hexArenaVariant: 'stat' | 'chaos' | 'merchant' | 'eden' | 'dream_layer';
+  hexArenaVariant: 'stat' | 'trial' | 'chaos' | 'merchant' | 'eden' | 'dream_layer';
   coopCombatArenaEnterSeq: number;
+  coopDeepSanctumLevel: number;
+  coopSunkenRoomIndex: number;
+  coopFaeRealmRoomIndex: number;
+  coopEternityRoomIndex: number;
   coopTerrainTheme: CoopTerrainTheme;
   campTypes: string[];
   coopCurrentRoomKind: string | null;
@@ -51,6 +59,8 @@ type CoopEnvironmentSceneLayerProps = {
     | 'pick_boss'
     | 'pick_post_boss'
     | 'pick_sunken_entry'
+    | 'pick_eternity_entry'
+    | 'pick_eternity_late_entry'
     | 'eden_exit'
     | null;
   thronePortalOffer: readonly string[];
@@ -63,14 +73,20 @@ type CoopEnvironmentSceneLayerProps = {
   coopIntroFountainPhase: boolean;
   coopIntroFountainUsed: boolean;
   coopIntroAllyChoiceMade: boolean;
+  coopFaeRealmPortalOpen: boolean;
   coopSunkenPortalOpen: boolean;
   coopSunkenFountainPhase: boolean;
   coopSunkenFountainUsed: boolean;
   coopSunkenLootPhaseComplete: boolean;
+  coopEternityPortalOpen: boolean;
+  coopEternityFountainPhase: boolean;
+  coopEternityFountainUsed: boolean;
+  coopEternityLootPhaseComplete: boolean;
   coopAllyOffer: readonly CoopAllyKind[];
   coopAllyKind: CoopAllyKind | null;
   introAllyChoiceEncounterRef: React.MutableRefObject<IntroAllyChoiceEncounterRef | null>;
   sunkenSentinelEncounterRef: React.MutableRefObject<SunkenSentinelEncounterRef | null>;
+  eternityPalaceEncounterRef: React.MutableRefObject<EternityPalaceEncounterRef | null>;
   coopVoidPortalOffered: boolean;
   deepSanctumRewardKind: string | null;
   coopEdenFountainUsed: boolean;
@@ -98,6 +114,10 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
   isIntroCastleRoom,
   hexArenaVariant,
   coopCombatArenaEnterSeq,
+  coopDeepSanctumLevel,
+  coopSunkenRoomIndex,
+  coopFaeRealmRoomIndex,
+  coopEternityRoomIndex,
   coopTerrainTheme,
   campTypes,
   coopCurrentRoomKind,
@@ -113,14 +133,20 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
   coopIntroFountainPhase,
   coopIntroFountainUsed,
   coopIntroAllyChoiceMade,
+  coopFaeRealmPortalOpen,
   coopSunkenPortalOpen,
   coopSunkenFountainPhase,
   coopSunkenFountainUsed,
   coopSunkenLootPhaseComplete,
+  coopEternityPortalOpen,
+  coopEternityFountainPhase,
+  coopEternityFountainUsed,
+  coopEternityLootPhaseComplete,
   coopAllyOffer,
   coopAllyKind,
   introAllyChoiceEncounterRef,
   sunkenSentinelEncounterRef,
+  eternityPalaceEncounterRef,
   coopVoidPortalOffered,
   deepSanctumRewardKind,
   coopEdenFountainUsed,
@@ -145,10 +171,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
   const leftCamp = o && o.length > 0 ? normalizeCoopPortalKind(o[0]) : 'purple';
   const rightCamp = o && o.length >= 2 ? normalizeCoopPortalKind(o[1]) : 'red';
 
-  const isCastleRoom = coopCurrentRoomKind === 'intro' || coopCurrentRoomKind === 'deep_sanctum';
-  const isSunkenTemple = coopCurrentRoomKind === 'sunken_temple';
-  const isDeepSanctum = coopCurrentRoomKind === 'deep_sanctum';
-  const isEdenRoom = coopCurrentRoomKind === 'eden';
+  const isCastleRoom = coopCurrentRoomKind === 'intro' || coopCurrentRoomKind === 'deep_sanctum';  const isSunkenTemple = coopCurrentRoomKind === 'sunken_temple';  const isEternityPalace = coopCurrentRoomKind === 'eternity_palace';  const isFaeRealm = coopCurrentRoomKind === 'fae_realm';  const isDeepSanctum = coopCurrentRoomKind === 'deep_sanctum';  const isEdenRoom = coopCurrentRoomKind === 'eden';
   const isFalseEdenRoom = coopCurrentRoomKind === 'false_eden';
   const isDeliriumRoom = coopCurrentRoomKind === 'delirium_gate';
   const isErebusGateRoom = coopCurrentRoomKind === 'erebus_gate';
@@ -164,9 +187,34 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
   const deepSanctumPedestalReady = isDeepSanctum && deepSanctumRewardKind != null;
   const edenExitPortalCamp = edenResumePortalCampType(coopEdenResumeKind);
 
+  const specialMapRoomIndex = isDeepSanctum
+    ? coopDeepSanctumLevel
+    : isSunkenTemple
+      ? coopSunkenRoomIndex
+      : isFaeRealm
+        ? coopFaeRealmRoomIndex
+        : isEternityPalace
+          ? coopEternityRoomIndex
+          : 0;
+  const showSpecialMapCenterDecor =
+    isDeepSanctum || isSunkenTemple || isFaeRealm || isEternityPalace;
+
   return (
     <>
-      {isCastleRoom ? (
+      {showSpecialMapCenterDecor && (
+        <SpecialMapCenterDecor
+          roomKind={coopCurrentRoomKind}
+          roomIndex={specialMapRoomIndex}
+          enterSeq={coopCombatArenaEnterSeq}
+        />
+      )}
+      {isFaeRealm ? (
+        <FaeRealmRoom
+          key={`coop-fae-env-${coopCombatArenaEnterSeq}`}
+          combatActive={combatArenaActive && enemiesCount > 0}
+          hiddenIndices={mushroomHiddenIndices}
+        />
+      ) : isCastleRoom ? (
         <CastleRoom
           key={`coop-castle-env-${coopCombatArenaEnterSeq}`}
           combatActive={combatArenaActive && enemiesCount > 0}
@@ -174,6 +222,11 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
       ) : isSunkenTemple ? (
         <SunkenTempleRoom
           key={`coop-sunken-env-${coopCombatArenaEnterSeq}`}
+          combatActive={combatArenaActive && enemiesCount > 0}
+        />
+      ) : isEternityPalace ? (
+        <EternityPalaceRoom
+          key={`coop-eternity-env-${coopCombatArenaEnterSeq}`}
           combatActive={combatArenaActive && enemiesCount > 0}
         />
       ) : isErebusGateRoom ? (
@@ -199,15 +252,11 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           campTypes={campTypes}
           coopTerrainTheme={coopTerrainTheme}
           coopCurrentRoomKind={coopCurrentRoomKind}
-          mushroomHiddenIndices={mushroomHiddenIndices}
           animateClouds={!(combatArenaActive && enemiesCount > 0)}
         />
       )}
-      {world && !isHexCombatArena && !isCastleRoom && !isSunkenTemple && !isErebusGateRoom && (
-        <CastleWallCollision
-          world={world}
-          enabled={!inThroneRoom && !inBossThroneArena && !isHexCombatArena}
-        />
+      {isFaeRealm && coopFaeRealmPortalOpen && (
+        <VoidPortal position={[0, 0.05, 0]} open={1} visible />
       )}
       {isCastleRoom && coopCurrentRoomKind === 'intro' && coopIntroPortalOpen && (
         <VoidPortal position={[0, 0.05, 0]} open={1} visible />
@@ -226,7 +275,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           )}
           {coopIntroAllyChoiceMade && coopIntroFountainUsed && o.length >= 2 && (
             <group name="intro-fountain-portals">
-              {MAIN_COMBAT_CHOICE_PORTAL_POSITIONS.map((pos, i) => (
+              {CASTLE_ROOM_CHOICE_PORTAL_POSITIONS.map((pos, i) => (
                 <group key={`intro-fountain-portal-${i}`} position={[pos.x, pos.y, pos.z]}>
                   <ThronePortalRing
                     campType={i === 0 ? leftCamp : rightCamp}
@@ -253,8 +302,35 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           )}
           {coopSunkenLootPhaseComplete && coopSunkenFountainUsed && o.length >= 2 && (
             <group name="sunken-fountain-portals">
-              {MAIN_COMBAT_CHOICE_PORTAL_POSITIONS.map((pos, i) => (
+              {CASTLE_ROOM_CHOICE_PORTAL_POSITIONS.map((pos, i) => (
                 <group key={`sunken-fountain-portal-${i}`} position={[pos.x, pos.y, pos.z]}>
+                  <ThronePortalRing
+                    campType={i === 0 ? leftCamp : rightCamp}
+                    locked={false}
+                  />
+                </group>
+              ))}
+            </group>
+          )}
+        </>
+      )}
+      {isEternityPalace && coopEternityPortalOpen && (
+        <VoidPortal position={[0, 0.05, 0]} open={1} visible scheme="eternity" />
+      )}
+      {isEternityPalace && coopEternityFountainPhase && (
+        <>
+          <HealingFountain active used={coopEternityFountainUsed} />
+          {!coopEternityLootPhaseComplete && (
+            <EternityPalaceLootEncounter
+              lootPhaseComplete={coopEternityLootPhaseComplete}
+              playerPositionRef={realTimePlayerPositionRef}
+              encounterRef={eternityPalaceEncounterRef}
+            />
+          )}
+          {coopEternityLootPhaseComplete && coopEternityFountainUsed && o.length >= 2 && (
+            <group name="eternity-fountain-portals">
+              {CASTLE_ROOM_CHOICE_PORTAL_POSITIONS.map((pos, i) => (
+                <group key={`eternity-fountain-portal-${i}`} position={[pos.x, pos.y, pos.z]}>
                   <ThronePortalRing
                     campType={i === 0 ? leftCamp : rightCamp}
                     locked={false}
@@ -338,7 +414,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           <ThronePortalRing campType={edenExitPortalCamp} locked={false} />
         </group>
       )}
-      {combatArenaActive && coopMainArenaPortalPhase && !isCastleRoom && !isSunkenTemple && !isSurpriseRoom && (
+      {combatArenaActive && coopMainArenaPortalPhase && !isCastleRoom && !isSunkenTemple && !isEternityPalace && !isSurpriseRoom && (
         <CoopMainArenaPortals
           thronePortalOffer={thronePortalOffer}
           phase={coopMainArenaPortalPhase}
@@ -347,7 +423,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           portalGroundY={isHexCombatArena ? 0 : MAIN_COMBAT_BOSS_PORTAL_POSITION.y}
         />
       )}
-      {combatArenaActive && !isCastleRoom && !isSunkenTemple && coopCurrentRoomKind !== 'merchant' && coopCurrentRoomKind !== 'dream_layer' && !isSurpriseRoom && (
+      {combatArenaActive && !isCastleRoom && !isSunkenTemple && !isEternityPalace && coopCurrentRoomKind !== 'merchant' && coopCurrentRoomKind !== 'dream_layer' && coopCurrentRoomKind !== 'fae_realm' && !isSurpriseRoom && (
         <CombatArenaPedestal
           campType={((k) => (k === 'red' ? 'purple' : k))(
             normalizeCoopPortalKind(coopClearedRoomKind ?? coopCurrentRoomKind ?? campTypes[0]),

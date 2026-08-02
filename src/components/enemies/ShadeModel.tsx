@@ -1,11 +1,20 @@
 'use client';
 
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
-import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, VectorKeyframeTrack } from 'three';
+import { Group, AnimationAction, AnimationClip } from 'three';
+import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
+import { loadGltfAnimationClips, preloadSkinnedIdleAndAnimationClips } from '@/utils/gltfAnimationLoader';
 import { applySelfIllumination, SHADE_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
-import { getCachedEnemyAnimationClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
+import {
+  filterAnimationClipsForRoot,
+  getCachedEnemyAnimationClips,
+  invalidateEnemyAnimationClipCache,
+  peekEnemyAnimationClipCache,
+  renameAnimationClips,
+  stripRootMotionXZ,
+} from '@/utils/enemyAnimationClipCache';
 
 interface ShadeModelProps {
   isWalking: boolean;
@@ -17,16 +26,25 @@ interface ShadeModelProps {
   onImpactFinished?: () => void;
 }
 
+const SHADE_IDLE_PATH = '/models/shade_idle.glb';
+
 const SHADE_MODEL_PATHS = [
-  '/models/shade_idle.glb',
+  SHADE_IDLE_PATH,
   '/models/shade_walk.glb',
   '/models/shade_throw.glb',
   '/models/shade_death.glb',
   '/models/shade_impact.glb',
 ];
 
+const SHADE_DEFERRED_PATHS = {
+  Walk: '/models/shade_walk.glb',
+  Throw: '/models/shade_throw.glb',
+  Death: '/models/shade_death.glb',
+  Impact: '/models/shade_impact.glb',
+} as const;
+
 export function preloadShadeModels(): void {
-  SHADE_MODEL_PATHS.forEach(path => useGLTF.preload(path));
+  preloadSkinnedIdleAndAnimationClips(SHADE_IDLE_PATH, SHADE_MODEL_PATHS, useGLTF.preload);
 }
 
 // Doubled from the knight baseline (0.0135) since the shade GLB geometry
@@ -45,12 +63,30 @@ export default React.memo(function ShadeModel({
   const sceneGroupRef = useRef<Group>(null);
   const currentActionRef = useRef<AnimationAction | null>(null);
   const lastImpactPlayKeyRef = useRef(-1);
+  const [extraAnims, setExtraAnims] = useState<Record<string, AnimationClip[]>>({});
 
-  const { scene, animations: idleAnims } = useGLTF('/models/shade_idle.glb');
-  const { animations: walkAnims }  = useGLTF('/models/shade_walk.glb');
-  const { animations: throwAnims } = useGLTF('/models/shade_throw.glb');
-  const { animations: deathAnims } = useGLTF('/models/shade_death.glb');
-  const { animations: impactAnims } = useGLTF('/models/shade_impact.glb');
+  const { scene, animations: idleAnims } = useGLTF(SHADE_IDLE_PATH);
+
+  useEffect(() => {
+    let cancelled = false;
+    const entries = Object.entries(SHADE_DEFERRED_PATHS);
+    void Promise.all(
+      entries.map(async ([name, path]) => {
+        const clips = await loadGltfAnimationClips(path);
+        return [name, clips] as const;
+      }),
+    )
+      .then((loaded) => {
+        if (cancelled) return;
+        setExtraAnims(Object.fromEntries(loaded));
+      })
+      .catch((error) => {
+        console.warn('Failed to load shade animations:', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Clone + own materials so a dying shade's fade-out doesn't affect other instances.
   const clonedScene = useMemo(() => {
@@ -70,22 +106,37 @@ export default React.memo(function ShadeModel({
 
   useDisposeClonedMaterials(clonedScene);
 
-  const animations = useMemo(
-    () =>
+  const animations = useMemo(() => {
+    const idleClips = renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ);
+    const hasAllDeferred = Object.keys(SHADE_DEFERRED_PATHS).every((key) => extraAnims[key]?.length);
+    if (!hasAllDeferred) {
+      return filterAnimationClipsForRoot(clonedScene, idleClips);
+    }
+
+    // Recover from a session cache that was poisoned before Walk/Throw/etc. loaded.
+    const cached = peekEnemyAnimationClipCache('shade');
+    if (cached && !cached.some((clip) => clip.name === 'Walk')) {
+      invalidateEnemyAnimationClipCache('shade');
+    }
+
+    return filterAnimationClipsForRoot(
+      clonedScene,
       getCachedEnemyAnimationClips('shade', () => [
-        ...renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ),
-        ...renameAnimationClips(walkAnims, 'Walk').map(stripRootMotionXZ),
-        ...renameAnimationClips(throwAnims, 'Throw'),
-        ...renameAnimationClips(deathAnims, 'Death'),
-        ...renameAnimationClips(impactAnims, 'Impact'),
+        ...idleClips,
+        ...renameAnimationClips(extraAnims.Walk, 'Walk').map(stripRootMotionXZ),
+        ...renameAnimationClips(extraAnims.Throw, 'Throw'),
+        ...renameAnimationClips(extraAnims.Death, 'Death'),
+        ...renameAnimationClips(extraAnims.Impact, 'Impact'),
       ]),
-    [idleAnims, walkAnims, throwAnims, deathAnims, impactAnims],
-  );
+    );
+  }, [idleAnims, extraAnims, clonedScene]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
   const getAction = (name: 'Idle' | 'Walk' | 'Throw' | 'Death' | 'Impact'): AnimationAction | null =>
     actions[name] ?? null;
+
+  const posed = useEnemyIdlePose({ actions, mixer, currentActionRef });
 
   // Priority: Death > Throw > Impact > Walk > Idle
   useEffect(() => {
@@ -102,35 +153,19 @@ export default React.memo(function ShadeModel({
             : getAction('Idle');
 
     if (!nextAction) return;
-    if (nextAction === currentActionRef.current) {
-      const retriggerImpact = isImpacting && impactPlayKey !== lastImpactPlayKeyRef.current;
-      if (!retriggerImpact) return;
-    }
 
-    currentActionRef.current?.fadeOut(0.2);
+    const retriggerImpact = isImpacting && impactPlayKey !== lastImpactPlayKeyRef.current;
+    if (isImpacting) lastImpactPlayKeyRef.current = impactPlayKey;
+    if (!isImpacting) lastImpactPlayKeyRef.current = -1;
 
-    if (isDying) {
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = true;
-      nextAction.reset().fadeIn(0.15).play();
-    } else if (isAttacking) {
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = true;
-      nextAction.reset().fadeIn(0.2).play();
-    } else if (isImpacting) {
-      lastImpactPlayKeyRef.current = impactPlayKey;
-      nextAction.setLoop(LoopOnce, 1);
-      nextAction.clampWhenFinished = true;
-      nextAction.reset().fadeIn(0.2).play();
-    } else {
-      if (!isImpacting) lastImpactPlayKeyRef.current = -1;
-      nextAction.enabled = true;
-      nextAction.setLoop(LoopRepeat, Infinity);
-      nextAction.fadeIn(0.2).play();
-    }
-
-    currentActionRef.current = nextAction;
-  }, [isWalking, isAttacking, isDying, isImpacting, impactPlayKey, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+    playEnemyAction(nextAction, currentActionRef, mixer, {
+      loopOnce: !!(isDying || isAttacking || isImpacting),
+      clampWhenFinished: !!(isDying || isAttacking || isImpacting),
+      fadeIn: isDying ? 0.15 : 0.2,
+      fadeOut: isDying ? 0.15 : 0.2,
+      forceRestart: retriggerImpact,
+    });
+  }, [isWalking, isAttacking, isDying, isImpacting, impactPlayKey, actions, mixer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // After one-shot (throw, impact) finishes, blend back to Walk or Idle.
   useEffect(() => {
@@ -139,13 +174,7 @@ export default React.memo(function ShadeModel({
     const blendToWalkOrIdle = () => {
       if (isDying) return;
       const fallback = isWalking ? getAction('Walk') : getAction('Idle');
-      if (fallback) {
-        fallback.enabled = true;
-        fallback.setLoop(LoopRepeat, Infinity);
-        currentActionRef.current?.fadeOut(0.15);
-        fallback.fadeIn(0.15).play();
-        currentActionRef.current = fallback;
-      }
+      playEnemyAction(fallback, currentActionRef, mixer, { fadeIn: 0.15, fadeOut: 0.15 });
     };
 
     const handleFinish = (e: { action: AnimationAction }) => {
@@ -168,11 +197,10 @@ export default React.memo(function ShadeModel({
   }, [mixer, isDying, isWalking, actions, onImpactFinished]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <group ref={sceneGroupRef}>
+    <group ref={sceneGroupRef} visible={posed}>
       <group scale={[SCALE, SCALE, SCALE]}>
         <primitive object={clonedScene} />
       </group>
     </group>
   );
 });
-

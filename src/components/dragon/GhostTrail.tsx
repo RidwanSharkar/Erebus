@@ -4,6 +4,7 @@ import { Mesh, Vector3, Color, SphereGeometry } from 'three';
 import { Group, MeshBasicMaterial } from '@/utils/three-exports';
 import { SharedMesh } from '@/utils/SharedMesh';
 import { WeaponType, WeaponSubclass } from './weapons';
+import { getAspectDragonVisualOverrides, type WeaponAspect } from '@/utils/weaponAspects';
 import React from 'react';
 
 const DASH_LINGER_MS = 100; // how long the trail stays visible after dash ends
@@ -34,6 +35,7 @@ function resolveTrailColor(
   fixedTrailColor: string | undefined,
   weaponSubclass: WeaponSubclass | undefined,
   weaponType: WeaponType,
+  weaponAspect: WeaponAspect | undefined,
 ): string {
   // If player is stealthing, use dark grey for all trails
   if (isStealthing) {
@@ -42,6 +44,11 @@ function resolveTrailColor(
 
   if (fixedTrailColor) {
     return fixedTrailColor;
+  }
+
+  const aspectTrail = getAspectDragonVisualOverrides(weaponAspect)?.trailColor;
+  if (aspectTrail) {
+    return aspectTrail;
   }
 
   if (weaponSubclass) {
@@ -121,9 +128,11 @@ interface GhostTrailProps {
   fixedTrailColor?: string;
   /** When set, drive visibility from this ref only (e.g. isBlinking); omit to use dash / weapon-charge refs. */
   isTrailMotionRef?: React.RefObject<boolean>;
+  /** Throne weapon aspect — overrides subclass/type trail color when defined. */
+  weaponAspect?: WeaponAspect;
 }
 
-const GhostTrail = React.memo(({ parentRef, worldPositionRef, weaponType, weaponSubclass, isStealthing = false, isDashingRef, isWeaponChargeMovingRef, isSkyfalling = false, yOffset = 0, fixedTrailColor, isTrailMotionRef }: GhostTrailProps) => {
+const GhostTrail = React.memo(({ parentRef, worldPositionRef, weaponType, weaponSubclass, isStealthing = false, isDashingRef, isWeaponChargeMovingRef, isSkyfalling = false, yOffset = 0, fixedTrailColor, isTrailMotionRef, weaponAspect }: GhostTrailProps) => {
   const trailsRef = useRef<(Mesh | null)[]>([]);
   const ringBuffer = useRef<Vector3[]>([]);
   const writeIndex = useRef(0);
@@ -134,7 +143,7 @@ const GhostTrail = React.memo(({ parentRef, worldPositionRef, weaponType, weapon
   const wasShowingRef = useRef(false);
   const trailCount = 24;
 
-  const trailColorHex = resolveTrailColor(isStealthing, fixedTrailColor, weaponSubclass, weaponType);
+  const trailColorHex = resolveTrailColor(isStealthing, fixedTrailColor, weaponSubclass, weaponType, weaponAspect);
   const trailMaterials = useMemo(
     () =>
       Array.from(

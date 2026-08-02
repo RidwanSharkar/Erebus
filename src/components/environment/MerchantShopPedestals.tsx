@@ -28,7 +28,9 @@ import { ITEM_RARITY_COLORS, isItemRarity } from '@/utils/itemRarity';
 import { StatSystem } from '@/utils/StatSystem';
 import {
   getMerchantShopTooltipData,
+  getMerchantSlotStock,
   getUtilityStock,
+  isMerchantBaseSlotSoldOut,
   isMerchantSlotTaken,
   MERCHANT_HEAL_COST,
 } from '@/utils/merchantShopUtils';
@@ -374,8 +376,16 @@ function BossDropSymbol({ stock }: { stock?: MerchantStockItem }) {
 function slotSymbol(
   slot: MerchantShopSlotKind,
   inventory: MerchantStockItem[],
+  purchaseState: MerchantPurchaseState,
   bossDropStock?: MerchantStockItem,
 ) {
+  if (
+    (slot === 'dash_charge' || slot === 'weapon_talent')
+    && isMerchantBaseSlotSoldOut(slot, purchaseState)
+  ) {
+    const backfill = getMerchantSlotStock(slot, inventory, purchaseState);
+    return <BossDropSymbol stock={backfill} />;
+  }
   switch (slot) {
     case 'dash_charge':
       return <DashChargeSymbol />;
@@ -398,10 +408,14 @@ function slotSymbol(
 export function getMerchantShopStockId(
   slot: MerchantShopSlotKind,
   inventory: MerchantStockItem[],
+  purchaseState?: MerchantPurchaseState,
 ): string | null {
   if (slot === 'heal') return null;
+  if (purchaseState) {
+    return getMerchantSlotStock(slot, inventory, purchaseState)?.id ?? null;
+  }
   if (slot === 'boss_drop') {
-    return inventory.find((s) => s.kind === 'boss_drop')?.id ?? null;
+    return inventory.find((s) => s.kind === 'boss_drop' && !s.backfillSlot)?.id ?? null;
   }
   if (slot === 'utility') {
     return getUtilityStock(inventory)?.id ?? null;
@@ -412,7 +426,17 @@ export function getMerchantShopStockId(
 export function getMerchantShopHintLabel(
   slot: MerchantShopSlotKind,
   inventory: MerchantStockItem[],
+  purchaseState?: MerchantPurchaseState,
 ): string {
+  if (
+    purchaseState
+    && (slot === 'dash_charge' || slot === 'weapon_talent')
+    && isMerchantBaseSlotSoldOut(slot, purchaseState)
+  ) {
+    const backfill = getMerchantSlotStock(slot, inventory, purchaseState);
+    const label = backfill?.item?.label ?? backfill?.label ?? 'Mystery Item';
+    return `${label} — ${backfill?.cost ?? 1200}g`;
+  }
   switch (slot) {
     case 'dash_charge':
       return `Dash Charge — ${inventory.find((s) => s.kind === 'dash_charge')?.cost ?? 1000}g`;
@@ -426,7 +450,7 @@ export function getMerchantShopHintLabel(
       return `${label} — ${entry?.cost ?? 300}g`;
     }
     case 'boss_drop': {
-      const entry = inventory.find((s) => s.kind === 'boss_drop');
+      const entry = inventory.find((s) => s.kind === 'boss_drop' && !s.backfillSlot);
       const label = entry?.item?.label ?? entry?.label ?? 'Mystery Item';
       return `${label} — ${entry?.cost ?? '?'}g`;
     }
@@ -461,7 +485,7 @@ export default function MerchantShopPedestals({
   } | null>(null);
 
   const bossDropStock = useMemo(
-    () => inventory.find((s) => s.kind === 'boss_drop'),
+    () => inventory.find((s) => s.kind === 'boss_drop' && !s.backfillSlot),
     [inventory],
   );
 
@@ -588,7 +612,7 @@ export default function MerchantShopPedestals({
                   scale={0.75}
                   position={[-0.5, 1.25, 0]}
                 >
-                  {slotSymbol(slot.slot, inventory, bossDropStock)}
+                  {slotSymbol(slot.slot, inventory, purchaseState, bossDropStock)}
                   {!taken ? (
                     <mesh
                       onPointerOver={(event) => {

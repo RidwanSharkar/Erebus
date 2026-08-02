@@ -40,6 +40,8 @@ export class Movement extends Component {
   public isSlowed: boolean;
   public slowedUntil: number;
   public movementSpeedMultiplier: number;
+  /** Persistence Hunter pet upgrade — walk/run bonus while near Fae wolf. */
+  public persistenceHunterActive: boolean;
   
   // Corrupted debuff state (WraithStrike)
   public isCorrupted: boolean;
@@ -65,6 +67,10 @@ export class Movement extends Component {
 
   // Attack-cast movement slow (Sword ColossusStrike, Bow/Scythe/Runeblade/Spear primary, abilities, Spear charges)
   public isAttackSlowed: boolean;
+  /** Multiplier applied while isAttackSlowed (default 0.5 = 50% slow; Hexmetal Leggings = 0.75). */
+  public attackSlowMultiplier: number;
+  /** Hexmetal 2pc — raise walk speed to 4.125 while not sprinting. */
+  public hexmetalWalkSpeedActive: boolean;
 
   // Hold-Shift sprint (any locomotion except backward)
   public isSprinting: boolean;
@@ -140,6 +146,7 @@ export class Movement extends Component {
     this.isSlowed = false;
     this.slowedUntil = 0;
     this.movementSpeedMultiplier = 1.0;
+    this.persistenceHunterActive = false;
     
     // Initialize corrupted debuff states
     this.isCorrupted = false;
@@ -163,6 +170,8 @@ export class Movement extends Component {
 
     // Initialize attack-cast slow state
     this.isAttackSlowed = false;
+    this.attackSlowMultiplier = 0.5;
+    this.hexmetalWalkSpeedActive = false;
 
     // Initialize sprint state
     this.isSprinting = false;
@@ -295,7 +304,24 @@ export class Movement extends Component {
       return 0; // Completely frozen or rooted
     }
 
-    let speed = this.maxSpeed * this.movementSpeedMultiplier;
+    // Persistence Hunter: raise walk/run to 4.0, but keep sprint absolute speed unchanged
+    // (sprint = base 3.575 × sprint multiplier).
+    const BASE_WALK = 3.575;
+    const PERSISTENCE_WALK = 4.0;
+    const HEXMETAL_WALK = 4.125;
+    let baseSpeed = this.maxSpeed;
+    if (this.persistenceHunterActive && !this.isSprinting) {
+      baseSpeed = PERSISTENCE_WALK;
+    } else if (this.isSprinting && this.persistenceHunterActive) {
+      // Ensure sprint uses the original base, not an inflated maxSpeed.
+      baseSpeed = BASE_WALK;
+    }
+    // Hexmetal 2pc: walk 4.125 (does not stack with sprint). Math.max so it never
+    // downgrades Sabres Lethality (4.25) or Persistence Hunter (4.0).
+    if (this.hexmetalWalkSpeedActive && !this.isSprinting) {
+      baseSpeed = Math.max(baseSpeed, HEXMETAL_WALK);
+    }
+    let speed = baseSpeed * this.movementSpeedMultiplier;
 
 
 
@@ -318,9 +344,9 @@ export class Movement extends Component {
       speed *= 0.2;
     }
 
-    // Apply attack-cast movement slow (50% slower while casting restricted abilities)
+    // Apply attack-cast movement slow (default 50%; Hexmetal Leggings halves the penalty)
     if (this.isAttackSlowed) {
-      speed *= 0.5;
+      speed *= this.attackSlowMultiplier;
     }
 
     // Apply sprint speed boost (50% faster while holding Shift, except backward locomotion)
@@ -750,12 +776,14 @@ export class Movement extends Component {
     this.isSlowed = false;
     this.slowedUntil = 0;
     this.movementSpeedMultiplier = 1.0;
+    this.persistenceHunterActive = false;
     this.isIcebeaming = false;
     this.isPrimeMateriaActive = false;
     this.isIncinerationCharging = false;
     this.isIncinerationArmed = false;
     this.isLocustChanneling = false;
     this.isAttackSlowed = false;
+    // Keep attackSlowMultiplier / hexmetalWalkSpeedActive — item ownership, not combat state.
     this.isSprinting = false;
 
     // Reset dash properties
@@ -816,12 +844,15 @@ export class Movement extends Component {
     clone.isSlowed = this.isSlowed;
     clone.slowedUntil = this.slowedUntil;
     clone.movementSpeedMultiplier = this.movementSpeedMultiplier;
+    clone.persistenceHunterActive = this.persistenceHunterActive;
     clone.isIcebeaming = this.isIcebeaming;
     clone.isPrimeMateriaActive = this.isPrimeMateriaActive;
     clone.isIncinerationCharging = this.isIncinerationCharging;
     clone.isIncinerationArmed = this.isIncinerationArmed;
     clone.isLocustChanneling = this.isLocustChanneling;
     clone.isAttackSlowed = this.isAttackSlowed;
+    clone.attackSlowMultiplier = this.attackSlowMultiplier;
+    clone.hexmetalWalkSpeedActive = this.hexmetalWalkSpeedActive;
     clone.isSprinting = this.isSprinting;
 
     // Clone dash properties

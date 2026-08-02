@@ -95,10 +95,28 @@ const DREAM_LAYER_COLORS: TerrainPalette = {
   groundLightIntensity: 0.3,
 };
 
+/** Crypt of Currency (trial) — teal-green, greener than dream layer. */
+const TEAL_FIELD_COLORS: TerrainPalette = {
+  baseColor: '#1e5a52',
+  tipColor: '#5ec4a0',
+  groundColor: '#0e2e2a',
+  groundLightColor: '#3a9a7a',
+  groundLightIntensity: 0.32,
+};
+
+/** Avernus (merchant) — warm ember orange blades. */
+const ORANGE_FIELD_COLORS: TerrainPalette = {
+  baseColor: '#4a2808',
+  tipColor: '#f97316',
+  groundColor: '#1e1006',
+  groundLightColor: '#c45a18',
+  groundLightIntensity: 0.34,
+};
+
 const THEME_COUNTS: Record<RoomBorderTheme, number> = {
-  green: 80_000,
-  red: 80_000,
-  blue: 80_000,
+  green: 16_000,
+  red: 16_000,
+  blue: 16_000,
   purple: 16_000,
 };
 
@@ -129,7 +147,7 @@ interface StylizedGrassProps {
   /** Coop room archetype — drives default palette, density (purple), and wind. */
   roomTheme?: RoomBorderTheme;
   /** Override palette; fixed palettes instead of theme defaults. */
-  grassPalette?: 'theme' | 'crimson' | 'delirium' | 'dream' | 'purple' | 'grey' | 'ocean';
+  grassPalette?: 'theme' | 'crimson' | 'delirium' | 'dream' | 'purple' | 'grey' | 'ocean' | 'teal' | 'orange';
   /** Legacy: when true, same as `roomTheme="blue"`. Ignored if `roomTheme` is set. */
   isSnowTheme?: boolean;
   baseColor?: string;
@@ -286,7 +304,11 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
               ? GREY_FIELD_COLORS
               : grassPalette === 'ocean'
                 ? OCEAN_FIELD_COLORS
-                : paletteForTheme(effectiveTheme);
+                : grassPalette === 'teal'
+                  ? TEAL_FIELD_COLORS
+                  : grassPalette === 'orange'
+                    ? ORANGE_FIELD_COLORS
+                    : paletteForTheme(effectiveTheme);
 
   const resolvedBaseColor        = baseColor        ?? palette.baseColor;
   const resolvedTipColor         = tipColor         ?? palette.tipColor;

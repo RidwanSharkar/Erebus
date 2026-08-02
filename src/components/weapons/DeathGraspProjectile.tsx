@@ -10,14 +10,20 @@ interface DeathGraspProjectileProps {
   casterId: string;
   onHit?: (targetId: string, position: Vector3) => void;
   onComplete?: () => void;
+  onPullStart?: () => void;
   playerEntities?: React.MutableRefObject<Map<string, number>>;
   enemyData?: Array<{
     id: string;
     position: Vector3;
     health: number;
+    type?: string;
+    isBoss1EliteKnight?: boolean;
   }>;
   players?: Map<string, any>;
   localSocketId?: string;
+  isEnemyPullImmune?: (enemyId: string) => boolean;
+  getPulledEnemyPosition?: (enemyId: string) => Vector3 | null;
+  onEnemyPullFrame?: (enemyId: string, position: Vector3) => void;
 }
 
 export default function DeathGraspProjectile({
@@ -26,10 +32,14 @@ export default function DeathGraspProjectile({
   casterId,
   onHit,
   onComplete,
+  onPullStart,
   playerEntities,
   enemyData = [],
   players,
-  localSocketId
+  localSocketId,
+  isEnemyPullImmune,
+  getPulledEnemyPosition,
+  onEnemyPullFrame,
 }: DeathGraspProjectileProps) {
   const timeRef = useRef(0);
   const flickerRef = useRef(1);
@@ -248,13 +258,18 @@ export default function DeathGraspProjectile({
             onHit(targetId, position);
           }
         }}
-        onPullStart={() => {}}
+        onPullStart={() => {
+          onPullStart?.();
+        }}
         onComplete={() => {
           if (onComplete) {
             onComplete();
           }
         }}
         enemyData={enemyData}
+        isEnemyPullImmune={isEnemyPullImmune}
+        getPulledEnemyPosition={getPulledEnemyPosition}
+        onEnemyPullFrame={onEnemyPullFrame}
       />
     );
   }

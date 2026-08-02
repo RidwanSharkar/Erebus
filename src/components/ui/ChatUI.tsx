@@ -1,12 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useMultiplayer } from '@/contexts/MultiplayerContext';
+import { COOP_DEV_LOCALHOST_FEATURES } from '@/components/environment/ThroneRoom';
+import { resolveDevBossChatCamp } from '@/utils/devBossChatCommands';
 
 interface ChatUIProps {
   isVisible?: boolean;
 }
 
 export default function ChatUI({ isVisible = true }: ChatUIProps) {
-  const { chatMessages, isChatOpen, sendChatMessage, closeChat } = useMultiplayer();
+  const { chatMessages, isChatOpen, sendChatMessage, closeChat, enterCombatArena } = useMultiplayer();
   const [inputMessage, setInputMessage] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -26,8 +28,16 @@ export default function ChatUI({ isVisible = true }: ChatUIProps) {
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      if (inputMessage.trim()) {
-        sendChatMessage(inputMessage.trim());
+      const trimmed = inputMessage.trim();
+      if (trimmed) {
+        const devCamp = resolveDevBossChatCamp(trimmed);
+        if (devCamp) {
+          enterCombatArena(devCamp);
+          setInputMessage('');
+          closeChat();
+          return;
+        }
+        sendChatMessage(trimmed);
         setInputMessage('');
       }
       closeChat();
@@ -60,7 +70,11 @@ export default function ChatUI({ isVisible = true }: ChatUIProps) {
               <div ref={messagesEndRef} />
             </div>
           ) : !isChatOpen ? (
-            <div className="text-gray-400 text-xs italic">Enter to Chat</div>
+            <div className="text-gray-400 text-xs italic">
+              {COOP_DEV_LOCALHOST_FEATURES
+                ? 'Enter to Chat'
+                : 'Enter to Chat'}
+            </div>
           ) : null}
         </div>
       </div>

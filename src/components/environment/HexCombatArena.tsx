@@ -10,7 +10,7 @@ const HEX_ARENA_GRASS_COUNT = Math.round(
   80_000 * (HEX_ARENA_RADIUS / MAIN_ARENA_HEX_RADIUS) ** 2,
 );
 
-type HexArenaVariant = 'stat' | 'chaos' | 'merchant' | 'eden' | 'dream_layer';
+type HexArenaVariant = 'stat' | 'trial' | 'chaos' | 'merchant' | 'eden' | 'dream_layer';
 
 interface HexCombatArenaProps {
   variant: HexArenaVariant;
@@ -33,8 +33,10 @@ export default function HexCombatArena({
       : variant === 'chaos'
         ? '#312e81'
         : variant === 'merchant'
-          ? '#ec4899'
-          : '#f97316';
+          ? '#f97316'
+          : variant === 'trial'
+            ? '#2dd4bf'
+            : '#a78bfa';
   const particleColor = useMemo(
     () => new Color(
       variant === 'eden'
@@ -44,21 +46,27 @@ export default function HexCombatArena({
         : variant === 'chaos'
           ? '#b91c1c'
           : variant === 'merchant'
-            ? '#f472b6'
-            : '#fb923c',
+            ? '#fb923c'
+            : variant === 'trial'
+              ? '#5eead4'
+              : '#c4b5fd',
     ),
     [variant],
   );
   const skyTheme =
     variant === 'eden'
-      ? 'green'
+      ? 'green' as const
       : variant === 'dream_layer'
-        ? 'purple'
+        ? 'purple' as const
       : variant === 'chaos'
-        ? 'purple'
-        : variant === 'merchant'
-          ? 'purple'
-          : 'red';
+        ? 'purple' as const
+        : variant === 'merchant' || variant === 'trial'
+          ? undefined
+          : 'green' as const;
+  const skyPreset =
+    variant === 'trial' || variant === 'merchant'
+      ? 'trialLightBlue' as const
+      : undefined;
   const ringColor =
     variant === 'eden'
       ? '#86efac'
@@ -67,12 +75,18 @@ export default function HexCombatArena({
       : variant === 'chaos'
         ? '#7f1d1d'
         : variant === 'merchant'
-          ? '#ec4899'
-          : '#fb923c';
+          ? '#f97316'
+          : variant === 'trial'
+            ? '#2dd4bf'
+            : '#a78bfa';
 
   return (
     <group name={`${variant}-hex-combat-arena`}>
-      <CustomSky roomTheme={skyTheme} animateClouds={!combatActive} />
+      <CustomSky
+        roomTheme={skyTheme ?? 'green'}
+        skyPreset={skyPreset}
+        animateClouds={!combatActive}
+      />
       {/* Subtle room tint only — shadow + key light come from CoopGameScene */}
       <hemisphereLight
         color={accent}
@@ -84,8 +98,10 @@ export default function HexCombatArena({
             : variant === 'chaos'
               ? '#1e1b2e'
               : variant === 'merchant'
-                ? '#1a0a14'
-                : '#08040b'
+                ? '#1e1006'
+                : variant === 'trial'
+                  ? '#0e2e2a'
+                  : '#1a1420'
         }
         intensity={
           variant === 'eden'
@@ -95,8 +111,10 @@ export default function HexCombatArena({
             : variant === 'chaos'
               ? 0.38
               : variant === 'merchant'
-                ? 0.42
-                : 0.35
+                ? 0.4
+                : variant === 'trial'
+                  ? 0.4
+                  : 0.38
         }
       />
       <StylizedGrass
@@ -111,12 +129,12 @@ export default function HexCombatArena({
             : variant === 'dream_layer'
               ? 'dream'
               : variant === 'merchant'
-                ? 'purple'
+                ? 'orange'
                 : variant === 'chaos'
                   ? 'grey'
-                  : variant === 'stat'
-                    ? 'ocean'
-                    : 'crimson'
+                  : variant === 'trial'
+                    ? 'teal'
+                    : 'purple'
         }
         roomTheme={variant === 'eden' ? 'green' : undefined}
       />

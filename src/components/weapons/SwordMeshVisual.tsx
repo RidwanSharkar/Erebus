@@ -83,9 +83,11 @@ const innerBladeExtrudeSettings = {
 
 interface SwordMeshVisualProps {
   theme: SwordMeshTheme;
+  /** `held` keeps decorative tilt; `vertical` zeros root rotation for parent-driven alignment. */
+  presentation?: 'held' | 'vertical';
 }
 
-export default function SwordMeshVisual({ theme }: SwordMeshVisualProps) {
+export default function SwordMeshVisual({ theme, presentation = 'held' }: SwordMeshVisualProps) {
   const meshRefs = useRef<(Mesh | null)[]>([]);
 
   const { bladeGeo, innerGeo } = useMemo(() => ({
@@ -97,6 +99,8 @@ export default function SwordMeshVisual({ theme }: SwordMeshVisualProps) {
   const emissiveColor = useMemo(() => new Color(theme.emissive), [theme.emissive]);
   const coreColor = useMemo(() => new Color(theme.core), [theme.core]);
   const glowColor = useMemo(() => new Color(theme.glow), [theme.glow]);
+  const rootRotation: [number, number, number] =
+    presentation === 'vertical' ? [0, 0, 0] : [-0.65, 0, 0.2];
 
   useEffect(() => {
     const toDispose: (BufferGeometry | Material)[] = [bladeGeo, innerGeo];
@@ -112,7 +116,7 @@ export default function SwordMeshVisual({ theme }: SwordMeshVisualProps) {
   }, [bladeGeo, innerGeo]);
 
   return (
-    <group rotation={[-0.65, 0, 0.2]} scale={[1.25, 1.25, 1.25]}>
+    <group rotation={rootRotation} scale={[1.25, 1.25, 1.25]}>
       <group position={[-1.18, 0.225, 0.3]} rotation={[0, 0, Math.PI / 3]} scale={[0.75, 0.8, 0.65]}>
         <group position={[0.25, -0.55, 0.35]} rotation={[0, 0, -Math.PI]}>
           <mesh ref={(el) => { meshRefs.current[0] = el; }}>

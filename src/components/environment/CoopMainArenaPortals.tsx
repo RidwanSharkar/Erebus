@@ -16,6 +16,8 @@ type Phase =
   | 'pick_boss'
   | 'pick_post_boss'
   | 'pick_sunken_entry'
+  | 'pick_eternity_entry'
+  | 'pick_eternity_late_entry'
   | 'eden_exit';
 
 export function CoopMainArenaPortals({
@@ -37,27 +39,33 @@ export function CoopMainArenaPortals({
   const isBoss = phase === 'pick_boss' || phase === 'pre_boss_merchant';
   const isDualChoice = phase === 'pick_wave2' || phase === 'pick_pre_boss' || phase === 'pick_post_boss';
   const isSunkenEntry = phase === 'pick_sunken_entry';
+  const isEternityEntry = phase === 'pick_eternity_entry' || phase === 'pick_eternity_late_entry';
   const o = thronePortalOffer;
 
   const { left, right } = useMemo(() => {
-    if (isBoss || isSunkenEntry) {
+    if (isBoss || isSunkenEntry || isEternityEntry) {
       return { left: 'boss' as CoopPortalKind, right: 'boss' as CoopPortalKind };
     }
     return {
       left: o[0] ? normalizeCoopPortalKind(o[0]) : 'purple',
       right: o[1] ? normalizeCoopPortalKind(o[1]) : 'red',
     };
-  }, [isBoss, isSunkenEntry, o]);
+  }, [isBoss, isSunkenEntry, isEternityEntry, o]);
 
-  if (isBoss || isSunkenEntry) {
-    const groundY = isSunkenEntry ? 0 : portalGroundY;
+  if (isBoss || isSunkenEntry || isEternityEntry) {
+    const groundY = isSunkenEntry || isEternityEntry ? 0 : portalGroundY;
+    const groupName = isEternityEntry
+      ? 'coop-main-arena-eternity-portal'
+      : isSunkenEntry
+        ? 'coop-main-arena-sunken-portal'
+        : 'coop-main-arena-boss-portal';
     return (
       <group
-        name={isSunkenEntry ? 'coop-main-arena-sunken-portal' : 'coop-main-arena-boss-portal'}
+        name={groupName}
         position={[MAIN_COMBAT_BOSS_PORTAL_POSITION.x, groundY, MAIN_COMBAT_BOSS_PORTAL_POSITION.z]}
       >
         <VoidPortal
-          scheme={isSunkenEntry ? 'sunken' : 'boss'}
+          scheme={isEternityEntry ? 'eternity' : isSunkenEntry ? 'sunken' : 'boss'}
           position={[0, 0.05, 0]}
           open={portalsUnlocked ? 1 : 0}
           visible={portalsUnlocked}

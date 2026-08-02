@@ -1,6 +1,7 @@
 import { Vector3 } from '@/utils/three-exports';
 import { DamageNumberManager } from '@/utils/DamageNumberManager';
 import { isKnightBlocking, knightBlockBypassesDamageType } from '@/utils/knightBlockState';
+import { isMedusaVoidWarping } from '@/utils/medusaVoidWarpState';
 
 export type EnemyHitDamageNumberOpts = {
   enemyId?: string;
@@ -36,9 +37,11 @@ export function addEnemyHitDamageNumber(
 
   if (
     enemyId &&
-    isKnightBlocking(enemyId) &&
-    !knightBlockBypassesDamageType(damageType) &&
-    (enemyType === undefined || enemyType === 'knight')
+    (
+      (isKnightBlocking(enemyId) && (enemyType === undefined || enemyType === 'knight'))
+      || (isMedusaVoidWarping(enemyId) && (enemyType === undefined || enemyType === 'medusa'))
+    ) &&
+    !knightBlockBypassesDamageType(damageType)
   ) {
     return manager.addDamageNumber(
       0,

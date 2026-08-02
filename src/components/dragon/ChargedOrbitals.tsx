@@ -3,6 +3,7 @@ import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
 import { useFrame } from '@react-three/fiber';
 import { Group, Color, DoubleSide, AdditiveBlending } from '@/utils/three-exports';
 import { WeaponType, WeaponSubclass } from './weapons';
+import { getAspectDragonVisualOverrides, type WeaponAspect } from '@/utils/weaponAspects';
 import React from 'react';
 
 export interface DashChargeStatus {
@@ -15,6 +16,8 @@ interface ChargedOrbitalsProps {
   dashCharges: Array<DashChargeStatus>;
   weaponType: WeaponType;
   weaponSubclass?: WeaponSubclass;
+  /** Throne weapon aspect — overrides subclass/type orbital color when defined. */
+  weaponAspect?: WeaponAspect;
   isCorruptedAuraActive?: boolean;
   yOffset?: number;
   customActiveColor?: string;
@@ -23,7 +26,7 @@ interface ChargedOrbitalsProps {
   rechargeDurationSec?: number;
 }
 
-const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weaponSubclass, isCorruptedAuraActive, yOffset = 0, customActiveColor, customInactiveColor = '#333333', rechargeDurationSec = 8 }: ChargedOrbitalsProps) => {
+const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weaponSubclass, weaponAspect, isCorruptedAuraActive, yOffset = 0, customActiveColor, customInactiveColor = '#333333', rechargeDurationSec = 8 }: ChargedOrbitalsProps) => {
   const orbitalsRef = useRef<Group>(null);
 
   const activeColor = useMemo(() => {
@@ -34,6 +37,11 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
     // Check for corrupted aura on Runeblade first
     if (isCorruptedAuraActive && weaponType === WeaponType.RUNEBLADE) {
       return '#ff8800';
+    }
+
+    const aspectOrbital = getAspectDragonVisualOverrides(weaponAspect)?.orbitalColor;
+    if (aspectOrbital) {
+      return aspectOrbital;
     }
 
     if (weaponSubclass) {
@@ -87,24 +95,10 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
       case WeaponType.SPEAR:
         return '#E8CD57'; // Light blue/teal for Spear
     }
-  }, [customActiveColor, isCorruptedAuraActive, weaponType, weaponSubclass]);
+  }, [customActiveColor, isCorruptedAuraActive, weaponType, weaponSubclass, weaponAspect]);
 
   const activeColorObj = useMemo(() => new Color(activeColor), [activeColor]);
   const inactiveColorObj = useMemo(() => new Color(customInactiveColor), [customInactiveColor]);
-
-  const centralLightIntensity = useMemo(() => {
-    return dashCharges.reduce((sum, charge) => {
-      const isAvailable = charge.isAvailable;
-      const rechargeProgress = isAvailable || rechargeDurationSec <= 0
-        ? 1
-        : Math.max(0, Math.min(1, 1 - charge.cooldownRemaining / rechargeDurationSec));
-      return sum + (isAvailable ? 1 : 0.1 + rechargeProgress * 0.9);
-    }, 0);
-  }, [dashCharges, rechargeDurationSec]);
-
-  const centralLightColor = centralLightIntensity > dashCharges.length * 0.5
-    ? activeColor
-    : customInactiveColor;
 
   useFrame(({ clock }) => {
     if (!orbitalsRef.current || !parentRef.current) return;
@@ -135,13 +129,6 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
 
   return (
     <group ref={orbitalsRef}>
-      <PooledEffectLight
-        position={[0, -0.65, 0]}
-        color={centralLightColor}
-        intensity={centralLightIntensity}
-        distance={2.3}
-        decay={3}
-      />
       {dashCharges.map((charge, index) => {
         const isAvailable = charge.isAvailable;
         const rechargeProgress = isAvailable || rechargeDurationSec <= 0
@@ -152,6 +139,7 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
         const opacity = isAvailable ? 0.8 : 0.4 + rechargeProgress * 0.4;
         const outerOpacity = isAvailable ? 0.4 : 0.15 + rechargeProgress * 0.25;
         const meshColor = isAvailable ? activeColorObj : inactiveColorObj;
+        const lightIntensity = isAvailable ? 1 : 0.1 + rechargeProgress * 0.9;
         
         return (
           <group key={index}>
@@ -180,6 +168,12 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
               />
             </mesh>
 
+            <PooledEffectLight
+              color={isAvailable ? activeColor : customInactiveColor}
+              intensity={lightIntensity}
+              distance={5}
+              decay={2}
+            />
           </group>
         );
       })}

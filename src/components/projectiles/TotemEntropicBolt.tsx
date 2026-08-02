@@ -11,6 +11,10 @@ import {
 } from '@/utils/three-exports';
 import type { TotemBoltVariant } from '@/utils/talents';
 import { getEntropicColorTheme } from '@/utils/entropicColorThemes';
+import {
+  resolveScytheEntropicColorVariant,
+  type WeaponAspect,
+} from '@/utils/weaponAspects';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import EntropicBoltTrail from './EntropicBoltTrail';
 
@@ -30,8 +34,10 @@ export interface TotemEntropicBoltProps {
   to?: Vector3;
   /** Called once when the bolt reaches `to`. */
   onImpact?: (impactWorld: Vector3) => void;
-  /** Boon tint; default rose gold aligns with baseline Mantra / Entropic LMB bolts. */
+  /** Boon tint; overrides aspect defaults when set (wrathful / staggering / etc). */
   totemBoltVariant?: TotemBoltVariant;
+  /** Scythe aspect for default bolt palette when no talent boon is active. */
+  weaponAspect?: WeaponAspect | null;
   /** When set, flight is driven from the pool slot (no React state per launch). */
   poolSlot?: TotemBoltPoolSlot;
   onPoolImpact?: (boltId: number, targetId: string) => void;
@@ -53,8 +59,14 @@ function alignBoltToDirection(group: Group | null, direction: Vector3) {
   group.quaternion.copy(_quat);
 }
 
-/** Match `EntropicBolt` palettes for red/green/blue; default aligns with default Entropic LMB. */
-export function getTotemBoltTheme(variant: TotemBoltVariant | undefined): {
+/**
+ * Match `EntropicBolt` palettes for talent boons; when no boon is set, use the
+ * caster's Scythe aspect default (Archmage=rosegold, Draconic=arctic, Necromancer=green).
+ */
+export function getTotemBoltTheme(
+  variant: TotemBoltVariant | undefined,
+  weaponAspect?: WeaponAspect | null,
+): {
   primary: string;
   secondary: string;
   light: string;
@@ -69,7 +81,7 @@ export function getTotemBoltTheme(variant: TotemBoltVariant | undefined): {
     case 'frost':
       return { primary: '#075985', secondary: '#0369a1', light: '#7dd3fc' };
     default:
-      return getEntropicColorTheme('rosegold');
+      return getEntropicColorTheme(resolveScytheEntropicColorVariant(weaponAspect));
   }
 }
 
@@ -79,6 +91,7 @@ export default function TotemEntropicBolt({
   to,
   onImpact,
   totemBoltVariant,
+  weaponAspect,
   poolSlot,
   onPoolImpact,
 }: TotemEntropicBoltProps) {
@@ -138,7 +151,10 @@ export default function TotemEntropicBolt({
     return Math.max(0.11, Math.min(0.38, d / 34));
   }, [from, to, poolSlot]);
 
-  const theme = useMemo(() => getTotemBoltTheme(totemBoltVariant), [totemBoltVariant]);
+  const theme = useMemo(
+    () => getTotemBoltTheme(totemBoltVariant, weaponAspect),
+    [totemBoltVariant, weaponAspect],
+  );
 
   const trailColor = useMemo(() => new Color(theme.primary), [theme.primary]);
 

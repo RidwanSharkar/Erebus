@@ -7,7 +7,6 @@ import { useFrame } from '@react-three/fiber';
 import { Color } from '@/utils/three-exports';
 import CustomSky from './CustomSky';
 import ArenaRisingBubbles from './ArenaRisingBubbles';
-import ThroneCenterSeal from './ThroneCenterSeal';
 import ThroneOuterFloor from './ThroneOuterFloor';
 import { PENTAGON_ARENA_RADIUS } from '@/utils/mapConstants';
 
@@ -87,6 +86,7 @@ const SunkenTempleRoom: React.FC<{ combatActive?: boolean }> = () => {
         radius={radius}
         texturePath="/center_glacial.png"
         position={[0, 0.01, 0]}
+        rotateSpeed={0.04}
       />
 
 

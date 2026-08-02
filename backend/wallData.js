@@ -14,7 +14,7 @@ const WALL_HEIGHT    = 3.0;
 const WALL_THICKNESS = 0.6;
 
 // Mirror: client MAIN_ARENA_HEX_RADIUS.
-const MAIN_ARENA_HEX_RADIUS = 20;
+const MAIN_ARENA_HEX_RADIUS = 16;
 const t = WALL_THICKNESS;
 const targetChordLength = 2.0;
 

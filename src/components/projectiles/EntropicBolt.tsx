@@ -1,30 +1,32 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
+import { useGLTF } from '@react-three/drei';
+import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import {
   Vector3,
   Group,
   Color,
   Quaternion,
-  AdditiveBlending,
-  DoubleSide,
-  MeshBasicMaterial,
+  Mesh,
+  MeshStandardMaterial,
 } from '@/utils/three-exports';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
-import EntropicBoltTrail, { ENTROPIC_TRAIL_FADE_OUT_DURATION } from './EntropicBoltTrail';
 import {
-  ENTROPIC_CORE_CONE_GEO,
-  ENTROPIC_GLOW_SPHERE_GEO,
-  ENTROPIC_SHAFT_CYL_GEO,
-  ENTROPIC_SHARD_BOX_A_GEO,
-  ENTROPIC_SHARD_BOX_B_GEO,
-  ENTROPIC_SHARD_CONE_GEO,
-  ENTROPIC_SHARD_TETRA_GEO,
-} from './sharedProjectileGeometry';
+  applyWeaponItemGlow,
+  useDisposeClonedMaterials,
+} from '@/utils/disposeObject3D';
+import EntropicBoltTrail, { ENTROPIC_TRAIL_FADE_OUT_DURATION } from './EntropicBoltTrail';
 import { getEntropicColorTheme } from '@/utils/entropicColorThemes';
 import {
   computeEntropicChaosOffset,
   entropicChaosSeedFromId,
 } from '@/utils/entropicBoltChaos';
+
+export const ENTROPIC_BOLT_MODEL_PATH = '/models/trinket/boltProjectile.glb';
+/** ~2× prior bolt height; tune after in-game look test */
+export const ENTROPIC_BOLT_MODEL_SCALE = 0.24;
+
+useGLTF.preload(ENTROPIC_BOLT_MODEL_PATH);
 
 interface EntropicBoltProps {
   id: number;
@@ -40,33 +42,12 @@ interface EntropicBoltProps {
 
 const AXIS_Y = new Vector3(0, 1, 0);
 const FALLBACK_UP = new Vector3(0, 0, 1);
-const ORBIT_SPEED = 8;
-const ORBIT_SHARD_ANGLES = [0, Math.PI * 2 / 3, Math.PI * 4 / 3, Math.PI] as const;
 const _dir = new Vector3();
 const _quat = new Quaternion();
 const _flightDir = new Vector3();
 const _basePos = new Vector3();
 const _chaosOffset = new Vector3();
 const WOBBLE_ROLL = 0.1;
-
-const BOLT_ADDITIVE_FLAGS = {
-  transparent: true,
-  blending: AdditiveBlending,
-  depthWrite: false,
-} as const;
-
-function createBoltBodyMaterials() {
-  return {
-    core: new MeshBasicMaterial({ ...BOLT_ADDITIVE_FLAGS, opacity: 0.94 }),
-    shardA: new MeshBasicMaterial({ ...BOLT_ADDITIVE_FLAGS, opacity: 0.82 }),
-    shardB: new MeshBasicMaterial({ ...BOLT_ADDITIVE_FLAGS, opacity: 0.78 }),
-    shardC: new MeshBasicMaterial({ ...BOLT_ADDITIVE_FLAGS, opacity: 0.75 }),
-    corona: new MeshBasicMaterial({ ...BOLT_ADDITIVE_FLAGS, opacity: 0.18, side: DoubleSide }),
-    orbitEven: new MeshBasicMaterial({ ...BOLT_ADDITIVE_FLAGS, opacity: 0.88 }),
-    orbitOdd: new MeshBasicMaterial({ ...BOLT_ADDITIVE_FLAGS, opacity: 0.88 }),
-    tip: new MeshBasicMaterial({ ...BOLT_ADDITIVE_FLAGS, opacity: 0.92 }),
-  };
-}
 
 function alignBoltToDirection(group: Group | null, direction: Vector3) {
   if (!group) return;
@@ -91,7 +72,6 @@ function EntropicBolt({
   const boltRef = useRef<Group>(null);
   const orientRef = useRef<Group>(null);
   const wobbleRef = useRef<Group>(null);
-  const orbitRef = useRef<Group>(null);
   const coreRef = useRef<Group>(null);
   const lastPosition = useRef(position.clone());
   const flightDirectionRef = useRef(_flightDir.copy(direction));
@@ -102,35 +82,51 @@ function EntropicBolt({
   const trailColor = useMemo(() => new Color(theme.primary), [theme.primary]);
   const primaryColor = useMemo(() => new Color(theme.primary), [theme.primary]);
   const secondaryColor = useMemo(() => new Color(theme.secondary), [theme.secondary]);
-  const lightColor = useMemo(() => new Color(theme.light), [theme.light]);
 
   const boltLight = useDynamicLight({ color: theme.light, distance: 7, decay: 2, priority: 2 });
 
-  const bodyMaterials = useMemo(() => createBoltBodyMaterials(), []);
+  const { scene } = useGLTF(ENTROPIC_BOLT_MODEL_PATH);
+
+  const { clonedScene, themeMats } = useMemo(() => {
+    const clone = SkeletonUtils.clone(scene) as Group;
+    clone.traverse((child) => {
+      const mesh = child as Mesh;
+      if (!mesh.isMesh) return;
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+      mesh.frustumCulled = true;
+      mesh.material = Array.isArray(mesh.material)
+        ? mesh.material.map((m) => m.clone())
+        : mesh.material.clone();
+    });
+    applyWeaponItemGlow(clone);
+
+    const mats: MeshStandardMaterial[] = [];
+    clone.traverse((child) => {
+      const mesh = child as Mesh;
+      if (!mesh.isMesh) return;
+      const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const mat of list) {
+        const std = mat as MeshStandardMaterial;
+        if (!std?.emissive) continue;
+        mats.push(std);
+      }
+    });
+    return { clonedScene: clone, themeMats: mats };
+  }, [scene]);
+
+  useDisposeClonedMaterials(clonedScene);
 
   useEffect(() => {
-    bodyMaterials.core.color.copy(primaryColor);
-    bodyMaterials.shardA.color.copy(secondaryColor);
-    bodyMaterials.shardB.color.copy(secondaryColor);
-    bodyMaterials.shardC.color.copy(primaryColor);
-    bodyMaterials.corona.color.copy(secondaryColor);
-    bodyMaterials.orbitEven.color.copy(secondaryColor);
-    bodyMaterials.orbitOdd.color.copy(primaryColor);
-    bodyMaterials.tip.color.copy(lightColor);
-  }, [bodyMaterials, primaryColor, secondaryColor, lightColor]);
-
-  useEffect(() => {
-    return () => {
-      bodyMaterials.core.dispose();
-      bodyMaterials.shardA.dispose();
-      bodyMaterials.shardB.dispose();
-      bodyMaterials.shardC.dispose();
-      bodyMaterials.corona.dispose();
-      bodyMaterials.orbitEven.dispose();
-      bodyMaterials.orbitOdd.dispose();
-      bodyMaterials.tip.dispose();
-    };
-  }, [bodyMaterials]);
+    for (const mat of themeMats) {
+      if (mat.color) {
+        mat.color.copy(secondaryColor);
+      }
+      mat.emissive.copy(primaryColor);
+      mat.emissiveIntensity = Math.max(mat.emissiveIntensity ?? 0, 3.5);
+      mat.needsUpdate = true;
+    }
+  }, [themeMats, primaryColor, secondaryColor]);
 
   const isTrailFading = trailFadeOutStartElapsed !== undefined;
   const hideBoltBody = isTrailFading;
@@ -161,10 +157,7 @@ function EntropicBolt({
     timeRef.current += delta;
     const pulse = 1 + Math.sin(timeRef.current * 14) * 0.06;
     if (coreRef.current) {
-      coreRef.current.scale.setScalar(pulse);
-    }
-    if (orbitRef.current) {
-      orbitRef.current.rotation.y += delta * ORBIT_SPEED;
+      coreRef.current.scale.setScalar(ENTROPIC_BOLT_MODEL_SCALE * pulse);
     }
 
     if (ecsDriven) {
@@ -207,8 +200,6 @@ function EntropicBolt({
 
   return (
     <group>
-
-
       <EntropicBoltTrail
         color={trailColor}
         accentColor={trailColor}
@@ -225,47 +216,9 @@ function EntropicBolt({
         {!hideBoltBody ? (
           <group ref={orientRef}>
             <group ref={wobbleRef}>
-            <group ref={coreRef}>
-              {/* Jagged core bolt */}
-              <mesh position={[0, 0.18, 0]} geometry={ENTROPIC_CORE_CONE_GEO}>
-                <primitive attach="material" object={bodyMaterials.core} />
-              </mesh>
-
-              {/* Fractured shaft shards */}
-              <mesh position={[0.028, 0.08, 0.012]} rotation={[0.15, 0.4, 0.25]} geometry={ENTROPIC_SHARD_BOX_A_GEO}>
-                <primitive attach="material" object={bodyMaterials.shardA} />
-              </mesh>
-              <mesh position={[-0.022, 0.12, -0.01]} rotation={[-0.2, -0.35, 0.18]} geometry={ENTROPIC_SHARD_BOX_B_GEO}>
-                <primitive attach="material" object={bodyMaterials.shardB} />
-              </mesh>
-              <mesh position={[0.01, 0.22, -0.024]} rotation={[0.35, 0.1, -0.3]} geometry={ENTROPIC_SHARD_CONE_GEO}>
-                <primitive attach="material" object={bodyMaterials.shardC} />
-              </mesh>
-
-              {/* Outer corona shell */}
-              <mesh position={[0, 0.16, 0]} geometry={ENTROPIC_SHAFT_CYL_GEO}>
-                <primitive attach="material" object={bodyMaterials.corona} />
-              </mesh>
-            </group>
-
-            {/* Perpendicular orbiting shards */}
-            <group ref={orbitRef} position={[0, 0.14, 0]}>
-              {ORBIT_SHARD_ANGLES.map((angle, i) => (
-                <group key={i} rotation={[0, angle, 0]}>
-                  <mesh position={[0.11, 0, 0]} rotation={[0.5, 0.8, 0.3]} geometry={ENTROPIC_SHARD_TETRA_GEO}>
-                    <primitive
-                      attach="material"
-                      object={i % 2 === 0 ? bodyMaterials.orbitEven : bodyMaterials.orbitOdd}
-                    />
-                  </mesh>
-                </group>
-              ))}
-            </group>
-
-            {/* Tip emissive glow */}
-            <mesh position={[0, 0.3, 0]} geometry={ENTROPIC_GLOW_SPHERE_GEO}>
-              <primitive attach="material" object={bodyMaterials.tip} />
-            </mesh>
+              <group ref={coreRef} scale={ENTROPIC_BOLT_MODEL_SCALE}>
+                <primitive object={clonedScene} />
+              </group>
             </group>
           </group>
         ) : null}

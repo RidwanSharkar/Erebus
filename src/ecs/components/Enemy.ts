@@ -2,7 +2,7 @@
 import { Component } from '../Entity';
 import { Vector3 } from '@/utils/three-exports';
 import { addGlobalFrozenEnemy } from '@/components/weapons/FrostNovaManager';
-import { addGlobalIgnitedEnemy } from '@/components/weapons/IgniteEffectManager';
+import { addGlobalIgnitedEnemy, addGlobalShadowflamedEnemy } from '@/components/weapons/IgniteEffectManager';
 import { isImmuneToPlayerStunAndFreeze } from '@/utils/enemyStatusImmunity';
 import {
   WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK,
@@ -24,7 +24,7 @@ export enum EnemyType {
   BOSS = 'boss',
 }
 
-const COOP_BOSS_SERVER_TYPES_FOR_FREEZE = new Set(['boss', 'boss2', 'boss3', 'boss-skeleton']);
+const COOP_BOSS_SERVER_TYPES_FOR_FREEZE = new Set(['boss', 'boss2', 'boss3', 'destiny', 'boss-skeleton']);
 
 function isBossForFreezeCap(enemy: { type: EnemyType }, coopServerEnemyType?: string | null): boolean {
   if (enemy.type === EnemyType.BOSS) return true;
@@ -120,6 +120,10 @@ export class Enemy extends Component {
   public isIgnited: boolean;
   public igniteEndTime: number;
 
+  /** Blademaster Shadowflame DoT (local + client mirror of server in co-op). */
+  public isShadowflamed: boolean;
+  public shadowflameEndTime: number;
+
   constructor(
     type: EnemyType = EnemyType.DUMMY,
     level: number = 1
@@ -187,6 +191,9 @@ export class Enemy extends Component {
 
     this.isIgnited = false;
     this.igniteEndTime = 0;
+
+    this.isShadowflamed = false;
+    this.shadowflameEndTime = 0;
   }
 
   private calculateExperienceReward(): number {
@@ -294,6 +301,7 @@ export class Enemy extends Component {
     this.chillStacks = 0;
     this.chillExpiresAtSec = 0;
     this.clearIgnite();
+    this.clearShadowflame();
   }
   
   public freeze(duration: number, currentTime: number, coopServerEnemyType?: string | null): void {
@@ -467,6 +475,48 @@ export class Enemy extends Component {
   public getIgniteRemainingMs(currentTime: number): number {
     if (!this.isIgnited) return 0;
     return Math.max(0, Math.floor((this.igniteEndTime - currentTime) * 1000));
+  }
+
+  public applyShadowflame(
+    durationMs: number,
+    currentTime: number,
+    ecsEntityIdForVfx?: string,
+    position?: Vector3,
+  ): void {
+    if (this.isDead) return;
+
+    this.isShadowflamed = true;
+    this.shadowflameEndTime = currentTime + durationMs / 1000;
+
+    if (ecsEntityIdForVfx && position) {
+      addGlobalShadowflamedEnemy(ecsEntityIdForVfx, position.clone(), durationMs);
+    }
+  }
+
+  public clearShadowflame(): void {
+    this.isShadowflamed = false;
+    this.shadowflameEndTime = 0;
+  }
+
+  public isShadowflameActive(currentTime: number): boolean {
+    if (!this.isShadowflamed) return false;
+    if (currentTime >= this.shadowflameEndTime) {
+      this.clearShadowflame();
+      return false;
+    }
+    return true;
+  }
+
+  public updateShadowflameStatus(currentTime: number): void {
+    if (!this.isShadowflamed) return;
+    if (currentTime >= this.shadowflameEndTime) {
+      this.clearShadowflame();
+    }
+  }
+
+  public getShadowflameRemainingMs(currentTime: number): number {
+    if (!this.isShadowflamed) return 0;
+    return Math.max(0, Math.floor((this.shadowflameEndTime - currentTime) * 1000));
   }
   
   public canMove(): boolean {
@@ -720,6 +770,7 @@ export class Enemy extends Component {
     this.chillExpiresAtSec = 0;
 
     this.clearIgnite();
+    this.clearShadowflame();
   }
 
   public clone(): Enemy {
@@ -780,6 +831,9 @@ export class Enemy extends Component {
 
     clone.isIgnited = this.isIgnited;
     clone.igniteEndTime = this.igniteEndTime;
+
+    clone.isShadowflamed = this.isShadowflamed;
+    clone.shadowflameEndTime = this.shadowflameEndTime;
     
     return clone;
   }

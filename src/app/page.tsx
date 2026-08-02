@@ -18,6 +18,7 @@ import InventoryPanel from '../components/ui/InventoryPanel';
 import EssenceDisplay from '../components/ui/EssenceDisplay';
 import CurrencyPanel from '../components/ui/CurrencyPanel';
 import HudActionButtons from '../components/ui/HudActionButtons';
+import RulebookPanel from '../components/ui/RulebookPanel';
 import { MultiplayerProvider, useMultiplayerActions, useMultiplayerRoom } from '../contexts/MultiplayerContext';
 import type { CoopRoomKind } from '../contexts/MultiplayerContext';
 import MerchantUI from '../components/ui/MerchantUI';
@@ -31,6 +32,9 @@ import AbilitySelectionModal from '../components/ui/AbilitySelectionModal';
 import TalentSelectionModal from '../components/ui/TalentSelectionModal';
 import CoopBoonPickerModal from '../components/ui/CoopBoonPickerModal';
 import CoopBossLootPickerModal from '../components/ui/CoopBossLootPickerModal';
+import CoopPetCompanionUpgradeModal from '../components/ui/CoopPetCompanionUpgradeModal';
+import type { PetCompanionUpgradeId } from '@/utils/petCompanionUpgrades';
+import { getPetCompanionUpgradeOptionsForKind } from '@/utils/petCompanionUpgrades';
 import DefeatRetryDialog from '../components/ui/DefeatRetryDialog';
 import {
   applyTalentIdToLoadout,
@@ -76,6 +80,8 @@ import {
   STAT_ROOM_PEDESTAL_POINTS,
   INTRO_ROOM_GOLD_REWARDS,
   SUNKEN_ROOM_GOLD_REWARDS,
+  ETERNITY_ROOM_GOLD_REWARDS,
+  FAE_REALM_ROOM_GOLD_REWARDS,
   DEEP_SANCTUM_STAT_POINTS,
   TRIAL_ROOM_PEDESTAL_GOLD,
   type BossSlainLabel,
@@ -83,6 +89,7 @@ import {
 import { useAnnouncementQueue } from '../utils/announcementQueue';
 import { ITEM_RARITY_COLORS, isItemRarity } from '../utils/itemRarity';
 import { DpsTracker, type DpsSnapshot } from '../utils/DpsTracker';
+import { getWeaponAspectLabel, defaultWeaponAspect, type WeaponAspect } from '../utils/weaponAspects';
 
 // Extend Window interface to include audioSystem
 declare global {
@@ -261,6 +268,8 @@ function HomeContent() {
     claimDeepSanctumReward,
     registerDeepSanctumRewardClaimedHandler,
     chooseSunkenTempleLoot,
+    chooseEternityPalaceLoot,
+    chooseEternityPetUpgrade,
   } = useMultiplayerActions();
 
   const {
@@ -284,16 +293,28 @@ function HomeContent() {
     coopMainArenaIntermissionSeq,
     coopIntroIntermissionSeq,
     coopSunkenIntermissionSeq,
+    coopEternityIntermissionSeq,
+    coopFaeRealmIntermissionSeq,
     coopIntroRoomIndex,
     coopIntroFountainPhase,
     coopIntroFountainUsed,
     coopIntroAllyChoiceMade,
+    coopFaeRealmRoomIndex,
+    coopFaeBeastCompanionGranted,
+    coopFaeBeastCompanionKind,
     coopSunkenRoomIndex,
     coopSunkenFountainPhase,
     coopSunkenFountainUsed,
     coopSunkenLootOffer,
     coopSunkenLootClaimedPlayerIds,
     coopSunkenLootPhaseComplete,
+    coopEternityRoomIndex,
+    coopEternityFountainPhase,
+    coopEternityFountainUsed,
+    coopEternityLootOffer,
+    coopEternityLootClaimedPlayerIds,
+    coopEternityLootPhaseComplete,
+    coopPetCompanionUpgrade,
     coopAllyKind,
     coopVoidPortalOffered,
     coopDeepSanctumLevel,
@@ -313,8 +334,11 @@ function HomeContent() {
     coopClearedRoomKind,
     coopColoredRoomVisitIndex,
     coopBossRoomVisitIndex,
+    coopBossThroneArena,
+    coopIntroPending,
     lateJoinCombatLoadout,
     selectedArchetype,
+    selectedWeaponAspect,
   } = useMultiplayerRoom();
 
   const combatOverlayCallbacksRef = useRef<CombatOverlayCallbacks>(NOOP_COMBAT_OVERLAY_CALLBACKS);
@@ -425,14 +449,18 @@ function HomeContent() {
   const coopColoredRoomVisitIndexRef = useRef(coopColoredRoomVisitIndex);
   const coopBossRoomVisitIndexRef = useRef(coopBossRoomVisitIndex);
   const coopIntroRoomIndexRef = useRef(coopIntroRoomIndex);
+  const coopFaeRealmRoomIndexRef = useRef(coopFaeRealmRoomIndex);
   const coopSunkenRoomIndexRef = useRef(coopSunkenRoomIndex);
+  const coopEternityRoomIndexRef = useRef(coopEternityRoomIndex);
   const coopDeepSanctumLevelRef = useRef(coopDeepSanctumLevel);
   const combatArenaActiveRef = useRef(combatArenaActive);
   coopCurrentRoomKindRef.current = coopCurrentRoomKind;
   coopColoredRoomVisitIndexRef.current = coopColoredRoomVisitIndex;
   coopBossRoomVisitIndexRef.current = coopBossRoomVisitIndex;
   coopIntroRoomIndexRef.current = coopIntroRoomIndex;
+  coopFaeRealmRoomIndexRef.current = coopFaeRealmRoomIndex;
   coopSunkenRoomIndexRef.current = coopSunkenRoomIndex;
+  coopEternityRoomIndexRef.current = coopEternityRoomIndex;
   coopDeepSanctumLevelRef.current = coopDeepSanctumLevel;
   combatArenaActiveRef.current = combatArenaActive;
   const [roomTitleAnnouncement, setRoomTitleAnnouncement] = useState<{
@@ -484,6 +512,7 @@ function HomeContent() {
   const claimRewardAnnouncedSeqRef = useRef(-1);
   const chooseGatewayAnnouncedSeqRef = useRef(-1);
   const introAllyDrinkAnnouncedSeqRef = useRef(-1);
+  const merchantInPlaceAnnouncedSeqRef = useRef(-1);
   const prevPortalsUnlockedRef = useRef(false);
 
   const announceThroneEnterPortal = useCallback(() => {
@@ -547,8 +576,13 @@ function HomeContent() {
     | { kind: 'room'; options: TalentId[] };
   const [coopBoon, setCoopBoon] = useState<CoopBoonState | null>(null);
   const [sunkenLootModalOpen, setSunkenLootModalOpen] = useState(false);
+  const [eternityLootModalOpen, setEternityLootModalOpen] = useState(false);
+  const [eternityPetUpgradeModalOpen, setEternityPetUpgradeModalOpen] = useState(false);
   /** Class boon completed for primary weapons in throne prep — one trio per weapon, not globally per run session. */
   const classBoonPickedWeaponsRef = useRef<Set<WeaponType>>(new Set());
+  const [classTalentPickedWeapons, setClassTalentPickedWeapons] = useState<ReadonlySet<WeaponType>>(
+    () => new Set(),
+  );
   const lateJoinLoadoutHandledRef = useRef(false);
   const roomBoonIntermissionDoneSeqRef = useRef(-1);
   const deepSanctumRewardClaimedSeqRef = useRef(-1);
@@ -676,6 +710,25 @@ function HomeContent() {
     }
   }, [gameMode, coopMainArenaPortalPhase]);
 
+  /** Pre-boss merchant is an in-place swap (no portal blink) — announce AVERNUS once per intermission. */
+  useEffect(() => {
+    if (gameMode !== 'coop') return;
+    if (coopCurrentRoomKind !== 'merchant' || coopMainArenaPortalPhase !== 'pre_boss_merchant') return;
+    if (merchantInPlaceAnnouncedSeqRef.current === coopMainArenaIntermissionSeq) return;
+    merchantInPlaceAnnouncedSeqRef.current = coopMainArenaIntermissionSeq;
+    queueRoomTitleAnnouncement(
+      'merchant',
+      null,
+      `merchant-inplace-${coopMainArenaIntermissionSeq}`,
+    );
+  }, [
+    gameMode,
+    coopCurrentRoomKind,
+    coopMainArenaPortalPhase,
+    coopMainArenaIntermissionSeq,
+    queueRoomTitleAnnouncement,
+  ]);
+
   /** New wave-clear intermission: ensure pedestal aura / X-interact isn't stuck behind prior `pedestalInteracted`. */
   const lastIntermissionSeqForPedestalRef = useRef<number | undefined>(undefined);
   useEffect(() => {
@@ -750,6 +803,46 @@ function HomeContent() {
     }
   }, [coopIntroIntermissionSeq, coopIntroFountainPhase, coopIntroAllyChoiceMade, coopIntroFountainUsed, gameMode, enqueueAnnouncement, enqueueAnnouncementAfter]);
 
+  const lastFaeRealmIntermissionSeqRef = useRef(-1);
+  useEffect(() => {
+    if (lastFaeRealmIntermissionSeqRef.current === coopFaeRealmIntermissionSeq) return;
+    lastFaeRealmIntermissionSeqRef.current = coopFaeRealmIntermissionSeq;
+    if (gameMode !== 'coop' || coopFaeRealmIntermissionSeq <= 0) return;
+
+    const clearedIndex = coopFaeRealmRoomIndexRef.current;
+    const goldAmount = FAE_REALM_ROOM_GOLD_REWARDS[Math.max(0, clearedIndex - 1)] ?? 0;
+    if (goldAmount > 0) {
+      enqueueAnnouncement(
+        `+${goldAmount} GOLD`,
+        REWARD_ANNOUNCEMENT_COLORS.gold,
+        `fae-gold-${coopFaeRealmIntermissionSeq}`,
+      );
+    }
+
+    if (clearedIndex === 3 && coopFaeBeastCompanionGranted) {
+      enqueueAnnouncementAfter(
+        ROOM_TITLE_ANNOUNCEMENT_MS,
+        'SPIRIT ANIMAL AWAKENED',
+        '#c9a227',
+        `fae-beast-${coopFaeRealmIntermissionSeq}`,
+      );
+    }
+
+    const { title, color } = GUIDE_ANNOUNCEMENTS.descendPortal;
+    enqueueAnnouncementAfter(
+      ROOM_TITLE_ANNOUNCEMENT_MS + (clearedIndex === 3 && coopFaeBeastCompanionGranted ? 1800 : 0),
+      title,
+      color,
+      `fae-descend-${coopFaeRealmIntermissionSeq}`,
+    );
+  }, [
+    coopFaeRealmIntermissionSeq,
+    coopFaeBeastCompanionGranted,
+    gameMode,
+    enqueueAnnouncement,
+    enqueueAnnouncementAfter,
+  ]);
+
   useEffect(() => {
     if (gameMode !== 'coop' || !coopIntroFountainPhase || !coopIntroAllyChoiceMade || coopIntroFountainUsed) return;
     if (introAllyDrinkAnnouncedSeqRef.current === coopIntroIntermissionSeq) return;
@@ -816,6 +909,66 @@ function HomeContent() {
     const { title, color } = GUIDE_ANNOUNCEMENTS.chooseGateway;
     enqueueAnnouncement(title, color, `sunken-gateway-${coopSunkenIntermissionSeq}`);
   }, [coopSunkenLootPhaseComplete, coopSunkenFountainUsed, coopSunkenIntermissionSeq, gameMode, enqueueAnnouncement]);
+
+  const lastEternityIntermissionSeqRef = useRef(-1);
+  useEffect(() => {
+    if (lastEternityIntermissionSeqRef.current === coopEternityIntermissionSeq) return;
+    lastEternityIntermissionSeqRef.current = coopEternityIntermissionSeq;
+    if (gameMode !== 'coop' || coopEternityIntermissionSeq <= 0) return;
+
+    const clearedIndex = coopEternityRoomIndexRef.current;
+    const goldAmount = ETERNITY_ROOM_GOLD_REWARDS[Math.max(0, clearedIndex - 1)] ?? 0;
+    if (goldAmount > 0) {
+      enqueueAnnouncement(
+        `+${goldAmount} GOLD`,
+        REWARD_ANNOUNCEMENT_COLORS.gold,
+        `eternity-gold-${coopEternityIntermissionSeq}`,
+      );
+    }
+
+    if (coopEternityFountainPhase) {
+      if (!coopEternityLootPhaseComplete) {
+        const { title, color } = GUIDE_ANNOUNCEMENTS.empowerSpiritAnimal
+          ?? GUIDE_ANNOUNCEMENTS.speakWithArchitect;
+        enqueueAnnouncementAfter(
+          ROOM_TITLE_ANNOUNCEMENT_MS,
+          title,
+          color,
+          `eternity-architect-${coopEternityIntermissionSeq}`,
+        );
+      } else if (!coopEternityFountainUsed) {
+        const { title, color } = GUIDE_ANNOUNCEMENTS.drinkFountain;
+        enqueueAnnouncementAfter(
+          ROOM_TITLE_ANNOUNCEMENT_MS,
+          title,
+          color,
+          `eternity-fountain-${coopEternityIntermissionSeq}`,
+        );
+      }
+    } else {
+      const { title, color } = GUIDE_ANNOUNCEMENTS.descendPortal;
+      enqueueAnnouncementAfter(
+        ROOM_TITLE_ANNOUNCEMENT_MS,
+        title,
+        color,
+        `eternity-descend-${coopEternityIntermissionSeq}`,
+      );
+    }
+  }, [coopEternityIntermissionSeq, coopEternityFountainPhase, coopEternityLootPhaseComplete, coopEternityFountainUsed, gameMode, enqueueAnnouncement, enqueueAnnouncementAfter]);
+
+  useEffect(() => {
+    if (gameMode !== 'coop' || !coopEternityFountainPhase || !coopEternityLootPhaseComplete || coopEternityFountainUsed) return;
+    if (introAllyDrinkAnnouncedSeqRef.current === coopEternityIntermissionSeq) return;
+    introAllyDrinkAnnouncedSeqRef.current = coopEternityIntermissionSeq;
+    const { title, color } = GUIDE_ANNOUNCEMENTS.drinkFountain;
+    enqueueAnnouncement(title, color, `eternity-fountain-after-loot-${coopEternityIntermissionSeq}`);
+  }, [coopEternityLootPhaseComplete, coopEternityFountainPhase, coopEternityFountainUsed, coopEternityIntermissionSeq, gameMode, enqueueAnnouncement]);
+
+  useEffect(() => {
+    if (!coopEternityLootPhaseComplete || !coopEternityFountainUsed || gameMode !== 'coop') return;
+    const { title, color } = GUIDE_ANNOUNCEMENTS.chooseGateway;
+    enqueueAnnouncement(title, color, `eternity-gateway-${coopEternityIntermissionSeq}`);
+  }, [coopEternityLootPhaseComplete, coopEternityFountainUsed, coopEternityIntermissionSeq, gameMode, enqueueAnnouncement]);
 
   useEffect(() => {
     if (!coopIntroAllyChoiceMade || !coopIntroFountainUsed || gameMode !== 'coop') return;
@@ -951,7 +1104,7 @@ function HomeContent() {
     const { weapon: w } = lateJoinCombatLoadout;
 
     setSelectedWeapons({ primary: w, secondary: w });
-    setAbilityLoadout(getDefaultLoadoutForWeapon(w));
+    setAbilityLoadout(getDefaultLoadoutForWeapon(w, defaultWeaponAspect(w)));
 
     setTalentLoadout((prev) => {
       const boonId = pickRandomClassBoonForWeapon(w, prev);
@@ -978,6 +1131,12 @@ function HomeContent() {
           );
         }
         classBoonPickedWeaponsRef.current.add(w);
+        setClassTalentPickedWeapons((prev) => {
+          if (prev.has(w)) return prev;
+          const next = new Set(prev);
+          next.add(w);
+          return next;
+        });
         enqueueAnnouncement('UNLOCKED', REWARD_ANNOUNCEMENT_COLORS.unlocked, `boon-${boonId}`);
         window.audioSystem?.playUIInterface3Sound?.();
       });
@@ -1024,6 +1183,46 @@ function HomeContent() {
   useEffect(() => {
     setSunkenLootModalOpen(false);
   }, [coopSunkenIntermissionSeq]);
+
+  const handleEternityPalaceArchitectInteract = useCallback(() => {
+    if (gameMode !== 'coop' || !coopEternityFountainPhase || coopEternityLootPhaseComplete) return;
+    if (socket?.id && coopEternityLootClaimedPlayerIds.includes(socket.id)) return;
+    if (!coopFaeBeastCompanionGranted || !coopFaeBeastCompanionKind) return;
+    setEternityPetUpgradeModalOpen(true);
+    window.audioSystem?.playUIInterface4Sound?.();
+  }, [
+    gameMode,
+    coopEternityFountainPhase,
+    coopEternityLootPhaseComplete,
+    coopEternityLootClaimedPlayerIds,
+    coopFaeBeastCompanionGranted,
+    coopFaeBeastCompanionKind,
+    socket?.id,
+  ]);
+
+  const handleEternityPetUpgradePick = useCallback((upgradeId: PetCompanionUpgradeId) => {
+    chooseEternityPetUpgrade(upgradeId);
+    setEternityPetUpgradeModalOpen(false);
+    window.audioSystem?.playUISelectionSound?.();
+  }, [chooseEternityPetUpgrade]);
+
+  const handleEternityLootPick = useCallback((stockId: string) => {
+    chooseEternityPalaceLoot(stockId);
+    setEternityLootModalOpen(false);
+    window.audioSystem?.playUISelectionSound?.();
+  }, [chooseEternityPalaceLoot]);
+
+  useEffect(() => {
+    if (socket?.id && coopEternityLootClaimedPlayerIds.includes(socket.id)) {
+      setEternityLootModalOpen(false);
+      setEternityPetUpgradeModalOpen(false);
+    }
+  }, [coopEternityLootClaimedPlayerIds, socket?.id]);
+
+  useEffect(() => {
+    setEternityLootModalOpen(false);
+    setEternityPetUpgradeModalOpen(false);
+  }, [coopEternityIntermissionSeq]);
 
   /**
    * Called by CoopGameScene when the player presses X near the combat pedestal.
@@ -1282,6 +1481,12 @@ function HomeContent() {
           classPickWeapon !== WeaponType.NONE
         ) {
           classBoonPickedWeaponsRef.current.add(classPickWeapon);
+          setClassTalentPickedWeapons((prev) => {
+            if (prev.has(classPickWeapon)) return prev;
+            const next = new Set(prev);
+            next.add(classPickWeapon);
+            return next;
+          });
         }
         if (coopMainArenaPortalPhase !== null) {
           clearCoopClearedRoomColor();
@@ -1295,6 +1500,17 @@ function HomeContent() {
       setCoopBoon(null);
     },
     [clearCoopClearedRoomColor, coopMainArenaPortalPhase, combatArenaActive, setTalentLoadout, setAbilityLoadout, abilityLoadout, enqueueAnnouncement, announceThroneEnterPortal],
+  );
+
+  const handleWeaponAspectCycled = useCallback(
+    (aspect: WeaponAspect) => {
+      enqueueAnnouncement(
+        getWeaponAspectLabel(aspect).toUpperCase(),
+        REWARD_ANNOUNCEMENT_COLORS.unlocked,
+        `weapon-aspect-${aspect}`,
+      );
+    },
+    [enqueueAnnouncement],
   );
 
   useEffect(() => {
@@ -1466,7 +1682,7 @@ function HomeContent() {
   const refreshCoopBossSpawned = useCallback(() => {
     setCoopBossSpawned(
       Array.from(enemiesRef.current.values()).some(
-        (e) => (e.type === 'boss' || e.type === 'boss2' || e.type === 'boss3') && !e.isDying,
+        (e) => (e.type === 'boss' || e.type === 'boss2' || e.type === 'boss3' || e.type === 'destiny') && !e.isDying,
       ),
     );
   }, [enemiesRef]);
@@ -1514,7 +1730,8 @@ function HomeContent() {
     initAudioSystem();
   }, []);
 
-  // Co-op BGM: silent throne prep, random room tracks in combat, chaos between rooms / after boss
+  // Co-op BGM: throne prep track at run start, room-specific or random combat tracks,
+  // chaos between rooms / after boss
   useEffect(() => {
     const audio = typeof window !== 'undefined' ? window.audioSystem : undefined;
     if (!audio) {
@@ -1531,7 +1748,11 @@ function HomeContent() {
       lastCoopIntermissionBgmRef.current = coopMainArenaIntermissionSeq;
       lastCoopEnterBgmRef.current = coopCombatArenaEnterSeq;
       lastCoopBossBgmRef.current = coopBossClearedBgmSeq;
-      audio.coopEnterHubMusic();
+      if (coopIntroPending) {
+        void audio.coopEnterThronePrepMusic();
+      } else {
+        audio.coopEnterHubMusic();
+      }
       return;
     }
     if (coopMainArenaIntermissionSeq > lastCoopIntermissionBgmRef.current) {
@@ -1548,7 +1769,9 @@ function HomeContent() {
     }
     if (coopCombatArenaEnterSeq > lastCoopEnterBgmRef.current) {
       lastCoopEnterBgmRef.current = coopCombatArenaEnterSeq;
-      void audio.coopEnterRandomCombatRoomMusic();
+      void audio.coopEnterCombatRoomMusic(coopCurrentRoomKind, {
+        bossThroneArena: coopBossThroneArena,
+      });
     }
   }, [
     sessionGameMode,
@@ -1557,6 +1780,9 @@ function HomeContent() {
     coopMainArenaIntermissionSeq,
     coopCombatArenaEnterSeq,
     coopBossClearedBgmSeq,
+    coopCurrentRoomKind,
+    coopBossThroneArena,
+    coopIntroPending,
   ]);
 
   // Co-op room clear: portal phase unlocks (pedestal) — plays once per null → phase transition.
@@ -1612,9 +1838,22 @@ function HomeContent() {
       portalsUnlocked &&
       coopMainArenaIntermissionSeq > 0
     ) {
+      // Merchant (Avernus) has no gateway choice prompt — boss portal is already visible pre-boss.
+      if (
+        coopCurrentRoomKind === 'merchant'
+        || coopMainArenaPortalPhase === 'pre_boss_merchant'
+      ) {
+        return;
+      }
       if (coopMainArenaPortalPhase === 'pick_sunken_entry') {
         const { title, color } = GUIDE_ANNOUNCEMENTS.descendPortal;
         enqueueAnnouncement(title, color, `sunken-entry-${coopMainArenaIntermissionSeq}`);
+      } else if (
+        coopMainArenaPortalPhase === 'pick_eternity_entry'
+        || coopMainArenaPortalPhase === 'pick_eternity_late_entry'
+      ) {
+        const { title, color } = GUIDE_ANNOUNCEMENTS.descendPortal;
+        enqueueAnnouncement(title, color, `eternity-entry-${coopMainArenaIntermissionSeq}`);
       } else {
         announceChooseGateway(coopMainArenaIntermissionSeq);
       }
@@ -1625,6 +1864,7 @@ function HomeContent() {
     sessionGameMode,
     coopMainArenaIntermissionSeq,
     coopMainArenaPortalPhase,
+    coopCurrentRoomKind,
     announceChooseGateway,
     enqueueAnnouncement,
   ]);
@@ -1688,78 +1928,13 @@ function HomeContent() {
     throneTalentWeapon !== null ||
     coopBoon !== null ||
     sunkenLootModalOpen;
+    eternityLootModalOpen;
+    eternityPetUpgradeModalOpen;
 
   return (
       <main className="w-full h-screen bg-black relative">
-        {/* Rules Panel */}
         {showRulesPanel && (
-          <div
-            className="absolute inset-0 bg-black/80 flex items-center justify-center z-50"
-            data-block-game-input
-            onClick={() => setShowRulesPanel(false)}
-          >
-            <div
-              className="bg-gray-900 border-2 border-green-400 rounded-xl p-8 max-w-2xl w-11/12 max-h-[80vh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="text-center mb-6">
-                <h2 className="text-2xl font-bold text-yellow-400 mb-2 flex items-center justify-center gap-2">
-                  <img
-                    src="/icons/rules.svg"
-                    alt=""
-                    className="h-7 w-7 shrink-0 object-contain"
-                    aria-hidden
-                  />
-                  RULEBOOK
-                </h2>
-              </div>
-
-              <div className="text-white space-y-4">
-                <div className="border-b border-gray-600 pb-4">
-                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">(roguelike flow)</h3>
-                  <p className="text-gray-300 text-sm mb-2">
-                    You start in the <strong className="text-green-400">throne room</strong>: pick a weapon, shape your ability bar, then enter the arena. Combat is room- and wave-based; between beats you choose where to go next. Boons you pick <strong>stack</strong> for the rest of the run (Hades-style).
-                  </p>
-                  <ul className="text-gray-300 text-sm space-y-1 ml-4 list-disc">
-                    <li>Stand by a floating weapon and press <strong className="text-green-400">X</strong> to equip it (resets default Q/E/R for that weapon).</li>
-                    <li>Use the east <strong>ability pillar</strong> with <strong className="text-green-400">X</strong> to assign Q, E, and R from the shared pool.</li>
-                    <li>When a <strong>class boon</strong> modal appears, pick 1 of 3 random talents for your <strong>current weapon</strong> (once per run after that weapon is equipped).</li>
-                    <li>After you <strong>clear the first combat room</strong>, a <strong>room boon</strong> offers 3 picks from a pool determined by <strong>that room&apos;s color</strong> (blue / green / purple / red). Weapon affects most colors; green rooms always add universal zombie boons usable with any weapon.</li>
-                    <li>On the <strong>main arena map</strong>, clearing <strong>3 combat rooms</strong> (colored, stat, or trial) opens a <strong>boss portal</strong>. <strong>Pink merchant</strong> portals never count toward that total. After <strong>Boss 2</strong>, <strong>4 combat rooms</strong> are required before each later boss gate.</li>
-                    <li>Use rim <strong>portals</strong> to leave prep or, in the arena, to choose the next challenge when prompted.</li>
-                    <li>You start with 0 STAT points at level 1. Leveling up grants +5 STAT points each time. Some talents may scale with specific stats.</li>
-                    <li>A <strong>PINK</strong> portal allows you to HEAL and buy items at the merchant.</li>
-                    <li><strong>ORANGE</strong> portals reward STAT points that can be spent. You gain +5 STAT points each time you level up.</li>
-                    <li><strong>RED</strong> portals are generally the most difficult.</li>
-                    <li><strong>YELLOW</strong> portals are TRIAL rooms that reward GOLD to be spent at the MERCHANT (PINK Portals).</li>
-                    <li><strong>Stats</strong> — <strong className="text-red-400">Strength</strong> increases critical strike damage, <strong className="text-green-400">Stamina</strong> increases maximum health, <strong className="text-blue-400">Agility</strong> increases critical hit chance, <strong className="text-purple-400">Intellect</strong> increases shield capacity.</li>
-                    <li><strong>PURPLE</strong>,<strong>BLUE</strong>,<strong>GREEN</strong>,and <strong>RED</strong> portals lead to enemy rooms that reward unique talents for abilities.</li>
-                    <li>When releasing the Bow's left-click attack while the Bow flashes, a Perfect Shot will be fired.</li>
-                    <li>Interacting with a pedestal after clearing a room will unlock the portals, allowing you to choose the next challenge.</li>
-                    <li>The Merchant (PINK Portal) will sell you items that can be purchased with GOLD.</li>
-                    <li>Enemies have a chance to drop a STAT rune. Pressing 'x' or clicking on the rune will add the stat to your character.</li>
-                    <li>Red Runes provide STRENGTH, Green Runes provide AGILITY, Blue Runes provide AGILITY, and Purple Runes provide INTELLECT.</li>
-                    <li>Reward choices can be Rerolled for 1 Fate in combat. There is no cost to reroll while in the Throne Room.</li>
-                  </ul>
-                </div>
-
-                <div className="border-b border-gray-600 pb-4">
-                  <h3 className="text-lg font-semibold text-yellow-400 mb-2">Controls</h3>
-                  <ul className="text-gray-300 text-sm space-y-1 ml-4 list-disc">
-                    <li><strong>WASD</strong> — Move (double-tap to dash).</li>
-                    <li><strong>Left click</strong> — Primary attack.</li>
-                    <li><strong>Right click</strong> — Camera.</li>
-                    <li><strong>Space</strong> — Jump.</li>
-                    <li><strong>Q / E / R / F</strong> — Abilities (loadout-dependent).</li>
-                    <li><strong>X</strong> — Throne prep: nearest interact (weapon swap, ability pillar, or talent pillar by proximity).</li>
-                    <li><strong>1 / 2</strong> — Swap primary/secondary weapon when slots differ (non-throne contexts).</li>
-                  </ul>
-                </div>
-
-            
-              </div>
-            </div>
-          </div>
+          <RulebookPanel onClose={() => setShowRulesPanel(false)} />
         )}
 
         {showCanvas && (
@@ -1790,12 +1965,17 @@ function HomeContent() {
                   statPointData={statPointData}
                   abilityLoadout={abilityLoadout}
                   throneAbilityModalOpen={
-                    throneAbilityWeapon !== null || throneTalentWeapon !== null || coopBoon !== null || sunkenLootModalOpen
+                    throneAbilityWeapon !== null || throneTalentWeapon !== null || coopBoon !== null || sunkenLootModalOpen || eternityLootModalOpen || eternityPetUpgradeModalOpen
                   }
                   uiBlocksGameInput={uiBlocksGameInput}
                   onRequestThroneAbilityModal={handleRequestThroneAbilityModal}
                   onRequestThroneTalentModal={handleRequestThroneTalentModal}
                   onThroneWeaponEquipped={handleThroneWeaponEquipped}
+                  canCycleWeaponAspect={
+                    selectedWeapons.primary !== WeaponType.NONE &&
+                    classTalentPickedWeapons.has(selectedWeapons.primary)
+                  }
+                  onWeaponAspectCycled={handleWeaponAspectCycled}
                   throneDevTalentShortcutEnabled={DEV_TALENT_MODAL}
                   pedestalBoonReady={
                     (
@@ -1814,6 +1994,7 @@ function HomeContent() {
                   portalsUnlocked={portalsUnlocked}
                   onCombatArenaPedestalInteract={handleCombatArenaPedestalInteract}
                   onSunkenSentinelInteract={handleSunkenSentinelInteract}
+                  onEternityPalaceArchitectInteract={handleEternityPalaceArchitectInteract}
                   onInteractHintChange={onCoopInteractHintChange}
                   onLocalPlayerDefeated={onLocalPlayerDefeated}
                   onLocalPlayerRevived={onLocalPlayerRevived}
@@ -1848,14 +2029,11 @@ function HomeContent() {
                   fate={playerFate}
                 />
               )}
-              <div className="flex items-center gap-2">
-                <HudActionButtons
-                  onOpenRulebook={() => setShowRulesPanel(true)}
-                />
-                {gameMode === 'pvp' && (
+              {gameMode === 'pvp' && (
+                <div className="flex items-center gap-2">
                   <EssenceDisplay essence={playerEssence} isLocalPlayer />
-                )}
-              </div>
+                </div>
+              )}
             </div>
             
             {/* Performance Stats */}
@@ -1864,18 +2042,10 @@ function HomeContent() {
               {isDevPerformanceHudEnabled() && <DevPerformanceMeter />}
 
               {sessionGameMode === 'coop' && (
-                <button
-                  type="button"
-                  onClick={handleOpenControlsTutorial}
-                  className="mt-2 flex h-8 w-8 items-center justify-center hover:scale-110 transition-transform cursor-pointer"
-                  title="Replay controls"
-                >
-                  <img
-                    src="/icons/rules.svg"
-                    alt="Replay controls"
-                    className="h-6 w-6 object-contain opacity-90 hover:opacity-100"
-                  />
-                </button>
+                <HudActionButtons
+                  onOpenRulebook={() => setShowRulesPanel(true)}
+                  onOpenControls={handleOpenControlsTutorial}
+                />
               )}
 
               {gameMode === 'pvp' && (
@@ -1911,6 +2081,12 @@ function HomeContent() {
                 interactHint={gameMode === 'coop' ? coopInteractHint : null}
                 gameMode={gameMode}
                 selectedArchetype={selectedArchetype}
+                weaponAspect={selectedWeaponAspect}
+                coopIntroAllyChoiceMade={coopIntroAllyChoiceMade}
+                coopAllyKind={coopAllyKind}
+                coopFaeBeastCompanionGranted={coopFaeBeastCompanionGranted}
+                coopFaeBeastCompanionKind={coopFaeBeastCompanionKind}
+                coopPetPackWolfActive={coopPetCompanionUpgrade === 'wolf_pack_expansion'}
               />
             </div>
 
@@ -2005,6 +2181,31 @@ function HomeContent() {
               />
             )}
 
+            {gameMode === 'coop'
+              && eternityPetUpgradeModalOpen
+              && coopFaeBeastCompanionGranted
+              && !!coopFaeBeastCompanionKind
+              && !(socket?.id && coopEternityLootClaimedPlayerIds.includes(socket.id)) && (
+              <CoopPetCompanionUpgradeModal
+                beastKind={coopFaeBeastCompanionKind}
+                options={getPetCompanionUpgradeOptionsForKind(coopFaeBeastCompanionKind)}
+                onPick={handleEternityPetUpgradePick}
+                onClose={() => setEternityPetUpgradeModalOpen(false)}
+              />
+            )}
+
+            {gameMode === 'coop'
+              && eternityLootModalOpen
+              && coopEternityLootOffer.length > 0
+              && !(socket?.id && coopEternityLootClaimedPlayerIds.includes(socket.id)) && (
+              <CoopBossLootPickerModal
+                options={coopEternityLootOffer}
+                inventory={inventory}
+                onPick={handleEternityLootPick}
+                onClose={() => setEternityLootModalOpen(false)}
+              />
+            )}
+
             {/* Merchant UI */}
             {gameMode === 'pvp' && (
               <MerchantUI
@@ -2067,8 +2268,12 @@ function HomeContent() {
                 ? coopBossRoomVisitIndexRef.current
                 : roomKind === 'intro'
                   ? coopIntroRoomIndexRef.current
+                  : roomKind === 'fae_realm'
+                    ? coopFaeRealmRoomIndexRef.current
                   : roomKind === 'sunken_temple'
                     ? coopSunkenRoomIndexRef.current
+                    : roomKind === 'eternity_palace'
+                      ? coopEternityRoomIndexRef.current
                     : roomKind === 'deep_sanctum'
                     ? coopDeepSanctumLevelRef.current
                     : coopColoredRoomVisitIndexRef.current;

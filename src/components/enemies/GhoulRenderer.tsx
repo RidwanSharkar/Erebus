@@ -6,7 +6,9 @@ import { Group, Mesh, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard } from '@react-three/drei';
 import GhoulModel from './GhoulModel';
+import KnightSoulEffect from './KnightSoulEffect';
 import EnemyMeleeAttackRangeRing, { GHOUL_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
+import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type MeleeTelegraphVisual } from '@/utils/meleeTelegraphVisual';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import EnemyStaggerBar from './EnemyStaggerBar';
@@ -29,6 +31,8 @@ interface GhoulRendererProps {
   visualScale?: number;
   campType?: string;
   skipSummon?: boolean;
+  /** Compact ground soul ring + orb (e.g. allied demon yellow). */
+  soulType?: 'yellow' | 'green' | 'red' | 'blue' | 'purple' | 'orange';
 }
 
 const ATTACK_DURATION  = 1200; // ms — matches ghoul attack clip; backend `meleeLockUntil` uses the same window
@@ -48,6 +52,7 @@ function GhoulRenderer({
   visualScale = 1,
   campType,
   skipSummon = false,
+  soulType,
 }: GhoulRendererProps) {
   const hpTheme = campHpTheme(campType);
   const { socket, enemyTransformsRef, enemyVisualRotationsRef, enemiesRef } = useMultiplayerActions();
@@ -56,6 +61,7 @@ function GhoulRenderer({
   const hpTextRef = useRef<any>(null);
 
   const [isAttacking,    setIsAttacking]    = useState(false);
+  const [meleeTelegraph, setMeleeTelegraph] = useState<MeleeTelegraphVisual | null>(null);
   const [isWalking,      setIsWalking]      = useState(false);
   const [isSummoning,    setIsSummoning]    = useState(!skipSummon);
   const [attackVariant,  setAttackVariant]  = useState<1 | 2>(1);
@@ -149,21 +155,40 @@ function GhoulRenderer({
   useEffect(() => {
     if (!socket) return;
 
-    const handleGhoulTelegraph = (data: { ghoulId: string }) => {
+    const handleGhoulTelegraph = (data: {
+      ghoulId: string;
+      hitDelayMs?: number;
+      swingLockMs?: number;
+      attackRange?: number;
+      arcDeg?: number;
+      facing?: number;
+      weightClass?: string;
+      timestamp?: number;
+    }) => {
       if (data.ghoulId !== id) return;
       if (isSummoningRef.current) return;
       if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
       setAttackVariant(prev => (prev === 1 ? 2 : 1));
+      const visual = parseMeleeTelegraphPayload(data, GHOUL_MELEE_ATTACK_RANGE, ATTACK_DURATION);
+      setMeleeTelegraph(visual);
       setIsAttacking(true);
       isAttackingRef.current = true;
+      const duration = meleeAttackDurationFromTelegraph(visual, ATTACK_DURATION);
       attackTimerRef.current = setTimeout(() => {
         setIsAttacking(false);
+        setMeleeTelegraph(null);
         isAttackingRef.current = false;
         attackTimerRef.current = null;
-      }, ATTACK_DURATION);
+      }, duration);
+    };
+
+    const handleGhoulWhiff = (data: { ghoulId: string }) => {
+      if (data.ghoulId !== id) return;
+      setMeleeTelegraph((prev) => (prev ? { ...prev, whiffed: true } : prev));
     };
 
     socket.on('ghoul-attack-telegraph', handleGhoulTelegraph);
+    socket.on('ghoul-attack-whiff', handleGhoulWhiff);
     const onLeapStart = (data: { ghoulId: string }) => {
       if (data.ghoulId !== id) return;
       setIsLeaping(true);
@@ -180,6 +205,7 @@ function GhoulRenderer({
     socket.on('ghoul-leap-land', onLeapLand);
     return () => {
       socket.off('ghoul-attack-telegraph', handleGhoulTelegraph);
+      socket.off('ghoul-attack-whiff', handleGhoulWhiff);
       socket.off('ghoul-leap-start', onLeapStart);
       socket.off('ghoul-leap-land', onLeapLand);
       if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
@@ -254,6 +280,21 @@ function GhoulRenderer({
         scaleMultiplier={visualScale}
       />
 
+      {isAttacking && !isDying && (
+        <EnemyMeleeAttackRangeRing
+          radius={meleeTelegraph?.attackRange ?? GHOUL_MELEE_ATTACK_RANGE}
+          hitDelayMs={meleeTelegraph?.hitDelayMs}
+          swingLockMs={meleeTelegraph?.swingLockMs}
+          arcDeg={meleeTelegraph?.arcDeg}
+          facing={meleeTelegraph?.facing}
+          weightClass={meleeTelegraph?.weightClass}
+          whiffed={meleeTelegraph?.whiffed}
+          startedAtMs={meleeTelegraph?.startedAtMs}
+          commitAtMs={meleeTelegraph?.commitAtMs}
+        />
+      )}
+
+      {!isDying && soulType && <KnightSoulEffect soulType={soulType} compact />}
 
       <Billboard position={[0, 2.8 * visualScale, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && !isSummoning && (

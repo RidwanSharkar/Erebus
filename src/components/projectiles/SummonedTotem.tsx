@@ -10,6 +10,7 @@ import { WeaponType } from '@/components/dragon/weapons';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import type { EnemyDamageMeta } from '@/contexts/MultiplayerContext';
 import type { TotemBoltVariant } from '@/utils/talents';
+import type { WeaponAspect } from '@/utils/weaponAspects';
 import {
   refreshTotemEnemyTargetScratch,
   type TotemTargetEntry,
@@ -82,6 +83,8 @@ interface SummonProps {
     coopEnemyDamageMeta?: EnemyDamageMeta,
   ) => void;
   totemBoltVariant?: TotemBoltVariant;
+  /** Scythe aspect for default bolt colors when no talent boon is active. */
+  weaponAspect?: WeaponAspect | null;
   onComplete?: () => void;
   onStartCooldown?: () => void;
   setActiveEffects?: (callback: (prev: Array<{
@@ -177,6 +180,7 @@ export default function SummonedTotem({
   casterId,
   allowPlayerTargets = false,
   totemBoltVariant,
+  weaponAspect,
   superconductor = false,
   resolveTotemEnemyFrozen,
 }: SummonProps) {
@@ -599,6 +603,7 @@ export default function SummonedTotem({
           key={`totem-bolt-${i}`}
           poolSlot={slot}
           totemBoltVariant={totemBoltVariant}
+          weaponAspect={weaponAspect}
           onPoolImpact={onTotemBoltImpact}
         />
       ))}

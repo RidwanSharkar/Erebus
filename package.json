@@ -12,7 +12,9 @@
     "assets:optimize-models": "node scripts/optimize-model-assets.mjs",
     "assets:retarget-knight-blocks": "node scripts/retarget-knight-block.mjs",
     "assets:retarget-character-sprint": "node scripts/retarget-character-sprint.mjs",
-    "assets:validate-models": "node scripts/validate-model-assets.mjs"
+    "assets:validate-models": "node scripts/validate-model-assets.mjs",
+    "assets:convert-props": "node scripts/convert-props-batch.mjs",
+    "assets:convert-turrets": "node scripts/convert-props-batch.mjs --dir turrets"
   },
   "dependencies": {
     "@react-three/drei": "^9.122.0",
@@ -39,6 +41,7 @@
     "@types/howler": "^2.2.12",
     "eslint": "^8",
     "eslint-config-next": "^14.2.35",
+    "sharp": "^0.33.5",
     "webpack-bundle-analyzer": "^4.10.2"
   },
   "overrides": {

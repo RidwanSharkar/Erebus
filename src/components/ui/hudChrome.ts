@@ -3,13 +3,19 @@
 import type { Archetype } from '@/utils/archetypes';
 
 export const BAR_HEIGHT = 30;
-
-/** Slanted right edge — bars emerge from the XP medallion on the left. */
-export const RESOURCE_BAR_CLIP =
-  'polygon(0 0, calc(100% - 16px) 0, 100% 50%, calc(100% - 16px) 100%, 0 100%)';
-
-export const RESOURCE_BAR_TRACK_CLIP =
-  'polygon(1px 1px, calc(100% - 17px) 1px, calc(100% - 1px) 50%, calc(100% - 17px) calc(100% - 1px), 1px calc(100% - 1px))';
+/** Outer frame height including 2px padding on each side. */
+export const RESOURCE_BAR_FRAME_HEIGHT = BAR_HEIGHT + 4;
+/** Tailwind `gap-1` between stacked resource bars. */
+export const RESOURCE_BAR_BAR_GAP_PX = 4;
+/** Diagonal slice depth on the right edge (taper cut). */
+export const RESOURCE_BAR_SLICE_PX = 18;
+/** Samples along the LevelBadge arc for the concave left edge. */
+export const RESOURCE_BAR_ARC_SAMPLES = 10;
+/** Extra px outside the badge circle so bars don't collide with the ring. */
+export const RESOURCE_BAR_ARC_CLEARANCE_PX = 2;
+/** Bars column padding / pull so the arc bites into the badge overlap. */
+export const RESOURCE_BARS_COLUMN_PAD_LEFT = 8;
+export const RESOURCE_BARS_COLUMN_MARGIN_LEFT = -14;
 
 export const HUD_PANEL_CLIP =
   'polygon(16px 0%, calc(100% - 16px) 0%, 100% 16px, 100% calc(100% - 16px), calc(100% - 16px) 100%, 16px 100%, 0% calc(100% - 16px), 0% 16px)';
@@ -29,6 +35,118 @@ export const LEVEL_BADGE_OVERLAP = 20;
 /** Left offset for resource bars when the integrated level badge is shown. */
 export const LEVEL_BADGE_BARS_OFFSET =
   8 + INTEGRATED_LEVEL_BADGE_OUTER_SIZE - LEVEL_BADGE_OVERLAP + 8;
+
+export type ResourceBarSlot = 0 | 1 | 2;
+
+/**
+ * How much shorter each stacked bar is vs the top (shield) baseline.
+ * Applied left-aligned so only the right end recedes.
+ */
+export const RESOURCE_BAR_WIDTH_TAPER_PX: Record<ResourceBarSlot, number> = {
+  0: 0,
+  1: 14,
+  2: 28,
+};
+
+/** Y offset of a bar's vertical center from the LevelBadge center (px). */
+export function getIntegratedBarCenterOffsetY(barSlot: ResourceBarSlot): number {
+  const stackH =
+    RESOURCE_BAR_FRAME_HEIGHT * 3 + RESOURCE_BAR_BAR_GAP_PX * 2;
+  const stackTop = (INTEGRATED_LEVEL_BADGE_OUTER_SIZE - stackH) / 2;
+  const barCenterY =
+    stackTop +
+    barSlot * (RESOURCE_BAR_FRAME_HEIGHT + RESOURCE_BAR_BAR_GAP_PX) +
+    RESOURCE_BAR_FRAME_HEIGHT / 2;
+  return barCenterY - INTEGRATED_LEVEL_BADGE_OUTER_SIZE / 2;
+}
+
+/** Bar left edge X relative to LevelBadge left, given current HUD overlap layout. */
+export function getIntegratedBarLeftX(): number {
+  return (
+    INTEGRATED_LEVEL_BADGE_OUTER_SIZE -
+    LEVEL_BADGE_OVERLAP +
+    RESOURCE_BARS_COLUMN_MARGIN_LEFT +
+    RESOURCE_BARS_COLUMN_PAD_LEFT
+  );
+}
+
+function fmtPx(n: number): string {
+  return `${Math.round(n * 100) / 100}px`;
+}
+
+/**
+ * Build a clip-path polygon for a resource bar.
+ * Left: concave arc hugging the LevelBadge (when integrated + barSlot set).
+ * Right: clean diagonal slice — angle is kept consistent via height-scaled slice.
+ */
+export function buildResourceBarClipPath(options: {
+  barSlot?: ResourceBarSlot;
+  integrated?: boolean;
+  /** Parallel inset for nested clips (shifts edges inward). */
+  inset?: number;
+  /**
+   * Element height the clip is applied to. Slice depth scales with this so the
+   * diagonal angle matches the outer frame (avoids tip/border mismatch).
+   */
+  height?: number;
+} = {}): string {
+  const inset = options.inset ?? 0;
+  const height = options.height ?? RESOURCE_BAR_FRAME_HEIGHT;
+  // Keep the same diagonal angle as the outer frame: rise/run = height/slice.
+  const slice =
+    RESOURCE_BAR_SLICE_PX * (height / RESOURCE_BAR_FRAME_HEIGHT);
+  const r = INTEGRATED_LEVEL_BADGE_OUTER_SIZE / 2;
+  const integrated =
+    options.integrated ?? options.barSlot !== undefined;
+
+  const points: string[] = [];
+
+  // —— Left edge (top → bottom) ——
+  if (integrated && options.barSlot !== undefined) {
+    const barLeftX = getIntegratedBarLeftX();
+    const centerOffsetY = getIntegratedBarCenterOffsetY(options.barSlot);
+    const samples = RESOURCE_BAR_ARC_SAMPLES;
+    // Map this element's vertical span onto the full frame slot for arc sampling.
+    const frameH = RESOURCE_BAR_FRAME_HEIGHT;
+    const yOffset = (frameH - height) / 2;
+
+    for (let i = 0; i <= samples; i++) {
+      const t = i / samples;
+      const localY = t * height;
+      const frameLocalY = yOffset + localY;
+      const dy = centerOffsetY - frameH / 2 + frameLocalY;
+      let xLocal = 0;
+      if (Math.abs(dy) <= r) {
+        xLocal =
+          r +
+          Math.sqrt(r * r - dy * dy) +
+          RESOURCE_BAR_ARC_CLEARANCE_PX -
+          barLeftX;
+      }
+      xLocal = Math.max(0, xLocal) + inset;
+      const y = i === 0 ? inset : i === samples ? height - inset : localY;
+      points.push(`${fmtPx(xLocal)} ${fmtPx(y)}`);
+    }
+  } else {
+    points.push(`${fmtPx(inset)} ${fmtPx(inset)}`);
+    points.push(`${fmtPx(inset)} calc(100% - ${inset}px)`);
+  }
+
+  // —— Bottom of diagonal → top-right tip (auto-closes along top) ——
+  // Clean diagonal: top extends farther right than the bottom (taper cut).
+  points.push(`calc(100% - ${slice + inset}px) calc(100% - ${inset}px)`);
+  points.push(`calc(100% - ${inset}px) ${fmtPx(inset)}`);
+
+  return `polygon(${points.join(', ')})`;
+}
+
+/** Flat-left + diagonal-slice fallback (no LevelBadge arc). */
+export const RESOURCE_BAR_CLIP = buildResourceBarClipPath({ integrated: false });
+
+export const RESOURCE_BAR_TRACK_CLIP = buildResourceBarClipPath({
+  integrated: false,
+  inset: 1,
+});
 
 export const BAR_FRAME_GRADIENT =
   'linear-gradient(180deg, rgba(80,90,120,0.55) 0%, rgba(20,24,36,0.95) 45%, rgba(8,10,18,0.98) 100%)';
@@ -53,6 +171,24 @@ export const WEAPON_PORTRAIT_FRAME_PADDING = 4;
 export const WEAPON_PORTRAIT_RADIUS = 10;
 
 export type ResourceBarKind = 'shield' | 'health' | 'energy';
+
+/** Width reduction for a resource bar (left-aligned taper). Prefers barSlot when set. */
+export function getResourceBarWidthTaperPx(options: {
+  barSlot?: ResourceBarSlot;
+  kind: ResourceBarKind;
+}): number {
+  if (options.barSlot !== undefined) {
+    return RESOURCE_BAR_WIDTH_TAPER_PX[options.barSlot];
+  }
+  switch (options.kind) {
+    case 'health':
+      return RESOURCE_BAR_WIDTH_TAPER_PX[1];
+    case 'energy':
+      return RESOURCE_BAR_WIDTH_TAPER_PX[2];
+    default:
+      return RESOURCE_BAR_WIDTH_TAPER_PX[0];
+  }
+}
 
 export const RESOURCE_BAR_THEMES: Record<
   ResourceBarKind,

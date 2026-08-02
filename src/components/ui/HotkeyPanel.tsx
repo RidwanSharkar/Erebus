@@ -13,10 +13,16 @@ import { partitionTalentsForHud } from '@/utils/talents';
 import { getWeaponHudIconSrc, getWeaponDisplayName } from '@/utils/weaponIcons';
 import {
   ARCHETYPE_DISPLAY,
-  getArchetypeIconSrc,
+  getArchetypeIconSvgSrc,
   isSelectableArchetype,
   type Archetype,
 } from '@/utils/archetypes';
+import {
+  resolveAbilityDisplayName,
+  isBowRejuvenatingShotAspect,
+  isRunebladeDeathGraspAspect,
+  isRunebladeTempestSweepAspect,
+} from '@/utils/weaponAspects';
 import {
   AbilityIcon,
   HotkeyTooltip,
@@ -33,7 +39,7 @@ import {
   HUD_PANEL_SHADOW,
 } from './hudChrome';
 
-const MAX_VISIBLE_TALENTS = 6;
+const MAX_VISIBLE_TALENTS = 4;
 const TALENT_GAP_PX = 8; // gap-2
 const TALENT_SCROLL_STEP_PX = TALENT_SLOT_PX + TALENT_GAP_PX;
 
@@ -194,13 +200,41 @@ export default function HotkeyPanel({
     }
   }
 
-  // Resolve the 3 assigned abilities from the loadout
+  // Resolve the 3 assigned abilities from the loadout (Druid bow / Legionnaire Death Grasp defensively show on R)
+  const weaponAspect = controlSystem?.getWeaponAspect?.();
   const loadoutAbilities: Array<{ slot: 'Q' | 'E' | 'R'; ability: UniversalAbility | null }> = (
     ['Q', 'E', 'R'] as const
-  ).map(slot => ({
-    slot,
-    ability: abilityLoadout?.[slot] ? (getUniversalAbilityById(abilityLoadout[slot]!) ?? null) : null
-  }));
+  ).map(slot => {
+    let abilityId = abilityLoadout?.[slot] ?? null;
+    if (
+      slot === 'R' &&
+      currentWeapon === WeaponType.BOW &&
+      isBowRejuvenatingShotAspect(weaponAspect) &&
+      (abilityId == null || abilityId === 'BOW_F')
+    ) {
+      abilityId = 'BOW_F';
+    }
+    if (
+      slot === 'R' &&
+      currentWeapon === WeaponType.RUNEBLADE &&
+      isRunebladeDeathGraspAspect(weaponAspect) &&
+      (abilityId == null || abilityId === 'DEATH_GRASP')
+    ) {
+      abilityId = 'DEATH_GRASP';
+    }
+    // Royal Guard: physical R is hard-bound to Tempest Sweep (SPEAR_E).
+    if (
+      slot === 'R' &&
+      currentWeapon === WeaponType.RUNEBLADE &&
+      isRunebladeTempestSweepAspect(weaponAspect)
+    ) {
+      abilityId = 'SPEAR_E';
+    }
+    return {
+      slot,
+      ability: abilityId ? (getUniversalAbilityById(abilityId) ?? null) : null,
+    };
+  });
 
   // Resolve the passive ability from the loadout (no hotkey, shown without a key badge)
   const passiveAbility: UniversalAbility | null = abilityLoadout?.passive
@@ -271,18 +305,20 @@ export default function HotkeyPanel({
 
   const handleAbilityHover = useCallback((
     e: React.MouseEvent,
-    ability: UniversalAbility
+    ability: UniversalAbility,
+    slot?: 'Q' | 'E' | 'R',
   ) => {
     const rect = e.currentTarget.getBoundingClientRect();
+    const aspect = controlSystem?.getWeaponAspect?.();
     setTooltipContent({
-      name: ability.name,
+      name: resolveAbilityDisplayName(ability.id, ability.name, aspect, slot),
       description: ability.description
     });
     setTooltipPosition({
       x: rect.left + rect.width / 2,
       y: rect.top
     });
-  }, []);
+  }, [controlSystem]);
 
   const handleWeaponHover = useCallback((
     e: React.MouseEvent,
@@ -361,7 +397,7 @@ export default function HotkeyPanel({
         className={
           embedded
             ? undefined
-            : 'fixed bottom-8 left-1/2 transform -translate-x-1/2 z-40'
+            : 'fixed bottom-4 left-1/2 transform -translate-x-1/2 z-40'
         }
         data-block-game-input
       >
@@ -587,6 +623,13 @@ export default function HotkeyPanel({
                   const p = controlSystem.getCobraShotChargeProgress?.() || 0;
                   return <div className="absolute inset-0 rounded-lg bg-green-400 bg-opacity-20 border-2 border-green-400"><div className="absolute bottom-0 left-0 right-0 bg-green-400 bg-opacity-60 transition-all duration-100" style={{ height: `${p * 100}%` }} /></div>;
                 }
+                if (
+                  (id === 'BOW_F' || (slot === 'R' && isBowRejuvenatingShotAspect(controlSystem.getWeaponAspect?.()))) &&
+                  controlSystem.isRejuvenatingShotChargingActive?.()
+                ) {
+                  const p = controlSystem.getRejuvenatingShotChargeProgress?.() || 0;
+                  return <div className="absolute inset-0 rounded-lg bg-cyan-400 bg-opacity-20 border-2 border-cyan-400"><div className="absolute bottom-0 left-0 right-0 bg-cyan-400 bg-opacity-60 transition-all duration-100" style={{ height: `${p * 100}%` }} /></div>;
+                }
                 if (id === 'SABRES_R' && controlSystem.isSkyfallActive?.()) {
                   return <div className="absolute inset-0 rounded-lg bg-yellow-400 bg-opacity-20 border-2 border-yellow-400 animate-pulse" />;
                 }
@@ -599,7 +642,15 @@ export default function HotkeyPanel({
                 }
                 if (id === 'SPEAR_E' && controlSystem.isWhirlwindChargingActive?.()) {
                   const p = controlSystem.getWhirlwindChargeProgress?.() || 0;
-                  return <div className="absolute inset-0 rounded-lg bg-cyan-400 bg-opacity-20 border-2 border-cyan-400"><div className="absolute bottom-0 left-0 right-0 bg-cyan-400 bg-opacity-60 transition-all duration-100" style={{ height: `${p * 100}%` }} /></div>;
+                  return <div className="absolute inset-0 rounded-lg bg-red-400 bg-opacity-20 border-2 border-red-400"><div className="absolute bottom-0 left-0 right-0 bg-red-400 bg-opacity-60 transition-all duration-100" style={{ height: `${p * 100}%` }} /></div>;
+                }
+                if (
+                  slot === 'R' &&
+                  isRunebladeTempestSweepAspect(controlSystem.getWeaponAspect?.()) &&
+                  controlSystem.isWhirlwindChargingActive?.()
+                ) {
+                  const p = controlSystem.getWhirlwindChargeProgress?.() || 0;
+                  return <div className="absolute inset-0 rounded-lg bg-red-400 bg-opacity-20 border-2 border-red-400"><div className="absolute bottom-0 left-0 right-0 bg-red-400 bg-opacity-60 transition-all duration-100" style={{ height: `${p * 100}%` }} /></div>;
                 }
                 return null;
               };
@@ -635,7 +686,7 @@ export default function HotkeyPanel({
                     boxShadow: abilityShadow,
                     opacity: !ability ? 0.55 : 1,
                   }}
-                  onMouseEnter={ability ? (e) => handleAbilityHover(e, ability) : undefined}
+                  onMouseEnter={ability ? (e) => handleAbilityHover(e, ability, slot) : undefined}
                   onMouseLeave={handleAbilityLeave}
                 >
                   {/* Key badge — centered above */}
@@ -716,7 +767,7 @@ export default function HotkeyPanel({
 
             {gameMode === 'coop' && isSelectableArchetype(selectedArchetype) && (() => {
               const meta = ARCHETYPE_DISPLAY[selectedArchetype];
-              const iconSrc = getArchetypeIconSrc(selectedArchetype);
+              const iconSrc = getArchetypeIconSvgSrc(selectedArchetype);
               const deflectCd = controlSystem?.getAbilityCooldowns?.()?.DEFLECT_SHIFT;
               const incinerationCd = controlSystem?.getAbilityCooldowns?.()?.INCINERATION_SHIFT;
               const shiftCd =

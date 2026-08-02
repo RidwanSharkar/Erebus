@@ -6,10 +6,15 @@ import type { InventoryItem } from '@/contexts/MultiplayerContext';
 import {
   getDreamLayerItemDescription,
   getDreamLayerItemIconPath,
-  isUniqueDreamLayerItem,
+  isUniqueOwnedItem,
 } from '@/utils/dreamLayerItems';
 
 const WARDING_PENDANT_ICON = '/icons/items/wardingPendant.svg';
+
+const PENDANT_ICON_BY_TYPE: Record<string, string> = {
+  HUNTERS_MARK: '/icons/items/huntersMark.svg',
+  SOUL_WARD: '/icons/items/soulWard.svg',
+};
 
 const ACCENT = {
   border: 'border-sky-400',
@@ -22,13 +27,21 @@ const ACCENT = {
 } as const;
 
 const SLOT_LABELS: Record<string, string> = {
-  warding_pendant: 'Warding Pendant',
+  warding_pendant: 'Pendant',
   ring: 'Ring',
   exodia: 'Relic',
 };
 
 function getLootIconPath(entry: DreamLayerStockItem): string | undefined {
-  if (entry.kind === 'warding_pendant') return WARDING_PENDANT_ICON;
+  if (entry.kind === 'warding_pendant') {
+    const type = entry.item?.type;
+    if (type && PENDANT_ICON_BY_TYPE[type]) return PENDANT_ICON_BY_TYPE[type];
+    if (type) {
+      const metaIcon = getDreamLayerItemIconPath(type);
+      if (metaIcon) return metaIcon;
+    }
+    return WARDING_PENDANT_ICON;
+  }
   const type = entry.item?.type;
   if (!type) return undefined;
   return getDreamLayerItemIconPath(type);
@@ -37,7 +50,7 @@ function getLootIconPath(entry: DreamLayerStockItem): string | undefined {
 function isEntryOwned(entry: DreamLayerStockItem, inventory: InventoryItem[]): boolean {
   const type = entry.item?.type;
   if (!type) return false;
-  if (!isUniqueDreamLayerItem(type)) return false;
+  if (!isUniqueOwnedItem(type)) return false;
   return inventory.some((item) => item.type === type);
 }
 

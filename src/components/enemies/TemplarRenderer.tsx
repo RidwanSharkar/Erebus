@@ -1,13 +1,14 @@
 'use client';
 import { positionScratch, type Position3 } from '@/utils/position3';
 
-import React, { useRef, useState, useEffect, useCallback, useLayoutEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback, useLayoutEffect, useMemo } from 'react';
 import { Group, Mesh, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard } from '@react-three/drei';
 import TemplarModel from './TemplarModel';
 import EnemyAbilityChargeTelegraph from './EnemyAbilityChargeTelegraph';
 import EnemyMeleeAttackRangeRing, { TEMPLAR_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
+import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type MeleeTelegraphVisual } from '@/utils/meleeTelegraphVisual';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
@@ -21,6 +22,9 @@ import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import TemplarSoulCrest from './TemplarSoulCrest';
+import SoulGroundRing from './SoulGroundRing';
+import ChargedOrbitals, { DashChargeStatus } from '../dragon/ChargedOrbitals';
+import { WeaponType } from '../dragon/weapons';
 
 interface TemplarRendererProps {
   id: string;
@@ -43,6 +47,9 @@ const LERP_SPEED      = 14;   // slightly faster than knight (12) to feel snappi
 const WALK_STOP_DELAY = 250;  // ms
 const TEMPLAR_BLINK_CHARGE_PRIMARY = '#ff3838';
 const TEMPLAR_BLINK_CHARGE_ACCENT = '#ff6644';
+const TEMPLAR_ORBITAL_ACTIVE = '#ff3838';
+const TEMPLAR_ORBITAL_INACTIVE = '#4a1515';
+const TEMPLAR_ORBITAL_Y_OFFSET = 2.1;
 
 function TemplarRenderer({
   id,
@@ -62,6 +69,7 @@ function TemplarRenderer({
   const hpTextRef = useRef<any>(null);
 
   const [isAttacking,   setIsAttacking]   = useState(false);
+  const [meleeTelegraph, setMeleeTelegraph] = useState<MeleeTelegraphVisual | null>(null);
   const [isWalking,     setIsWalking]     = useState(false);
   const [attackVariant, setAttackVariant] = useState<1 | 2>(1);
   const [isImpacting,   setIsImpacting]   = useState(false);
@@ -88,6 +96,11 @@ function TemplarRenderer({
   const cachedDeathMats = useRef<any[]>([]);
   const deathCacheBuilt = useRef(false);
   const isDyingRef    = useRef(isDying);
+
+  const orbitalCharges = useMemo<DashChargeStatus[]>(
+    () => [0, 1, 2].map(() => ({ isAvailable: true, cooldownRemaining: 0 })),
+    [],
+  );
 
   useEffect(() => {
     isDyingRef.current = isDying;
@@ -231,13 +244,22 @@ function TemplarRenderer({
       if (data.templarId !== id) return;
       if (isBlinkSmiteRef.current) return;
       setAttackVariant(Math.random() < 0.5 ? 1 : 2);
+      const visual = parseMeleeTelegraphPayload(data, TEMPLAR_MELEE_ATTACK_RANGE, ATTACK_DURATION);
+      setMeleeTelegraph(visual);
       setIsAttacking(true);
       isAttackingRef.current = true;
+      const duration = meleeAttackDurationFromTelegraph(visual, ATTACK_DURATION);
       setTimeout(() => {
         setIsAttacking(false);
+        setMeleeTelegraph(null);
         isAttackingRef.current = false;
         restoreWalkIfUnlocked();
-      }, ATTACK_DURATION);
+      }, duration);
+    };
+
+    const handleTemplarWhiff = (data: { templarId: string }) => {
+      if (data.templarId !== id) return;
+      setMeleeTelegraph((prev) => (prev ? { ...prev, whiffed: true } : prev));
     };
 
     const clearBlinkSmite = () => {
@@ -279,6 +301,7 @@ function TemplarRenderer({
       isBlinkSmiteRef.current = true;
       setBlinkSmitePlayKey(k => k + 1);
       setIsAttacking(false);
+      setMeleeTelegraph(null);
       isAttackingRef.current = false;
       // Fallback only — mixer `finished` via onBlinkSmiteFinished is the primary exit.
       blinkSmiteTimer.current = setTimeout(() => {
@@ -306,6 +329,7 @@ function TemplarRenderer({
       isWalkingRef.current = false;
       setIsWalking(false);
       setIsAttacking(false);
+      setMeleeTelegraph(null);
       isAttackingRef.current = false;
       setIsBlinkCharging(true);
       isAbilityRef.current = true;
@@ -324,6 +348,7 @@ function TemplarRenderer({
     };
 
     socket.on('templar-attack-telegraph', handleTemplarTelegraph);
+    socket.on('templar-attack-whiff', handleTemplarWhiff);
     socket.on('templar-blink-smite-charge', handleTemplarBlinkSmiteCharge);
     socket.on('templar-blink-smite-windup', handleTemplarBlinkSmiteWindup);
     socket.on('templar-teleport', handleTemplarTeleport);
@@ -344,6 +369,7 @@ function TemplarRenderer({
     socket.on('templar-leap-land', onLeapLand);
     return () => {
       socket.off('templar-attack-telegraph', handleTemplarTelegraph);
+      socket.off('templar-attack-whiff', handleTemplarWhiff);
       socket.off('templar-blink-smite-charge', handleTemplarBlinkSmiteCharge);
       socket.off('templar-blink-smite-windup', handleTemplarBlinkSmiteWindup);
       socket.off('templar-teleport', handleTemplarTeleport);
@@ -421,7 +447,10 @@ function TemplarRenderer({
   });
 
   return (
-    <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
+    <>
+
+
+      <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <EnemyAbilityChargeTelegraph
         active={isBlinkCharging && !isDying}
         primaryColor={TEMPLAR_BLINK_CHARGE_PRIMARY}
@@ -442,7 +471,22 @@ function TemplarRenderer({
         onBlinkSmiteFinished={handleBlinkSmiteFinished}
       />
 
+      {showMeleeRangeRing && isAttacking && !isDying && (
+        <EnemyMeleeAttackRangeRing
+          radius={meleeTelegraph?.attackRange ?? TEMPLAR_MELEE_ATTACK_RANGE}
+          hitDelayMs={meleeTelegraph?.hitDelayMs}
+          swingLockMs={meleeTelegraph?.swingLockMs}
+          arcDeg={meleeTelegraph?.arcDeg}
+          facing={meleeTelegraph?.facing}
+          weightClass={meleeTelegraph?.weightClass}
+          whiffed={meleeTelegraph?.whiffed}
+          startedAtMs={meleeTelegraph?.startedAtMs}
+          commitAtMs={meleeTelegraph?.commitAtMs}
+        />
+      )}
+
       {!isDying && <TemplarSoulCrest />}
+      {!isDying && <SoulGroundRing soulType="red" />}
 
       {/* Billboard health bar */}
       <Billboard position={[0, 3, 0]} follow lockX={false} lockY={false} lockZ={false}>
@@ -467,6 +511,7 @@ function TemplarRenderer({
         )}
       </Billboard>
     </group>
+    </>
   );
 }
 

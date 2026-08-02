@@ -5,6 +5,7 @@ import { EnemyDynamicLight } from '@/components/effects/DynamicLightPool';
 
 import { useFrame } from '@react-three/fiber';
 import { Mesh, Group, AdditiveBlending } from 'three';
+import SoulGroundRing from './SoulGroundRing';
 
 type CubeColor = 'green' | 'red' | 'purple' | 'blue' | 'yellow';
 
@@ -27,6 +28,8 @@ const CUBE_COLORS: Record<CubeColor, { core: string; glow: string; light: string
 // 6 orbiting cube particles in a ring
 const ORBIT_COUNT  = 6;
 const ORBIT_RADIUS = 0.55;
+/** Keep ground ring at ~world y=0.12 regardless of soul float height. */
+const GROUND_RING_WORLD_Y = 0.12;
 
 export default function CubeSoulEffect({ color, posY = 2.0, enabledRef }: CubeSoulEffectProps) {
   const groupRef      = useRef<Group>(null);
@@ -99,8 +102,6 @@ export default function CubeSoulEffect({ color, posY = 2.0, enabledRef }: CubeSo
         decay={3}
       />
 
-
-
       {/* Orbiting cube particles */}
       <group ref={orbitGroupRef}>
         {Array.from({ length: ORBIT_COUNT }).map((_, i) => {
@@ -123,28 +124,12 @@ export default function CubeSoulEffect({ color, posY = 2.0, enabledRef }: CubeSo
                 depthWrite={false}
               />
             </mesh>
-            
           );
         })}
       </group>
 
-
-      {/* Wide aura disc beneath the orb — more visible */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -2.65, 0]}>
-        <ringGeometry args={[0.5, 0.825, 32]} />
-        <meshBasicMaterial
-          color={'#ff0000'}
-          transparent
-          opacity={0.28}
-          depthWrite={false}
-          blending={AdditiveBlending}
-          toneMapped={false}
-          side={2}
-        />
-
-
-        
-      </mesh>
+      {/* Ground ring — offset so world Y stays ~0.12 while soul floats at posY */}
+      <SoulGroundRing soulType={color} y={GROUND_RING_WORLD_Y - posY} />
     </group>
   );
 }

@@ -8,6 +8,7 @@ import { Billboard } from '@react-three/drei';
 import NemesisModel from './NemesisModel';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyMeleeAttackRangeRing, { NEMESIS_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
+import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type MeleeTelegraphVisual } from '@/utils/meleeTelegraphVisual';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { campHpTheme } from '@/utils/campHpTheme';
@@ -52,13 +53,15 @@ export default function NemesisRenderer({
   const hpTextRef = useRef<any>(null);
 
   const [isAttacking, setIsAttacking] = useState(false);
-  const [isWalking, setIsWalking] = useState(true);
+  const [meleeTelegraph, setMeleeTelegraph] = useState<MeleeTelegraphVisual | null>(null);
+  // Start in Idle until movement is detected — avoids requesting Walk before the deferred GLB is registered.
+  const [isWalking, setIsWalking] = useState(false);
   const [attackVariant, setAttackVariant] = useState<1 | 2>(1);
 
   const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation = useRef(rotation);
   const isAttackingRef = useRef(false);
-  const isWalkingRef = useRef(true);
+  const isWalkingRef = useRef(false);
   const lastMoveTimeRef = useRef(0);
   const pendingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
@@ -91,23 +94,44 @@ export default function NemesisRenderer({
 
   useEffect(() => {
     if (!socket) return;
-    const handleTelegraph = (data: { nemesisId: string; attackVariant?: 1 | 2 }) => {
+    const handleTelegraph = (data: {
+      nemesisId: string;
+      attackVariant?: 1 | 2;
+      hitDelayMs?: number;
+      swingLockMs?: number;
+      attackRange?: number;
+      arcDeg?: number;
+      facing?: number;
+      weightClass?: string;
+      timestamp?: number;
+    }) => {
       if (data.nemesisId !== id) return;
       setAttackVariant(data.attackVariant === 2 ? 2 : 1);
+      const visual = parseMeleeTelegraphPayload(data, NEMESIS_MELEE_ATTACK_RANGE, ATTACK_DURATION);
+      setMeleeTelegraph(visual);
       setIsAttacking(true);
       isAttackingRef.current = true;
       isWalkingRef.current = false;
       setIsWalking(false);
+      const duration = meleeAttackDurationFromTelegraph(visual, ATTACK_DURATION);
       trackTimeout(() => {
         setIsAttacking(false);
+        setMeleeTelegraph(null);
         isAttackingRef.current = false;
         isWalkingRef.current = true;
         setIsWalking(true);
-      }, ATTACK_DURATION);
+      }, duration);
+    };
+
+    const handleNemesisWhiff = (data: { nemesisId: string }) => {
+      if (data.nemesisId !== id) return;
+      setMeleeTelegraph((prev) => (prev ? { ...prev, whiffed: true } : prev));
     };
     socket.on('nemesis-attack-telegraph', handleTelegraph);
+    socket.on('nemesis-attack-whiff', handleNemesisWhiff);
     return () => {
       socket.off('nemesis-attack-telegraph', handleTelegraph);
+      socket.off('nemesis-attack-whiff', handleNemesisWhiff);
     };
   }, [id, socket, trackTimeout]);
 
@@ -148,8 +172,20 @@ export default function NemesisRenderer({
         attackVariant={attackVariant}
         isDying={isDying}
       />
-      {isAttacking && <EnemyMeleeAttackRangeRing radius={NEMESIS_MELEE_ATTACK_RANGE} />}
-      <Billboard position={[0, 2.8, 0]}>
+      {isAttacking && (
+        <EnemyMeleeAttackRangeRing
+          radius={meleeTelegraph?.attackRange ?? NEMESIS_MELEE_ATTACK_RANGE}
+          hitDelayMs={meleeTelegraph?.hitDelayMs}
+          swingLockMs={meleeTelegraph?.swingLockMs}
+          arcDeg={meleeTelegraph?.arcDeg}
+          facing={meleeTelegraph?.facing}
+          weightClass={meleeTelegraph?.weightClass}
+          whiffed={meleeTelegraph?.whiffed}
+          startedAtMs={meleeTelegraph?.startedAtMs}
+          commitAtMs={meleeTelegraph?.commitAtMs}
+        />
+      )}
+      <Billboard position={[0, 5.0, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
             <EnemyHpBarPlanes fillRef={hpFillRef} backgroundColor={theme.background} fillColor={theme.fill} />

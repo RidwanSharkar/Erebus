@@ -10,6 +10,7 @@ import {
   SENTINEL_ENCOUNTER_INTERACT_RADIUS,
   SENTINEL_ENCOUNTER_MEET,
   SENTINEL_ENCOUNTER_WALK_SPEED,
+  SENTINEL_ENCOUNTER_WAYPOINTS,
   type SunkenSentinelEncounterRef,
   type SunkenSentinelEncounterSnapshot,
 } from '@/utils/sunkenSentinelEncounter';
@@ -20,7 +21,6 @@ import {
 
 preloadSentinelModels();
 
-const SCALE = 0.014;
 const ARRIVAL_EPSILON = 0.08;
 const TOOLTIP_WORLD_OFFSET = new Vector3(0, 1.55, 0);
 const _projectScratch = new Vector3();
@@ -47,18 +47,20 @@ export default function SunkenSentinelEncounter({
   const { camera, size } = useThree();
   const groupRef = useRef<Group | null>(null);
   const phaseRef = useRef<EncounterPhase>('entering');
+  const waypointIndexRef = useRef(0);
   const posRef = useRef<{ x: number; z: number }>({
     x: SENTINEL_ENCOUNTER_ENTRY.x,
     z: SENTINEL_ENCOUNTER_ENTRY.z,
   });
   const [isWalking, setIsWalking] = useState(true);
   const [visible, setVisible] = useState(true);
+  const firstWaypoint = SENTINEL_ENCOUNTER_WAYPOINTS[0] ?? SENTINEL_ENCOUNTER_MEET;
   const rotationRef = useRef(
     rotationToward(
       SENTINEL_ENCOUNTER_ENTRY.x,
       SENTINEL_ENCOUNTER_ENTRY.z,
-      SENTINEL_ENCOUNTER_MEET.x,
-      SENTINEL_ENCOUNTER_MEET.z,
+      firstWaypoint.x,
+      firstWaypoint.z,
     ),
   );
   const snapshotRef = useRef<SunkenSentinelEncounterSnapshot | null>(null);
@@ -73,12 +75,14 @@ export default function SunkenSentinelEncounter({
       return;
     }
     phaseRef.current = 'entering';
+    waypointIndexRef.current = 0;
     posRef.current = { x: SENTINEL_ENCOUNTER_ENTRY.x, z: SENTINEL_ENCOUNTER_ENTRY.z };
+    const next = SENTINEL_ENCOUNTER_WAYPOINTS[0] ?? SENTINEL_ENCOUNTER_MEET;
     rotationRef.current = rotationToward(
       SENTINEL_ENCOUNTER_ENTRY.x,
       SENTINEL_ENCOUNTER_ENTRY.z,
-      SENTINEL_ENCOUNTER_MEET.x,
-      SENTINEL_ENCOUNTER_MEET.z,
+      next.x,
+      next.z,
     );
     setIsWalking(true);
     setVisible(true);
@@ -108,18 +112,33 @@ export default function SunkenSentinelEncounter({
     let nextWalking = false;
 
     if (phaseRef.current === 'entering') {
-      const dx = SENTINEL_ENCOUNTER_MEET.x - posRef.current.x;
-      const dz = SENTINEL_ENCOUNTER_MEET.z - posRef.current.z;
+      const target =
+        SENTINEL_ENCOUNTER_WAYPOINTS[waypointIndexRef.current] ?? SENTINEL_ENCOUNTER_MEET;
+      const dx = target.x - posRef.current.x;
+      const dz = target.z - posRef.current.z;
       const dist = Math.hypot(dx, dz);
       if (dist <= ARRIVAL_EPSILON) {
-        posRef.current = { x: SENTINEL_ENCOUNTER_MEET.x, z: SENTINEL_ENCOUNTER_MEET.z };
-        phaseRef.current = 'idle';
-        rotationRef.current = rotationToward(
-          SENTINEL_ENCOUNTER_MEET.x,
-          SENTINEL_ENCOUNTER_MEET.z,
-          0,
-          0,
-        );
+        posRef.current = { x: target.x, z: target.z };
+        if (waypointIndexRef.current < SENTINEL_ENCOUNTER_WAYPOINTS.length - 1) {
+          waypointIndexRef.current += 1;
+          const next =
+            SENTINEL_ENCOUNTER_WAYPOINTS[waypointIndexRef.current] ?? SENTINEL_ENCOUNTER_MEET;
+          rotationRef.current = rotationToward(
+            posRef.current.x,
+            posRef.current.z,
+            next.x,
+            next.z,
+          );
+          nextWalking = true;
+        } else {
+          phaseRef.current = 'idle';
+          rotationRef.current = rotationToward(
+            SENTINEL_ENCOUNTER_MEET.x,
+            SENTINEL_ENCOUNTER_MEET.z,
+            0,
+            0,
+          );
+        }
       } else {
         const step = Math.min(dist, SENTINEL_ENCOUNTER_WALK_SPEED * delta);
         posRef.current = {
@@ -129,8 +148,8 @@ export default function SunkenSentinelEncounter({
         rotationRef.current = rotationToward(
           posRef.current.x,
           posRef.current.z,
-          SENTINEL_ENCOUNTER_MEET.x,
-          SENTINEL_ENCOUNTER_MEET.z,
+          target.x,
+          target.z,
         );
         nextWalking = true;
       }
@@ -207,16 +226,13 @@ export default function SunkenSentinelEncounter({
 
   return (
     <group name="sunken-sentinel-encounter" ref={setGroupRef}>
-      <group scale={[SCALE, SCALE, SCALE]}>
-        <Suspense fallback={null}>
-          <SentinelModel
-            isWalking={isWalking}
-            isSprinting={false}
-            abilityClip={null}
-            isDying={false}
-          />
-        </Suspense>
-      </group>
+      <Suspense fallback={null}>
+        <SentinelModel
+          isWalking={isWalking}
+          abilityClip={null}
+          isDying={false}
+        />
+      </Suspense>
       <KnightSoulEffect soulType="blue" />
     </group>
   );

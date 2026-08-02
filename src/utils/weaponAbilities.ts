@@ -12,6 +12,44 @@ import {
   CLOUDKILL_ARROW_COUNT_MAX,
   type TalentLoadout,
 } from '@/utils/talents';
+import {
+  ASPECT_LEGIONNAIRE,
+  isDruidBowAspect,
+  isLegionnaireRunebladeAspect,
+  resolveBowRAbilityId,
+  resolveRunebladeRAbilityId,
+  type WeaponAspect,
+} from '@/utils/weaponAspects';
+
+/** Death Grasp combat constants (keep in sync with backend/playerHandler.js). */
+export const DEATH_GRASP_DAMAGE = 80;
+export const DEATH_GRASP_COOLDOWN_SEC = 5;
+export const DEATH_GRASP_RANGE = 18;
+export const DEATH_GRASP_HIT_RADIUS = 2.5;
+export const DEATH_GRASP_STANDOFF = 1.2;
+export const DEATH_GRASP_TAUNT_MS = 10000;
+export const DEATH_GRASP_PULL_DURATION_MS = 600;
+
+const DEATH_GRASP_PULL_IMMUNE_TYPES = new Set([
+  'boss',
+  'boss2',
+  'boss3',
+  'titan',
+  'valkyrie',
+  'nemesis',
+  'medusa',
+  'training-dummy',
+]);
+
+/** True when Death Grasp should deal damage + taunt but NOT pull the unit. */
+export function isDeathGraspPullImmune(enemy: {
+  type?: string;
+  isBoss1EliteKnight?: boolean;
+} | null | undefined): boolean {
+  if (!enemy?.type) return false;
+  if (DEATH_GRASP_PULL_IMMUNE_TYPES.has(enemy.type)) return true;
+  return enemy.type === 'knight' && enemy.isBoss1EliteKnight === true;
+}
 
 export interface AbilityData {
   name: string;
@@ -68,7 +106,7 @@ export const universalAbilityPool: UniversalAbility[] = [
   {
     id: 'DEATH_GRASP', sourceWeapon: WeaponType.RUNEBLADE, sourceKey: 'Q',
     name: 'Death Grasp', cooldown: 5.0, icon: '💀',
-    description: 'Launch a spectral claw that grabs the nearest enemy unit, pulling them towards you and dealing 80 damage.',
+    description: 'Launch a spectral claw that grabs an enemy, dealing 80 damage and TAUNTING them. Non-elite enemies are pulled in front of you.',
     allowedWeapons: ALL_WEAPONS,
   },
   {
@@ -120,7 +158,8 @@ export const universalAbilityPool: UniversalAbility[] = [
   {
     id: 'BOW_F', sourceWeapon: WeaponType.BOW, sourceKey: 'F',
     name: 'Rejuvenating Shot', cooldown: 4.0, icon: '/icons/rejuvShot.svg',
-    description: 'Fires a healing projectile that restores 50 + 3 HP per point of Intellect to the first allied target it hits. 4 second cooldown.',
+    description:
+      'Fires a healing projectile that restores 50 + 3 HP per point of Intellect to the first allied target it hits. Hitting an enemy instead Entangles them for 5 seconds (20 damage per second). Requires Druid aspect. 4 second cooldown.',
     allowedWeapons: [WeaponType.SCYTHE, WeaponType.BOW],
   },
   {
@@ -197,8 +236,9 @@ export const universalAbilityPool: UniversalAbility[] = [
   },
   {
     id: 'SPEAR_E', sourceWeapon: WeaponType.SPEAR, sourceKey: 'E',
-    name: 'Tempest Sweep', cooldown: 3.0, icon: '🌪️',
-    description: 'Hold to charge for up to 2 seconds, then release to damage all nearby enemies around you for 50 to 400 based on charge time.',
+    name: 'Tempest Sweep', cooldown: 3.0, icon: '/icons/crescentFlare.svg',
+    description:
+      'Hold to charge for up to 2.5 seconds, then release to damage all nearby enemies around you for 100 to 300 based on charge time. Royal Guard R: charging for at least 1.5 seconds also Ignites hit enemies for 80% of impact damage over 4 seconds.',
     allowedWeapons: [WeaponType.SPEAR, WeaponType.RUNEBLADE],
   },
   {
@@ -249,19 +289,33 @@ export function getDefaultLoadout(): AbilityLoadout {
   return { Q: null, E: null, R: null };
 }
 
-/** Returns the pre-selected default loadout for a given weapon */
-export function getDefaultLoadoutForWeapon(weapon: WeaponType): AbilityLoadout {
+/** Returns the pre-selected default loadout for a given weapon (and optional aspect). */
+export function getDefaultLoadoutForWeapon(
+  weapon: WeaponType,
+  aspect?: WeaponAspect | null,
+): AbilityLoadout {
   switch (weapon) {
     case WeaponType.NONE:
       return getDefaultLoadout();
     case WeaponType.RUNEBLADE:
-      return { Q: 'RUNEBLADE_E', E: 'RUNEBLADE_R', R: null }; // Wraith Strike / Colossus Smite / (R unlocks later)
+      // Death Grasp (R) only on Legionnaire aspect; other aspects leave R empty for room boons.
+      // When aspect is omitted, default to Legionnaire (weapon's baseline aspect).
+      return {
+        Q: 'RUNEBLADE_E',
+        E: 'RUNEBLADE_R',
+        R: resolveRunebladeRAbilityId(aspect ?? ASPECT_LEGIONNAIRE),
+      };
     case WeaponType.SCYTHE:
       return { Q: 'SCYTHE_F', E: 'SCYTHE_R', R: null }; // Mantra / Crossentropy / (R unlocks later)
     case WeaponType.SPEAR:
       return { Q: 'SPEAR_Q', E: 'SPEAR_E', R: 'SPEAR_F' }; // Wind Shear / Tempest Sweep / Storm Shroud
     case WeaponType.BOW:
-      return { Q: 'BOW_Q', E: 'BOW_R', R: 'BOW_F' }; // Frostbite / Reaping Talons / Rejuvenating Shot
+      // Rejuvenating Shot (R) only on Druid aspect; Sniper has no R.
+      return {
+        Q: 'BOW_Q',
+        E: 'BOW_R',
+        R: resolveBowRAbilityId(aspect),
+      };
     case WeaponType.SABRES:
       return { Q: 'SABRES_Q', E: 'SABRES_E', R: 'SABRES_R' }; // Backstab / Flourish / Divebomb
     default:
@@ -270,11 +324,55 @@ export function getDefaultLoadoutForWeapon(weapon: WeaponType): AbilityLoadout {
 }
 
 /** True when Q and E are filled, and R is filled if this weapon’s baseline default includes R. */
-export function isAbilityLoadoutCompleteForWeapon(weapon: WeaponType, loadout: AbilityLoadout): boolean {
+export function isAbilityLoadoutCompleteForWeapon(
+  weapon: WeaponType,
+  loadout: AbilityLoadout,
+  aspect?: WeaponAspect | null,
+): boolean {
   if (loadout.Q == null || loadout.E == null) return false;
-  const baselineR = getDefaultLoadoutForWeapon(weapon).R;
+  const baselineR = getDefaultLoadoutForWeapon(weapon, aspect).R;
   if (baselineR === null) return true;
   return loadout.R != null;
+}
+
+/** Patch bow loadout R when throne aspect cycles between Sniper / Druid / Beastmaster. */
+export function syncBowLoadoutRForAspect(
+  loadout: AbilityLoadout,
+  aspect: WeaponAspect | null | undefined,
+): AbilityLoadout {
+  const nextR = resolveBowRAbilityId(aspect);
+  if (loadout.R === nextR) return loadout;
+  // Clear BOW_F when leaving Druid; grant BOW_F when entering Druid (if R empty or was BOW_F).
+  if (isDruidBowAspect(aspect)) {
+    if (loadout.R == null || loadout.R === 'BOW_F') {
+      return { ...loadout, R: 'BOW_F' };
+    }
+    return loadout;
+  }
+  if (loadout.R === 'BOW_F') {
+    return { ...loadout, R: null };
+  }
+  return loadout;
+}
+
+/** Patch Runeblade loadout R when throne aspect cycles to/from Legionnaire. */
+export function syncRunebladeLoadoutRForAspect(
+  loadout: AbilityLoadout,
+  aspect: WeaponAspect | null | undefined,
+): AbilityLoadout {
+  const nextR = resolveRunebladeRAbilityId(aspect);
+  if (loadout.R === nextR) return loadout;
+  // Clear DEATH_GRASP when leaving Legionnaire; grant when entering (if R empty or was DEATH_GRASP).
+  if (isLegionnaireRunebladeAspect(aspect)) {
+    if (loadout.R == null || loadout.R === 'DEATH_GRASP') {
+      return { ...loadout, R: 'DEATH_GRASP' };
+    }
+    return loadout;
+  }
+  if (loadout.R === 'DEATH_GRASP') {
+    return { ...loadout, R: null };
+  }
+  return loadout;
 }
 
 // Weapon abilities data - extracted from HotkeyPanel for reuse
@@ -456,7 +554,8 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Tempest Sweep',
       key: 'E',
       cooldown: 3.0,
-      description: 'Hold to charge for up to 2 seconds, then release to damage all nearby enemies around you for 50 to 400 based on charge time.'
+      description:
+        'Hold to charge for up to 2.5 seconds, then release to damage all nearby enemies around you for 100 to 300 based on charge time. Royal Guard R: charging for at least 1.5 seconds also Ignites hit enemies for 80% of impact damage over 4 seconds.',
     },
     {
       name: 'Lightning Bolt',
@@ -521,7 +620,7 @@ export const abilityIcons: Record<WeaponType, Partial<Record<'Q' | 'E' | 'R' | '
   },
   [WeaponType.SPEAR]: {
     Q: '💨', // Throw Spear
-    E: '🌪️', // Whirlwind
+    E: '/icons/crescentFlare.svg', // Tempest Sweep
     R: '⚡️', // Lightning Storm
     F: '🌩️', // Flurry
     P: '🌩️' // Tempest
@@ -595,7 +694,7 @@ const SPEAR_PRIMARY: PrimaryAttackData = {
 export const weaponPrimaryAttacks: Record<WeaponType, PrimaryAttackData | null> = {
   [WeaponType.NONE]: {
     name: 'Unarmed',
-    description: 'Strike with your bare hands.',
+    description: 'Equip a weapon and use left-click to attack.',
   },
   [WeaponType.SWORD]: SWORD_PRIMARY,
   [WeaponType.BOW]: BOW_PRIMARY_ATTACK,

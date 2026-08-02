@@ -60,6 +60,8 @@ interface ViperStingManagerProps {
   giantKiller?: boolean;
   glacialTalonsTheme?: boolean;
   queryExplosionTargets?: (cx: number, cz: number, radius: number) => ViperExplosionTarget[];
+  /** Sniper Terminal Velocity — flat bonus when horizontal shot-origin→target distance > 10. */
+  getTerminalVelocityBonus?: (horizontalDistance: number) => number;
 }
 
 interface SoulStealEffect {
@@ -131,6 +133,7 @@ export default function ViperStingManager({
   giantKiller,
   glacialTalonsTheme,
   queryExplosionTargets,
+  getTerminalVelocityBonus,
 }: ViperStingManagerProps) {
   const [soulStealEffects, setSoulStealEffects] = useState<SoulStealEffect[]>([]);
   const nextSoulStealId = useRef(0);
@@ -172,6 +175,7 @@ export default function ViperStingManager({
     giantKiller,
     glacialTalonsTheme,
     queryExplosionTargets,
+    getTerminalVelocityBonus,
   });
 
   // Register global manager

@@ -77,6 +77,37 @@ export const ARCHETYPE_DISPLAY: Record<ThroneArchetype, ArchetypeDisplayMeta> = 
   },
 };
 
+/** Throne-room pedestal trinket GLBs (floating symbol above each archetype pedestal). */
+export const ARCHETYPE_TRINKET_MODEL_PATH: Record<ThroneArchetype, string> = {
+  ROGUE: '/models/trinket/ROGUETRINKET.glb',
+  GLADIATOR: '/models/trinket/GLADIATORTRINKET.glb',
+  ACOLYTE: '/models/trinket/ACOLYTETRINKET.glb',
+  ALCHEMIST: '/models/trinket/ALCHEMISTTRINKET.glb',
+  SORCERESS: '/models/trinket/SORCERESSTRINKET.glb',
+};
+
+/**
+ * Torus halo + point-light colors for throne archetype pedestals.
+ * Optional `pedestal` overrides the stone-cap glow (falls back to `light`).
+ * Alchemist: green pedestal aligned with ARCHETYPE_DISPLAY; halo/trinket light stay red.
+ * Sorceress uses explicit orange — secondaryColor is too dark on throne-room grass.
+ */
+export const ARCHETYPE_PEDESTAL_GLOW: Record<
+  ThroneArchetype,
+  { readonly halo: string; readonly light: string; readonly pedestal?: string }
+> = {
+  ROGUE: { halo: '#0e7490', light: '#22d3ee' },
+  GLADIATOR: { halo: '#b45309', light: '#fbbf24' },
+  ACOLYTE: { halo: '#6b21a8', light: '#a855f7' },
+  ALCHEMIST: { halo: '#dc2626', light: '#ef4444', pedestal: '#22c55e' },
+  SORCERESS: { halo: '#ea580c', light: '#f97316' },
+};
+
+export function getArchetypePedestalCapGlow(archetype: ThroneArchetype): string {
+  const g = ARCHETYPE_PEDESTAL_GLOW[archetype];
+  return g.pedestal ?? g.light;
+}
+
 export function isArchetype(value: unknown): value is Archetype {
   return (
     value === 'NONE' ||
