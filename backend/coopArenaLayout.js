@@ -28,9 +28,9 @@ function rotationYTowardArenaCenter(fromX, fromZ) {
 }
 
 /** Fae Realm hex — keep in sync with `FAE_REALM_HEX_RADIUS` in src/utils/mapConstants.ts */
-const FAE_REALM_HEX_RADIUS = 15;
+const FAE_REALM_HEX_RADIUS = 21;
 const FAE_REALM_ENTRY_X = 0;
-const FAE_REALM_ENTRY_Z = -12;
+const FAE_REALM_ENTRY_Z = -17;
 
 /** Eternity's Palace hex — keep in sync with `ETERNITY_PALACE_HEX_RADIUS` in src/utils/mapConstants.ts */
 const ETERNITY_PALACE_HEX_RADIUS = 18;

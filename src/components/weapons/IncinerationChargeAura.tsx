@@ -213,6 +213,12 @@ const IncinerationChargeAura = forwardRef<{ isActive: boolean }, IncinerationCha
     setShouldRender(true);
   }, [isActive, runeBandMaterial]);
 
+  useEffect(() => {
+    return () => {
+      runeBandMaterial.dispose();
+    };
+  }, [runeBandMaterial]);
+
   useFrame((_, delta) => {
     if (!auraRef.current || !parentRef.current) return;
 

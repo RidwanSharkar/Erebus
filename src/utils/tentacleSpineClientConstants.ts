@@ -2,7 +2,7 @@
  * Kept in sync with backend/enemyAI.js tentacle-spine constants
  * (TENTACLE_SPINE_WINDUP_MS, TENTACLE_SPINE_LINE_HALF_W, etc.)
  *
- * Idle clip: Stand (ID 0) ≈ 2.333s.
+ * Idle clip: Stand (ID 0) from tentacle_idle.glb ≈ 2.333s.
  * Attack clip: AttackUnarmed (ID 16 var 0) ≈ 1.666s; slam lands at 50%.
  * Death clip: Death (ID 1) from tentacle_death.glb ≈ 3.434s.
  */

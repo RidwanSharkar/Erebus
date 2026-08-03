@@ -300,8 +300,10 @@ const PrimeMateriaAura = forwardRef<{ isActive: boolean }, PrimeMateriaAuraProps
       rimGlowMaterial.dispose();
       dragGeo.dispose();
       dragMat.dispose();
+      runeBandMaterial.dispose();
+      boneMat.dispose();
     };
-  }, [mawMaterial, rimGlowMaterial, dragGeo, dragMat]);
+  }, [mawMaterial, rimGlowMaterial, dragGeo, dragMat, runeBandMaterial, boneMat]);
 
   useFrame((_, delta) => {
     if (!auraRef.current || !parentRef.current) return;

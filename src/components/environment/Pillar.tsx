@@ -1,7 +1,18 @@
-import React, { useMemo, useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
-import { CylinderGeometry, SphereGeometry, MeshStandardMaterial, Mesh } from '../../utils/three-exports';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { useFrame, useLoader } from '@react-three/fiber';
+import {
+  CylinderGeometry,
+  SphereGeometry,
+  MeshStandardMaterial,
+  Mesh,
+  TextureLoader,
+} from '../../utils/three-exports';
 import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
+import {
+  PEDESTAL_BRICK_TEXTURE_PATH,
+  PEDESTAL_BRICK_STONE_PROPS,
+  configurePedestalBrickTexture,
+} from '@/utils/pedestalBrickTexture';
 
 /** Shared stone meshes — one geometry set for all pillar instances (never disposed). */
 export const PILLAR_SHARED_GEOMETRIES = {
@@ -12,9 +23,7 @@ export const PILLAR_SHARED_GEOMETRIES = {
 };
 
 export const PILLAR_STONE_MATERIAL = new MeshStandardMaterial({
-  color: '#ffffff',
-  roughness: 0.7,
-  metalness: 0.2,
+  ...PEDESTAL_BRICK_STONE_PROPS,
 });
 
 interface PillarProps {
@@ -26,6 +35,15 @@ interface PillarProps {
 }
 
 const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], orbColorHex = '#5DADE2', showOrb = true }) => {
+  const brickTexture = useLoader(TextureLoader, PEDESTAL_BRICK_TEXTURE_PATH);
+
+  useEffect(() => {
+    configurePedestalBrickTexture(brickTexture);
+    PILLAR_STONE_MATERIAL.map = brickTexture;
+    PILLAR_STONE_MATERIAL.emissiveMap = brickTexture;
+    PILLAR_STONE_MATERIAL.needsUpdate = true;
+  }, [brickTexture]);
+
   const orbMaterial = useMemo(
     () =>
       new MeshStandardMaterial({
@@ -45,7 +63,7 @@ const Pillar: React.FC<PillarProps> = ({ position = [0, 0, 0], orbColorHex = '#5
     orbRef.current.rotation.y += 0.02;
   });
 
-  React.useEffect(
+  useEffect(
     () => () => {
       orbMaterial.dispose();
     },

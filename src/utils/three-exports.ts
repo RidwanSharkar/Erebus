@@ -12,7 +12,8 @@ export {
   Quaternion,
   Color,
   MathUtils,
-  Spherical
+  Spherical,
+  Plane,
 } from 'three';
 
 // Geometry classes

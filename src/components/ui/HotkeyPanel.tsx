@@ -10,7 +10,7 @@ import {
 } from '@/utils/weaponAbilities';
 import type { TalentId, TalentLoadout } from '@/utils/talents';
 import { partitionTalentsForHud } from '@/utils/talents';
-import { getWeaponHudIconSrc, getWeaponDisplayName } from '@/utils/weaponIcons';
+import { getWeaponHudIconSrc } from '@/utils/weaponIcons';
 import {
   ARCHETYPE_DISPLAY,
   getArchetypeIconSvgSrc,
@@ -22,6 +22,8 @@ import {
   isBowRejuvenatingShotAspect,
   isRunebladeDeathGraspAspect,
   isRunebladeTempestSweepAspect,
+  normalizeWeaponAspect,
+  getWeaponAspectTooltipData,
 } from '@/utils/weaponAspects';
 import {
   AbilityIcon,
@@ -355,16 +357,16 @@ export default function HotkeyPanel({
 
   const handlePortraitHover = useCallback((e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
-    const name = getWeaponDisplayName(currentWeapon);
-    setTooltipContent({
-      name,
-      description: `Wielding the ${name}`,
-    });
+    const aspect = normalizeWeaponAspect(
+      controlSystem?.getWeaponAspect?.(),
+      currentWeapon,
+    );
+    setTooltipContent(getWeaponAspectTooltipData(aspect));
     setTooltipPosition({
       x: rect.left + rect.width / 2,
       y: rect.top,
     });
-  }, [currentWeapon]);
+  }, [controlSystem, currentWeapon]);
 
   const handleTalentHover = useCallback((e: React.MouseEvent, talentId: TalentId) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -423,9 +425,12 @@ export default function HotkeyPanel({
               pointerEvents: 'none',
             }}
           />
-          <div className="flex flex-nowrap items-center justify-center gap-2">
+          <div className="flex flex-nowrap items-center justify-center gap-1.5">
             <WeaponPortraitBadge
               weapon={currentWeapon}
+              label={getWeaponAspectTooltipData(
+                normalizeWeaponAspect(weaponAspect, currentWeapon),
+              ).name}
               className="mr-1"
               onMouseEnter={handlePortraitHover}
               onMouseLeave={handleAbilityLeave}

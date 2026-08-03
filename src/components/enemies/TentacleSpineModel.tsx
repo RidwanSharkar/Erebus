@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useMemo } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { Group, LoopOnce, AnimationAction, AnimationClip } from 'three';
@@ -27,16 +27,18 @@ interface TentacleSpineModelProps {
 }
 
 /**
- * JadeTentacle scene + idle/death from tentacle_death.glb.
+ * Mesh + Death from tentacle_death.glb; Idle Stand from tentacle_idle.glb.
  * AttackUnarmed timing donor: tentacle_attack.glb (MassiveTentacle mesh unused —
  * death GLB AttackUnarmed var0 has corrupt ~825s duration).
  */
 const ATTACK_MODEL_PATH = '/models/spine/tentacle_attack.glb';
-const JADE_MODEL_PATH = '/models/spine/tentacle_death.glb';
+const DEATH_MODEL_PATH = '/models/spine/tentacle_death.glb';
+const IDLE_MODEL_PATH = '/models/spine/tentacle_idle.glb';
 
 export function preloadTentacleSpineModels(): void {
   useGLTF.preload(ATTACK_MODEL_PATH);
-  useGLTF.preload(JADE_MODEL_PATH);
+  useGLTF.preload(DEATH_MODEL_PATH);
+  useGLTF.preload(IDLE_MODEL_PATH);
 }
 
 /** Bind height from JadeTentacle mesh bbox (~18.92). */
@@ -122,12 +124,14 @@ export default React.memo(function TentacleSpineModel({
   const attackFinishedRef = useRef(false);
   const attackOriginalNameRef = useRef<string | null>(null);
 
-  // JadeTentacle mesh + idle/death clips.
-  const { scene, animations: jadeAnims } = useGLTF(JADE_MODEL_PATH);
+  // Mesh + Death clips from death GLB; Idle Stand from idle GLB.
+  const { scene, animations: deathAnims } = useGLTF(DEATH_MODEL_PATH);
+  const { animations: idleAnims } = useGLTF(IDLE_MODEL_PATH);
   // AttackUnarmed timing donor only (MassiveTentacle scene unused).
   const { animations: attackAnims } = useGLTF(ATTACK_MODEL_PATH);
 
-  useEffect(() => {
+  // Layout so useFrame sees death before the next attack scrub tick.
+  useLayoutEffect(() => {
     isDyingRef.current = isDying;
   }, [isDying]);
   useEffect(() => {
@@ -158,8 +162,8 @@ export default React.memo(function TentacleSpineModel({
   useDisposeClonedMaterials(clonedScene);
 
   const idleRaw = useMemo(
-    () => pickWowClipExact(jadeAnims, IDLE_CLIP_NAME, 'Stand'),
-    [jadeAnims],
+    () => pickWowClipExact(idleAnims, IDLE_CLIP_NAME, 'Stand'),
+    [idleAnims],
   );
   // Attack from MassiveTentacle donor — keep ~1.666s timing; never death GLB var0 (~825s).
   const attackRaw = useMemo(
@@ -167,17 +171,19 @@ export default React.memo(function TentacleSpineModel({
     [attackAnims],
   );
   const deathRaw = useMemo(
-    () => pickWowClipExact(jadeAnims, DEATH_CLIP_NAME, 'Death'),
-    [jadeAnims],
+    () => pickWowClipExact(deathAnims, DEATH_CLIP_NAME, 'Death'),
+    [deathAnims],
   );
 
   const animations = useMemo(() => {
     if (!didLogClips && (idleRaw || attackRaw || deathRaw)) {
       didLogClips = true;
-      console.warn('[TentacleSpine] clips (JadeTentacle scene)', {
+      console.warn('[TentacleSpine] clips', {
         idle: idleRaw?.name,
+        idleSource: IDLE_MODEL_PATH,
         attack: attackRaw?.name,
         death: deathRaw?.name,
+        deathSource: DEATH_MODEL_PATH,
         attackDuration: attackRaw?.duration,
         attackTrackCount: attackRaw?.tracks.length,
         deathDuration: deathRaw?.duration,
@@ -186,7 +192,7 @@ export default React.memo(function TentacleSpineModel({
     }
     if (!idleRaw) {
       console.warn(
-        `[TentacleSpine] Idle clip not found in jade GLB (wanted ${IDLE_CLIP_NAME} | Stand); refusing clips[0] fallback`,
+        `[TentacleSpine] Idle clip not found in idle GLB (wanted ${IDLE_CLIP_NAME} | Stand); refusing clips[0] fallback`,
       );
     }
     if (!attackRaw) {
@@ -202,7 +208,7 @@ export default React.memo(function TentacleSpineModel({
     }
     if (!deathRaw) {
       console.warn(
-        `[TentacleSpine] Death clip not found in jade GLB (wanted ${DEATH_CLIP_NAME}); refusing clips[0] fallback`,
+        `[TentacleSpine] Death clip not found in death GLB (wanted ${DEATH_CLIP_NAME}); refusing clips[0] fallback`,
       );
     }
 
@@ -245,28 +251,59 @@ export default React.memo(function TentacleSpineModel({
     death.weight = 0;
   };
 
+  const stopAttackHard = () => {
+    const attack = getAction('Attack');
+    if (!attack) return;
+    attack.paused = false;
+    attack.stop();
+    attack.enabled = false;
+    attack.weight = 0;
+  };
+
+  const stopIdleHard = () => {
+    const idle = getAction('Idle');
+    if (!idle) return;
+    idle.stop();
+    idle.enabled = false;
+    idle.weight = 0;
+  };
+
   const blendToIdle = () => {
+    if (isDyingRef.current) return;
     stopDeathHard();
     playEnemyAction(getAction('Idle'), currentActionRef, mixer, { fadeIn: 0.15, fadeOut: 0.15 });
   };
 
-  const posed = useEnemyIdlePose({ actions, mixer, currentActionRef });
+  // Dying-aware: never re-kick Stand over Death (LoopOnce ends with isRunning() === false).
+  const posed = useEnemyIdlePose({
+    actions,
+    mixer,
+    currentActionRef,
+    resolveIdle: () => (isDyingRef.current ? null : actions?.Idle ?? null),
+  });
 
-  // Priority: Death > Attack > Idle.
+  // Dedicated death path — hard-cut Attack + Idle so bind/Stand cannot cover Death.
   useEffect(() => {
-    if (!actions) return;
-
-    if (isDying) {
-      const death = getAction('Death');
-      if (!death) return;
-      playEnemyAction(death, currentActionRef, mixer, {
-        loopOnce: true,
-        clampWhenFinished: true,
-        fadeIn: 0.15,
-        fadeOut: 0.15,
-      });
+    if (!actions || !isDying) return;
+    attackFinishedRef.current = true;
+    stopAttackHard();
+    stopIdleHard();
+    const death = getAction('Death');
+    if (!death) {
+      console.warn('[TentacleSpine] isDying but Death action missing after clips loaded');
       return;
     }
+    playEnemyAction(death, currentActionRef, mixer, {
+      loopOnce: true,
+      clampWhenFinished: true,
+      forceRestart: true,
+      instant: true,
+    });
+  }, [isDying, actions, mixer]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Attack > Idle (death handled above).
+  useEffect(() => {
+    if (!actions || isDying) return;
 
     if (isAttacking) {
       const attack = getAction('Attack');

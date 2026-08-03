@@ -18,12 +18,15 @@ interface HexCombatArenaProps {
   combatActive?: boolean;
   /** Indices to hide (server-destroyed mushrooms). */
   hiddenIndices?: ReadonlySet<number>;
+  /** Server-authoritative random CustomSky preset index. */
+  skyPresetIndex?: number;
 }
 
 export default function HexCombatArena({
   variant,
   combatActive = false,
   hiddenIndices,
+  skyPresetIndex,
 }: HexCombatArenaProps) {
   const accent =
     variant === 'eden'
@@ -53,20 +56,6 @@ export default function HexCombatArena({
     ),
     [variant],
   );
-  const skyTheme =
-    variant === 'eden'
-      ? 'green' as const
-      : variant === 'dream_layer'
-        ? 'purple' as const
-      : variant === 'chaos'
-        ? 'purple' as const
-        : variant === 'merchant' || variant === 'trial'
-          ? undefined
-          : 'green' as const;
-  const skyPreset =
-    variant === 'trial' || variant === 'merchant'
-      ? 'trialLightBlue' as const
-      : undefined;
   const ringColor =
     variant === 'eden'
       ? '#86efac'
@@ -83,8 +72,8 @@ export default function HexCombatArena({
   return (
     <group name={`${variant}-hex-combat-arena`}>
       <CustomSky
-        roomTheme={skyTheme ?? 'green'}
-        skyPreset={skyPreset}
+        skyPresetIndex={skyPresetIndex}
+        roomTheme="green"
         animateClouds={!combatActive}
       />
       {/* Subtle room tint only — shadow + key light come from CoopGameScene */}

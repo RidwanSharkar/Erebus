@@ -15,8 +15,9 @@ import {
   AdditiveBlending,
   DoubleSide,
   Mesh,
+  Plane,
 } from '@/utils/three-exports';
-import { useFrame } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { WeaponType } from '../dragon/weapons';
 import { calculateDamage, DamageResult } from '@/core/DamageCalculator';
 import { INFERNAL_SMITE_CRIT_CHANCE_ADD, STAGGERING_SMITE_BEAM_STAGGER } from '@/utils/talents';
@@ -30,6 +31,13 @@ import {
 
 const _hslScratch = { h: 0, s: 0, l: 0 };
 const _smiteBoltLightPos = new Vector3();
+
+/** How far below strike floor Y fragments may still render (short impact bite). */
+const SMITE_UNDERFLOOR_ALLOW = 0.35;
+
+/** Ref-count so concurrent Smites (e.g. Trinity) share localClippingEnabled safely. */
+let smiteLocalClippingUsers = 0;
+let smiteLocalClippingPrev: boolean | null = null;
 
 /** Saturated, punchy smite colors (Three.js) per talent theme; aspect is lowest priority. */
 function smiteVividColorPair(
@@ -162,6 +170,12 @@ const SmiteComponent = memo(function Smite({
   const burstCoreRef = useRef<Mesh>(null);
   /** Ref-based delay does not re-render; state flips visibility once the bolt should show. */
   const [boltVisible, setBoltVisible] = useState(false);
+  const { gl } = useThree();
+  const minWorldY = position.y - SMITE_UNDERFLOOR_ALLOW;
+  const underfloorClipPlane = useMemo(
+    () => new Plane(new Vector3(0, 1, 0), -minWorldY),
+    [minWorldY],
+  );
 
   // useMemo for static geometries — tight column, reduced outer halo
   const cylinderGeometries = useMemo(() => ({
@@ -201,18 +215,34 @@ const SmiteComponent = memo(function Smite({
   const boltLight = useDynamicLight({ color: primaryColor, distance: 28, priority: 2 });
   const burstLight = useDynamicLight({ color: burstPointColor, distance: 11, priority: 1 });
 
+  // Enable local clipping for MeshStandardMaterial spiral/particle planes while mounted.
+  useEffect(() => {
+    if (smiteLocalClippingUsers === 0) {
+      smiteLocalClippingPrev = gl.localClippingEnabled;
+      gl.localClippingEnabled = true;
+    }
+    smiteLocalClippingUsers += 1;
+    return () => {
+      smiteLocalClippingUsers = Math.max(0, smiteLocalClippingUsers - 1);
+      if (smiteLocalClippingUsers === 0 && smiteLocalClippingPrev !== null) {
+        gl.localClippingEnabled = smiteLocalClippingPrev;
+        smiteLocalClippingPrev = null;
+      }
+    };
+  }, [gl]);
+
   const beamCylinderMaterials = useMemo(() => {
     const glow2Color = primaryColor.clone().lerp(secondaryColor, 0.42);
     const outerGlowColor = primaryColor.clone().lerp(secondaryColor, 0.52);
     return {
-      core: createBeamCylinderAdditiveMaterial(primaryColor, 0.92, 0.32),
-      inner: createBeamCylinderAdditiveMaterial(primaryColor, 0.78, 0.3),
-      outer: createBeamCylinderAdditiveMaterial(primaryColor, 0.62, 0.28),
-      glow1: createBeamCylinderAdditiveMaterial(primaryColor, 0.48, 0.26),
-      glow2: createBeamCylinderAdditiveMaterial(glow2Color, 0.38, 0.24),
-      outerGlow: createBeamCylinderAdditiveMaterial(outerGlowColor, 0.22, 0.2),
+      core: createBeamCylinderAdditiveMaterial(primaryColor, 0.92, 0.32, 1, minWorldY),
+      inner: createBeamCylinderAdditiveMaterial(primaryColor, 0.78, 0.3, 1, minWorldY),
+      outer: createBeamCylinderAdditiveMaterial(primaryColor, 0.62, 0.28, 1, minWorldY),
+      glow1: createBeamCylinderAdditiveMaterial(primaryColor, 0.48, 0.26, 1, minWorldY),
+      glow2: createBeamCylinderAdditiveMaterial(glow2Color, 0.38, 0.24, 1, minWorldY),
+      outerGlow: createBeamCylinderAdditiveMaterial(outerGlowColor, 0.22, 0.2, 1, minWorldY),
     };
-  }, [primaryColor, secondaryColor]);
+  }, [primaryColor, secondaryColor, minWorldY]);
 
   useEffect(() => {
     const m = beamCylinderMaterials;
@@ -251,6 +281,8 @@ const SmiteComponent = memo(function Smite({
       emissiveIntensity: 12,
       transparent: true,
       opacity: 0.48,
+      clippingPlanes: [underfloorClipPlane],
+      clipShadows: false,
     }),
     skySpiral: new MeshStandardMaterial({
       color: primaryColor,
@@ -258,6 +290,8 @@ const SmiteComponent = memo(function Smite({
       emissiveIntensity: 11,
       transparent: true,
       opacity: 0.36,
+      clippingPlanes: [underfloorClipPlane],
+      clipShadows: false,
     }),
     particle: new MeshStandardMaterial({
       color: primaryColor,
@@ -265,6 +299,8 @@ const SmiteComponent = memo(function Smite({
       emissiveIntensity: 12,
       transparent: true,
       opacity: 0.62,
+      clippingPlanes: [underfloorClipPlane],
+      clipShadows: false,
     }),
     burstRing: new MeshBasicMaterial({
       color: primaryColor,
@@ -282,7 +318,7 @@ const SmiteComponent = memo(function Smite({
         depthWrite: false,
         side: DoubleSide,
       }),
-    }), [beamCylinderMaterials, primaryColor, secondaryColor]);
+    }), [beamCylinderMaterials, primaryColor, secondaryColor, underfloorClipPlane]);
 
   useEffect(() => {
     const m = materials;

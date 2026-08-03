@@ -36,6 +36,15 @@ function resolveAttackStartedAt(windupAt: number | undefined): number {
   return now;
 }
 
+/** Shared across tentacles — alternate swordMiss1 / swordMiss2 whooshes on each windup. */
+let tentacleSpineMissVariant: 1 | 2 = 1;
+
+function playTentacleSpineAttackMiss(pos: Vector3) {
+  const soundId = tentacleSpineMissVariant === 1 ? 'sword_miss_1' : 'sword_miss_2';
+  window.audioSystem?.playWeaponSound?.(soundId, pos, { volume: 0.75 });
+  tentacleSpineMissVariant = tentacleSpineMissVariant === 1 ? 2 : 1;
+}
+
 const TentacleSpineRenderer: React.FC<TentacleSpineRendererProps> = ({
   id,
   position,
@@ -50,6 +59,7 @@ const TentacleSpineRenderer: React.FC<TentacleSpineRendererProps> = ({
   const groupRef = useRef<Group>(null);
   const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation = useRef(rotation);
+  const isDyingRef = useRef(isDying);
 
   const lastWindSeq = useRef(0);
   const lastSlamSeq = useRef(0);
@@ -59,11 +69,18 @@ const TentacleSpineRenderer: React.FC<TentacleSpineRendererProps> = ({
   const [slamAtMs, setSlamAtMs] = useState<number | null>(null);
 
   useLayoutEffect(() => {
+    isDyingRef.current = isDying;
+  }, [isDying]);
+
+  useLayoutEffect(() => {
     if (windSeq > lastWindSeq.current) {
       lastWindSeq.current = windSeq;
       setAttackStartedAt(resolveAttackStartedAt(windupAt));
       setSlamAtMs(null);
       setIsAttacking(true);
+      if (!isDyingRef.current) {
+        playTentacleSpineAttackMiss(targetPosition.current);
+      }
     }
   }, [windSeq, windupAt]);
 

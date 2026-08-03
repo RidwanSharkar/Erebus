@@ -69,11 +69,31 @@ export function disposeClonedMaterials(object: THREE.Object3D): void {
   });
 }
 
+/**
+ * SkeletonUtils.clone() gives each instance its own Skeleton, and each Skeleton
+ * lazily owns a bone DataTexture that only Skeleton.dispose() frees.
+ * Without this, every enemy spawn permanently increments renderer.info.memory.textures.
+ */
+export function disposeClonedSkeletons(object: THREE.Object3D): void {
+  const seen = new Set<THREE.Skeleton>();
+  object.traverse((child) => {
+    const skinned = child as THREE.SkinnedMesh;
+    if (!skinned.isSkinnedMesh) return;
+    const skeleton = skinned.skeleton;
+    if (!skeleton || seen.has(skeleton)) return;
+    seen.add(skeleton);
+    skeleton.dispose();
+  });
+}
+
 /** Cleanup hook for SkeletonUtils.clone scenes that duplicate materials per instance. */
 export function useDisposeClonedMaterials(clonedScene: THREE.Object3D | null | undefined): void {
   useEffect(() => {
     if (!clonedScene) return;
-    return () => disposeClonedMaterials(clonedScene);
+    return () => {
+      disposeClonedMaterials(clonedScene);
+      disposeClonedSkeletons(clonedScene);
+    };
   }, [clonedScene]);
 }
 

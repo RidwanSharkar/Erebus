@@ -31,8 +31,10 @@ export function isDreamLayerSlotTaken(
       return purchaseState.healPurchasedThisVisit;
     case 'warding_pendant':
       return purchaseState.wardingPurchasedThisVisit || !!getDreamLayerStockForSlot(slot, inventory)?.sold;
-    case 'exodia':
-      return purchaseState.exodiaPurchasedThisVisit || !!getDreamLayerStockForSlot(slot, inventory)?.sold;
+    case 'legendary_a':
+      return purchaseState.legendaryAPurchasedThisVisit || !!getDreamLayerStockForSlot(slot, inventory)?.sold;
+    case 'legendary_b':
+      return purchaseState.legendaryBPurchasedThisVisit || !!getDreamLayerStockForSlot(slot, inventory)?.sold;
     case 'ring':
       return purchaseState.ringPurchasedThisVisit || !!getDreamLayerStockForSlot(slot, inventory)?.sold;
     default:

@@ -110,7 +110,7 @@ export const MAP_CENTER_PRISM_MODELS: readonly MapCenterPrismModel[] = [
   'goldCracked',
 ] as const;
 
-export const THRONE_GOLD_SHARD_CRACKED_PATH = '/models/trinket/goldshard_cracked.glb';
+export const THRONE_GOLD_SHARD_CRACKED_PATH = '/models/trinket/pylons/7.glb';
 
 export const MAP_CENTER_PRISM_PATHS: Record<MapCenterPrismModel, string> = {
   prismGold: THRONE_PRISM_GOLD_PATH,
@@ -173,7 +173,7 @@ export const MAP_CENTER_DECOR_BY_KIND: Record<
     centerZ: 0,
     floatY: 4.55,
     scale: 0.475,
-    orbitRadius: 15 + MAP_CENTER_ORBIT_MARGIN,
+    orbitRadius: 21 + MAP_CENTER_ORBIT_MARGIN,
   },
   eternity_palace: {
     centerZ: 0,

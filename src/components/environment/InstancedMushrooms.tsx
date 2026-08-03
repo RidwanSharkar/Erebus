@@ -82,7 +82,7 @@ const _zero = new Matrix4().makeScale(0, 0, 0);
 export interface InstancedMushroomsProps {
   /** Indices to hide (server-destroyed). */
   hiddenIndices?: ReadonlySet<number>;
-  /** When set, hide mushrooms outside this hex circumradius (e.g. Fae Realm r=15). */
+  /** When set, hide mushrooms outside this hex circumradius (e.g. Fae Realm r=21). */
   hexRadius?: number;
 }
 

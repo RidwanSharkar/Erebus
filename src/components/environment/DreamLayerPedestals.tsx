@@ -27,8 +27,17 @@ import type { DreamLayerPurchaseState, DreamLayerStockItem } from '@/contexts/Mu
 import { ITEM_RARITY_COLORS } from '@/utils/itemRarity';
 import {
   getDreamLayerShopTooltipData,
+  getDreamLayerStockForSlot,
   isDreamLayerSlotTaken,
 } from '@/utils/dreamLayerShopUtils';
+import {
+  INFINITE_AMBER,
+  JAGUAR_EMERALD,
+  LIQUID_SAPPHIRE,
+  PERSEPHONE,
+  RAZED_DIAMOND,
+  WYVERN_AMETHYST,
+} from '@/utils/dreamLayerItems';
 import {
   clearMerchantShopTooltip,
   publishMerchantShopTooltip,
@@ -38,6 +47,14 @@ const FADE_OUT_SPEED = 10;
 const FADE_IN_SPEED = 5;
 const TOOLTIP_WORLD_OFFSET = new ThreeVector3(0, 1.35, 0);
 const _projectScratch = new ThreeVector3();
+const DREAM_LAYER_RING_TYPES = new Set([
+  PERSEPHONE,
+  WYVERN_AMETHYST,
+  INFINITE_AMBER,
+  LIQUID_SAPPHIRE,
+  JAGUAR_EMERALD,
+  RAZED_DIAMOND,
+]);
 
 function DreamLayerFloatingDisplay({
   xz,
@@ -174,14 +191,18 @@ function RingSymbol() {
   );
 }
 
-function slotSymbol(slot: DreamLayerShopSlotKind) {
+function slotSymbol(slot: DreamLayerShopSlotKind, inventory: DreamLayerStockItem[]) {
   switch (slot) {
     case 'heal':
       return <HealSymbol />;
     case 'warding_pendant':
       return <WardingSymbol />;
-    case 'exodia':
+    case 'legendary_a':
+    case 'legendary_b': {
+      const type = getDreamLayerStockForSlot(slot, inventory)?.item?.type;
+      if (type && DREAM_LAYER_RING_TYPES.has(type)) return <RingSymbol />;
       return <ExodiaSymbol />;
+    }
     case 'ring':
       return <RingSymbol />;
     default:
@@ -334,7 +355,7 @@ export default function DreamLayerPedestals({
                 scale={0.75}
                 position={[-0.5, 1.25, 0]}
               >
-                {slotSymbol(slot.slot)}
+                {slotSymbol(slot.slot, inventory)}
                 {!taken ? (
                   <mesh
                     onPointerOver={(event) => {

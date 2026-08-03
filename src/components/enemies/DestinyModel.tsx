@@ -8,7 +8,15 @@ import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 import { loadGltfAnimationClips, preloadSkinnedIdleAndAnimationClips } from '@/utils/gltfAnimationLoader';
 import { filterAnimationTracksForRoot, getCachedProcessedClips } from '@/utils/enemyAnimationClipCache';
-import { isDestinyAirPhase, type DestinyPhase } from '@/utils/destinyCoopConstants';
+import {
+  DESTINY_BREATH_ROAR_CAST_LOCK_MS,
+  DESTINY_FLY_ATTACK_CAST_MS,
+  DESTINY_FLY_LAND_MS,
+  DESTINY_FLY_TAKEOFF_MS,
+  DESTINY_WING_CAST_LOCK_MS,
+  isDestinyAirPhase,
+  type DestinyPhase,
+} from '@/utils/destinyCoopConstants';
 
 export type DestinyAnimState =
   | 'idle'
@@ -16,6 +24,7 @@ export type DestinyAnimState =
   | 'leftSwipe'
   | 'rightSwipe'
   | 'breath'
+  | 'wingAttack'
   | 'flyTakeoff'
   | 'flyIdle'
   | 'fly'
@@ -28,10 +37,20 @@ interface DestinyModelProps {
   isAttacking: boolean;
   swipeVariant: 1 | 2;
   isBreathing: boolean;
+  isWingAttacking: boolean;
   isFlyAttacking: boolean;
   phase: DestinyPhase;
   isDying: boolean;
 }
+
+/** EmoteRoar clip length (seconds) — used to stretch breath into the cast window. */
+const EMOTE_ROAR_CLIP_SEC = 5.333;
+/** SpecialUnarmed (wing buffet) clip length (seconds). */
+const SPECIAL_UNARMED_CLIP_SEC = 5.333;
+/** DragonSpitHover clip length (seconds). */
+const DRAGON_SPIT_HOVER_CLIP_SEC = 1.0;
+/** LiftOff / Land clip length (seconds). */
+const LIFTOFF_LAND_CLIP_SEC = 3.0;
 
 const DESTINY_IDLE_PATH = '/models/dragon/azugeros_idle.glb';
 
@@ -41,6 +60,7 @@ const DESTINY_MODEL_PATHS = [
   '/models/dragon/azugeros_leftSwipe.glb',
   '/models/dragon/azugeros_rightSwipe.glb',
   '/models/dragon/azugeros_roar.glb',
+  '/models/dragon/azugeros_wingAttack.glb',
   '/models/dragon/azugeros_flyTakeoff.glb',
   '/models/dragon/azugeros_flyIdle.glb',
   '/models/dragon/azugeros_fly.glb',
@@ -54,6 +74,7 @@ const DESTINY_DEFERRED_PATHS = {
   LeftSwipe: '/models/dragon/azugeros_leftSwipe.glb',
   RightSwipe: '/models/dragon/azugeros_rightSwipe.glb',
   Breath: '/models/dragon/azugeros_roar.glb',
+  WingAttack: '/models/dragon/azugeros_wingAttack.glb',
   FlyTakeoff: '/models/dragon/azugeros_flyTakeoff.glb',
   FlyIdle: '/models/dragon/azugeros_flyIdle.glb',
   Fly: '/models/dragon/azugeros_fly.glb',
@@ -86,6 +107,7 @@ function phaseToAnim(
   isAttacking: boolean,
   swipeVariant: 1 | 2,
   isBreathing: boolean,
+  isWingAttacking: boolean,
   _isFlyAttacking: boolean,
   isDying: boolean,
 ): DestinyAnimState {
@@ -111,6 +133,7 @@ function phaseToAnim(
     }
   }
 
+  if (isWingAttacking) return 'wingAttack';
   if (isBreathing) return 'breath';
   if (isAttacking) return swipeVariant === 2 ? 'rightSwipe' : 'leftSwipe';
   return isWalking ? 'walk' : 'idle';
@@ -121,6 +144,7 @@ export default React.memo(function DestinyModel({
   isAttacking,
   swipeVariant,
   isBreathing,
+  isWingAttacking,
   isFlyAttacking,
   phase,
   isDying,
@@ -169,44 +193,61 @@ export default React.memo(function DestinyModel({
 
   useDisposeClonedMaterials(clonedScene);
 
+  // Every azugeros_*.glb ships the full WoW clip table — use exact names (wyvern pattern)
+  // so loose prefixes cannot resolve flyIdleAttack → AttackUnarmed, etc.
   const idleSource = useMemo(
-    () => pickWowClip(idleAnims, 'Stand (ID 0 variation 0)', 'Stand', 'Idle'),
+    () => pickWowClip(idleAnims, 'Stand (ID 0 variation 0)', 'Stand'),
     [idleAnims],
   );
   const walkSource = useMemo(
-    () => pickWowClip(extraAnims.Walk ?? [], 'Walk', 'Run', 'Stand'),
+    () => pickWowClip(extraAnims.Walk ?? [], 'Run (ID 5 variation 0)', 'Walk (ID 4 variation 0)', 'Run', 'Walk'),
     [extraAnims.Walk],
   );
   const leftSwipeSource = useMemo(
-    () => pickWowClip(extraAnims.LeftSwipe ?? [], 'AttackUnarmed', 'Attack', 'CombatAttack'),
+    () => pickWowClip(extraAnims.LeftSwipe ?? [], 'AttackUnarmed (ID 16 variation 0)', 'AttackUnarmed'),
     [extraAnims.LeftSwipe],
   );
   const rightSwipeSource = useMemo(
-    () => pickWowClip(extraAnims.RightSwipe ?? [], 'AttackUnarmed', 'Attack', 'CombatAttack'),
+    () => pickWowClip(extraAnims.RightSwipe ?? [], 'AttackUnarmed (ID 16 variation 1)', 'AttackUnarmed'),
     [extraAnims.RightSwipe],
   );
   const breathSource = useMemo(
-    () => pickWowClip(extraAnims.Breath ?? [], 'BattleRoar', 'EmoteRoar', 'DragonSpit', 'Stand'),
+    () => pickWowClip(extraAnims.Breath ?? [], 'EmoteRoar (ID 74 variation 0)', 'EmoteRoar', 'BattleRoar'),
     [extraAnims.Breath],
   );
+  const wingAttackSource = useMemo(
+    () =>
+      pickWowClip(
+        extraAnims.WingAttack ?? [],
+        'SpecialUnarmed (ID 118 variation 0)',
+        'SpecialUnarmed',
+      ),
+    [extraAnims.WingAttack],
+  );
   const flyTakeoffSource = useMemo(
-    () => pickWowClip(extraAnims.FlyTakeoff ?? [], 'Fly', 'Takeoff', 'Hover', 'Stand'),
+    () => pickWowClip(extraAnims.FlyTakeoff ?? [], 'LiftOff (ID 192 variation 0)', 'LiftOff'),
     [extraAnims.FlyTakeoff],
   );
   const flyIdleSource = useMemo(
-    () => pickWowClip(extraAnims.FlyIdle ?? [], 'Fly', 'Hover', 'SwimIdle', 'Stand'),
+    () => pickWowClip(extraAnims.FlyIdle ?? [], 'Hover (ID 193 variation 0)', 'Hover'),
     [extraAnims.FlyIdle],
   );
   const flySource = useMemo(
-    () => pickWowClip(extraAnims.Fly ?? [], 'Fly', 'Run', 'Swim', 'Stand'),
+    () => pickWowClip(extraAnims.Fly ?? [], 'Fly (ID 135 variation 0)', 'Fly'),
     [extraAnims.Fly],
   );
   const flyIdleAttackSource = useMemo(
-    () => pickWowClip(extraAnims.FlyIdleAttack ?? [], 'Attack', 'CombatAttack', 'BattleRoar', 'Fly', 'Stand'),
+    () =>
+      pickWowClip(
+        extraAnims.FlyIdleAttack ?? [],
+        'DragonSpitHover (ID 183 variation 0)',
+        'DragonSpitHover',
+        'DragonSpit',
+      ),
     [extraAnims.FlyIdleAttack],
   );
   const flyLandSource = useMemo(
-    () => pickWowClip(extraAnims.FlyLand ?? [], 'Land', 'JumpEnd', 'Fly', 'Stand'),
+    () => pickWowClip(extraAnims.FlyLand ?? [], 'Land (ID 200 variation 0)', 'Land'),
     [extraAnims.FlyLand],
   );
   const deathSource = useMemo(
@@ -227,6 +268,7 @@ export default React.memo(function DestinyModel({
       ...getCachedProcessedClips('destiny-left-swipe', leftSwipeSource, { renameTo: 'LeftSwipe' }),
       ...getCachedProcessedClips('destiny-right-swipe', rightSwipeSource, { renameTo: 'RightSwipe' }),
       ...getCachedProcessedClips('destiny-breath-roar', breathSource, { renameTo: 'Breath' }),
+      ...getCachedProcessedClips('destiny-wing-attack', wingAttackSource, { renameTo: 'WingAttack' }),
       ...getCachedProcessedClips('destiny-fly-takeoff', flyTakeoffSource, {
         stripRootMotion: true,
         renameTo: 'FlyTakeoff',
@@ -256,6 +298,7 @@ export default React.memo(function DestinyModel({
     leftSwipeSource,
     rightSwipeSource,
     breathSource,
+    wingAttackSource,
     flyTakeoffSource,
     flyIdleSource,
     flySource,
@@ -273,6 +316,7 @@ export default React.memo(function DestinyModel({
     | 'LeftSwipe'
     | 'RightSwipe'
     | 'Breath'
+    | 'WingAttack'
     | 'FlyTakeoff'
     | 'FlyIdle'
     | 'Fly'
@@ -292,6 +336,8 @@ export default React.memo(function DestinyModel({
         return getAction('RightSwipe');
       case 'breath':
         return getAction('Breath');
+      case 'wingAttack':
+        return getAction('WingAttack');
       case 'flyTakeoff':
         return getAction('FlyTakeoff');
       case 'flyIdle':
@@ -310,9 +356,29 @@ export default React.memo(function DestinyModel({
     }
   };
 
+  /** Stretch / speed clips so they fill their gameplay windows (and walk matches move speed). */
+  const timeScaleFor = (state: DestinyAnimState): number => {
+    switch (state) {
+      case 'walk':
+        return 1.6;
+      case 'breath':
+        return EMOTE_ROAR_CLIP_SEC / (DESTINY_BREATH_ROAR_CAST_LOCK_MS / 1000);
+      case 'wingAttack':
+        return SPECIAL_UNARMED_CLIP_SEC / (DESTINY_WING_CAST_LOCK_MS / 1000);
+      case 'flyIdleAttack':
+        return DRAGON_SPIT_HOVER_CLIP_SEC / (DESTINY_FLY_ATTACK_CAST_MS / 1000);
+      case 'flyTakeoff':
+        return LIFTOFF_LAND_CLIP_SEC / (DESTINY_FLY_TAKEOFF_MS / 1000);
+      case 'flyLand':
+        return LIFTOFF_LAND_CLIP_SEC / (DESTINY_FLY_LAND_MS / 1000);
+      default:
+        return 1;
+    }
+  };
+
   const posed = useEnemyIdlePose({ actions, mixer, currentActionRef });
 
-  // Priority: Death > FlyAttack > Breath > Melee > phase locomotion
+  // Priority: Death > FlyAttack > WingAttack > Breath > Melee > phase locomotion
   useEffect(() => {
     if (!actions) return;
 
@@ -322,6 +388,7 @@ export default React.memo(function DestinyModel({
       isAttacking,
       swipeVariant,
       isBreathing,
+      isWingAttacking,
       isFlyAttacking,
       isDying,
     );
@@ -333,6 +400,7 @@ export default React.memo(function DestinyModel({
       nextState === 'leftSwipe' ||
       nextState === 'rightSwipe' ||
       nextState === 'breath' ||
+      nextState === 'wingAttack' ||
       nextState === 'flyTakeoff' ||
       nextState === 'flyIdleAttack' ||
       nextState === 'flyLand';
@@ -340,8 +408,9 @@ export default React.memo(function DestinyModel({
     playEnemyAction(nextAction, currentActionRef, mixer, {
       loopOnce: once,
       clampWhenFinished: once,
+      timeScale: timeScaleFor(nextState),
     });
-  }, [phase, isWalking, isAttacking, swipeVariant, isBreathing, isFlyAttacking, isDying, actions, mixer]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [phase, isWalking, isAttacking, swipeVariant, isBreathing, isWingAttacking, isFlyAttacking, isDying, actions, mixer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!mixer || isDying) return;
@@ -350,9 +419,19 @@ export default React.memo(function DestinyModel({
       if (isDying) return;
       // Keep flyIdleAttack clamped for the remainder of the cast window.
       if (phase === 'fly_attack') return;
-      const fallback = animToAction(
-        phaseToAnim(phase, isWalking, false, swipeVariant, false, false, false),
+      // Do not clobber an in-progress ground special / melee with locomotion.
+      if (isWingAttacking || isBreathing || isAttacking) return;
+      const fallbackState = phaseToAnim(
+        phase,
+        isWalking,
+        isAttacking,
+        swipeVariant,
+        isBreathing,
+        isWingAttacking,
+        isFlyAttacking,
+        false,
       );
+      const fallback = animToAction(fallbackState);
       if (!fallback) return;
       const once = phase === 'takeoff' || phase === 'land';
       playEnemyAction(fallback, currentActionRef, mixer, {
@@ -360,17 +439,20 @@ export default React.memo(function DestinyModel({
         clampWhenFinished: once,
         fadeIn: 0.15,
         fadeOut: 0.15,
+        timeScale: timeScaleFor(fallbackState),
       });
     };
 
     const handleFinish = (e: { action: AnimationAction }) => {
       if (isDying) return;
+      if (isWingAttacking || isBreathing) return;
       const name = e.action.getClip().name;
       if (name === 'Death') return;
       if (
         name === 'LeftSwipe' ||
         name === 'RightSwipe' ||
         name === 'Breath' ||
+        name === 'WingAttack' ||
         name === 'FlyIdleAttack'
       ) {
         blendToPhaseIdle();
@@ -379,7 +461,7 @@ export default React.memo(function DestinyModel({
 
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
-  }, [mixer, isDying, phase, isWalking, swipeVariant, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mixer, isDying, phase, isWalking, isAttacking, swipeVariant, isBreathing, isWingAttacking, isFlyAttacking, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <group ref={sceneGroupRef} visible={posed}>

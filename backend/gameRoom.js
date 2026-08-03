@@ -19,6 +19,7 @@ const {
   ETERNITY_PALACE_ENTRY_X,
   ETERNITY_PALACE_ENTRY_Z,
 } = require('./coopArenaLayout');
+const { rollCoopSkyPresetIndex } = require('./coopSkyPresets');
 const mushroomLayout = require('./mushroomLayout');
 const mushroomConstants = require('./mushroomConstants');
 const dreamLayerItems = require('./dreamLayerItems');
@@ -95,6 +96,17 @@ const COOP_ALL_WEAPON_ASPECTS = new Set([
   'SNIPER',
   'DRUID',
   'BEASTMASTER',
+]);
+/** Damage types whose HP sync is throttled in damageEnemy (avoid allocating per hit). */
+const DOT_DAMAGE_TYPES = new Set([
+  'ignite',
+  'shadowflame',
+  'venom',
+  'entanglement',
+  'allied_enchantress_entanglement',
+  'blizzard',
+  'cloudkill',
+  'prime_materia',
 ]);
 function defaultWeaponAspectForWeapon(weapon) {
   const key = weapon != null ? String(weapon).toUpperCase() : '';
@@ -600,6 +612,21 @@ const DREAM_LAYER_RING_POOL = Object.freeze([
   { type: 'JAGUAR_EMERALD', label: 'Jaguar Emerald', cost: 65 },
   { type: 'RAZED_DIAMOND', label: 'Razed Diamond', cost: 65 },
 ]);
+/** Combined armor-set + ring pool for Dream Layer legendary pedestals A/B. */
+const DREAM_LAYER_COMBINED_LEGENDARY_POOL = Object.freeze([
+  ...EXODIA_ITEM_POOL.map((entry) => ({
+    type: entry.type,
+    label: entry.label,
+    cost: DREAM_LAYER_EXODIA_COST,
+    category: 'armor',
+  })),
+  ...DREAM_LAYER_RING_POOL.map((entry) => ({
+    type: entry.type,
+    label: entry.label,
+    cost: entry.cost,
+    category: 'ring',
+  })),
+]);
 const GOLD_REWARD_TABLE = Object.freeze({
   'knight:red': { min: 8, max: 10 },
   'knight:blue': { min: 7, max: 9 },
@@ -936,6 +963,11 @@ class GameRoom {
     this.coopPostTeleportPositionGuardUntil = 0;
     /** Co-op: monotonic token bumped on each portal teleport; stamped on authoritative position events. */
     this.coopRoomEntryToken = 0;
+    /**
+     * Co-op: server-authoritative CustomSky preset index for the current room.
+     * Rolled on each room entry (including throne prep); sunken temple keeps its fixed underwater sky.
+     */
+    this.coopSkyPresetIndex = 0;
     /** Co-op colored room: one whisper SFX per room visit on first combat engagement. */
     this.coopRoomWhisperPlayed = false;
     /** Co-op: pending post-teleport initial wave spawn (`_schedulePostTeleportEnemyWave`). */
@@ -1447,6 +1479,7 @@ class GameRoom {
     this.coopCombatTransitionId = 0;
     this.coopPostTeleportPositionGuardUntil = 0;
     this.coopRoomEntryToken = 0;
+    this.coopSkyPresetIndex = 0;
     this._devSpawnBoss2 = false;
     this._devSpawnBoss3 = false;
     this._devSpawnDestiny = false;
@@ -1539,6 +1572,7 @@ class GameRoom {
       this.coopFaeRealmPending = true;
       this.coopIntroPending = false;
       this.thronePortalOffer = [];
+      this._rollCoopSkyPresetForEntry(null);
       this.teleportAllPlayersToThroneRoom();
       this.spawnThroneTrainingDummy();
       this.syncAllBeastmasterTigers();
@@ -1586,6 +1620,7 @@ class GameRoom {
         ...this.gameMode === 'coop' ? this._getEternityPayloadFields() : {},
         ...this.gameMode === 'coop' ? this._getDeepSanctumPayloadFields() : {},
         ...this.gameMode === 'coop' ? this._getEdenPayloadFields() : {},
+        ...this.gameMode === 'coop' ? this._getCoopSkyPayloadFields() : {},
       });
     }
     
@@ -1625,6 +1660,7 @@ class GameRoom {
       ...this._getEternityPayloadFields(),
       ...this._getDeepSanctumPayloadFields(),
       ...this._getEdenPayloadFields(),
+      ...this._getCoopSkyPayloadFields(),
     };
   }
 
@@ -1714,6 +1750,7 @@ class GameRoom {
     if (this.gameMode === 'coop') {
       this.coopRoomEntryToken += 1;
       this.coopPostTeleportPositionGuardUntil = Date.now() + COOP_POST_TELEPORT_POSITION_GUARD_MS;
+      this._rollCoopSkyPresetForEntry(this.currentCoopRoomKind);
     }
     const spawnBaseX = COOP_MAIN_ENTRY_X;
     const spawnBaseZ = COOP_MAIN_ENTRY_Z;
@@ -2589,6 +2626,25 @@ class GameRoom {
     };
   }
 
+  /**
+   * Server-authoritative CustomSky index for the current room.
+   * Clients resolve via `resolveSkyPresetByIndex` (excludes sunken temple fixed sky).
+   */
+  _getCoopSkyPayloadFields() {
+    return {
+      coopSkyPresetIndex: this.coopSkyPresetIndex,
+    };
+  }
+
+  /**
+   * Roll a new random sky for a room entry. Sunken temple keeps its fixed underwater sky.
+   * @param {string|null|undefined} roomKind
+   */
+  _rollCoopSkyPresetForEntry(roomKind) {
+    if (roomKind === 'sunken_temple') return;
+    this.coopSkyPresetIndex = rollCoopSkyPresetIndex();
+  }
+
   _getFaeRealmPayloadFields() {
     return {
       coopFaeRealmPending: this.coopFaeRealmPending,
@@ -2814,12 +2870,16 @@ class GameRoom {
         campTypes: this.sessionCampTypes,
         merchantInventory: this.getMerchantInventory(),
         dreamLayerInventory: this.getDreamLayerInventory(),
+        ...(surpriseKind === 'dream_layer'
+          ? { dreamLayerPurchaseStates: this._getDreamLayerPurchaseStatesByPlayer() }
+          : {}),
         coopMainArenaPortalPhase: this.coopMainArenaPortalPhase,
         thronePortalOffer: [...this.thronePortalOffer],
         coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         ...this._getDeepSanctumPayloadFields(),
         ...this._getEdenPayloadFields(),
@@ -3311,6 +3371,7 @@ class GameRoom {
         coopBossRoomVisitIndex: null,
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         ...this._getDeepSanctumPayloadFields(),
         ...this._getEdenPayloadFields(),
@@ -3359,6 +3420,7 @@ class GameRoom {
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         ...this._getDeepSanctumPayloadFields(),
         ...this._getEdenPayloadFields(),
@@ -4010,6 +4072,7 @@ class GameRoom {
         coopBossRoomVisitIndex: null,
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         ...this._getDeepSanctumPayloadFields(),
         timestamp: Date.now(),
@@ -4085,6 +4148,7 @@ class GameRoom {
     if (this.gameMode === 'coop') {
       this.coopRoomEntryToken += 1;
       this.coopPostTeleportPositionGuardUntil = Date.now() + COOP_POST_TELEPORT_POSITION_GUARD_MS;
+      this._rollCoopSkyPresetForEntry(this.currentCoopRoomKind);
     }
     const spawnBaseX = CASTLE_ROOM_ENTRY_X;
     const spawnBaseZ = CASTLE_ROOM_ENTRY_Z;
@@ -4186,6 +4250,7 @@ class GameRoom {
         coopBossRoomVisitIndex: null,
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         ...this._getFaeRealmPayloadFields(),
         ...this._getIntroPayloadFields(),
@@ -4505,6 +4570,7 @@ class GameRoom {
     if (this.gameMode === 'coop') {
       this.coopRoomEntryToken += 1;
       this.coopPostTeleportPositionGuardUntil = Date.now() + COOP_POST_TELEPORT_POSITION_GUARD_MS;
+      this._rollCoopSkyPresetForEntry(this.currentCoopRoomKind ?? 'fae_realm');
     }
     const spawnBaseX = FAE_REALM_ENTRY_X;
     const spawnBaseZ = FAE_REALM_ENTRY_Z;
@@ -4585,6 +4651,7 @@ class GameRoom {
         coopBossRoomVisitIndex: null,
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         ...this._getIntroPayloadFields(),
         ...this._getFaeRealmPayloadFields(),
@@ -4803,6 +4870,7 @@ class GameRoom {
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         ...this._getIntroPayloadFields(),
         timestamp: Date.now(),
@@ -4864,6 +4932,7 @@ class GameRoom {
         coopBossRoomVisitIndex: null,
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         ...this._getSunkenPayloadFields(),
         timestamp: Date.now(),
@@ -5142,6 +5211,7 @@ class GameRoom {
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         ...this._getSunkenPayloadFields(),
         timestamp: Date.now(),
@@ -5154,6 +5224,7 @@ class GameRoom {
     if (this.gameMode === 'coop') {
       this.coopRoomEntryToken += 1;
       this.coopPostTeleportPositionGuardUntil = Date.now() + COOP_POST_TELEPORT_POSITION_GUARD_MS;
+      this._rollCoopSkyPresetForEntry(this.currentCoopRoomKind ?? 'eternity_palace');
     }
     const spawnBaseX = ETERNITY_PALACE_ENTRY_X;
     const spawnBaseZ = ETERNITY_PALACE_ENTRY_Z;
@@ -5413,6 +5484,7 @@ class GameRoom {
         coopBossRoomVisitIndex: null,
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         ...this._getEternityPayloadFields(),
         timestamp: Date.now(),
@@ -5718,6 +5790,7 @@ class GameRoom {
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         ...this._getEternityPayloadFields(),
         timestamp: Date.now(),
@@ -6211,6 +6284,7 @@ class GameRoom {
     this.thronePortalOffer = ['boss'];
     this.coopMainArenaPortalPhase = 'pre_boss_merchant';
     this.generateMerchantInventory();
+    this._rollCoopSkyPresetForEntry('merchant');
 
     if (this.io) {
       this.io.to(this.roomId).emit('coop-main-arena-intermission', {
@@ -6227,6 +6301,7 @@ class GameRoom {
         merchantPurchaseStates: this._getMerchantPurchaseStatesByPlayer(),
         players: this.getPlayers(),
         enemies: this.getEnemies(),
+        ...this._getCoopSkyPayloadFields(),
         timestamp: Date.now(),
       });
     }
@@ -6358,6 +6433,7 @@ class GameRoom {
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         timestamp: Date.now(),
       });
@@ -6414,6 +6490,7 @@ class GameRoom {
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         timestamp: Date.now(),
       });
@@ -6464,6 +6541,7 @@ class GameRoom {
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         timestamp: Date.now(),
       });
@@ -6515,6 +6593,7 @@ class GameRoom {
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         timestamp: Date.now(),
       });
@@ -6566,6 +6645,7 @@ class GameRoom {
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         timestamp: Date.now(),
       });
@@ -6688,6 +6768,7 @@ class GameRoom {
         coopBossRoomVisitIndex: null,
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         ...this._getIntroPayloadFields(),
         ...this._getFaeRealmPayloadFields(),
@@ -6737,6 +6818,7 @@ class GameRoom {
         coopBossRoomVisitIndex: null,
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         ...this._getSunkenPayloadFields(),
         timestamp: Date.now(),
@@ -6786,6 +6868,7 @@ class GameRoom {
         coopBossRoomVisitIndex: null,
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         ...this._getEternityPayloadFields(),
         timestamp: Date.now(),
@@ -6837,6 +6920,7 @@ class GameRoom {
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         ...this._getDeepSanctumPayloadFields(),
         ...this._getEdenPayloadFields(),
@@ -6889,6 +6973,7 @@ class GameRoom {
         coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
         coopCombatTransitionId,
         coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
         mushroomState: this.getMushroomState(),
         ...this._getDeepSanctumPayloadFields(),
         ...this._getEdenPayloadFields(),
@@ -6988,6 +7073,7 @@ class GameRoom {
           coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
           coopCombatTransitionId,
           coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
           mushroomState: this.getMushroomState(),
           timestamp: Date.now(),
         });
@@ -7055,6 +7141,7 @@ class GameRoom {
           coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
           coopCombatTransitionId,
           coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
           mushroomState: this.getMushroomState(),
           timestamp: Date.now(),
         });
@@ -7132,6 +7219,7 @@ class GameRoom {
           coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
           coopCombatTransitionId,
           coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
           mushroomState: this.getMushroomState(),
           timestamp: Date.now(),
         });
@@ -7314,7 +7402,8 @@ class GameRoom {
       merchantBackfillTalentPurchasedThisVisit: false,
       dreamLayerHealPurchasedThisVisit: false,
       dreamLayerWardingPurchasedThisVisit: false,
-      dreamLayerExodiaPurchasedThisVisit: false,
+      dreamLayerLegendaryAPurchasedThisVisit: false,
+      dreamLayerLegendaryBPurchasedThisVisit: false,
       dreamLayerRingPurchasedThisVisit: false,
       ownedUniqueItemTypes: new Set(),
       bossRelicRarities: {},
@@ -8630,10 +8719,10 @@ class GameRoom {
     if (type === 'titan') {
       // Excluded from HP scaling.
       const TITAN_STATS_BY_SOUL = {
-        blue:   { health: 4000, maxHealth: 3500, damage: 134 },
-        red:    { health: 4500, maxHealth: 4000, damage: 126 },
+        blue:   { health: 3500, maxHealth: 3500, damage: 134 },
+        red:    { health: 4000, maxHealth: 4000, damage: 126 },
         green:  { health: 5000, maxHealth: 5000, damage: 112 },
-        purple: { health: 3500, maxHealth: 3000, damage: 148 },
+        purple: { health: 3000, maxHealth: 3000, damage: 148 },
       };
       const soulType = this._resolveTitanSoulType(campDef);
       const stats = TITAN_STATS_BY_SOUL[soulType];
@@ -9855,9 +9944,8 @@ class GameRoom {
 
     // Always sync HP to clients (socket `enemy-damage` and internal sources e.g. player-zombie hits).
     if (this.io) {
-      const dotDamageTypes = new Set(['ignite', 'shadowflame', 'venom', 'entanglement', 'allied_enchantress_entanglement', 'blizzard', 'cloudkill', 'prime_materia']);
       const damageType = hitMeta && hitMeta.damageType;
-      const isThrottledDot = damageType && dotDamageTypes.has(damageType);
+      const isThrottledDot = damageType && DOT_DAMAGE_TYPES.has(damageType);
       let shouldEmitHp = true;
       if (isThrottledDot) {
         const now = Date.now();
@@ -12418,6 +12506,7 @@ class GameRoom {
             destinyPhase: 'ground',
             flyPhaseCompleted: false,
             flyAttackVolleysFired: 0,
+            nextAirEmberAt: 0,
           }
         : {}),
     };
@@ -12430,7 +12519,7 @@ class GameRoom {
         boss: bossData,
         timestamp: Date.now()
       });
-      
+
       // Also broadcast as regular enemy spawn for compatibility
       broadcastEnemySpawn(this.io, this.roomId, bossData);
     }
@@ -12544,7 +12633,7 @@ class GameRoom {
     const spawnConfigs = [
       { type: 'boss3', pos: { x: -8, y: 0, z:  3 }, moveSpeed: 2.0, extra: { summonChargesLeft: 2 } },
       { type: 'boss2', pos: { x:  8, y: 0, z:  3 }, moveSpeed: 2.0, extra: {} },
-      { type: 'destiny', pos: { x:  0, y: 0, z: -9 }, moveSpeed: 2.5, extra: { attackVariant: 1, breathVariant: 1, visualScale: 1.8, damage: 55, destinyPhase: 'ground', flyPhaseCompleted: false, flyAttackVolleysFired: 0 } },
+      { type: 'destiny', pos: { x:  0, y: 0, z: -9 }, moveSpeed: 2.5, extra: { attackVariant: 1, breathVariant: 1, visualScale: 1.8, damage: 55, destinyPhase: 'ground', flyPhaseCompleted: false, flyAttackVolleysFired: 0, nextAirEmberAt: 0 } },
     ];
 
     this.tripleBossIds = new Set();
@@ -13333,6 +13422,7 @@ class GameRoom {
     if (this.io) {
       this.io.to(this.roomId).emit('merchant-inventory-updated', {
         inventory: this.getMerchantInventory(),
+        merchantPurchaseStates: this._getMerchantPurchaseStatesByPlayer(),
         timestamp: Date.now(),
       });
     }
@@ -13580,6 +13670,7 @@ class GameRoom {
       if (!backfillSlot) {
         this.io.to(this.roomId).emit('merchant-inventory-updated', {
           inventory: this.getMerchantInventory(),
+          merchantPurchaseStates: this._getMerchantPurchaseStatesByPlayer(),
           timestamp: Date.now(),
         });
       }
@@ -13658,7 +13749,8 @@ class GameRoom {
     if (!player) return;
     player.dreamLayerHealPurchasedThisVisit = false;
     player.dreamLayerWardingPurchasedThisVisit = false;
-    player.dreamLayerExodiaPurchasedThisVisit = false;
+    player.dreamLayerLegendaryAPurchasedThisVisit = false;
+    player.dreamLayerLegendaryBPurchasedThisVisit = false;
     player.dreamLayerRingPurchasedThisVisit = false;
   }
 
@@ -13666,8 +13758,45 @@ class GameRoom {
     return {
       healPurchasedThisVisit: !!player.dreamLayerHealPurchasedThisVisit,
       wardingPurchasedThisVisit: !!player.dreamLayerWardingPurchasedThisVisit,
-      exodiaPurchasedThisVisit: !!player.dreamLayerExodiaPurchasedThisVisit,
+      legendaryAPurchasedThisVisit: !!player.dreamLayerLegendaryAPurchasedThisVisit,
+      legendaryBPurchasedThisVisit: !!player.dreamLayerLegendaryBPurchasedThisVisit,
       ringPurchasedThisVisit: !!player.dreamLayerRingPurchasedThisVisit,
+    };
+  }
+
+  _getDreamLayerPurchaseStatesByPlayer() {
+    const result = {};
+    for (const [playerId, player] of this.players) {
+      result[playerId] = this._getDreamLayerPurchaseState(player);
+    }
+    return result;
+  }
+
+  /** Roll a legendary (armor set piece or ring) for Dream Layer pedestals A/B. */
+  _rollDreamLayerCombinedLegendary(usedTypes = new Set()) {
+    const pool = DREAM_LAYER_COMBINED_LEGENDARY_POOL.filter((entry) => !usedTypes.has(entry.type));
+    const candidates = pool.length > 0 ? pool : [...DREAM_LAYER_COMBINED_LEGENDARY_POOL];
+    if (candidates.length === 0) return null;
+    const pick = candidates[Math.floor(Math.random() * candidates.length)];
+    usedTypes.add(pick.type);
+    return pick;
+  }
+
+  _buildDreamLayerLegendaryStock(kind, pick, ts) {
+    return {
+      id: `dream-layer-${kind}-${ts}`,
+      kind,
+      cost: pick.cost,
+      sold: false,
+      label: pick.label,
+      description: dreamLayerItems.getDreamLayerItemDescription(pick.type),
+      item: {
+        id: `dream-${kind}-${ts}`,
+        type: pick.type,
+        label: pick.label,
+        category: 'boss_drop',
+        rarity: 'legendary',
+      },
     };
   }
 
@@ -13695,8 +13824,12 @@ class GameRoom {
       this._resetDreamLayerVisitPurchases(player);
     }
     const pendant = PENDANT_POOL[Math.floor(Math.random() * PENDANT_POOL.length)];
-    const exodia = EXODIA_ITEM_POOL[Math.floor(Math.random() * EXODIA_ITEM_POOL.length)];
-    const ring = DREAM_LAYER_RING_POOL[Math.floor(Math.random() * DREAM_LAYER_RING_POOL.length)];
+    const usedLegendaryTypes = new Set();
+    const legendaryA = this._rollDreamLayerCombinedLegendary(usedLegendaryTypes);
+    const legendaryB = this._rollDreamLayerCombinedLegendary(usedLegendaryTypes);
+    const ringPool = DREAM_LAYER_RING_POOL.filter((entry) => !usedLegendaryTypes.has(entry.type));
+    const ringPickFrom = ringPool.length > 0 ? ringPool : DREAM_LAYER_RING_POOL;
+    const ring = ringPickFrom[Math.floor(Math.random() * ringPickFrom.length)];
     const ts = Date.now();
     this.dreamLayerInventory = [
       {
@@ -13715,40 +13848,32 @@ class GameRoom {
           iconPath: pendant.iconPath,
         },
       },
-      {
-        id: `dream-layer-exodia-${ts}`,
-        kind: 'exodia',
-        cost: DREAM_LAYER_EXODIA_COST,
-        sold: false,
-        label: exodia.label,
-        description: dreamLayerItems.getDreamLayerItemDescription(exodia.type),
-        item: {
-          id: `dream-exodia-${ts}`,
-          type: exodia.type,
-          label: exodia.label,
-          category: 'boss_drop',
-          rarity: 'legendary',
-        },
-      },
-      {
-        id: `dream-layer-ring-${ts}`,
-        kind: 'ring',
-        cost: ring.cost,
-        sold: false,
-        label: ring.label,
-        description: dreamLayerItems.getDreamLayerItemDescription(ring.type),
-        item: {
-          id: `dream-ring-${ts}`,
-          type: ring.type,
-          label: ring.label,
-          category: 'boss_drop',
-          rarity: 'legendary',
-        },
-      },
     ];
+    if (legendaryA) {
+      this.dreamLayerInventory.push(this._buildDreamLayerLegendaryStock('legendary_a', legendaryA, ts));
+    }
+    if (legendaryB) {
+      this.dreamLayerInventory.push(this._buildDreamLayerLegendaryStock('legendary_b', legendaryB, `${ts}-b`));
+    }
+    this.dreamLayerInventory.push({
+      id: `dream-layer-ring-${ts}`,
+      kind: 'ring',
+      cost: ring.cost,
+      sold: false,
+      label: ring.label,
+      description: dreamLayerItems.getDreamLayerItemDescription(ring.type),
+      item: {
+        id: `dream-ring-${ts}`,
+        type: ring.type,
+        label: ring.label,
+        category: 'boss_drop',
+        rarity: 'legendary',
+      },
+    });
     if (this.io) {
       this.io.to(this.roomId).emit('dream-layer-inventory-updated', {
         inventory: this.getDreamLayerInventory(),
+        dreamLayerPurchaseStates: this._getDreamLayerPurchaseStatesByPlayer(),
         timestamp: Date.now(),
       });
     }
@@ -13773,9 +13898,14 @@ class GameRoom {
         this._emitDreamLayerPurchaseFailure(playerId, 'warding_already_purchased_this_visit');
         return false;
       }
-    } else if (kind === 'exodia') {
-      if (player.dreamLayerExodiaPurchasedThisVisit) {
-        this._emitDreamLayerPurchaseFailure(playerId, 'exodia_already_purchased_this_visit');
+    } else if (kind === 'legendary_a') {
+      if (player.dreamLayerLegendaryAPurchasedThisVisit) {
+        this._emitDreamLayerPurchaseFailure(playerId, 'legendary_a_already_purchased_this_visit');
+        return false;
+      }
+    } else if (kind === 'legendary_b') {
+      if (player.dreamLayerLegendaryBPurchasedThisVisit) {
+        this._emitDreamLayerPurchaseFailure(playerId, 'legendary_b_already_purchased_this_visit');
         return false;
       }
     } else if (kind === 'ring') {
@@ -13808,8 +13938,10 @@ class GameRoom {
 
     if (kind === 'warding_pendant') {
       player.dreamLayerWardingPurchasedThisVisit = true;
-    } else if (kind === 'exodia') {
-      player.dreamLayerExodiaPurchasedThisVisit = true;
+    } else if (kind === 'legendary_a') {
+      player.dreamLayerLegendaryAPurchasedThisVisit = true;
+    } else if (kind === 'legendary_b') {
+      player.dreamLayerLegendaryBPurchasedThisVisit = true;
     } else if (kind === 'ring') {
       player.dreamLayerRingPurchasedThisVisit = true;
     }
@@ -13841,6 +13973,7 @@ class GameRoom {
       });
       this.io.to(this.roomId).emit('dream-layer-inventory-updated', {
         inventory: this.getDreamLayerInventory(),
+        dreamLayerPurchaseStates: this._getDreamLayerPurchaseStatesByPlayer(),
         timestamp: Date.now(),
       });
       this.io.to(playerId).emit('dream-layer-purchase-succeeded', {
@@ -14182,6 +14315,7 @@ class GameRoom {
     this.coopCombatTransitionId = 0;
     this.coopPostTeleportPositionGuardUntil = 0;
     this.coopRoomEntryToken = 0;
+    this.coopSkyPresetIndex = 0;
   }
 
   // Get room summary for debugging

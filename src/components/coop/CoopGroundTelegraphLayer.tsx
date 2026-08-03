@@ -1,7 +1,6 @@
 'use client';
 
-import React, { forwardRef, memo, useCallback, useImperativeHandle, useState } from 'react';
-import { useFrame } from '@react-three/fiber';
+import React, { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { Vector3 } from '@/utils/three-exports';
 import BossLeapTelegraph from '@/components/enemies/BossLeapTelegraph';
 import ViperShotTelegraphLine from '@/components/enemies/ViperShotTelegraphLine';
@@ -43,6 +42,8 @@ export type CoopGroundTelegraphLayerHandle = {
   removeById: (id: string) => void;
 };
 
+const TENTACLE_STALE_SWEEP_MS = 250;
+
 const CoopGroundTelegraphLayer = memo(forwardRef<CoopGroundTelegraphLayerHandle, object>(
   function CoopGroundTelegraphLayer(_props, ref) {
     const [bossLeapTelegraphs, setBossLeapTelegraphs] = useState<BossLeapTelegraphState[]>([]);
@@ -53,6 +54,8 @@ const CoopGroundTelegraphLayer = memo(forwardRef<CoopGroundTelegraphLayerHandle,
     const [weaverImpaleTelegraphs, setWeaverImpaleTelegraphs] = useState<WeaverImpaleTelegraphState[]>([]);
     const [martyrDetonationTelegraphs, setMartyrDetonationTelegraphs] = useState<MartyrDetonationTelegraphState[]>([]);
     const [titanCannonAbilities, setTitanCannonAbilities] = useState<TitanCannonAbilityState[]>([]);
+    const tentacleSpineTelegraphsRef = useRef(tentacleSpineTelegraphs);
+    tentacleSpineTelegraphsRef.current = tentacleSpineTelegraphs;
 
     const clearAll = useCallback(() => {
       setBossLeapTelegraphs([]);
@@ -116,18 +119,31 @@ const CoopGroundTelegraphLayer = memo(forwardRef<CoopGroundTelegraphLayerHandle,
       setTentacleSpineTelegraphsState(telegraphs);
     }, []);
 
-    // Defensive sweep: remove tentacle strips whose endAt passed (orphaned if socket timers fail)
-    useFrame(() => {
-      const now = Date.now();
-      setTentacleSpineTelegraphsState((prev) => {
-        const staleIds = prev
-          .filter((t) => t.endAt !== undefined && now > t.endAt + 250)
-          .map((t) => t.id);
-        if (staleIds.length === 0) return prev;
-        const staleSet = new Set(staleIds);
-        return prev.filter((t) => !staleSet.has(t.id));
-      });
-    });
+    // Defensive sweep: remove tentacle strips whose endAt passed (orphaned if socket timers fail).
+    // Interval — not useFrame — so we do not invoke a React setState updater every frame.
+    useEffect(() => {
+      const intervalId = window.setInterval(() => {
+        const now = Date.now();
+        const prev = tentacleSpineTelegraphsRef.current;
+        if (prev.length === 0) return;
+        let hasStale = false;
+        for (let i = 0; i < prev.length; i++) {
+          const t = prev[i];
+          if (t.endAt !== undefined && now > t.endAt + 250) {
+            hasStale = true;
+            break;
+          }
+        }
+        if (!hasStale) return;
+        setTentacleSpineTelegraphsState((current) => {
+          const next = current.filter(
+            (t) => t.endAt === undefined || now <= t.endAt + 250,
+          );
+          return next.length === current.length ? current : next;
+        });
+      }, TENTACLE_STALE_SWEEP_MS);
+      return () => window.clearInterval(intervalId);
+    }, []);
 
     const addBossTectonicTelegraph = useCallback((tg: BossTectonicTelegraphState) => {
       setBossTectonicTelegraphs((prev) => [...prev, tg]);

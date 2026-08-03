@@ -38,6 +38,10 @@ interface CharacterRendererProps {
 const LERP_SPEED      = 15;  // snappy but smooth position interpolation
 const WALK_STOP_DELAY = 120; // ms before switching to Idle after movement stops
 const YAW_OFFSET_FACTOR = 1.6;         // fraction of residual angle applied (keeps strafe posture readable)
+const _facingScratch = new Vector3(0, 0, -1);
+const _cameraDirScratch = new Vector3();
+const _moveDirScratch = new Vector3();
+const _jumpDirScratch = new Vector3();
 const YAW_OFFSET_MAX    = Math.PI / 4; // clamp (~45 deg) so the body never fully turns off-camera
 const YAW_OFFSET_LERP   = 10;          // smoothing speed toward target offset
 const YAW_OFFSET_MAX_SPRINT = Math.PI / 2; // sprint clip rotates up to ±90° for pure A/D
@@ -334,7 +338,7 @@ export default function CharacterRenderer({
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
 
     // Rotation: local player always faces the camera; remote players lerp to server rotation.
-    let facingDir = new Vector3(0, 0, -1); // default
+    const facingDir = _facingScratch.set(0, 0, -1);
     if (isLocalPlayer && camera) {
       const cameraSystem = (window as any).cameraSystem as
         | { getOrbitHorizontalFacingAngle?: () => number }
@@ -343,9 +347,8 @@ export default function CharacterRenderer({
         typeof cameraSystem?.getOrbitHorizontalFacingAngle === 'function'
           ? cameraSystem.getOrbitHorizontalFacingAngle()
           : (() => {
-              const dir = new Vector3();
-              camera.getWorldDirection(dir);
-              return Math.atan2(dir.x, dir.z);
+              camera.getWorldDirection(_cameraDirScratch);
+              return Math.atan2(_cameraDirScratch.x, _cameraDirScratch.z);
             })();
       group.rotation.y = angle;
       facingDir.set(Math.sin(angle), 0, Math.cos(angle));
@@ -428,11 +431,11 @@ export default function CharacterRenderer({
       // Capture the jump direction at take-off so it stays consistent mid-air.
       if (wasGrounded.current) {
         if (movement.inputStrength > 0.05) {
-          const md = movement.moveDirection.clone();
+          const md = _jumpDirScratch.copy(movement.moveDirection);
           md.y = 0;
           if (md.length() > 0.01) {
             md.normalize();
-            jumpMoveDirRef.current = md;
+            jumpMoveDirRef.current = md.clone();
             const dot    = facingDir.dot(md);
             const crossY = facingDir.x * md.z - facingDir.z * md.x;
             const angle  = Math.atan2(crossY, dot);
@@ -476,7 +479,7 @@ export default function CharacterRenderer({
         }
 
         // Player is actively pressing a movement key — pick directional animation.
-        const moveDir = movement.moveDirection.clone();
+        const moveDir = _moveDirScratch.copy(movement.moveDirection);
         moveDir.y = 0;
         if (moveDir.length() > 0.01) {
           moveDir.normalize();

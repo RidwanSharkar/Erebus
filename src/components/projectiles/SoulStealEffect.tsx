@@ -1,5 +1,13 @@
-import React, { useRef, useEffect } from 'react';
-import { Vector3, Group, AdditiveBlending, DoubleSide } from '@/utils/three-exports';
+import React, { useRef, useEffect, useMemo } from 'react';
+import {
+  Vector3,
+  Group,
+  AdditiveBlending,
+  DoubleSide,
+  SphereGeometry,
+  RingGeometry,
+  MeshStandardMaterial,
+} from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import type { Mesh } from '@/utils/three-exports';
 
@@ -28,6 +36,58 @@ export default function SoulStealEffect({
   const ringRef = useRef<Mesh>(null);
   const currentPosition = useRef(startPosition.clone());
   const hasCompleted = useRef(false);
+
+  const coreGeo = useMemo(() => new SphereGeometry(0.15, 8, 8), []);
+  const glowGeo = useMemo(() => new SphereGeometry(0.25, 8, 8), []);
+  const ringGeo = useMemo(() => new RingGeometry(0.1, 0.3, 8), []);
+  const coreMat = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        color: '#ff4400',
+        emissive: '#cc0000',
+        emissiveIntensity: 2,
+        transparent: true,
+        opacity: 0.8,
+        blending: AdditiveBlending,
+      }),
+    [],
+  );
+  const glowMat = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        color: '#ff6600',
+        emissive: '#ff6600',
+        emissiveIntensity: 1,
+        transparent: true,
+        opacity: 0.3,
+        blending: AdditiveBlending,
+      }),
+    [],
+  );
+  const ringMat = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        color: '#ff4400',
+        emissive: '#cc0000',
+        emissiveIntensity: 1.5,
+        transparent: true,
+        opacity: 0.4,
+        blending: AdditiveBlending,
+        side: DoubleSide,
+      }),
+    [],
+  );
+
+  useEffect(() => {
+    return () => {
+      coreGeo.dispose();
+      glowGeo.dispose();
+      ringGeo.dispose();
+      coreMat.dispose();
+      glowMat.dispose();
+      ringMat.dispose();
+    };
+  }, [coreGeo, glowGeo, ringGeo, coreMat, glowMat, ringMat]);
 
   useFrame(() => {
     if (!groupRef.current || hasCompleted.current) return;
@@ -68,44 +128,13 @@ export default function SoulStealEffect({
   return (
     <group ref={groupRef} position={startPosition}>
       {/* Core soul orb */}
-      <mesh>
-        <sphereGeometry args={[0.15, 8, 8]} />
-        <meshStandardMaterial
-          color="#ff4400"
-          emissive="#cc0000"
-          emissiveIntensity={2}
-          transparent
-          opacity={0.8}
-          blending={AdditiveBlending}
-        />
-      </mesh>
+      <mesh geometry={coreGeo} material={coreMat} />
 
       {/* Outer glow */}
-      <mesh>
-        <sphereGeometry args={[0.25, 8, 8]} />
-        <meshStandardMaterial
-          color="#ff6600"
-          emissive="#ff6600"
-          emissiveIntensity={1}
-          transparent
-          opacity={0.3}
-          blending={AdditiveBlending}
-        />
-      </mesh>
+      <mesh geometry={glowGeo} material={glowMat} />
 
       {/* Healing energy aura */}
-      <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
-        <ringGeometry args={[0.1, 0.3, 8]} />
-        <meshStandardMaterial
-          color="#ff4400"
-          emissive="#cc0000"
-          emissiveIntensity={1.5}
-          transparent
-          opacity={0.4}
-          blending={AdditiveBlending}
-          side={DoubleSide}
-        />
-      </mesh>
+      <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]} geometry={ringGeo} material={ringMat} />
     </group>
   );
 }

@@ -23,16 +23,19 @@ const RING_OUTER = 6.15 * (ETERNITY_PALACE_HEX_RADIUS / HEX_ARENA_RADIUS);
 
 interface EternityPalaceRoomProps {
   combatActive?: boolean;
+  /** Server-authoritative random CustomSky preset index. */
+  skyPresetIndex?: number;
 }
 
 export default function EternityPalaceRoom({
   combatActive = false,
+  skyPresetIndex,
 }: EternityPalaceRoomProps) {
   const particleColor = useMemo(() => new Color('#f97316'), []);
 
   return (
     <group name="eternity-palace-room">
-      <CustomSky skyPreset="eternityPalace" animateClouds={!combatActive} />
+      <CustomSky skyPresetIndex={skyPresetIndex} skyPreset="eternityPalace" animateClouds={!combatActive} />
       <hemisphereLight color="#f97316" groundColor="#2a1810" intensity={0.38} />
       <StylizedGrass
         fieldShape="hex"

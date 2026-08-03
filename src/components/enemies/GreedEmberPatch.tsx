@@ -74,10 +74,13 @@ const BLUE_DIM: [number, number, number] = [0.00, 0.04, 0.22];
 const BLUE_BRIGHT: [number, number, number] = [0.03, 0.75, 1.00];
 const PURPLE_DIM: [number, number, number] = [0.12, 0.02, 0.18];
 const PURPLE_BRIGHT: [number, number, number] = [0.73, 0.33, 0.83];
+const ORANGE_DIM: [number, number, number] = [0.25, 0.02, 0.00];
+const ORANGE_BRIGHT: [number, number, number] = [1.00, 0.55, 0.05];
 
 const VARIANT_PRESETS = {
   blue: { dim: BLUE_DIM, bright: BLUE_BRIGHT, ringColor: '#38bdf8' },
   purple: { dim: PURPLE_DIM, bright: PURPLE_BRIGHT, ringColor: '#BA55D3' },
+  orange: { dim: ORANGE_DIM, bright: ORANGE_BRIGHT, ringColor: '#ff6a1a' },
 } as const;
 
 const PARTICLE_COUNT = 22;

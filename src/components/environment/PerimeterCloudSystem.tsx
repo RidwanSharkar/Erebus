@@ -73,7 +73,7 @@ const PerimeterCloudParticles: React.FC<PerimeterCloudParticlesProps> = ({
   const materialRef = useRef<ShaderMaterial>(null!);
 
   const material = useMemo(() => {
-    const precompiledMaterial = shaderRegistry.getShader('perimeterCloud');
+    const precompiledMaterial = shaderRegistry.acquireShader('perimeterCloud');
     if (precompiledMaterial) {
       precompiledMaterial.uniforms.uDuration.value = cloud.duration;
       precompiledMaterial.uniforms.uCloudOrigin.value.copy(cloud.origin);
@@ -110,7 +110,7 @@ const PerimeterCloudParticles: React.FC<PerimeterCloudParticlesProps> = ({
   useEffect(() => {
     return () => {
       if (material) {
-        material.dispose();
+        shaderRegistry.releaseShader('perimeterCloud', material);
       }
     };
   }, [material]);

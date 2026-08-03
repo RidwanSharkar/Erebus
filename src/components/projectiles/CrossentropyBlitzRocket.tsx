@@ -14,6 +14,7 @@ import {
   getCrossentropyBlitzAspectPalette,
   type CrossentropyBlitzAspectKey,
 } from '@/utils/weaponAspects';
+import ScytheHandleTrail from '@/components/weapons/ScytheHandleTrail';
 import BlitzFireTrail from './BlitzFireTrail';
 
 const ROCKET_SCALE = 2.1;
@@ -24,6 +25,8 @@ export const BLITZ_BOLT_MODEL_PATH = '/models/trinket/blitzBoltProjectile.glb';
 /** Tune after in-game look test */
 export const BLITZ_BOLT_MODEL_SCALE = 0.24;
 const BLITZ_BOLT_SPIN_RAD_PER_SEC = 12;
+/** Local X offset for opposite spin-trail anchors on boltSpinRef */
+const BLITZ_BOLT_TRAIL_ANCHOR_OFFSET = 0.22;
 
 useGLTF.preload(BLITZ_BOLT_MODEL_PATH);
 
@@ -101,6 +104,8 @@ export default function CrossentropyBlitzRocket({
   const rocketGroupRef = useRef<Group>(null);
   const exhaustRef = useRef<Mesh>(null);
   const boltSpinRef = useRef<Group>(null);
+  const boltTrailEndARef = useRef<Group>(null);
+  const boltTrailEndBRef = useRef<Group>(null);
   const currentPosition = useRef(position.clone());
   const directionRef = useRef(direction.clone());
   const time = useRef(0);
@@ -245,8 +250,20 @@ export default function CrossentropyBlitzRocket({
           <group scale={BLITZ_BOLT_MODEL_SCALE * 0.75}>
             <primitive object={clonedScene} />
           </group>
+          <group ref={boltTrailEndARef} position={[BLITZ_BOLT_TRAIL_ANCHOR_OFFSET, 0, 0]} />
+          <group ref={boltTrailEndBRef} position={[-BLITZ_BOLT_TRAIL_ANCHOR_OFFSET, 0, 0]} />
         </group>
         </group>
+        <ScytheHandleTrail
+          anchorRef={boltTrailEndARef}
+          parentRef={outerGroupRef}
+          color={trail}
+        />
+        <ScytheHandleTrail
+          anchorRef={boltTrailEndBRef}
+          parentRef={outerGroupRef}
+          color={trail}
+        />
       </group>
     </>
   );

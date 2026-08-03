@@ -49,6 +49,7 @@ import {
 import { CASTLE_ROOM_HALF_SIZE } from '@/utils/mapConstants';
 import ThroneSkyRayDecor from './ThroneSkyRayDecor';
 import ThroneStatueDecor from './ThroneStatueDecor';
+import ThronePerimeterPylonDecor from './ThronePerimeterPylonDecor';
 import ThroneCenterDecor from './ThroneCenterDecor';
 import CloudSeaOcean from './CloudSeaOcean';
 import ThroneIslandUnderside from './ThroneIslandUnderside';
@@ -196,18 +197,25 @@ export const ARCHITECT_NPC_POSITION = Object.freeze({ x: 0, y: 0, z: 15.5 });
 export const ARCHITECT_NPC_DEFAULT_ROTATION_Y = Math.PI;
 export const ARCHITECT_NPC_FACE_RANGE = 7;
 
-export type DreamLayerShopSlotKind = 'heal' | 'warding_pendant' | 'exodia' | 'ring';
+export type DreamLayerShopSlotKind =
+  | 'heal'
+  | 'warding_pendant'
+  | 'legendary_a'
+  | 'legendary_b'
+  | 'ring';
 
+/** Five shop pedestals matching merchant spacing (toward arena center). */
 export const DREAM_LAYER_SHOP_PEDESTAL_POSITIONS: ReadonlyArray<{
   readonly slot: DreamLayerShopSlotKind;
   readonly x: number;
   readonly y: number;
   readonly z: number;
 }> = Object.freeze([
-  Object.freeze({ slot: 'heal' as const, x: -4.5, y: 0, z: 12.5 }),
-  Object.freeze({ slot: 'warding_pendant' as const, x: -1.5, y: 0, z: 12.5 }),
-  Object.freeze({ slot: 'exodia' as const, x: 1.5, y: 0, z: 12.5 }),
-  Object.freeze({ slot: 'ring' as const, x: 4.5, y: 0, z: 12.5 }),
+  Object.freeze({ slot: 'heal' as const, x: -6.75, y: 0, z: 12.5 }),
+  Object.freeze({ slot: 'warding_pendant' as const, x: -3.375, y: 0, z: 12.5 }),
+  Object.freeze({ slot: 'legendary_a' as const, x: 0, y: 0, z: 12.5 }),
+  Object.freeze({ slot: 'legendary_b' as const, x: 3.375, y: 0, z: 12.5 }),
+  Object.freeze({ slot: 'ring' as const, x: 6.75, y: 0, z: 12.5 }),
 ]);
 
 export const DREAM_LAYER_SHOP_INTERACT_RADIUS = 2.35;
@@ -324,6 +332,215 @@ export function normalizeCoopPortalKind(s: string | undefined): CoopPortalKind {
     return k;
   }
   return 'purple';
+}
+
+/** Title-only labels for colored portal choice tooltips. */
+export const COOP_PORTAL_TOOLTIP_LABEL: Partial<Record<CoopPortalKind, string>> = {
+  trial: 'GOLD',
+  stat: 'STATS',
+  red: 'INFERNAL GATE',
+  green: 'ELDRITCH GATE',
+  blue: 'TEMPEST GATE',
+  purple: 'ABYSSAL GATE',
+  merchant: 'MERCHANT',
+};
+
+export function getCoopPortalTooltipData(
+  kind: CoopPortalKind,
+): { name: string; description: string } | null {
+  const name = COOP_PORTAL_TOOLTIP_LABEL[kind];
+  if (!name) return null;
+  return { name, description: '' };
+}
+
+/** Proximity radius for portal choice tooltips (matches portal interact distance). */
+export const COOP_PORTAL_TOOLTIP_INTERACT_RADIUS = 3.3;
+
+const COOP_PORTAL_TOOLTIP_WORLD_OFFSET = new Vector3(0, 2.2, 0);
+const _coopPortalProjectScratch = new Vector3();
+
+export type CoopPortalTooltipEntry = {
+  key: string;
+  kind: CoopPortalKind;
+  x: number;
+  y: number;
+  z: number;
+};
+
+/**
+ * Publishes merchant-style floating tooltips above colored portal choices
+ * (proximity or mesh hover). Title-only labels like GOLD / INFERNAL GATE.
+ */
+export function CoopPortalOfferTooltips({
+  portals,
+  playerPositionRef,
+  locked = false,
+  symbolRefs,
+  hoveredKey,
+}: {
+  portals: ReadonlyArray<CoopPortalTooltipEntry>;
+  playerPositionRef: React.MutableRefObject<Vector3>;
+  locked?: boolean;
+  symbolRefs: React.MutableRefObject<Partial<Record<string, Group | null>>>;
+  hoveredKey: string | null;
+}) {
+  const { camera, size } = useThree();
+  const [proximityKey, setProximityKey] = useState<string | null>(null);
+  const lastPublishedTooltipRef = useRef<{
+    key: string;
+    x: number;
+    y: number;
+    name: string;
+    description: string;
+  } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      lastPublishedTooltipRef.current = null;
+      clearMerchantShopTooltip();
+    };
+  }, []);
+
+  useFrame(() => {
+    if (locked || portals.length === 0) {
+      if (lastPublishedTooltipRef.current !== null) {
+        lastPublishedTooltipRef.current = null;
+        publishMerchantShopTooltip(null);
+      }
+      if (proximityKey !== null) setProximityKey(null);
+      return;
+    }
+
+    const playerPos = playerPositionRef.current;
+    const interactRadiusSq =
+      COOP_PORTAL_TOOLTIP_INTERACT_RADIUS * COOP_PORTAL_TOOLTIP_INTERACT_RADIUS;
+    let nearest: { key: string; d2: number } | null = null;
+
+    for (const portal of portals) {
+      const dx = playerPos.x - portal.x;
+      const dz = playerPos.z - portal.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 <= interactRadiusSq && (!nearest || d2 < nearest.d2)) {
+        nearest = { key: portal.key, d2 };
+      }
+    }
+
+    const nextProximity = nearest?.key ?? null;
+    if (nextProximity !== proximityKey) {
+      setProximityKey(nextProximity);
+    }
+
+    const keyForTooltip = hoveredKey ?? nextProximity;
+    if (!keyForTooltip) {
+      if (lastPublishedTooltipRef.current !== null) {
+        lastPublishedTooltipRef.current = null;
+        publishMerchantShopTooltip(null);
+      }
+      return;
+    }
+
+    const portal = portals.find((entry) => entry.key === keyForTooltip);
+    if (!portal) {
+      if (lastPublishedTooltipRef.current !== null) {
+        lastPublishedTooltipRef.current = null;
+        publishMerchantShopTooltip(null);
+      }
+      return;
+    }
+
+    const tooltipData = getCoopPortalTooltipData(portal.kind);
+    if (!tooltipData) {
+      if (lastPublishedTooltipRef.current !== null) {
+        lastPublishedTooltipRef.current = null;
+        publishMerchantShopTooltip(null);
+      }
+      return;
+    }
+
+    const symbolGroup = symbolRefs.current[keyForTooltip];
+    if (!symbolGroup || size.width <= 0 || size.height <= 0) return;
+
+    symbolGroup.getWorldPosition(_coopPortalProjectScratch);
+    _coopPortalProjectScratch.add(COOP_PORTAL_TOOLTIP_WORLD_OFFSET);
+    _coopPortalProjectScratch.project(camera);
+
+    const x = (_coopPortalProjectScratch.x * 0.5 + 0.5) * size.width;
+    const y = (_coopPortalProjectScratch.y * -0.5 + 0.5) * size.height;
+
+    const last = lastPublishedTooltipRef.current;
+    const shouldPublish =
+      !last
+      || last.key !== keyForTooltip
+      || last.name !== tooltipData.name
+      || last.description !== tooltipData.description
+      || Math.abs(last.x - x) > 1.5
+      || Math.abs(last.y - y) > 1.5;
+
+    if (shouldPublish) {
+      lastPublishedTooltipRef.current = {
+        key: keyForTooltip,
+        x,
+        y,
+        name: tooltipData.name,
+        description: tooltipData.description,
+      };
+      publishMerchantShopTooltip({
+        visible: true,
+        x,
+        y,
+        name: tooltipData.name,
+        description: tooltipData.description,
+      });
+    }
+  });
+
+  return null;
+}
+
+/** Renders portal rings with proximity + hover tooltips. */
+export function CoopPortalRingsWithTooltips({
+  portals,
+  playerPositionRef,
+  locked = false,
+}: {
+  portals: ReadonlyArray<CoopPortalTooltipEntry>;
+  playerPositionRef: React.MutableRefObject<Vector3>;
+  locked?: boolean;
+}) {
+  const symbolRefs = useRef<Partial<Record<string, Group | null>>>({});
+  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+
+  const handleHoverChange = useCallback((key: string | null) => {
+    setHoveredKey(key);
+  }, []);
+
+  return (
+    <>
+      <CoopPortalOfferTooltips
+        portals={portals}
+        playerPositionRef={playerPositionRef}
+        locked={locked}
+        symbolRefs={symbolRefs}
+        hoveredKey={hoveredKey}
+      />
+      {portals.map((portal) => (
+        <group
+          key={portal.key}
+          position={[portal.x, portal.y, portal.z]}
+          ref={(node) => {
+            symbolRefs.current[portal.key] = node;
+          }}
+        >
+          <ThronePortalRing
+            campType={portal.kind}
+            locked={locked}
+            hoverKey={portal.key}
+            onHoverChange={locked ? undefined : handleHoverChange}
+          />
+        </group>
+      ))}
+    </>
+  );
 }
 
 /** Must match `gameRoom.js` throne training dummy id. */
@@ -1006,6 +1223,7 @@ function ThroneArchetypePedestals({
               position={[slot.x, slot.y, slot.z]}
               glowColor={getArchetypePedestalCapGlow(slot.archetype)}
               glowIntensity={glowIntensity}
+              stoneFinish="archetype"
             />
             <ThroneFloatingWeapon
               xz={[slot.x, slot.z]}
@@ -1037,10 +1255,15 @@ function ThroneArchetypePedestals({
 export function ThronePortalRing({
   campType,
   locked = false,
+  hoverKey,
+  onHoverChange,
 }: {
   campType: CoopPortalKind;
   /** When true the portal renders grey and dimmed to signal it is not yet usable. */
   locked?: boolean;
+  /** Key passed to onHoverChange for portal choice tooltips. */
+  hoverKey?: string;
+  onHoverChange?: (key: string | null) => void;
 }) {
   const ringRef = useRef<any>(null);
   const innerRef = useRef<any>(null);
@@ -1092,6 +1315,8 @@ export function ThronePortalRing({
     };
   }, [ringMaterial, innerMaterial]);
 
+  const canHover = !locked && !!onHoverChange && hoverKey != null;
+
   return (
     <group>
       <mesh
@@ -1101,6 +1326,21 @@ export function ThronePortalRing({
         material={ringMaterial}
       />
       <mesh ref={innerRef} geometry={THRONE_PORTAL_INNER_SPHERE_GEO} material={innerMaterial} />
+      {canHover ? (
+        <mesh
+          visible={false}
+          onPointerOver={(e) => {
+            e.stopPropagation();
+            onHoverChange?.(hoverKey!);
+          }}
+          onPointerOut={(e) => {
+            e.stopPropagation();
+            onHoverChange?.(null);
+          }}
+        >
+          <sphereGeometry args={[2.4, 12, 12]} />
+        </mesh>
+      ) : null}
       <pointLight
         color={portalColor}
         intensity={locked ? 0.5 : 2.2}
@@ -1154,6 +1394,8 @@ interface ThroneRoomProps {
   /** Co-op intro: center void portal opens after weapon selection delay. */
   voidPortalOpen?: boolean;
   voidPortalOpenProgress?: number;
+  /** Server-authoritative random CustomSky preset index. */
+  skyPresetIndex?: number;
 }
 
 /**
@@ -1168,6 +1410,7 @@ function ThroneRoom({
   playerPositionRef,
   voidPortalOpen = false,
   voidPortalOpenProgress = 0,
+  skyPresetIndex,
 }: ThroneRoomProps) {
   /** All co-op boss tiers + post-boss intermission share the same purple shell (legacy Boss 2 / Archon look). */
   const usePurpleBossArenaShell = layout === 'bossArena';
@@ -1176,14 +1419,15 @@ function ThroneRoom({
   return (
     <group name="throne-room">
       {usePurpleBossArenaShell ? (
-        <CustomSky roomTheme="red" animateClouds={false} />
+        <CustomSky skyPresetIndex={skyPresetIndex} roomTheme="red" animateClouds={false} />
       ) : (
-        <CustomSky skyPreset="throneBlue" />
+        <CustomSky skyPresetIndex={skyPresetIndex} skyPreset="throneBlue" />
       )}
       <ThroneSkyRayDecor />
       <ThroneStatueDecor />
+      <ThronePerimeterPylonDecor />
 
-      {/* Celestial cloud sea + floating-island shell — prep only (bossArena keeps red sky). */}
+      {/* Celestial cloud sea + floating-island shell — prep only 
       {isPrep && (
         <>
           <CloudSeaOcean animateClouds />
@@ -1191,7 +1435,7 @@ function ThroneRoom({
           <ThroneRimMistfall animateClouds />
           <ThroneVoidMotes animateClouds />
         </>
-      )}
+      )}  (bossArena keeps red sky). */}
 
       <group position={THRONE_GRASS_POSITION}>
         <StylizedGrass
@@ -1252,7 +1496,7 @@ function ThroneRoom({
             visible={voidPortalOpen || voidPortalOpenProgress > 0.01}
             effectHeightOffset={0.3}
           />
-          <ThroneCenterDecor />
+          {/* // <ThroneCenterDecor /> */}
         </>
       )}
     </group>

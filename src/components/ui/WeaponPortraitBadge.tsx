@@ -15,6 +15,8 @@ import {
 
 interface WeaponPortraitBadgeProps {
   weapon: WeaponType;
+  /** Overrides native title / aria-label (defaults to weapon display name). */
+  label?: string;
   className?: string;
   onMouseEnter?: (e: React.MouseEvent) => void;
   onMouseLeave?: () => void;
@@ -22,6 +24,7 @@ interface WeaponPortraitBadgeProps {
 
 export default function WeaponPortraitBadge({
   weapon,
+  label,
   className = '',
   onMouseEnter,
   onMouseLeave,
@@ -29,8 +32,8 @@ export default function WeaponPortraitBadge({
   const portraitSrc = getWeaponPortraitIconSrc(weapon);
   if (!portraitSrc) return null;
 
-  const outerSize = WEAPON_PORTRAIT_SIZE + WEAPON_PORTRAIT_FRAME_PADDING * 2;
-  const weaponName = getWeaponDisplayName(weapon);
+  const outerSize = WEAPON_PORTRAIT_SIZE + WEAPON_PORTRAIT_FRAME_PADDING * 1;
+  const displayLabel = label ?? getWeaponDisplayName(weapon);
 
   return (
     <div
@@ -39,8 +42,8 @@ export default function WeaponPortraitBadge({
       data-block-game-input
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      title={weaponName}
-      aria-label={weaponName}
+      title={displayLabel}
+      aria-label={displayLabel}
     >
       <div
         className="relative flex items-center justify-center"

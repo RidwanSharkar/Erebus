@@ -439,7 +439,7 @@ export function isRunebladeDeathdealerAspect(
 }
 
 /** Deathdealer warhammer — chance for third combo hit to fire an immediate Stagger Lightning Bolt. */
-export const DEATHDEALER_THIRD_HIT_STAGGER_PROC_CHANCE = 0.25;
+export const DEATHDEALER_THIRD_HIT_STAGGER_PROC_CHANCE = 0.50;
 
 export function isRunebladeBlademasterAspect(
   aspect: WeaponAspect | null | undefined,
@@ -448,7 +448,7 @@ export function isRunebladeBlademasterAspect(
 }
 
 /** Blademaster Wraith Strike — Shadowflame DoT (keep in sync with backend/gameRoom.js). */
-export const BLADEMASTER_SHADOWFLAME_DOT_FRACTION = 0.6;
+export const BLADEMASTER_SHADOWFLAME_DOT_FRACTION = 0.7;
 export const BLADEMASTER_SHADOWFLAME_DURATION_MS = 2500;
 export const BLADEMASTER_SHADOWFLAME_TICKS = 5;
 
@@ -574,12 +574,12 @@ export function isScytheNecromancerAspect(
 
 export const VENGEFUL_SPIRIT_BASE_DAMAGE = 50;
 export const VENGEFUL_SPIRIT_DAMAGE_PER_STAT_POINT = 1;
-export const VENGEFUL_SPIRIT_ATTACK_RANGE = 3.5;
+export const VENGEFUL_SPIRIT_ATTACK_RANGE = 3.8;
 export const VENGEFUL_SPIRIT_MOVE_SPEED = 0;
 export const VENGEFUL_SPIRIT_ATTACK_COOLDOWN_MS = 1050;
-export const VENGEFUL_SPIRIT_DURATION_MS = 14000;
+export const VENGEFUL_SPIRIT_DURATION_MS = 12000;
 /** Match Abysslick Emerge clip (~3s). */
-export const VENGEFUL_SPIRIT_SUMMON_LOCK_MS = 3000;
+export const VENGEFUL_SPIRIT_SUMMON_LOCK_MS = 2400;
 /** Submerge + fade window before enemy-removed (full Submerge is ~5s). */
 export const VENGEFUL_SPIRIT_EXPIRE_ANIM_MS = 2200;
 export const VENGEFUL_SPIRIT_MAX_ACTIVE = 4;

@@ -19,7 +19,7 @@ import {
 } from '@/utils/weaponAspects';
 
 export const LEGIONNAIRE_ITEM_MODEL_PATH = '/models/items/boneSWordDope.glb';
-export const BLADEMASTER_ITEM_MODEL_PATH = '/models/items/OUTLINEBLADE.glb';
+export const BLADEMASTER_ITEM_MODEL_PATH = '/models/items/runeblade.glb';
 export const DEATHDEALER_ITEM_MODEL_PATH = '/models/items/MACE.glb';
 export const ROYAL_GUARD_ITEM_MODEL_PATH = '/models/items/runeblade4.glb';
 
@@ -58,9 +58,9 @@ export const RUNEBLADE_ITEM_LOCAL_BY_ASPECT: Record<
   },
   DEATHDEALER: {
     path: DEATHDEALER_ITEM_MODEL_PATH,
-    rotation: [0, -Math.PI / 2, Math.PI / 2],
+    rotation: [0, Math.PI / 2.25, 0],
     position: [0, 0.95, 0],
-    scale: 1.625,
+    scale: 1.5525,
     light: '#eab308',
   },
   ROYAL_GUARD: {

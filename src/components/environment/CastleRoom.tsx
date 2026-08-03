@@ -8,12 +8,14 @@ import { CASTLE_ROOM_HALF_SIZE } from '@/utils/mapConstants';
 
 interface CastleRoomProps {
   combatActive?: boolean;
+  /** Server-authoritative random CustomSky preset index. */
+  skyPresetIndex?: number;
 }
 
-const CastleRoom: React.FC<CastleRoomProps> = ({ combatActive = false }) => {
+const CastleRoom: React.FC<CastleRoomProps> = ({ combatActive = false, skyPresetIndex }) => {
   return (
     <group name="castle-intro-room">
-      <CustomSky skyPreset="sanctumHoly" animateClouds={!combatActive} />
+      <CustomSky skyPresetIndex={skyPresetIndex} skyPreset="sanctumHoly" animateClouds={!combatActive} />
 
       <ThroneOuterFloor
         radius={CASTLE_ROOM_HALF_SIZE}

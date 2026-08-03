@@ -1,4 +1,5 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { TalentId } from '@/utils/talents';
 import {
   getCoopRoomColorForTalent,
@@ -89,7 +90,7 @@ export function HotkeyTooltip({
     }
   }, [visible, x, y, placement, content.name, content.description]);
 
-  if (!visible) return null;
+  if (!visible || typeof document === 'undefined') return null;
 
   const baseStyle: React.CSSProperties =
     placement === 'right'
@@ -100,10 +101,10 @@ export function HotkeyTooltip({
     ? { left: clampedPosition.left, top: clampedPosition.top, transform: 'none' }
     : undefined;
 
-  return (
+  return createPortal(
     <div
       ref={tooltipRef}
-      className="fixed z-50 text-white text-sm max-w-xs pointer-events-none"
+      className="fixed z-[60] text-white text-sm max-w-xs pointer-events-none"
       style={{
         ...baseStyle,
         ...clampedStyle,
@@ -118,7 +119,8 @@ export function HotkeyTooltip({
     >
       <div className="font-semibold text-blue-300 mb-1 text-[13px]">{content.name}</div>
       <div className="text-gray-400 text-xs leading-relaxed">{content.description}</div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

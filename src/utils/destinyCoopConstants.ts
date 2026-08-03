@@ -19,6 +19,16 @@ export const DESTINY_FLY_APPROACH_STOP = 6.0;
 export const DESTINY_FLY_CENTER_HOLD = 1.5;
 export const DESTINY_FLY_ATTACK_RANGE = 18;
 
+/** Ground roar breath cast lock — keep in sync with `DESTINY_BREATH_ROAR_CAST_LOCK_MS`. */
+export const DESTINY_BREATH_ROAR_CAST_LOCK_MS = 3200;
+/** Ground roar breath cooldown — keep in sync with `DESTINY_BREATH_COOLDOWN_MS`. */
+export const DESTINY_BREATH_COOLDOWN_MS = 9000;
+
+/** Ground wing-attack cast lock — keep in sync with `DESTINY_WING_CAST_LOCK_MS`. */
+export const DESTINY_WING_CAST_LOCK_MS = 2000;
+/** Ground wing-attack cooldown — keep in sync with `DESTINY_WING_COOLDOWN_MS`. */
+export const DESTINY_WING_COOLDOWN_MS = 8000;
+
 export type DestinyPhase =
   | 'ground'
   | 'takeoff'

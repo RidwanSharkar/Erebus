@@ -200,6 +200,306 @@ export const SKY_THRONE_LIGHT_PURPLE: SkyThemeUniforms = {
   cloudWarmth: 0.4,
 };
 
+/** Honey gold — warm midday amber. */
+export const SKY_HONEY_GOLD: SkyThemeUniforms = {
+  zenith: '#8a6820',
+  upperMid: '#c89838',
+  midHorizon: '#e8c058',
+  horizon: '#f8e8a8',
+  ground: '#201808',
+  sunColor: '#fff8e0',
+  sunDir: [0.48, 0.34, -0.48],
+  sunHalo0: '#fff4c8',
+  sunHalo1: '#f0d070',
+  sunHalo2: '#c89830',
+  cloudWarmth: 0.88,
+};
+
+/** Burnt sienna — deep copper dusk. */
+export const SKY_BURNT_SIENNA: SkyThemeUniforms = {
+  zenith: '#5a2818',
+  upperMid: '#8a4028',
+  midHorizon: '#c86840',
+  horizon: '#e8a078',
+  ground: '#180c08',
+  sunColor: '#fff0e0',
+  sunDir: [0.55, 0.22, -0.5],
+  sunHalo0: '#ffe0c0',
+  sunHalo1: '#e88858',
+  sunHalo2: '#a84828',
+  cloudWarmth: 0.95,
+};
+
+/** Apricot dawn — soft peach sunrise. */
+export const SKY_APRICOT_DAWN: SkyThemeUniforms = {
+  zenith: '#c87058',
+  upperMid: '#e09870',
+  midHorizon: '#f0c098',
+  horizon: '#f8e0c8',
+  ground: '#201410',
+  sunColor: '#fff8f0',
+  sunDir: [0.5, 0.3, -0.45],
+  sunHalo0: '#fff0e0',
+  sunHalo1: '#f0b888',
+  sunHalo2: '#d88058',
+  cloudWarmth: 0.8,
+};
+
+/** Dusty rose — muted pink twilight. */
+export const SKY_DUSTY_ROSE: SkyThemeUniforms = {
+  zenith: '#784858',
+  upperMid: '#a07080',
+  midHorizon: '#c8a0a8',
+  horizon: '#e8d0d4',
+  ground: '#180c10',
+  sunColor: '#fff4f8',
+  sunDir: [0.46, 0.32, -0.48],
+  sunHalo0: '#ffe8f0',
+  sunHalo1: '#d8a0b0',
+  sunHalo2: '#a06878',
+  cloudWarmth: 0.55,
+};
+
+/** Teal dawn — cool turquoise morning. */
+export const SKY_TEAL_DAWN: SkyThemeUniforms = {
+  zenith: '#184868',
+  upperMid: '#287898',
+  midHorizon: '#48a8b8',
+  horizon: '#88d0d8',
+  ground: '#081418',
+  sunColor: '#f0fffc',
+  sunDir: [0.4, 0.4, -0.4],
+  sunHalo0: '#e0fff8',
+  sunHalo1: '#70c8d0',
+  sunHalo2: '#3890a0',
+  cloudWarmth: 0.15,
+};
+
+/** Arctic mint — icy pale green. */
+export const SKY_ARCTIC_MINT: SkyThemeUniforms = {
+  zenith: '#286858',
+  upperMid: '#489878',
+  midHorizon: '#78c8a8',
+  horizon: '#b8e8d0',
+  ground: '#081410',
+  sunColor: '#f4fff8',
+  sunDir: [0.42, 0.38, -0.42],
+  sunHalo0: '#e8fff0',
+  sunHalo1: '#90d8b8',
+  sunHalo2: '#50a888',
+  cloudWarmth: 0.08,
+};
+
+/** Steel blue — cold industrial dusk. */
+export const SKY_STEEL_BLUE: SkyThemeUniforms = {
+  zenith: '#1a3048',
+  upperMid: '#385878',
+  midHorizon: '#587898',
+  horizon: '#98b0c8',
+  ground: '#081018',
+  sunColor: '#e8f0f8',
+  sunDir: [0.35, 0.42, -0.35],
+  sunHalo0: '#d0e0f0',
+  sunHalo1: '#7898b0',
+  sunHalo2: '#486078',
+  cloudWarmth: 0.05,
+};
+
+/** Twilight cyan — luminous blue-green nightfall. */
+export const SKY_TWILIGHT_CYAN: SkyThemeUniforms = {
+  zenith: '#0a3858',
+  upperMid: '#186888',
+  midHorizon: '#2898b8',
+  horizon: '#58c8e0',
+  ground: '#041018',
+  sunColor: '#e0f8ff',
+  sunDir: [0.38, 0.36, -0.45],
+  sunHalo0: '#c8f0ff',
+  sunHalo1: '#48b0d0',
+  sunHalo2: '#187898',
+  cloudWarmth: 0.1,
+};
+
+/** Electric violet — neon purple night. */
+export const SKY_ELECTRIC_VIOLET: SkyThemeUniforms = {
+  zenith: '#281060',
+  upperMid: '#5020a0',
+  midHorizon: '#8040e0',
+  horizon: '#b888f8',
+  ground: '#0c0820',
+  sunColor: '#f0e8ff',
+  sunDir: [0.5, 0.2, -0.48],
+  sunHalo0: '#e0d0ff',
+  sunHalo1: '#a070f0',
+  sunHalo2: '#6830c0',
+  cloudWarmth: 0.35,
+};
+
+/** Magenta bloom — hot pink zenith. */
+export const SKY_MAGENTA_BLOOM: SkyThemeUniforms = {
+  zenith: '#781848',
+  upperMid: '#b02878',
+  midHorizon: '#e048a8',
+  horizon: '#f8a0d0',
+  ground: '#180810',
+  sunColor: '#fff0f8',
+  sunDir: [0.48, 0.28, -0.45],
+  sunHalo0: '#ffe0f0',
+  sunHalo1: '#e070b0',
+  sunHalo2: '#a02870',
+  cloudWarmth: 0.6,
+};
+
+/** Lime aurora — vivid yellow-green. */
+export const SKY_LIME_AURORA: SkyThemeUniforms = {
+  zenith: '#386818',
+  upperMid: '#68a028',
+  midHorizon: '#98d048',
+  horizon: '#c8f080',
+  ground: '#0c1808',
+  sunColor: '#f8ffe0',
+  sunDir: [0.44, 0.38, -0.4],
+  sunHalo0: '#f0ffc8',
+  sunHalo1: '#a8e058',
+  sunHalo2: '#68a828',
+  cloudWarmth: 0.4,
+};
+
+/** Cherry sunset — deep crimson evening. */
+export const SKY_CHERRY_SUNSET: SkyThemeUniforms = {
+  zenith: '#581018',
+  upperMid: '#982028',
+  midHorizon: '#d04048',
+  horizon: '#f88880',
+  ground: '#180808',
+  sunColor: '#fff0e8',
+  sunDir: [0.58, 0.18, -0.48],
+  sunHalo0: '#ffd8c8',
+  sunHalo1: '#e06058',
+  sunHalo2: '#a02828',
+  cloudWarmth: 0.9,
+};
+
+/** Charcoal amber — dark sky with warm horizon. */
+export const SKY_CHARCOAL_AMBER: SkyThemeUniforms = {
+  zenith: '#181410',
+  upperMid: '#383028',
+  midHorizon: '#886028',
+  horizon: '#d0a050',
+  ground: '#0c0804',
+  sunColor: '#fff0d0',
+  sunDir: [0.55, 0.2, -0.5],
+  sunHalo0: '#ffe8b0',
+  sunHalo1: '#c88840',
+  sunHalo2: '#785018',
+  cloudWarmth: 0.85,
+};
+
+/** Deep wine — burgundy dusk. */
+export const SKY_DEEP_WINE: SkyThemeUniforms = {
+  zenith: '#381018',
+  upperMid: '#582030',
+  midHorizon: '#884058',
+  horizon: '#c08090',
+  ground: '#100808',
+  sunColor: '#fff0f0',
+  sunDir: [0.5, 0.25, -0.48],
+  sunHalo0: '#ffe0e8',
+  sunHalo1: '#b06070',
+  sunHalo2: '#682038',
+  cloudWarmth: 0.7,
+};
+
+/** Storm slate — grey stormfront. */
+export const SKY_STORM_SLATE: SkyThemeUniforms = {
+  zenith: '#283038',
+  upperMid: '#485058',
+  midHorizon: '#687078',
+  horizon: '#a0a8b0',
+  ground: '#0c1014',
+  sunColor: '#e8ecf0',
+  sunDir: [0.3, 0.45, -0.35],
+  sunHalo0: '#d0d8e0',
+  sunHalo1: '#889098',
+  sunHalo2: '#505860',
+  cloudWarmth: 0.15,
+};
+
+/** Ember dusk — dark sky with glowing orange belly. */
+export const SKY_EMBER_DUSK: SkyThemeUniforms = {
+  zenith: '#180c18',
+  upperMid: '#381828',
+  midHorizon: '#a84818',
+  horizon: '#f08830',
+  ground: '#0c0604',
+  sunColor: '#fff0c8',
+  sunDir: [0.6, 0.12, -0.5],
+  sunHalo0: '#ffe0a0',
+  sunHalo1: '#e87028',
+  sunHalo2: '#983818',
+  cloudWarmth: 1.0,
+};
+
+/** Sapphire noon — rich clear blue. */
+export const SKY_SAPPHIRE_NOON: SkyThemeUniforms = {
+  zenith: '#1040a0',
+  upperMid: '#2870c8',
+  midHorizon: '#58a0e0',
+  horizon: '#a0d0f8',
+  ground: '#081428',
+  sunColor: '#fffef8',
+  sunDir: [0.5, 0.36, -0.45],
+  sunHalo0: '#ffffff',
+  sunHalo1: '#90c0f0',
+  sunHalo2: '#4880c8',
+  cloudWarmth: 0.12,
+};
+
+/** Verdant haze — soft olive-green. */
+export const SKY_VERDANT_HAZE: SkyThemeUniforms = {
+  zenith: '#284828',
+  upperMid: '#487048',
+  midHorizon: '#78a068',
+  horizon: '#b0d098',
+  ground: '#0c1408',
+  sunColor: '#f8ffe8',
+  sunDir: [0.42, 0.4, -0.4],
+  sunHalo0: '#f0ffd8',
+  sunHalo1: '#98c080',
+  sunHalo2: '#588048',
+  cloudWarmth: 0.35,
+};
+
+/** Indigo night — deep blue-violet. */
+export const SKY_INDIGO_NIGHT: SkyThemeUniforms = {
+  zenith: '#101838',
+  upperMid: '#202860',
+  midHorizon: '#3840a0',
+  horizon: '#6870d0',
+  ground: '#060810',
+  sunColor: '#e8e8ff',
+  sunDir: [0.45, 0.28, -0.5],
+  sunHalo0: '#d0d0ff',
+  sunHalo1: '#6870c8',
+  sunHalo2: '#3838a0',
+  cloudWarmth: 0.2,
+};
+
+/** Coral reef — bright tropical coral. */
+export const SKY_CORAL_REEF: SkyThemeUniforms = {
+  zenith: '#c85060',
+  upperMid: '#e07880',
+  midHorizon: '#f0a8a0',
+  horizon: '#f8d8c8',
+  ground: '#201010',
+  sunColor: '#fff8f0',
+  sunDir: [0.48, 0.32, -0.45],
+  sunHalo0: '#ffe8e0',
+  sunHalo1: '#f09088',
+  sunHalo2: '#d05860',
+  cloudWarmth: 0.75,
+};
+
 const SKY_BY_ROOM: Record<RoomBorderTheme, SkyThemeUniforms> = {
   green: {
     zenith: '#1e3d5c',
@@ -414,7 +714,27 @@ export type CustomSkyPreset =
   | 'gateLightRed'
   | 'gateLightOrange'
   | 'gateLightGreen'
-  | 'faeRealm';
+  | 'faeRealm'
+  | 'honeyGold'
+  | 'burntSienna'
+  | 'apricotDawn'
+  | 'dustyRose'
+  | 'tealDawn'
+  | 'arcticMint'
+  | 'steelBlue'
+  | 'twilightCyan'
+  | 'electricViolet'
+  | 'magentaBloom'
+  | 'limeAurora'
+  | 'cherrySunset'
+  | 'charcoalAmber'
+  | 'deepWine'
+  | 'stormSlate'
+  | 'emberDusk'
+  | 'sapphireNoon'
+  | 'verdantHaze'
+  | 'indigoNight'
+  | 'coralReef';
 
 /** Complementary light sky per gate/camp color (main combat rooms). */
 export const GATE_SKY_PRESET_BY_THEME: Record<RoomBorderTheme, CustomSkyPreset> = {
@@ -423,6 +743,57 @@ export const GATE_SKY_PRESET_BY_THEME: Record<RoomBorderTheme, CustomSkyPreset> 
   green: 'gateLightGreen',
   red: 'trialLightBlue',
 };
+
+/**
+ * Server-authoritative random sky pool (excludes sunkenTemple).
+ * Keep count in sync with `COOP_RANDOM_SKY_PRESET_COUNT` in backend/coopSkyPresets.js.
+ */
+export const RANDOM_SKY_PRESETS: readonly CustomSkyPreset[] = [
+  'throneBlue',
+  'throneLightPurple',
+  'sanctumHoly',
+  'eternityPalace',
+  'colosseum',
+  'trialLightBlue',
+  'gateLightRed',
+  'gateLightOrange',
+  'gateLightGreen',
+  'faeRealm',
+  'green',
+  'red',
+  'blue',
+  'purple',
+  'honeyGold',
+  'burntSienna',
+  'apricotDawn',
+  'dustyRose',
+  'tealDawn',
+  'arcticMint',
+  'steelBlue',
+  'twilightCyan',
+  'electricViolet',
+  'magentaBloom',
+  'limeAurora',
+  'cherrySunset',
+  'charcoalAmber',
+  'deepWine',
+  'stormSlate',
+  'emberDusk',
+  'sapphireNoon',
+  'verdantHaze',
+  'indigoNight',
+  'coralReef',
+] as const;
+
+export const RANDOM_SKY_PRESET_COUNT = RANDOM_SKY_PRESETS.length;
+
+export function resolveSkyPresetByIndex(index: number): CustomSkyPreset {
+  const n = RANDOM_SKY_PRESET_COUNT;
+  if (n <= 0) return 'throneBlue';
+  const i = Number.isFinite(index) ? Math.floor(index) : 0;
+  const wrapped = ((i % n) + n) % n;
+  return RANDOM_SKY_PRESETS[wrapped] ?? 'throneBlue';
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -439,6 +810,26 @@ function skyUniformsForPreset(preset: CustomSkyPreset): SkyThemeUniforms {
   if (preset === 'gateLightOrange') return SKY_GATE_LIGHT_ORANGE;
   if (preset === 'gateLightGreen') return SKY_GATE_LIGHT_GREEN;
   if (preset === 'faeRealm') return SKY_FAE_REALM;
+  if (preset === 'honeyGold') return SKY_HONEY_GOLD;
+  if (preset === 'burntSienna') return SKY_BURNT_SIENNA;
+  if (preset === 'apricotDawn') return SKY_APRICOT_DAWN;
+  if (preset === 'dustyRose') return SKY_DUSTY_ROSE;
+  if (preset === 'tealDawn') return SKY_TEAL_DAWN;
+  if (preset === 'arcticMint') return SKY_ARCTIC_MINT;
+  if (preset === 'steelBlue') return SKY_STEEL_BLUE;
+  if (preset === 'twilightCyan') return SKY_TWILIGHT_CYAN;
+  if (preset === 'electricViolet') return SKY_ELECTRIC_VIOLET;
+  if (preset === 'magentaBloom') return SKY_MAGENTA_BLOOM;
+  if (preset === 'limeAurora') return SKY_LIME_AURORA;
+  if (preset === 'cherrySunset') return SKY_CHERRY_SUNSET;
+  if (preset === 'charcoalAmber') return SKY_CHARCOAL_AMBER;
+  if (preset === 'deepWine') return SKY_DEEP_WINE;
+  if (preset === 'stormSlate') return SKY_STORM_SLATE;
+  if (preset === 'emberDusk') return SKY_EMBER_DUSK;
+  if (preset === 'sapphireNoon') return SKY_SAPPHIRE_NOON;
+  if (preset === 'verdantHaze') return SKY_VERDANT_HAZE;
+  if (preset === 'indigoNight') return SKY_INDIGO_NIGHT;
+  if (preset === 'coralReef') return SKY_CORAL_REEF;
   return SKY_BY_ROOM[preset] ?? SKY_BY_ROOM.red;
 }
 
@@ -464,10 +855,18 @@ const CustomSky: React.FC<{
   roomTheme?: RoomBorderTheme;
   /** When set, overrides `roomTheme` (e.g. throne prep always uses clear blue sky). */
   skyPreset?: CustomSkyPreset;
+  /**
+   * Server-authoritative random sky index. When set (including 0), overrides
+   * `skyPreset` / `roomTheme` via `resolveSkyPresetByIndex`.
+   */
+  skyPresetIndex?: number;
   /** When false, cloud FBM stops updating (combat LOD). Defaults to true. */
   animateClouds?: boolean;
-}> = ({ roomTheme = 'red', skyPreset, animateClouds = true }) => {
-  const effectivePreset: CustomSkyPreset = skyPreset ?? roomTheme;
+}> = ({ roomTheme = 'red', skyPreset, skyPresetIndex, animateClouds = true }) => {
+  const effectivePreset: CustomSkyPreset =
+    skyPresetIndex != null
+      ? resolveSkyPresetByIndex(skyPresetIndex)
+      : (skyPreset ?? roomTheme);
   const material = useMemo(
     () =>
       new ShaderMaterial({

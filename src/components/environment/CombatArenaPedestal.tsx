@@ -1,7 +1,13 @@
-import React, { useRef } from 'react';
-import { useFrame } from '@react-three/fiber';
-import { AdditiveBlending } from '@/utils/three-exports';
+import React, { useEffect, useRef } from 'react';
+import { useFrame, useLoader } from '@react-three/fiber';
+import { AdditiveBlending, TextureLoader } from '@/utils/three-exports';
 import { useDynamicLight, PooledEffectLight } from '@/components/effects/DynamicLightPool';
+import {
+  PEDESTAL_BRICK_TEXTURE_PATH,
+  PEDESTAL_BRICK_STONE_PROPS,
+  PEDESTAL_BRICK_ARCHETYPE_STONE_PROPS,
+  configurePedestalBrickTexture,
+} from '@/utils/pedestalBrickTexture';
 import type { CoopPortalKind } from './ThroneRoom';
 import { MAIN_COMBAT_PEDESTAL_POSITION } from './ThroneRoom';
 
@@ -21,30 +27,59 @@ export function ArenaRewardPedestalBase({
   position = [0, 0, 0],
   glowColor,
   glowIntensity = 1,
+  stoneFinish = 'default',
 }: {
   position?: [number, number, number];
   /** When set, paints an additive disc on the cap and a short-range point light. */
   glowColor?: string;
   /** 0–1 multiplier for disc / emissive / cap light (selected vs idle). */
   glowIntensity?: number;
+  /** `archetype` uses a slightly duller brick response than weapon/combat pedestals. */
+  stoneFinish?: 'default' | 'archetype';
 }) {
   const g = Math.max(0, Math.min(1, glowIntensity));
+  const brickTexture = useLoader(TextureLoader, PEDESTAL_BRICK_TEXTURE_PATH);
+  const stoneProps =
+    stoneFinish === 'archetype'
+      ? PEDESTAL_BRICK_ARCHETYPE_STONE_PROPS
+      : PEDESTAL_BRICK_STONE_PROPS;
+
+  useEffect(() => {
+    configurePedestalBrickTexture(brickTexture);
+  }, [brickTexture]);
 
   return (
     <group position={position}>
       <mesh castShadow receiveShadow>
         <cylinderGeometry args={[0.45, 0.65, 1.75, 12]} />
-        <meshStandardMaterial color="#c8c0b4" roughness={0.75} metalness={0.15} />
+        <meshStandardMaterial
+          map={brickTexture}
+          emissiveMap={brickTexture}
+          color={stoneProps.color}
+          roughness={stoneProps.roughness}
+          metalness={stoneProps.metalness}
+          emissive={stoneProps.emissive}
+          emissiveIntensity={stoneProps.emissiveIntensity}
+        />
       </mesh>
       <mesh position={[0, 0.99, 0]} castShadow receiveShadow>
         <cylinderGeometry args={[0.55, 0.45, 0.24, 12]} />
         <meshStandardMaterial
-          color="#b8b0a4"
-          roughness={0.7}
-          metalness={0.2}
+          map={brickTexture}
+          // Colored cap glow stays unmapped so selection tint isn’t crushed by dark brick.
           {...(glowColor
-            ? { emissive: glowColor, emissiveIntensity: 0.28 * g }
-            : {})}
+            ? {
+                emissive: glowColor,
+                emissiveIntensity: 0.28 * g,
+              }
+            : {
+                emissiveMap: brickTexture,
+                emissive: stoneProps.emissive,
+                emissiveIntensity: stoneProps.emissiveIntensity,
+              })}
+          color={stoneProps.color}
+          roughness={stoneProps.roughness}
+          metalness={stoneProps.metalness}
         />
       </mesh>
       {glowColor && g > 0.01 ? (

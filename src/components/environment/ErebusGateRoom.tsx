@@ -296,9 +296,11 @@ function ColosseumInstancedWalls({
 
 interface ErebusGateRoomProps {
   combatActive?: boolean;
+  /** Server-authoritative random CustomSky preset index. */
+  skyPresetIndex?: number;
 }
 
-export default function ErebusGateRoom({ combatActive = false }: ErebusGateRoomProps) {
+export default function ErebusGateRoom({ combatActive = false, skyPresetIndex }: ErebusGateRoomProps) {
   const groundGeo = useMemo(() => new CircleGeometry(ARENA_RADIUS, 64), []);
   const sandMaterial = useMemo(
     () =>
@@ -318,7 +320,7 @@ export default function ErebusGateRoom({ combatActive = false }: ErebusGateRoomP
 
   return (
     <group name="erebus-gate-room">
-      <CustomSky skyPreset="colosseum" animateClouds={!combatActive} />
+      <CustomSky skyPresetIndex={skyPresetIndex} skyPreset="colosseum" animateClouds={!combatActive} />
 
       <mesh
         geometry={groundGeo}

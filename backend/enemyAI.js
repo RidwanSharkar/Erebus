@@ -166,10 +166,10 @@ const TITAN_CANNON_WINDUP_MS = 1000;
 const TITAN_CANNON_TOTAL_LOCK_MS = 1500;
 const TITAN_CANNON_RANGE = 20;
 const TITAN_CANNON_HALF_WIDTH = 1.8;
-const TITAN_CANNON_MIN_RANGE = TITAN_STOMP_MAX_RANGE;
+// Above melee (3); overlaps stomp so cannon can fire in normal post-aggro fights.
+const TITAN_CANNON_MIN_RANGE = 6;
 const TITAN_CANNON_START_OFFSET = 0.65;
 const TITAN_CANNON_DAMAGE_BY_SOUL = { green: 120, red: 150, purple: 130, blue: 140 };
-const TITAN_CANNON_BLUE_HEALTH_PCT = 0.5;
 const TITAN_CANNON_BLUE_COOLDOWN_MS = 5000;
 const TITAN_CANNON_RED_HEALTH_PCT = 0.9;
 const TITAN_CANNON_RED_MAX_CHARGES = 2;
@@ -347,13 +347,13 @@ const WYVERN_BREATH_COOLDOWN_MS = 5000;
 const WYVERN_BREATH_CAST_LOCK_MS = 1500;
 const WYVERN_BREATH_ROAR_CAST_LOCK_MS = 2000; // +500ms over base cast (drake_roar)
 const WYVERN_BREATH_LAUNCH_EARLY_MS = 400; // firebolts release before cast ends (animation sync)
-// Simultaneous fan: far left (+30°), left (+15°), center, right (−15°), far right (−30°)
+// Simultaneous fan: far left (+36°), left (+18°), center, right (−18°), far right (−36°)
 const WYVERN_BREATH_ROAR_FAN_ANGLES_RAD = [
-  Math.PI / 6,
-  Math.PI / 12,
+  Math.PI / 5,
+  Math.PI / 10,
   0,
-  -Math.PI / 12,
-  -Math.PI / 6,
+  -Math.PI / 10,
+  -Math.PI / 5,
 ];
 const WYVERN_BREATH_DAMAGE = 36;
 const WYVERN_BREATH_CAST_RANGE = 10;
@@ -369,6 +369,8 @@ const TERRORHAWK_LANDING_DAMAGE = 17;
 const TERRORHAWK_MELEE_DAMAGE = 23;
 const TERRORHAWK_DIVE_XZ_THRESHOLD = 2.5;
 const TERRORHAWK_DIVE_SPEED = 22.5;
+/** Brief hold at hover Y after dive telegraph SFX before descending. */
+const TERRORHAWK_DIVE_TELEGRAPH_MS = 300;
 const TERRORHAWK_TAKEOFF_MS = 1250;
 const TERRORHAWK_JUMPEND_MS = 800;
 const TERRORHAWK_SWING_LOCK_MS = 3100;
@@ -384,19 +386,21 @@ const DESTINY_SWING_LOCK_MS = 1500;
 const DESTINY_HIT_DELAY_MS = 1200;
 const DESTINY_BASE_DAMAGE = 55;
 const DESTINY_BASE_MOVE_SPEED = 2.5;
-const DESTINY_BREATH_COOLDOWN_MS = 6000;
-const DESTINY_BREATH_ROAR_CAST_LOCK_MS = 2000;
-const DESTINY_BREATH_LAUNCH_EARLY_MS = 400;
-// Simultaneous fan: far left (+30°), left (+15°), center, right (−15°), far right (−30°)
+const DESTINY_BREATH_COOLDOWN_MS = 9000;
+const DESTINY_BREATH_ROAR_CAST_LOCK_MS = 3200;
+const DESTINY_BREATH_LAUNCH_EARLY_MS = 650;
+// Simultaneous fan: far left (+36°), left (+18°), center, right (−18°), far right (−36°)
 const DESTINY_BREATH_ROAR_FAN_ANGLES_RAD = [
-  Math.PI / 6,
-  Math.PI / 12,
+  Math.PI / 5,
+  Math.PI / 10,
   0,
-  -Math.PI / 12,
-  -Math.PI / 6,
+  -Math.PI / 10,
+  -Math.PI / 5,
 ];
 const DESTINY_BREATH_DAMAGE = 45;
 const DESTINY_BREATH_CAST_RANGE = 12;
+/** Prefer melee when this close; leave room for walk-in between roars. */
+const DESTINY_BREATH_MIN_RANGE = 5.0;
 const DESTINY_ATTACK_COOLDOWN_MS = 2000;
 // Fly phase (one-shot at ≤70% HP) — keep in sync with src/utils/destinyCoopConstants.ts
 const DESTINY_FLY_HEALTH_PCT = 0.70;
@@ -409,13 +413,38 @@ const DESTINY_FLY_TAKEOFF_MS = 2000;
 const DESTINY_FLY_LAND_MS = 2200;
 const DESTINY_FLY_IDLE_HOLD_MS = 600;
 const DESTINY_FLY_ATTACK_CAST_MS = 1800;
-const DESTINY_FLY_ATTACK_LAUNCH_EARLY_MS = 400;
+const DESTINY_FLY_ATTACK_LAUNCH_EARLY_MS = 650;
 const DESTINY_FLY_ATTACK_COOLDOWN_MS = 3000;
 const DESTINY_FLY_ATTACK_VOLLEYS = 5;
 const DESTINY_FLY_APPROACH_STOP = 6.0;
 const DESTINY_FLY_CENTER_HOLD = 1.5;
 const DESTINY_FLY_ATTACK_RANGE = 18;
 const DESTINY_FLY_MUZZLE_Y_OFFSET = 1.5;
+/** Air-only ember patches dropped on combat target — damage matches GREED_BLUE_EMBER_*. */
+const DESTINY_AIR_EMBER_INTERVAL_MS = 6000;
+const DESTINY_AIR_EMBER_DURATION_MS = 12000;
+const DESTINY_AIR_EMBER_TICK_MS = 750;
+const DESTINY_AIR_EMBER_DAMAGE = 20;
+const DESTINY_AIR_EMBER_RADIUS = 2.0;
+// Ground wing attack (bilateral fire-pillar streams) — keep in sync with src/utils/destinyCoopConstants.ts
+const DESTINY_WING_COOLDOWN_MS = 8000;
+const DESTINY_WING_CAST_LOCK_MS = 2000;
+const DESTINY_WING_PILLAR_DAMAGE = 47;
+const DESTINY_WING_PILLAR_RADIUS = 2.25;
+const DESTINY_WING_PILLAR_COUNT = 5;
+const DESTINY_WING_PILLAR_STAGGER_MS = 250;
+const DESTINY_WING_PILLAR_FIRST_DELAY_MS = 500;
+const DESTINY_WING_PILLAR_BASE_OFFSET = 2.0;
+const DESTINY_WING_PILLAR_STEP = 1.0;
+const DESTINY_WING_CAST_RANGE = 12;
+/** Gap after a ground special ends before the other special may start (prevents roar→wing chaining). */
+const DESTINY_GROUND_SPECIAL_GAP_MS = 2500;
+
+/**
+ * Flying units (terrorhawk / destiny hover at y=9) and Sabres Skyfall (~y≥6)
+ * are unreachable for ground melee. Normal coop jumps apex ~0.8.
+ */
+const AIRBORNE_UNTARGETABLE_Y = 2.0;
 
 /** Rotate a horizontal XZ direction around Y (same as Three.js makeRotationY). */
 function rotateXZDir(x, z, angleRad) {
@@ -1368,6 +1397,13 @@ class EnemyAI {
     this.destinyFlyAttackLaunchTimeout = new Map();
     this.destinyFlyAttackEndTimeout = new Map();
     this.destinyFlyAttackCooldown = new Map();
+    // Destiny ground wing attack (bilateral flame pillars)
+    this.destinyWingCooldown = new Map();
+    this.destinyWingEndTimeout = new Map();
+    /** @type {Map<string, ReturnType<typeof setTimeout>[]>} */
+    this.destinyWingPillarTimeouts = new Map();
+    /** id -> timestamp when next ground special (breath/wing) may start */
+    this.destinyGroundSpecialReadyAt = new Map();
 
     // Red / Green: Death Grasp (independent 15s CD from knightAbilityCooldown)
     this.knightDeathGraspCooldown = new Map(); // enemyId -> lastCastMs
@@ -1395,6 +1431,10 @@ class EnemyAI {
     this._alliedKnightBoonsCachedAt = 0;
     this._meleePeerGrid = null;
     this._meleePeerBucketPool = [];
+    /** Monotonic AI tick counter for closest-player cache TTL. */
+    this._aiTickId = 0;
+    /** enemyId -> { tick, player } — reuse closest-player for a few ticks. */
+    this._closestPlayerCache = new Map();
     /** Pooled A* typed arrays (reused across path recomputes). */
     this._astarGScore = null;
     this._astarCameFrom = null;
@@ -1403,6 +1443,8 @@ class EnemyAI {
     this.alliedCombatStarted = false;
     /** Per-enemy pending timeout handles cleared on death. */
     this.enemyPendingTimeouts = new Map();
+    /** All AI setTimeout handles — cleared on full AI teardown. */
+    this._pendingTimeouts = new Set();
     /** Per-enemy hazard tick intervals (ember patches, fireballs, spin damage) cleared on death. */
     this.enemyHazardIntervals = new Map();
 
@@ -1738,6 +1780,14 @@ class EnemyAI {
     });
     this.destinyFlyAttackLaunchTimeout.clear();
     this.destinyFlyAttackCooldown.clear();
+    this.destinyWingEndTimeout.forEach((t) => clearTimeout(t));
+    this.destinyWingEndTimeout.clear();
+    this.destinyWingPillarTimeouts.forEach((handles) => {
+      for (const t of handles) clearTimeout(t);
+    });
+    this.destinyWingPillarTimeouts.clear();
+    this.destinyWingCooldown.clear();
+    this.destinyGroundSpecialReadyAt.clear();
     this.enemyPaths.clear();
     this.templarBlinkSmiteNextAt.clear();
     this.templarLeapCooldown.clear();
@@ -1760,6 +1810,9 @@ class EnemyAI {
       for (const handle of pending) clearTimeout(handle);
     }
     this.enemyPendingTimeouts.clear();
+    for (const handle of this._pendingTimeouts) clearTimeout(handle);
+    this._pendingTimeouts.clear();
+    this._closestPlayerCache.clear();
     this.enemyHazardIntervals.forEach((set) => set.forEach((iv) => clearInterval(iv)));
     this.enemyHazardIntervals.clear();
   }
@@ -1796,6 +1849,7 @@ class EnemyAI {
     // Skip full AI during co-op throne prep (combat arena not yet active).
     if (this.room.gameMode === 'coop' && this.room.combatArenaActive === false) return;
 
+    this._aiTickId = (this._aiTickId + 1) | 0;
     const enemies = this._refreshTickEnemies();
     const players = this._refreshTickPlayers();
     this._meleePeerGrid = this._buildMeleePeerGrid(enemies);
@@ -1823,6 +1877,7 @@ class EnemyAI {
     });
 
     this.tickPalaceHeavyAuras(Date.now());
+    this.room?.tickPetCompanionProximityBuffs?.(Date.now());
 
     // Emit all position updates accumulated during this tick as a single batch
     this._flushMoves();
@@ -2445,7 +2500,7 @@ class EnemyAI {
     };
     const minStandoff = profile.range * 0.75;
 
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (enemy.isDying || !this.room?.getGameStarted()) return;
       if (this.room?.isEnemyAffectedBy(enemy.id, 'stun')) return;
 
@@ -2561,7 +2616,7 @@ class EnemyAI {
 
     const enemyId = enemy.id;
     const hitDelay = profile.hitDelayMs;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       this._resolveMeleeSwingHit(enemyId, profile, {
         targetKind,
         targetId,
@@ -2675,9 +2730,20 @@ class EnemyAI {
    * player/zombie/hostile/trap engage blocks used by melee AI updates.
    * @returns {'swung'|'press'|'chase'|'idle'}
    */
+  /** True when an entity's Y is high enough that ground melee cannot engage it. */
+  _isTargetAirborne(entity) {
+    return (entity?.position?.y ?? 0) > AIRBORNE_UNTARGETABLE_Y;
+  }
+
   tryMeleeEngage(enemy, resolved, moveTarget, profile, options = {}) {
     if (!enemy || !resolved || !profile) return 'idle';
     const tpos = this.combatTargetPosition(resolved);
+    // Skyfall / elevated players: hold idle (face target) instead of jitter-chasing underneath.
+    if (resolved.kind === 'player' && this._isTargetAirborne(resolved.player)) {
+      this._smoothRotateEnemyTowardPoint(enemy, tpos);
+      this._queueMoveIfChanged(enemy.id, enemy.position, enemy.rotation);
+      return 'idle';
+    }
     const distance = options.distance ?? this.calculateHorizontalDistance(enemy.position, tpos);
     const attackRange = profile.range;
     const meleePressDistance = attackRange - (SHARED_MELEE_CLOSE_INSET || MELEE_CLOSE_INSET);
@@ -3103,7 +3169,7 @@ class EnemyAI {
     // Hostile and allied knights both use 2.6 melee range; floor at surround ring.
     const minStandoff = ALLIED_KNIGHT_ATTACK_RANGE * MELEE_SURROUND_STANDOFF_FRAC;
 
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (knight.isDying || !this.room?.getGameStarted()) return;
       if (this.room?.isEnemyAffectedBy(knight.id, 'stun')) return;
 
@@ -3152,7 +3218,7 @@ class EnemyAI {
       z: targetPlayer.position.z,
     };
 
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (boss.isDying || !this.room?.getGameStarted()) return;
       if (this.room?.isEnemyAffectedBy(boss.id, 'stun')) return;
 
@@ -3281,7 +3347,7 @@ class EnemyAI {
 
     this.clearKnightDeathGraspTimers(knightId);
 
-    const launchTimer = setTimeout(() => {
+    const launchTimer = this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) {
         this.clearKnightDeathGraspTimers(knightId);
         return;
@@ -3330,7 +3396,7 @@ class EnemyAI {
         });
       }
 
-      const travelTimer = setTimeout(() => {
+      const travelTimer = this._scheduleTimeout(() => {
         this.clearKnightDeathGraspTimers(knightId);
         if (!this.room?.getGameStarted()) return;
         if (this.room?.isEnemyAffectedBy(knightId, 'stun')) return;
@@ -3577,7 +3643,7 @@ class EnemyAI {
     }
     _enemyAiLog(`⚡ ${soulType} Knight ${knightId} charging Smite at target ${targetId}!`);
 
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       const liveKnight = this.room?.getEnemy(knightId);
       if (!liveKnight || liveKnight.isDying || !this.room?.getGameStarted()) return;
       if (this.room?.isEnemyAffectedBy(knightId, 'stun')) return;
@@ -3634,7 +3700,7 @@ class EnemyAI {
     _enemyAiLog(`🟢💚 Knight ${knight.id} (${knight.soulType}) casting Heal!`);
 
     // Apply the heal at the animation midpoint (~1 200 ms)
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (knight.isDying || !this.room?.getGameStarted()) return;
       if (this.room?.isEnemyAffectedBy(knight.id, 'stun')) return;
       const liveKnight = this.room?.getEnemy(knight.id);
@@ -3683,7 +3749,7 @@ class EnemyAI {
     const targetId = targetPlayer.id;
     const knightId = knight.id;
 
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const liveKnight = this.room?.getEnemy(knightId);
       if (!liveKnight || liveKnight.isDying) return;
@@ -3717,7 +3783,7 @@ class EnemyAI {
         });
       }
 
-      setTimeout(() => {
+      this._scheduleTimeout(() => {
         if (!this.room?.getGameStarted()) return;
         if (this.room?.isEnemyAffectedBy(knightId, 'stun')) return;
         const players = this.room?.getPlayers();
@@ -3790,7 +3856,7 @@ class EnemyAI {
 
     for (let i = 1; i <= zapCount; i += 1) {
       const delayMs = i * KNIGHT_STORM_LASH_ZAP_INTERVAL_MS;
-      const handle = setTimeout(() => {
+      const handle = this._scheduleTimeout(() => {
         if (!this.room?.getGameStarted()) return;
         const liveKnight = this.room?.getEnemy(knightId);
         if (!liveKnight || liveKnight.isDying) return;
@@ -3940,7 +4006,7 @@ class EnemyAI {
           const zid = z.id;
           const shadeId = shade.id;
           this.getShadeDaggerDelays(shade).forEach((delay) => {
-            setTimeout(() => {
+            this._scheduleTimeout(() => {
               if (shade.isDying || !this.room?.getGameStarted()) return;
               if (this.room?.isEnemyAffectedBy(shadeId, 'stun')) return;
               const zz = this.room?.getEnemy(zid);
@@ -3961,7 +4027,7 @@ class EnemyAI {
           const hid = hostile.id;
           const shadeId = shade.id;
           this.getShadeDaggerDelays(shade).forEach((delay) => {
-            setTimeout(() => {
+            this._scheduleTimeout(() => {
               if (shade.isDying || !this.room?.getGameStarted()) return;
               if (this.room?.isEnemyAffectedBy(shadeId, 'stun')) return;
               const liveTarget = this.room?.getEnemy(hid);
@@ -3982,7 +4048,7 @@ class EnemyAI {
           const trapId = tr.id;
           const shadeId = shade.id;
           this.getShadeDaggerDelays(shade).forEach((delay) => {
-            setTimeout(() => {
+            this._scheduleTimeout(() => {
               if (shade.isDying || !this.room?.getGameStarted()) return;
               if (this.room?.isEnemyAffectedBy(shadeId, 'stun')) return;
               const tt = this.room?.getEnemy(trapId);
@@ -4005,7 +4071,7 @@ class EnemyAI {
     if (!this.shadeBlinkNearTarget(shade, targetPlayer)) return;
 
     // After the blink completes, fire daggers at the target's location
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (shade.isDying || !this.room?.getGameStarted()) return;
       if (this.room?.isEnemyAffectedBy(shade.id, 'stun')) return;
 
@@ -4025,7 +4091,7 @@ class EnemyAI {
       );
 
       if ((this.room?.coopBossesDefeatedCount ?? 0) >= 1) {
-        setTimeout(() => {
+        this._scheduleTimeout(() => {
           if (shade.isDying || !this.room?.getGameStarted()) return;
           if (this.room?.isEnemyAffectedBy(shade.id, 'freeze')) return;
           if (this.room?.isEnemyAffectedBy(shade.id, 'stun')) return;
@@ -4199,7 +4265,7 @@ class EnemyAI {
     this.wraithStealthCooldown.set(wraith.id, now);
     const stealthEndsAt = now + WRAITH_STEALTH_DURATION_MS;
     const wraithId = wraith.id;
-    const revealTimeout = setTimeout(() => {
+    const revealTimeout = this._scheduleTimeout(() => {
       this.revealWraithStealth(wraithId, 'timeout');
     }, WRAITH_STEALTH_DURATION_MS);
     this.wraithStealthState.set(wraithId, { stealthEndsAt, revealTimeout });
@@ -4560,7 +4626,7 @@ class EnemyAI {
       bz: targetPosition.z,
     };
 
-    const handle = setTimeout(() => {
+    const handle = this._scheduleTimeout(() => {
       this.warlockArchonShockTimeout.delete(warlock.id);
       const liveWarlock = this.room?.enemies?.get(warlock.id);
       if (!liveWarlock || liveWarlock.isDying || liveWarlock.health <= 0) return;
@@ -4642,7 +4708,7 @@ class EnemyAI {
 
     const flameXZ = { x: endPosition.x, z: endPosition.z };
     const wid = warlock.id;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const w = this.room?.getEnemy(wid);
       if (!w || w.isDying) return;
@@ -4878,7 +4944,7 @@ class EnemyAI {
     const sz = warlock.position.z;
     const wid = warlock.id;
     const targetId = targetPlayer.id;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const w = this.room?.getEnemy(wid);
       if (!w || w.isDying) return;
@@ -5195,7 +5261,7 @@ class EnemyAI {
       });
     }
 
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const e = this.room?.enemies?.get(templarId);
       if (!e || e.isDying || e.type !== 'templar') return;
@@ -5224,7 +5290,7 @@ class EnemyAI {
         });
       }
 
-      setTimeout(() => {
+      this._scheduleTimeout(() => {
         if (!this.room?.getGameStarted()) return;
         const templar = this.room?.enemies?.get(templarId);
         if (!templar || templar.isDying || templar.type !== 'templar') return;
@@ -5283,7 +5349,7 @@ class EnemyAI {
     if (!this.room) return;
     const players = this.room.getPlayers?.() || [];
 
-    for (const ally of this.room.getEnemies()) {
+    for (const ally of this.room.enemies.values()) {
       if (!ally || ally.isDying || ally.health <= 0) continue;
       const isAlly = this._isPlayerCombatAlly(ally) || ally.type === 'player-zombie';
       if (!isAlly) continue;
@@ -5356,7 +5422,7 @@ class EnemyAI {
 
     const prev = this.assassinDreamshroudState.get(assassinId);
     if (prev?.revealTimeout) clearTimeout(prev.revealTimeout);
-    const revealTimeout = setTimeout(() => {
+    const revealTimeout = this._scheduleTimeout(() => {
       this.revealAssassinDreamshroud(assassinId, 'timeout');
     }, ASSASSIN_DREAMSHROUD_DURATION_MS);
     this.assassinDreamshroudState.set(assassinId, { stealthEndsAt, revealTimeout });
@@ -5506,7 +5572,7 @@ class EnemyAI {
           }, shotId, { damage: ASSASSIN_BOW_DAMAGE });
           const zid = z.id;
           const aid = assassin.id;
-          setTimeout(() => {
+          this._scheduleTimeout(() => {
             if (assassin.isDying || !this.room?.getGameStarted()) return;
             const live = this.room?.getEnemy(aid);
             if (!live || live.isDying) return;
@@ -5756,7 +5822,7 @@ class EnemyAI {
     );
     const pid = player.id;
     const aid = assassin.id;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (assassin.isDying || !this.room?.getGameStarted()) return;
       const a = this.room?.getEnemy(aid);
       if (!a || a.isDying) return;
@@ -5892,7 +5958,7 @@ class EnemyAI {
     );
     const pid = player.id;
     const vid = viper.id;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (viper.isDying || !this.room?.getGameStarted()) return;
       const v = this.room?.getEnemy(vid);
       if (!v || v.isDying) return;
@@ -5984,7 +6050,7 @@ class EnemyAI {
           if ((this.room?.coopBossesDefeatedCount ?? 0) >= VIPER_DOUBLE_SHOT_UNLOCK_BOSS_COUNT) {
             const vid = viper.id;
             const pid = resolved.player.id;
-            const t = setTimeout(() => {
+            const t = this._scheduleTimeout(() => {
               if (!this.room?.getGameStarted()) return;
               const liveViper = this.room?.getEnemy(vid);
               if (!liveViper || liveViper.isDying) return;
@@ -6022,7 +6088,7 @@ class EnemyAI {
             position: z.position,
           }, shotId);
           const zid = z.id;
-          setTimeout(() => {
+          this._scheduleTimeout(() => {
             if (viper.isDying || !this.room?.getGameStarted()) return;
             const liveViper = this.room?.getEnemy(viper.id);
             if (!liveViper || liveViper.isDying) return;
@@ -6055,7 +6121,7 @@ class EnemyAI {
           }, shotId);
           const hid = hostile.id;
           const vid = viper.id;
-          setTimeout(() => {
+          this._scheduleTimeout(() => {
             if (viper.isDying || !this.room?.getGameStarted()) return;
             const liveViper = this.room?.getEnemy(vid);
             if (!liveViper || liveViper.isDying) return;
@@ -6088,7 +6154,7 @@ class EnemyAI {
           }, shotId);
           const trapId = tr.id;
           const vid = viper.id;
-          setTimeout(() => {
+          this._scheduleTimeout(() => {
             if (viper.isDying || !this.room?.getGameStarted()) return;
             const liveViper = this.room?.getEnemy(vid);
             if (!liveViper || liveViper.isDying) return;
@@ -6327,7 +6393,7 @@ class EnemyAI {
       });
     }
 
-    const telegraphHandle = setTimeout(() => {
+    const telegraphHandle = this._scheduleTimeout(() => {
       this.removeWeaverImpaleSpikePendingTimeoutHandle(wid, telegraphHandle);
       const w = this.room?.enemies?.get(wid);
       if (!w || w.isDying || w.health <= 0) return;
@@ -6351,7 +6417,7 @@ class EnemyAI {
         });
       }
 
-      const hitHandle = setTimeout(() => {
+      const hitHandle = this._scheduleTimeout(() => {
         this.removeWeaverImpaleSpikePendingTimeoutHandle(wid, hitHandle);
         const liveWeaver = this.room?.enemies?.get(wid);
         if (!liveWeaver || liveWeaver.isDying || liveWeaver.health <= 0) return;
@@ -6413,7 +6479,7 @@ class EnemyAI {
       });
     }
     const zid = zombie.id;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const zz = this.room?.getEnemy(zid);
       if (!zz || zz.isDying || zz.health <= 0) return;
@@ -6449,7 +6515,7 @@ class EnemyAI {
     }
     const tid = targetEnemy.id;
     const wid = weaver.id;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const liveWeaver = this.room?.getEnemy(wid);
       const liveTarget = this.room?.getEnemy(tid);
@@ -6485,7 +6551,7 @@ class EnemyAI {
       });
     }
     const trapId = trap.id;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const tt = this.room?.getEnemy(trapId);
       if (!tt || tt.isDying || tt.health <= 0 || tt.type !== 'tentacle-spine') return;
@@ -6513,23 +6579,23 @@ class EnemyAI {
     let lowestPct  = Infinity;
     let bestTarget = null;
 
-    this.room.getEnemies().forEach(enemy => {
-      if (enemy.id === weaver.id) return;
-      if (this.isFriendlyCombatUnit(enemy)) return;
-      if (enemy.isDying || enemy.health <= 0) return;
-      if (enemy.type === 'tentacle-spine') return;
-      if (enemy.type === 'nemesis') return;
-      if (enemy.health >= enemy.maxHealth) return; // Already full — no point healing
+    for (const enemy of this.room.enemies.values()) {
+      if (enemy.id === weaver.id) continue;
+      if (this.isFriendlyCombatUnit(enemy)) continue;
+      if (enemy.isDying || enemy.health <= 0) continue;
+      if (enemy.type === 'tentacle-spine') continue;
+      if (enemy.type === 'nemesis') continue;
+      if (enemy.health >= enemy.maxHealth) continue; // Already full — no point healing
 
       const dist = this.calculateDistance(weaver.position, enemy.position);
-      if (dist > range) return;
+      if (dist > range) continue;
 
       const pct = enemy.health / enemy.maxHealth;
       if (pct < lowestPct) {
         lowestPct  = pct;
         bestTarget = enemy;
       }
-    });
+    }
 
     return bestTarget;
   }
@@ -6557,7 +6623,7 @@ class EnemyAI {
     _enemyAiLog(`🧵 Weaver ${weaver.id} casting Heal on ${targetEnemy.id} (HP: ${targetEnemy.health}/${targetEnemy.maxHealth})`);
 
     // After cast animation (~1.8s) apply the actual heal.
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (weaver.isDying || !this.room?.getGameStarted()) return;
 
       const liveEnemy = this.room?.getEnemy(targetEnemy.id);
@@ -6607,7 +6673,7 @@ class EnemyAI {
     const strikeX = targetPlayer.position.x;
     const strikeZ = targetPlayer.position.z;
     const wid = weaver.id;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const w = this.room?.getEnemy(wid);
       if (!w || w.isDying) return;
@@ -6649,7 +6715,7 @@ class EnemyAI {
     const isBoss3Summon = weaver.type === 'boss3';
 
     // After the cast animation (~3s), spawn the ghoul
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (weaver.isDying || !this.room?.getGameStarted()) return;
 
       const ghoulId = `ghoul-${weaver.id}-${Date.now()}`;
@@ -6691,7 +6757,7 @@ class EnemyAI {
 
       // Unlock movement once the summon animation finishes (~4500ms, extended to match ritual duration)
       const speedMult = isBoss3Summon ? BOSS3_SUMMONED_GHOUL_SPEED_MULT : 1;
-      setTimeout(() => {
+      this._scheduleTimeout(() => {
         const spawnedGhoul = this.room?.getEnemy(ghoulId);
         if (spawnedGhoul && !spawnedGhoul.isDying) {
           spawnedGhoul.moveSpeed = GHOUL_BASE_MOVE_SPEED * speedMult;
@@ -6779,7 +6845,7 @@ class EnemyAI {
             id: 'delirium-structure',
             position: structurePos,
           });
-          setTimeout(() => {
+          this._scheduleTimeout(() => {
             if (ghoul.isDying || !this.room?.getGameStarted()) return;
             const liveStructure = this.room?.deliriumStructure;
             if (!liveStructure || liveStructure.destroyed || liveStructure.hp <= 0) return;
@@ -6850,7 +6916,7 @@ class EnemyAI {
 
       const martyrId = martyr.id;
       const blastCenter = { x: detX, y: detY, z: detZ };
-      setTimeout(() => {
+      this._scheduleTimeout(() => {
         if (!this.room?.getGameStarted()) return;
         if (this.io) {
           this.io.to(this.roomId).emit('martyr-detonation-impact', {
@@ -6865,8 +6931,8 @@ class EnemyAI {
         if (e && !e.isDying && e.health > 0) {
           this.room.damageEnemy(martyrId, MARTYR_DETONATION_ENEMY_DAMAGE, null, null, { damageType: 'martyr_self' });
         }
-        if (this.room?.getEnemies) {
-          for (const other of this.room.getEnemies()) {
+        if (this.room?.enemies) {
+          for (const other of this.room.enemies.values()) {
             if (!other || other.id === martyrId || other.isDying || other.health <= 0) continue;
             if (MARTYR_DETONATION_SPLASH_EXCLUDED_TYPES.has(other.type)) continue;
             if (this.calculateDistance(blastCenter, other.position) <= MARTYR_DETONATION_RADIUS) {
@@ -7023,28 +7089,14 @@ class EnemyAI {
       cannonUnlocked &&
       !titan.bladestormPowerupActive &&
       !titan.bladestormActive &&
-      !this.titanCannonWindupTimeout.has(titan.id)
+      !this.titanCannonWindupTimeout.has(titan.id) &&
+      resolved.kind === 'player' &&
+      distance > TITAN_CANNON_MIN_RANGE &&
+      distance <= TITAN_CANNON_RANGE &&
+      this._titanCanFireCannon(titan, now)
     ) {
-      const soulType = titan.soulType || 'green';
-      if (soulType === 'green') {
-        const greenTarget = this._findStunnedOrFrozenTitanTarget(titan, now);
-        const greenBaseline = this.titanCannonCooldown.get(titan.id) ?? titan.spawnedAt ?? 0;
-        if (
-          greenTarget &&
-          now - greenBaseline >= TITAN_CANNON_GREEN_COOLDOWN_MS
-        ) {
-          this.titanStartCannon(titan, greenTarget);
-          return;
-        }
-      } else if (
-        resolved.kind === 'player' &&
-        distance > TITAN_CANNON_MIN_RANGE &&
-        distance <= TITAN_CANNON_RANGE &&
-        this._titanCanFireCannon(titan, now)
-      ) {
-        this.titanStartCannon(titan, resolved.player);
-        return;
-      }
+      this.titanStartCannon(titan, resolved.player);
+      return;
     }
 
     if (
@@ -7084,7 +7136,7 @@ class EnemyAI {
     }
 
     const titanId = titan.id;
-    const handle = setTimeout(() => {
+    const handle = this._scheduleTimeout(() => {
       this.titanBladestormPowerupTimeout.delete(titanId);
       this.titanCompleteBladestormPowerup(titanId);
     }, TITAN_BLADESTORM_POWERUP_MS);
@@ -7137,7 +7189,7 @@ class EnemyAI {
 
     const titanId = titan.id;
     const targetId = targetPlayer.id;
-    const handle = setTimeout(() => {
+    const handle = this._scheduleTimeout(() => {
       this.titanStompWindupTimeout.delete(titanId);
       this.titanReleaseStompShockwave(titanId, targetId, ux, uz);
     }, TITAN_STOMP_WINDUP_MS);
@@ -7255,8 +7307,7 @@ class EnemyAI {
     const baseline = this.titanCannonCooldown.get(titan.id) ?? titan.spawnedAt ?? 0;
 
     if (soulType === 'blue') {
-      return healthPct <= TITAN_CANNON_BLUE_HEALTH_PCT &&
-        now - baseline >= TITAN_CANNON_BLUE_COOLDOWN_MS;
+      return now - baseline >= TITAN_CANNON_BLUE_COOLDOWN_MS;
     }
     if (soulType === 'purple') {
       return now - baseline >= TITAN_CANNON_PURPLE_COOLDOWN_MS;
@@ -7267,32 +7318,10 @@ class EnemyAI {
       const lastCast = this.titanRedCannonLastCastAt.get(titan.id) ?? 0;
       return state.charges > 0 && now - lastCast >= TITAN_CANNON_RED_CAST_GAP_MS;
     }
-    return false;
-  }
-
-  _findStunnedOrFrozenTitanTarget(titan, now) {
-    const players = this.room?.getPlayers();
-    if (!players) return null;
-
-    let best = null;
-    let bestDist = Infinity;
-    for (const p of players) {
-      if (!p || p.health <= 0) continue;
-      if (
-        !this.room?.isPlayerAffectedBy(p.id, 'stun') &&
-        !this.room?.isPlayerAffectedBy(p.id, 'freeze')
-      ) {
-        continue;
-      }
-      const d = this.calculateDistance(titan.position, p.position);
-      if (d <= TITAN_CANNON_MIN_RANGE || d > TITAN_CANNON_RANGE) continue;
-      if (!this.hasLineOfSight(titan.position, p.position)) continue;
-      if (d < bestDist) {
-        best = p;
-        bestDist = d;
-      }
+    if (soulType === 'green') {
+      return now - baseline >= TITAN_CANNON_GREEN_COOLDOWN_MS;
     }
-    return best;
+    return false;
   }
 
   titanStartCannon(titan, targetPlayer) {
@@ -7334,7 +7363,7 @@ class EnemyAI {
     const titanId = titan.id;
     const oldHandle = this.titanCannonWindupTimeout.get(titanId);
     if (oldHandle) clearTimeout(oldHandle);
-    const handle = setTimeout(() => {
+    const handle = this._scheduleTimeout(() => {
       this.titanCannonWindupTimeout.delete(titanId);
       this.titanFireCannon(titanId, ux, uz, ox, oz);
     }, TITAN_CANNON_WINDUP_MS);
@@ -7539,7 +7568,7 @@ class EnemyAI {
     const oakId = oak.id;
     const old = this.eternalOakEarthbreakerTimeout.get(oakId);
     if (old) clearTimeout(old);
-    const handle = setTimeout(() => {
+    const handle = this._scheduleTimeout(() => {
       this.eternalOakEarthbreakerTimeout.delete(oakId);
       this.eternalOakReleaseEarthbreaker(oakId);
     }, ETERNAL_OAK_EARTHBREAKER_CAST_MS);
@@ -7664,8 +7693,8 @@ class EnemyAI {
    * Colossus resurrection is handled on death in gameRoom.
    */
   tickPalaceHeavyAuras(now = Date.now()) {
-    if (!this.room?.getEnemies || !this.room?.getGameStarted?.()) return;
-    const enemies = this.room.getEnemies();
+    if (!this.room?.enemies || !this.room?.getGameStarted?.()) return;
+    const enemies = this._tickEnemies.length > 0 ? this._tickEnemies : this._refreshTickEnemies();
     if (!enemies || enemies.length === 0) return;
 
     for (const heavy of enemies) {
@@ -7701,17 +7730,22 @@ class EnemyAI {
     if (now - last < 1000) return;
     oak._eternalOakAuraHealAt = now;
 
+    const heals = [];
+    const radiusSq = PALACE_AURA_RADIUS * PALACE_AURA_RADIUS;
+    const ox = oak.position.x;
+    const oz = oak.position.z;
     for (const ally of enemies) {
       if (!this._isPalaceAuraAlly(ally, oak.id)) continue;
-      const dist = this.calculateDistance(oak.position, ally.position);
-      if (dist > PALACE_AURA_RADIUS) continue;
+      const dx = ox - (ally.position?.x ?? 0);
+      const dz = oz - (ally.position?.z ?? 0);
+      if (dx * dx + dz * dz > radiusSq) continue;
       const maxHp = ally.maxHealth ?? 0;
       if (maxHp <= 0 || ally.health >= maxHp) continue;
       const previousHealth = ally.health;
       ally.health = Math.min(maxHp, ally.health + ETERNAL_OAK_HEAL_PER_SEC);
       const actualHeal = ally.health - previousHealth;
-      if (actualHeal <= 0 || !this.io) continue;
-      this.io.to(this.roomId).emit('enemy-healed', {
+      if (actualHeal <= 0) continue;
+      heals.push({
         enemyId: ally.id,
         healAmount: actualHeal,
         newHealth: ally.health,
@@ -7725,6 +7759,9 @@ class EnemyAI {
         timestamp: now,
       });
     }
+    if (heals.length === 0 || !this.io) return;
+    // Single socket event for the whole aura tick (clients accept `heals` array or legacy single).
+    this.io.to(this.roomId).emit('enemy-healed', { heals, timestamp: now });
   }
 
   _tickStoneGiantBuffAura(giant, enemies) {
@@ -7820,7 +7857,7 @@ class EnemyAI {
         timestamp: tickNow,
       });
     }
-    const handle = setTimeout(() => {
+    const handle = this._scheduleTimeout(() => {
       this.removeTectonicSpikePendingTimeoutHandle(boss.id, handle);
       const b = this.room?.enemies?.get(boss.id);
       if (!b || b.isDying || b.health <= 0) return;
@@ -7963,7 +8000,7 @@ class EnemyAI {
         timestamp: Date.now(),
       });
     }
-    const t = setTimeout(() => {
+    const t = this._scheduleTimeout(() => {
       this.bossCompleteLeap(boss.id);
     }, BOSS_LEAP_DURATION_MS);
     this.bossLeapTimeout.set(boss.id, t);
@@ -8033,7 +8070,7 @@ class EnemyAI {
       });
     }
     const ghoulId = ghoul.id;
-    const t = setTimeout(() => {
+    const t = this._scheduleTimeout(() => {
       this.ghoulCompleteLeap(ghoulId);
     }, GHOUL_LEAP_DURATION_MS);
     this.ghoulLeapTimeout.set(ghoul.id, t);
@@ -8103,7 +8140,7 @@ class EnemyAI {
       });
     }
     const templarId = templar.id;
-    const t = setTimeout(() => {
+    const t = this._scheduleTimeout(() => {
       this.templarCompleteLeap(templarId);
     }, TEMPLAR_LEAP_DURATION_MS);
     this.templarLeapTimeout.set(templar.id, t);
@@ -8222,7 +8259,7 @@ class EnemyAI {
       });
     }
     const tigerId = tiger.id;
-    const t = setTimeout(() => {
+    const t = this._scheduleTimeout(() => {
       this.tigerCompletePounce(tigerId);
     }, TIGER_POUNCE_DURATION_MS);
     this.tigerPounceTimeout.set(tiger.id, t);
@@ -8539,7 +8576,7 @@ class EnemyAI {
       });
     }
 
-    const launchTimer = setTimeout(() => {
+    const launchTimer = this._scheduleTimeout(() => {
       const liveBoss = this.room?.getEnemy(bossId);
       if (!this.room?.getGameStarted() || !liveBoss || liveBoss.isDying || liveBoss.health <= 0) return;
 
@@ -8582,7 +8619,7 @@ class EnemyAI {
         });
       }
 
-      const resolveTimer = setTimeout(() => {
+      const resolveTimer = this._scheduleTimeout(() => {
         const k = this.room?.getEnemy(bossId);
         const currentPlayers = this.room?.getPlayers();
         if (!this.room?.getGameStarted() || !k || k.isDying || k.health <= 0 || !currentPlayers) return;
@@ -8973,7 +9010,7 @@ class EnemyAI {
       timeouts = [];
       this.boss3NovaBurstTimeouts.set(bossId, timeouts);
     }
-    const t = setTimeout(() => {
+    const t = this._scheduleTimeout(() => {
       const arr = this.boss3NovaBurstTimeouts.get(bossId);
       if (arr) {
         const idx = arr.indexOf(t);
@@ -9112,7 +9149,7 @@ class EnemyAI {
       (burstRoundsAtWindup - 1) * BOSS3_NOVA_BURST_GAP_MS + BOSS3_NOVA_TRAVEL_MS;
     this.boss3LockUntil.set(boss.id, startedAt + BOSS3_NOVA_WINDUP_MS + burstSpanAtWindup);
 
-    const windupTimer = setTimeout(() => {
+    const windupTimer = this._scheduleTimeout(() => {
       this.boss3NovaWindupTimeout.delete(boss.id);
 
       const live = this.room?.enemies?.get(boss.id);
@@ -9207,8 +9244,8 @@ class EnemyAI {
       this.room.damagePlayersInHorizontalRing(center, BOSS2_FLAME_PILLAR_RADIUS, BOSS2_FLAME_PILLAR_DAMAGE, 'boss2_flame_pillar');
     };
 
-    const h1 = setTimeout(() => erupt(pillar1), BOSS2_FLAME_PILLAR_BLINK_DELAY_MS);
-    const h2 = setTimeout(() => erupt(pillar2), BOSS2_FLAME_PILLAR_BLINK_DELAY_MS + BOSS2_FLAME_PILLAR_STAGGER_MS);
+    const h1 = this._scheduleTimeout(() => erupt(pillar1), BOSS2_FLAME_PILLAR_BLINK_DELAY_MS);
+    const h2 = this._scheduleTimeout(() => erupt(pillar2), BOSS2_FLAME_PILLAR_BLINK_DELAY_MS + BOSS2_FLAME_PILLAR_STAGGER_MS);
     this.addBoss2FlamePillarTimeout(bossId, h1);
     this.addBoss2FlamePillarTimeout(bossId, h2);
   }
@@ -9307,7 +9344,7 @@ class EnemyAI {
       bz: b.targetPosition.z,
     }));
 
-    const handle = setTimeout(() => {
+    const handle = this._scheduleTimeout(() => {
       this.boss2ArchonLightningTimeout.delete(boss.id);
       const liveBoss = this.room?.enemies?.get(boss.id);
       if (!liveBoss || liveBoss.isDying || liveBoss.health <= 0) return;
@@ -9612,7 +9649,7 @@ class EnemyAI {
       });
     }
 
-    const t = setTimeout(() => {
+    const t = this._scheduleTimeout(() => {
       this.bossCompleteThrow(boss.id);
     }, BOSS_THROW_SPEAR_RELEASE_MS);
     this.bossThrowTimeout.set(boss.id, t);
@@ -9755,21 +9792,39 @@ class EnemyAI {
   }
 
   findClosestPlayer(enemy, players) {
-    let closestPlayer = null;
-    let closestDistance = Infinity;
-
-    players.forEach(player => {
-      // Skip dead players (health <= 0)
-      if (player.health <= 0) {
-        return;
+    const enemyId = enemy?.id;
+    const cache = this._closestPlayerCache;
+    const tick = this._aiTickId | 0;
+    if (enemyId != null && cache) {
+      const cached = cache.get(enemyId);
+      // Reuse for current tick and the previous one (~33–66ms) — same targeting intent.
+      if (cached && tick - cached.tick <= 1 && cached.player && cached.player.health > 0) {
+        return cached.player;
       }
+    }
 
-      const distance = this.calculateDistance(enemy.position, player.position);
-      if (distance < closestDistance) {
-        closestDistance = distance;
+    let closestPlayer = null;
+    let closestDistSq = Infinity;
+    const ex = enemy.position.x;
+    const ez = enemy.position.z;
+
+    for (let i = 0; i < players.length; i++) {
+      const player = players[i];
+      // Skip dead players (health <= 0)
+      if (player.health <= 0) continue;
+
+      const dx = ex - player.position.x;
+      const dz = ez - player.position.z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq < closestDistSq) {
+        closestDistSq = distSq;
         closestPlayer = player;
       }
-    });
+    }
+
+    if (enemyId != null && cache) {
+      cache.set(enemyId, { tick, player: closestPlayer });
+    }
 
     return closestPlayer;
   }
@@ -10401,10 +10456,10 @@ class EnemyAI {
   }
 
   findClosestNemesisPrey(nemesis, maxRadius = NEMESIS_AGGRO_RADIUS) {
-    if (!this.room?.getEnemies || !nemesis?.position) return null;
+    if (!this.room?.enemies || !nemesis?.position) return null;
     let best = null;
     let bestDist = maxRadius;
-    for (const enemy of this.room.getEnemies()) {
+    for (const enemy of this.room.enemies.values()) {
       if (enemy.id === nemesis.id) continue;
       if (!this.isValidNemesisPrey(enemy)) continue;
       const dist = this.calculateDistance(nemesis.position, enemy.position);
@@ -10461,8 +10516,8 @@ class EnemyAI {
       }
     }
 
-    if (this.room?.getEnemies) {
-      for (const enemy of this.room.getEnemies()) {
+    if (this.room?.enemies) {
+      for (const enemy of this.room.enemies.values()) {
         if (enemy.id === spectre.id) continue;
         if (!this.isValidHostileEnemyAggroTarget(spectre, enemy)) continue;
         const dist = this.calculateDistance(spectre.position, enemy.position);
@@ -10495,8 +10550,8 @@ class EnemyAI {
       }
     }
 
-    if (this.room?.getEnemies) {
-      for (const enemy of this.room.getEnemies()) {
+    if (this.room?.enemies) {
+      for (const enemy of this.room.enemies.values()) {
         if (enemy.id === valkyrie.id) continue;
         if (!this.isValidHostileEnemyAggroTarget(valkyrie, enemy)) continue;
         const dist = this.calculateDistance(valkyrie.position, enemy.position);
@@ -10547,7 +10602,7 @@ class EnemyAI {
   damageAlliedUnitsAlongSegmentXZ(startX, startZ, endX, endZ, radiusSq, damage, hitMeta) {
     if (!this.room?.getEnemies) return 0;
     let hitCount = 0;
-    for (const ally of this.room.getEnemies()) {
+    for (const ally of this.room.enemies.values()) {
       if (!ally?.alliedUnit || ally.isDying || ally.health <= 0) continue;
       const ax = ally.position?.x ?? 0;
       const az = ally.position?.z ?? 0;
@@ -10564,7 +10619,7 @@ class EnemyAI {
     if (segLenSq < 1e-4) return 0;
 
     let hitCount = 0;
-    for (const ally of this.room.getEnemies()) {
+    for (const ally of this.room.enemies.values()) {
       if (!ally?.alliedUnit || ally.isDying || ally.health <= 0) continue;
       if (hitAllyIds.has(ally.id)) continue;
 
@@ -10586,7 +10641,7 @@ class EnemyAI {
   countHostileEnemiesAlongSegmentXZ(startX, startZ, endX, endZ, radiusSq, ally = null) {
     if (!this.room?.getEnemies) return 0;
     let count = 0;
-    for (const enemy of this.room.getEnemies()) {
+    for (const enemy of this.room.enemies.values()) {
       if (!this.isValidAlliedKnightTarget(enemy, ally)) continue;
       const ex = enemy.position?.x ?? 0;
       const ez = enemy.position?.z ?? 0;
@@ -10599,7 +10654,7 @@ class EnemyAI {
   damageHostileEnemiesAlongSegmentXZ(startX, startZ, endX, endZ, radiusSq, damage, hitMeta, ally = null) {
     if (!this.room?.getEnemies) return 0;
     let hitCount = 0;
-    for (const enemy of this.room.getEnemies()) {
+    for (const enemy of this.room.enemies.values()) {
       if (!this.isValidAlliedKnightTarget(enemy, ally)) continue;
       const ex = enemy.position?.x ?? 0;
       const ez = enemy.position?.z ?? 0;
@@ -10686,7 +10741,7 @@ class EnemyAI {
       return;
     }
     this.alliedCombatStarted = true;
-    const enemies = this._tickEnemies || this.room.getEnemies();
+    const enemies = this._tickEnemies.length > 0 ? this._tickEnemies : this._refreshTickEnemies();
     for (const e of enemies) {
       if (!this._isPlayerCombatAlly(e) || e.isDying || e.health <= 0) continue;
       e.combatInitiated = true;
@@ -10696,8 +10751,17 @@ class EnemyAI {
     }
   }
 
+  _scheduleTimeout(fn, ms) {
+    const handle = setTimeout(() => {
+      this._pendingTimeouts.delete(handle);
+      fn();
+    }, ms);
+    this._pendingTimeouts.add(handle);
+    return handle;
+  }
+
   _scheduleEnemyTimeout(enemyId, fn, ms) {
-    const handle = setTimeout(fn, ms);
+    const handle = this._scheduleTimeout(fn, ms);
     if (!this.enemyPendingTimeouts.has(enemyId)) {
       this.enemyPendingTimeouts.set(enemyId, new Set());
     }
@@ -10708,7 +10772,10 @@ class EnemyAI {
   _clearEnemyTimeouts(enemyId) {
     const pending = this.enemyPendingTimeouts.get(enemyId);
     if (!pending) return;
-    for (const handle of pending) clearTimeout(handle);
+    for (const handle of pending) {
+      clearTimeout(handle);
+      this._pendingTimeouts.delete(handle);
+    }
     this.enemyPendingTimeouts.delete(enemyId);
   }
 
@@ -10811,7 +10878,7 @@ class EnemyAI {
     const now = Date.now();
     const numericDamage = Number(damage) || 0;
     const shouldOverrideTarget = numericDamage > ALLIED_KNIGHT_PROTECTIVE_OVERRIDE_DAMAGE;
-    for (const ally of this.room.getEnemies()) {
+    for (const ally of this.room.enemies.values()) {
       if (!this._isPlayerCombatAlly(ally) || ally.isDying || ally.health <= 0) continue;
       ally.combatInitiated = true;
       const lockedTarget = this.getAlliedKnightLockedTarget(ally);
@@ -10890,7 +10957,7 @@ class EnemyAI {
     let bestPierceCount = 0;
     let bestDist = Infinity;
 
-    for (const enemy of this.room.getEnemies()) {
+    for (const enemy of this.room.enemies.values()) {
       if (!this.isValidAlliedKnightTarget(enemy, huntress)) continue;
       const dist = this.calculateDistance(huntress.position, enemy.position);
       if (dist > attackRange) continue;
@@ -11019,7 +11086,7 @@ class EnemyAI {
     }
 
     const targetId = targetEnemy.id;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       const liveAlly = this.room?.getEnemy(ally.id);
       if (!liveAlly || liveAlly.isDying || liveAlly.health <= 0 || !this.room?.getGameStarted()) return;
       if (this.room?.isEnemyAffectedBy(liveAlly.id, 'stun')) return;
@@ -11034,7 +11101,7 @@ class EnemyAI {
         z: liveTarget.position.z,
       };
 
-      for (const enemy of this.room.getEnemies()) {
+      for (const enemy of this.room.enemies.values()) {
         if (!this.isValidAlliedKnightTarget(enemy, liveAlly)) continue;
         const ex = enemy.position.x - strikePosition.x;
         const ez = enemy.position.z - strikePosition.z;
@@ -11120,7 +11187,7 @@ class EnemyAI {
         this.scheduleKnightMeleeWindupStep(ally, attackFocus);
         this.telegraphAlliedKnightAttack(ally, target);
         const targetId = target.id;
-        setTimeout(() => {
+        this._scheduleTimeout(() => {
           if (ally.isDying || !this.room?.getGameStarted()) return;
           if (this.room?.isEnemyAffectedBy(ally.id, 'stun')) return;
           if (this.room?.isEnemyAffectedBy(ally.id, 'hostileFreeze')) return;
@@ -11191,7 +11258,7 @@ class EnemyAI {
     const endX = startX + (ddx / segLen) * maxRange;
     const endZ = startZ + (ddz / segLen) * maxRange;
     const hid = huntress.id;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (huntress.isDying || !this.room?.getGameStarted()) return;
       const liveHuntress = this.room?.getEnemy(hid);
       if (!liveHuntress || liveHuntress.isDying) return;
@@ -11264,7 +11331,7 @@ class EnemyAI {
     if (!this.room) return null;
     let best = null;
     let bestDist = Infinity;
-    for (const enemy of this.room.getEnemies()) {
+    for (const enemy of this.room.enemies.values()) {
       if (!this.isValidAlliedKnightTarget(enemy, phantom)) continue;
       const dist = this.calculateDistance(phantom.position, enemy.position);
       if (dist > ALLIED_PHANTOM_ATTACK_RANGE) continue;
@@ -11278,7 +11345,7 @@ class EnemyAI {
 
   scheduleAlliedPhantomDaggerChecks(phantomId, aimTx, aimTz, delaysMs = SHADE_DAGGER_DELAYS_MS) {
     delaysMs.forEach((delayMs) => {
-      setTimeout(() => {
+      this._scheduleTimeout(() => {
         if (!this.room?.getGameStarted()) return;
         const phantom = this.room?.getEnemy(phantomId);
         if (!phantom || phantom.isDying) return;
@@ -11315,7 +11382,7 @@ class EnemyAI {
 
     const phantomId = phantom.id;
     const targetId = targetEnemy.id;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const livePhantom = this.room?.getEnemy(phantomId);
       if (!livePhantom || livePhantom.isDying) return;
@@ -11409,7 +11476,7 @@ class EnemyAI {
       });
     }
     const demonId = demon.id;
-    const t = setTimeout(() => {
+    const t = this._scheduleTimeout(() => {
       this.alliedDemonCompleteLeap(demonId);
     }, GHOUL_LEAP_DURATION_MS);
     this.ghoulLeapTimeout.set(demon.id, t);
@@ -11433,7 +11500,7 @@ class EnemyAI {
       const cz = land.z;
       const r2 = GHOUL_LEAP_LANDING_RADIUS * GHOUL_LEAP_LANDING_RADIUS;
       const leapDamage = this.getDemonLeapDamage(this.getCoopAlliedKnightBoons());
-      for (const enemy of this.room.getEnemies()) {
+      for (const enemy of this.room.enemies.values()) {
         if (!this.isValidAlliedKnightTarget(enemy, demon)) continue;
         const ex = enemy.position?.x ?? 0;
         const ez = enemy.position?.z ?? 0;
@@ -11524,7 +11591,7 @@ class EnemyAI {
         this.telegraphAlliedDemonAttack(ally, target);
         const targetId = target.id;
         const allyId = ally.id;
-        setTimeout(() => {
+        this._scheduleTimeout(() => {
           if (!this.room?.getGameStarted()) return;
           const liveAlly = this.room?.getEnemy(allyId);
           if (!liveAlly || liveAlly.isDying || liveAlly.health <= 0) return;
@@ -11567,8 +11634,10 @@ class EnemyAI {
     if (!this.room) return null;
     let best = null;
     let bestDist = config.aggroRadius;
-    for (const enemy of this.room.getEnemies()) {
+    for (const enemy of this.room.enemies.values()) {
       if (!this.isValidAlliedKnightTarget(enemy, beast)) continue;
+      // Flying enemies (terrorhawk / destiny) are untargetable until they land.
+      if (this._isTargetAirborne(enemy)) continue;
       const dist = this.calculateDistance(beast.position, enemy.position);
       if (dist > bestDist) continue;
       bestDist = dist;
@@ -11595,7 +11664,7 @@ class EnemyAI {
 
     let best = null;
     let bestDist = config.aggroRadius;
-    for (const enemy of this.room.getEnemies()) {
+    for (const enemy of this.room.enemies.values()) {
       if (enemy.type !== 'training-dummy') continue;
       if (!this.isValidAlliedKnightTarget(enemy, beast)) continue;
       const dist = this.calculateDistance(beast.position, enemy.position);
@@ -11703,6 +11772,7 @@ class EnemyAI {
         }
       }
     }
+    this.room?.tickPetCompanionProximityBuffs?.(Date.now());
     this._flushMoves();
   }
 
@@ -11768,7 +11838,7 @@ class EnemyAI {
         const damageType = config.damageType;
         const hitDelay = config.hitDelayMs;
         const damageFallback = config.damageFallback;
-        setTimeout(() => {
+        this._scheduleTimeout(() => {
           if (!this.room?.getGameStarted()) return;
           const liveAlly = this.room?.getEnemy(allyId);
           if (!liveAlly || liveAlly.isDying || liveAlly.health <= 0) return;
@@ -11910,7 +11980,7 @@ class EnemyAI {
     if (now - last < PET_UPGRADE_SIEGEBREAKER_TAUNT_CD_MS) return false;
 
     const hostiles = [];
-    for (const enemy of this.room.getEnemies()) {
+    for (const enemy of this.room.enemies.values()) {
       if (!this.isValidAlliedKnightTarget(enemy, bear)) continue;
       const dist = this.calculateDistance(bear.position, enemy.position);
       if (dist > PET_UPGRADE_SIEGEBREAKER_TAUNT_RANGE) continue;
@@ -11940,8 +12010,9 @@ class EnemyAI {
   findAlliedSpiderEnsnareTarget(spider) {
     let best = null;
     let bestScore = Infinity;
-    for (const enemy of this.room.getEnemies()) {
+    for (const enemy of this.room.enemies.values()) {
       if (!this.isValidAlliedKnightTarget(enemy, spider)) continue;
+      if (this._isTargetAirborne(enemy)) continue;
       const dist = this.calculateDistance(spider.position, enemy.position);
       if (dist > PET_UPGRADE_ENSNARING_THREADS_RANGE) continue;
       const entangled = this.room?.isEnemyAffectedBy?.(enemy.id, 'entangle') ? 1 : 0;
@@ -11982,7 +12053,7 @@ class EnemyAI {
 
     const spiderId = spider.id;
     const targetId = targetEnemy.id;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const liveSpider = this.room?.getEnemy(spiderId);
       if (!liveSpider || liveSpider.isDying || liveSpider.health <= 0) return;
@@ -12028,7 +12099,7 @@ class EnemyAI {
         pos.x += dir.x * PET_UPGRADE_ENSNARING_THREADS_SPEED * (STEP_MS / 1000);
         pos.z += dir.z * PET_UPGRADE_ENSNARING_THREADS_SPEED * (STEP_MS / 1000);
         const hitR2 = PET_UPGRADE_ENSNARING_THREADS_HIT_RADIUS * PET_UPGRADE_ENSNARING_THREADS_HIT_RADIUS;
-        for (const enemy of this.room.getEnemies()) {
+        for (const enemy of this.room.enemies.values()) {
           if (!this.isValidAlliedKnightTarget(enemy, liveSpider)) continue;
           const hdx = enemy.position.x - pos.x;
           const hdz = enemy.position.z - pos.z;
@@ -12088,8 +12159,6 @@ class EnemyAI {
     if (!config) return;
     const now = Date.now();
     this.tryAlliedBeastHpRegen(ally, config, now);
-    // Mending Spores ticks once per AI pass (throttled inside gameRoom).
-    this.room?.tickPetCompanionProximityBuffs?.(now);
     const lockUntil = this.meleeLockUntil.get(ally.id) || 0;
     if (now < lockUntil) return;
 
@@ -12187,7 +12256,7 @@ class EnemyAI {
   findAlliedEnchantressHostilesInRange(enchantress, range) {
     if (!this.room) return [];
     const candidates = [];
-    for (const enemy of this.room.getEnemies()) {
+    for (const enemy of this.room.enemies.values()) {
       if (!this.isValidAlliedKnightTarget(enemy, enchantress)) continue;
       const dist = this.calculateDistance(enchantress.position, enemy.position);
       if (dist > range) continue;
@@ -12218,7 +12287,7 @@ class EnemyAI {
 
     const enchantressId = enchantress.id;
     const targetId = targetEnemy.id;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const liveEnchantress = this.room?.getEnemy(enchantressId);
       if (!liveEnchantress || liveEnchantress.isDying || liveEnchantress.health <= 0) return;
@@ -12260,7 +12329,7 @@ class EnemyAI {
         steps++;
         pos.x += dir.x * GREED_FIREBALL_SPEED * (STEP_MS / 1000);
         pos.z += dir.z * GREED_FIREBALL_SPEED * (STEP_MS / 1000);
-        for (const enemy of this.room.getEnemies()) {
+        for (const enemy of this.room.enemies.values()) {
           if (!this.isValidAlliedKnightTarget(enemy, liveEnchantress)) continue;
           const hdx = enemy.position.x - pos.x;
           const hdz = enemy.position.z - pos.z;
@@ -12321,7 +12390,7 @@ class EnemyAI {
     }
 
     const enchantressId = enchantress.id;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const liveEnchantress = this.room?.getEnemy(enchantressId);
       if (!liveEnchantress || liveEnchantress.isDying || liveEnchantress.health <= 0) return;
@@ -12554,7 +12623,7 @@ class EnemyAI {
     const targetKind = target.kind;
     const targetId = target.id;
     const healerId = healer.id;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       const liveHealer = this.room?.getEnemy?.(healerId);
       if (!liveHealer || liveHealer.isDying || liveHealer.health <= 0 || !this.room?.getGameStarted()) return;
       if (this.room?.isEnemyAffectedBy(liveHealer.id, 'stun')) return;
@@ -12638,7 +12707,7 @@ class EnemyAI {
     const healerId = healer.id;
     const impactDelay = ALLIED_HEALER_ATTACK_CAST_MS + ALLIED_HEALER_ATTACK_TRAVEL_MS;
 
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       const liveHealer = this.room?.getEnemy?.(healerId);
       if (!liveHealer || liveHealer.isDying || liveHealer.health <= 0 || !this.room?.getGameStarted()) return;
       if (this.room?.isEnemyAffectedBy(liveHealer.id, 'stun')) return;
@@ -12774,7 +12843,7 @@ class EnemyAI {
       });
     }
 
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       const spawned = this.room?.getEnemy(zombieId);
       if (spawned && !spawned.isDying && spawned.type === 'player-zombie') {
         let moveSpeed = PLAYER_ZOMBIE_UNLOCK_MOVE_SPEED;
@@ -12791,7 +12860,7 @@ class EnemyAI {
   countLivingVengefulSpirits() {
     if (!this.room) return 0;
     let count = 0;
-    for (const e of this.room.getEnemies()) {
+    for (const e of this.room.enemies.values()) {
       if (
         e &&
         e.type === 'vengeful-spirit' &&
@@ -12861,7 +12930,7 @@ class EnemyAI {
     }
 
     const expireAnimDelay = VENGEFUL_SPIRIT_DURATION_MS - VENGEFUL_SPIRIT_EXPIRE_ANIM_MS;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       const live = this.room?.getEnemy(spiritId);
       if (!live || live.isDying || live.type !== 'vengeful-spirit') return;
       if (live.isExpiring) return;
@@ -12876,13 +12945,13 @@ class EnemyAI {
     }, expireAnimDelay);
 
     // Guaranteed removal after full lifetime (works even if companion/main AI misses expireAt).
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       const live = this.room?.getEnemy(spiritId);
       if (!live || live.type !== 'vengeful-spirit') return;
       if (live.isDying || live._vengefulRemovalScheduled) return;
       live.isDying = true;
       live._vengefulRemovalScheduled = true;
-      setTimeout(() => {
+      this._scheduleTimeout(() => {
         if (!this.room?.getGameStarted()) return;
         if (this.room?.enemies.has(spiritId)) {
           this.room.enemies.delete(spiritId);
@@ -12919,7 +12988,7 @@ class EnemyAI {
       if (spirit._vengefulRemovalScheduled) return;
       spirit._vengefulRemovalScheduled = true;
       const sid = spirit.id;
-      setTimeout(() => {
+      this._scheduleTimeout(() => {
         if (!this.room?.getGameStarted()) return;
         if (this.room?.enemies.has(sid)) {
           this.room.enemies.delete(sid);
@@ -12985,7 +13054,7 @@ class EnemyAI {
 
     const targetId = hostile.id;
     const spiritId = spirit.id;
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const liveSpirit = this.room?.getEnemy(spiritId);
       if (!liveSpirit || liveSpirit.isDying || liveSpirit.isExpiring || liveSpirit.health <= 0) return;
@@ -13007,7 +13076,7 @@ class EnemyAI {
     const isPlayerCombatAlly = this._isPlayerCombatAlly(zombie);
     let best = null;
     let bestD = Infinity;
-    for (const e of this.room.getEnemies()) {
+    for (const e of this.room.enemies.values()) {
       if (!e || e.id === zombie.id || e.isDying) continue;
       if (this.isFriendlyCombatUnit(e)) continue;
       if (this.isAssassinUntargetable(e)) continue;
@@ -13069,7 +13138,7 @@ class EnemyAI {
       });
     }
 
-    for (const e of this.room.getEnemies()) {
+    for (const e of this.room.enemies.values()) {
       if (!e || e.id === live.id || e.isDying) continue;
       if (this.isFriendlyCombatUnit(e)) continue;
       if (e.type === 'training-dummy') continue;
@@ -13093,7 +13162,7 @@ class EnemyAI {
       zombie.isDying = true;
       const zid = zombie.id;
       const ownerId = zombie.ownerPlayerId;
-      setTimeout(() => {
+      this._scheduleTimeout(() => {
         if (!this.room?.getGameStarted()) return;
         if (this.room?.enemies.has(zid)) {
           this.room.enemies.delete(zid);
@@ -13140,7 +13209,7 @@ class EnemyAI {
           this.meleeLockUntil.set(zombie.id, now + SWING_LOCK_MS);
           this.telegraphPlayerZombieAttack(zombie, hostile);
 
-          setTimeout(() => {
+          this._scheduleTimeout(() => {
             if (zombie.isDying || !this.room?.getGameStarted()) return;
             const attacker = this.room?.getEnemy(zombie.id) || zombie;
             const liveHostile = this.room?.getEnemy(hostile.id);
@@ -13223,7 +13292,7 @@ class EnemyAI {
     if (greed.expireAt && now >= greed.expireAt && !greed.isDying) {
       greed.isDying = true;
       const gid = greed.id;
-      setTimeout(() => {
+      this._scheduleTimeout(() => {
         if (!this.room?.getGameStarted()) return;
         if (this.room?.enemies.has(gid)) {
           this.room.enemies.delete(gid);
@@ -13338,7 +13407,7 @@ class EnemyAI {
         impactAt: now + GREED_GREEN_CAST_LOCK_MS, timestamp: now,
       });
     }
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       const live = this.room?.getEnemy(greed.id);
       if (!live || live.isDying) return;
       const before = live.health;
@@ -13354,8 +13423,7 @@ class EnemyAI {
 
   /**
    * Purple — frost ray, reusing Purple Knight's exact `knightCastFrost` mechanic verbatim
-   * (it only touches knight.id/position/rotation and generic room getters), which also makes
-   * the resulting freeze count for Green Titans' `_findStunnedOrFrozenTitanTarget` for free.
+   * (it only touches knight.id/position/rotation and generic room getters).
    */
   greedCastFrostRay(greed, targetPlayer) {
     const now = Date.now();
@@ -14575,7 +14643,7 @@ class EnemyAI {
     const frostQueenId = frostQueen.id;
     const fallbackAim = { ...castTarget.position };
 
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const liveQueen = this.room?.getEnemy(frostQueenId);
       if (!liveQueen || liveQueen.isDying) return;
@@ -14641,7 +14709,7 @@ class EnemyAI {
           });
         }
 
-        setTimeout(() => {
+        this._scheduleTimeout(() => {
           if (!this.room?.getGameStarted()) return;
           if (this.room?.isEnemyAffectedBy(frostQueenId, 'stun')) return;
 
@@ -14771,7 +14839,7 @@ class EnemyAI {
 
     for (let i = 1; i <= tickCount; i += 1) {
       const delayMs = i * FROST_QUEEN_ICE_STORM_TICK_MS;
-      const handle = setTimeout(() => {
+      const handle = this._scheduleTimeout(() => {
         if (!this.room?.getGameStarted()) return;
         const liveQueen = this.room?.getEnemy(frostQueenId);
         if (!liveQueen || liveQueen.isDying) return;
@@ -14845,7 +14913,7 @@ class EnemyAI {
     }
 
     // Channel end
-    const endHandle = setTimeout(() => {
+    const endHandle = this._scheduleTimeout(() => {
       this.frostQueenIceStormActiveUntil.delete(frostQueenId);
       this.frostQueenIceStormTimeouts.delete(frostQueenId);
       if (this.io) {
@@ -15925,6 +15993,15 @@ class EnemyAI {
       return;
     }
 
+    // Airborne player (Skyfall): hold calm idle — no run/pounce chase underneath.
+    if (resolved.kind === 'player' && this._isTargetAirborne(resolved.player)) {
+      tiger.tigerLocomotion = 'walk';
+      tiger.moveSpeed = 0;
+      const profile = getMeleeProfile(tiger.type === 'boss-tiger' ? 'boss-tiger' : 'tiger');
+      this.tryMeleeEngage(tiger, resolved, moveTarget, profile, { now, distance });
+      return;
+    }
+
     tiger.tigerLocomotion = 'run';
     tiger.moveSpeed = TIGER_RUN_SPEED;
 
@@ -16084,6 +16161,7 @@ class EnemyAI {
     hawk.takeoffEndsAt = now + TERRORHAWK_TAKEOFF_MS;
     hawk.diveLandX = null;
     hawk.diveLandZ = null;
+    hawk.diveDescendAt = null;
     hawk.groundMinUntil = null;
     if (hawk.position.y == null || hawk.position.y < 0) hawk.position.y = 0;
     this.meleeLockUntil.set(hawk.id, hawk.takeoffEndsAt);
@@ -16105,6 +16183,7 @@ class EnemyAI {
     hawk.moveSpeed = 0;
     hawk.diveLandX = landX;
     hawk.diveLandZ = landZ;
+    hawk.diveDescendAt = now + TERRORHAWK_DIVE_TELEGRAPH_MS;
     hawk.position.x = landX;
     hawk.position.z = landZ;
     hawk.position.y = TERRORHAWK_HOVER_Y;
@@ -16114,6 +16193,13 @@ class EnemyAI {
         terrorhawkId: hawk.id,
         landPosition: { x: landX, y: 0, z: landZ },
         position: { ...hawk.position },
+        timestamp: now,
+      });
+      // Telegraph SFX right before the dive descends.
+      this.io.to(this.roomId).emit('beast-attack-sfx', {
+        soundId: 'beast_wyvern_attack',
+        beastId: hawk.id,
+        position: hawk.position,
         timestamp: now,
       });
       this._queueMove(hawk.id, hawk.position, hawk.rotation);
@@ -16128,6 +16214,7 @@ class EnemyAI {
     if (hawk.diveLandZ != null) hawk.position.z = hawk.diveLandZ;
     hawk.terrorhawkPhase = 'land';
     hawk.moveSpeed = 0;
+    hawk.diveDescendAt = null;
     hawk.landEndsAt = now + TERRORHAWK_JUMPEND_MS;
     hawk.groundMinUntil = now + TERRORHAWK_MIN_GROUND_MS;
     this.meleeLockUntil.set(hawk.id, hawk.landEndsAt);
@@ -16231,11 +16318,16 @@ class EnemyAI {
       }
       return;
     }
-    // --- Dive: rapid descent, XZ frozen ---
+    // --- Dive: hold briefly for telegraph SFX, then rapid descent (XZ frozen) ---
     if (phase === 'dive') {
       hawk.moveSpeed = 0;
       if (hawk.diveLandX != null) hawk.position.x = hawk.diveLandX;
       if (hawk.diveLandZ != null) hawk.position.z = hawk.diveLandZ;
+      if (hawk.diveDescendAt && now < hawk.diveDescendAt) {
+        hawk.position.y = TERRORHAWK_HOVER_Y;
+        this._queueMove(hawk.id, hawk.position, hawk.rotation);
+        return;
+      }
       hawk.position.y = Math.max(0, hawk.position.y - TERRORHAWK_DIVE_SPEED * deltaTime);
       this._queueMove(hawk.id, hawk.position, hawk.rotation);
       if (hawk.position.y <= 0.05) {
@@ -16436,7 +16528,7 @@ class EnemyAI {
     wyvern.breathRoarVolleyId = roarVolleyId;
 
     if (breathVariant === 2) {
-      const handle = setTimeout(() => {
+      const handle = this._scheduleTimeout(() => {
         if (!this.room?.getGameStarted()) return;
         const live = this.room?.getEnemy?.(wid);
         if (!live || live.isDying || live.health <= 0 || !live.breathActive) return;
@@ -16445,7 +16537,7 @@ class EnemyAI {
       }, launchAtMs);
       launchHandles.push(handle);
     } else {
-      const handle = setTimeout(() => {
+      const handle = this._scheduleTimeout(() => {
         if (!this.room?.getGameStarted()) return;
         const live = this.room?.getEnemy?.(wid);
         if (live && !live.isDying && live.health > 0 && live.breathActive) {
@@ -16457,7 +16549,7 @@ class EnemyAI {
     this.wyvernBreathLaunchTimeout.set(wid, launchHandles);
 
     // After full cast lock: clear breath state for clients (movement unlock).
-    const endHandle = setTimeout(() => {
+    const endHandle = this._scheduleTimeout(() => {
       this.wyvernBreathEndTimeout.delete(wid);
       this.endWyvernBreath(wid);
     }, castLockMs);
@@ -16536,12 +16628,18 @@ class EnemyAI {
     return { start, target, dirLen, baseDir };
   }
 
-  /** Fire all roar fan bolts in one tick (no stagger). */
+  /** Fire all roar fan bolts in one tick (no stagger). Shares hit registry across bolts. */
   _launchRoarFanVolley(enemy, resolved, fanAngles, muzzleYOffset, onBolt, maxRange = null) {
     const aim = this._resolveBreathFireboltAim(enemy, resolved, muzzleYOffset, maxRange);
     if (!aim) return;
     const { start, target, dirLen, baseDir } = aim;
     const volleyTs = Date.now();
+    // One hit per target across the entire fan (prevents multi-bolt stacking).
+    const volleyHits = {
+      players: new Set(),
+      allies: new Set(),
+      zombies: new Set(),
+    };
     for (let fanIndex = 0; fanIndex < fanAngles.length; fanIndex++) {
       const fanDir = rotateXZDir(baseDir.x, baseDir.z, fanAngles[fanIndex]);
       const fanTarget = {
@@ -16549,7 +16647,7 @@ class EnemyAI {
         y: target.y,
         z: start.z + fanDir.z * dirLen,
       };
-      onBolt(enemy.id, start, fanTarget, fanIndex, volleyTs);
+      onBolt(enemy.id, start, fanTarget, fanIndex, volleyTs, volleyHits);
     }
   }
 
@@ -16560,9 +16658,9 @@ class EnemyAI {
       resolved,
       WYVERN_BREATH_ROAR_FAN_ANGLES_RAD,
       1.4,
-      (wid, start, fanTarget, fanIndex, volleyTs) => {
+      (wid, start, fanTarget, fanIndex, volleyTs, volleyHits) => {
         this._simulateWyvernBreathFirebolt(
-          wid, start, fanTarget, `${wid}-roar-${fanIndex}-${volleyTs}`, 2,
+          wid, start, fanTarget, `${wid}-roar-${fanIndex}-${volleyTs}`, 2, volleyHits,
         );
       },
       WYVERN_BREATH_MAX_RANGE,
@@ -16580,7 +16678,7 @@ class EnemyAI {
   }
 
   /** Emit VFX + run authoritative straight-line pierce sim for one breath firebolt. */
-  _simulateWyvernBreathFirebolt(wid, start, target, fireboltId, breathVariant = 1) {
+  _simulateWyvernBreathFirebolt(wid, start, target, fireboltId, breathVariant = 1, volleyHits = null) {
     if (this.io) {
       this.io.to(this.roomId).emit('wyvern-breath-firebolt', {
         wyvernId: wid,
@@ -16600,9 +16698,10 @@ class EnemyAI {
     const maxSteps = Math.ceil((dirLen / GREED_FIREBALL_SPEED) * (1000 / STEP_MS)) + 4;
     let steps = 0;
     const hitRadiusSq = GREED_FIREBALL_HIT_RADIUS * GREED_FIREBALL_HIT_RADIUS;
-    const hitPlayerIds = new Set();
-    const hitAllyIds = new Set();
-    const hitZombieIds = new Set();
+    // Prefer shared volley registry so fan bolts don't multi-hit the same target.
+    const hitPlayerIds = volleyHits?.players ?? new Set();
+    const hitAllyIds = volleyHits?.allies ?? new Set();
+    const hitZombieIds = volleyHits?.zombies ?? new Set();
     const hitMeta = { sourceEnemyId: wid, damageType: 'wyvern_breath' };
     const sx = start.x;
     const sz = start.z;
@@ -16732,7 +16831,7 @@ class EnemyAI {
     }, SPECTRE_WHIRLWIND_TICK_MS);
     this._addEnemyHazardInterval(sid, intervalId);
 
-    const endHandle = setTimeout(() => {
+    const endHandle = this._scheduleTimeout(() => {
       this.spectreWhirlwindEndTimeout.delete(sid);
       this.endSpectreWhirlwind(sid);
     }, SPECTRE_WHIRLWIND_DURATION_MS);
@@ -16917,14 +17016,14 @@ class EnemyAI {
       });
     }
 
-    setTimeout(() => {
+    this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const live = this.room?.getEnemy?.(sid);
       if (!live || live.isDying || live.health <= 0 || !live.heartstrikeActive) return;
       this.applyDeathKnightHeartstrikeDamage(live);
     }, DEATH_KNIGHT_HIT_DELAY_MS);
 
-    const endHandle = setTimeout(() => {
+    const endHandle = this._scheduleTimeout(() => {
       this.deathKnightHeartstrikeEndTimeout.delete(sid);
       this.endDeathKnightHeartstrike(sid);
     }, DEATH_KNIGHT_SWING_LOCK_MS);
@@ -17152,7 +17251,7 @@ class EnemyAI {
     const prevSpawn = this.shamanSpiritWolvesSpawnTimeout.get(sid);
     if (prevSpawn) clearTimeout(prevSpawn);
 
-    const spawnHandle = setTimeout(() => {
+    const spawnHandle = this._scheduleTimeout(() => {
       this.shamanSpiritWolvesSpawnTimeout.delete(sid);
       if (!this.room?.getGameStarted()) return;
       const live = this.room?.getEnemy?.(sid);
@@ -17251,7 +17350,7 @@ class EnemyAI {
       });
     }
 
-    const zapHandle = setTimeout(() => {
+    const zapHandle = this._scheduleTimeout(() => {
       this.shamanStormShockZapTimeout.delete(sid);
       if (!this.room?.getGameStarted()) return;
       const live = this.room?.getEnemy?.(sid);
@@ -17260,7 +17359,7 @@ class EnemyAI {
     }, SHAMAN_STORM_SHOCK_WINDUP_MS);
     this.shamanStormShockZapTimeout.set(sid, zapHandle);
 
-    const endHandle = setTimeout(() => {
+    const endHandle = this._scheduleTimeout(() => {
       this.shamanStormShockEndTimeout.delete(sid);
       this.endShamanStormShock(sid);
     }, SHAMAN_STORM_SHOCK_CAST_LOCK_MS);
@@ -17688,15 +17787,21 @@ class EnemyAI {
   _destinyBeginTakeoff(destiny) {
     if (!destiny || destiny.isDying) return;
     const now = Date.now();
-    // Cancel any in-progress ground breath.
+    // Cancel any in-progress ground breath / wing attack.
     if (destiny.breathActive) {
       this.endDestinyBreath(destiny.id);
+    }
+    if (destiny.wingActive) {
+      this.clearDestinyWingPillarTimers(destiny.id);
+      this.endDestinyWingAttack(destiny.id);
+      destiny.wingCastId = null;
     }
     destiny.destinyPhase = 'takeoff';
     destiny.moveSpeed = 0;
     destiny.flyAttackVolleysFired = 0;
     destiny.takeoffStartedAt = now;
     destiny.takeoffEndsAt = now + DESTINY_FLY_TAKEOFF_MS;
+    destiny.nextAirEmberAt = now + DESTINY_AIR_EMBER_INTERVAL_MS;
     destiny.flyIdleUntil = null;
     destiny.flyAttackEndsAt = null;
     destiny.landEndsAt = null;
@@ -17878,6 +17983,12 @@ class EnemyAI {
         position: { ...destiny.position },
         timestamp: now,
       });
+      this.io.to(this.roomId).emit('beast-attack-sfx', {
+        soundId: 'beast_wyvern_roar',
+        beastId: did,
+        position: destiny.position,
+        timestamp: now,
+      });
       this._queueMove(destiny.id, destiny.position, destiny.rotation);
     }
 
@@ -17885,7 +17996,7 @@ class EnemyAI {
     destiny.breathRoarVolleyId = roarVolleyId;
     const launchAtMs = Math.max(0, DESTINY_FLY_ATTACK_CAST_MS - DESTINY_FLY_ATTACK_LAUNCH_EARLY_MS);
     const launchHandles = [];
-    const handle = setTimeout(() => {
+    const handle = this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const live = this.room?.getEnemy?.(did);
       if (!live || live.isDying || live.health <= 0) return;
@@ -17897,7 +18008,7 @@ class EnemyAI {
     launchHandles.push(handle);
     this.destinyFlyAttackLaunchTimeout.set(did, launchHandles);
 
-    const endHandle = setTimeout(() => {
+    const endHandle = this._scheduleTimeout(() => {
       this.destinyFlyAttackEndTimeout.delete(did);
       const live = this.room?.getEnemy?.(did);
       if (!live || live.isDying) return;
@@ -17934,17 +18045,87 @@ class EnemyAI {
       resolved,
       DESTINY_BREATH_ROAR_FAN_ANGLES_RAD,
       DESTINY_FLY_MUZZLE_Y_OFFSET,
-      (did, start, fanTarget, fanIndex, volleyTs) => {
+      (did, start, fanTarget, fanIndex, volleyTs, volleyHits) => {
         this._simulateDestinyBreathFirebolt(
-          did, start, fanTarget, `${did}-air-roar-${fanIndex}-${volleyTs}`, true,
+          did, start, fanTarget, `${did}-air-roar-${fanIndex}-${volleyTs}`, true, volleyHits,
         );
       },
     );
     _enemyAiLog(`🐉 Destiny ${destiny.id} air roar fan volley (${DESTINY_BREATH_ROAR_FAN_ANGLES_RAD.length} bolts)`);
   }
 
+  /** Air-only — ground ember at combat-target XZ; ticks player damage for its duration. */
+  destinySpawnAirEmberPatch(destiny, position) {
+    const now = Date.now();
+    const did = destiny.id;
+    const zoneId = `destiny-ember-${did}-${now}`;
+    const pos = { x: position.x, z: position.z };
+    this.io?.to(this.roomId).emit('destiny-ember-zone-spawned', {
+      id: zoneId,
+      position: pos,
+      radius: DESTINY_AIR_EMBER_RADIUS,
+      durationMs: DESTINY_AIR_EMBER_DURATION_MS,
+      timestamp: now,
+    });
+    let elapsed = 0;
+    const intervalId = setInterval(() => {
+      if (!this.room?.getGameStarted()) {
+        clearInterval(intervalId);
+        this._removeEnemyHazardInterval(did, intervalId);
+        return;
+      }
+      elapsed += DESTINY_AIR_EMBER_TICK_MS;
+      this.room?.damagePlayersInHorizontalRing(
+        pos,
+        DESTINY_AIR_EMBER_RADIUS,
+        DESTINY_AIR_EMBER_DAMAGE,
+        'destiny_air_ember',
+        { sourceEnemyId: did },
+      );
+      if (elapsed >= DESTINY_AIR_EMBER_DURATION_MS) {
+        clearInterval(intervalId);
+        this._removeEnemyHazardInterval(did, intervalId);
+        this.io?.to(this.roomId).emit('destiny-ember-zone-expired', { id: zoneId, timestamp: Date.now() });
+      }
+    }, DESTINY_AIR_EMBER_TICK_MS);
+    this._addEnemyHazardInterval(did, intervalId);
+  }
+
+  /** While airborne, drop an ember patch on the combat target every DESTINY_AIR_EMBER_INTERVAL_MS. */
+  destinyMaybeSpawnAirEmber(destiny, players) {
+    if (!destiny || destiny.isDying || destiny.health <= 0) return;
+    const now = Date.now();
+    if (now < (destiny.nextAirEmberAt || 0)) return;
+
+    let aggroData = this.enemyAggro.get(destiny.id);
+    if (!aggroData) {
+      const closestPlayer = this.findClosestPlayer(destiny, players);
+      if (!closestPlayer) return;
+      aggroData = {
+        targetPlayerId: closestPlayer.id,
+        targetZombieId: null,
+        targetTrapId: null,
+        lastUpdate: Date.now(),
+        aggro: 100,
+        isAggroed: true,
+      };
+      this.enemyAggro.set(destiny.id, aggroData);
+    }
+
+    const resolved = this.resolveAggroCombatTarget(aggroData, destiny, players);
+    if (!resolved) return;
+
+    const tpos = this.combatTargetPosition(resolved);
+    if (!tpos) return;
+
+    destiny.nextAirEmberAt = now + DESTINY_AIR_EMBER_INTERVAL_MS;
+    this.destinySpawnAirEmberPatch(destiny, tpos);
+  }
+
   updateDestinyFlyAI(destiny, players) {
     if (!destiny || destiny.isDying || destiny.health <= 0) return;
+
+    this.destinyMaybeSpawnAirEmber(destiny, players);
 
     const now = Date.now();
     const phase = destiny.destinyPhase;
@@ -18215,9 +18396,26 @@ class EnemyAI {
       return;
     }
 
-    if (destiny.breathActive) return;
+    if (destiny.breathActive || destiny.wingActive) return;
 
-    if (this.tryDestinyBreath(destiny, resolved, distance, now)) return;
+    const breathOk = this.canDestinyBreath(destiny, distance, now);
+    const wingOk = this.canDestinyWingAttack(destiny, distance, now);
+    if (breathOk && wingOk) {
+      if (Math.random() < 0.5) {
+        this.startDestinyWingAttack(destiny, resolved);
+      } else {
+        this.startDestinyBreath(destiny, resolved);
+      }
+      return;
+    }
+    if (breathOk) {
+      this.startDestinyBreath(destiny, resolved);
+      return;
+    }
+    if (wingOk) {
+      this.startDestinyWingAttack(destiny, resolved);
+      return;
+    }
 
     const lockUntil = this.meleeLockUntil.get(destiny.id) || 0;
     if (now < lockUntil) {
@@ -18229,17 +18427,23 @@ class EnemyAI {
     this.tryMeleeEngage(destiny, resolved, moveTarget, profile, { now, distance });
   }
 
-  tryDestinyBreath(destiny, resolved, distance, now) {
+  canDestinyBreath(destiny, distance, now) {
     if (!destiny || destiny.isDying || destiny.health <= 0) return false;
     if (destiny.destinyPhase && destiny.destinyPhase !== 'ground') return false;
-    if (destiny.breathActive) return false;
+    if (destiny.breathActive || destiny.wingActive) return false;
     if (this.room?.isEnemyAffectedBy(destiny.id, 'freeze')) return false;
     if (this.room?.isEnemyAffectedBy(destiny.id, 'stun')) return false;
     if (distance > DESTINY_BREATH_CAST_RANGE) return false;
-
+    if (distance <= DESTINY_BREATH_MIN_RANGE) return false;
+    const readyAt = this.destinyGroundSpecialReadyAt.get(destiny.id) || 0;
+    if (now < readyAt) return false;
     const last = this.destinyBreathCooldown.get(destiny.id) || 0;
     if (now - last < DESTINY_BREATH_COOLDOWN_MS) return false;
+    return true;
+  }
 
+  tryDestinyBreath(destiny, resolved, distance, now) {
+    if (!this.canDestinyBreath(destiny, distance, now)) return false;
     this.startDestinyBreath(destiny, resolved);
     return true;
   }
@@ -18262,6 +18466,7 @@ class EnemyAI {
 
     const castLockMs = DESTINY_BREATH_ROAR_CAST_LOCK_MS;
     this.meleeLockUntil.set(did, now + castLockMs);
+    this.destinyGroundSpecialReadyAt.set(did, now + castLockMs + DESTINY_GROUND_SPECIAL_GAP_MS);
 
     const aimPos = this.combatTargetPosition(resolved);
     if (aimPos) {
@@ -18277,6 +18482,12 @@ class EnemyAI {
         position: destiny.position,
         timestamp: now,
       });
+      this.io.to(this.roomId).emit('beast-attack-sfx', {
+        soundId: 'beast_wyvern_roar',
+        beastId: did,
+        position: destiny.position,
+        timestamp: now,
+      });
     }
 
     const launchAtMs = Math.max(0, castLockMs - DESTINY_BREATH_LAUNCH_EARLY_MS);
@@ -18284,7 +18495,7 @@ class EnemyAI {
     const roarVolleyId = now;
     destiny.breathRoarVolleyId = roarVolleyId;
 
-    const handle = setTimeout(() => {
+    const handle = this._scheduleTimeout(() => {
       if (!this.room?.getGameStarted()) return;
       const live = this.room?.getEnemy?.(did);
       if (!live || live.isDying || live.health <= 0 || !live.breathActive) return;
@@ -18294,7 +18505,7 @@ class EnemyAI {
     launchHandles.push(handle);
     this.destinyBreathLaunchTimeout.set(did, launchHandles);
 
-    const endHandle = setTimeout(() => {
+    const endHandle = this._scheduleTimeout(() => {
       this.destinyBreathEndTimeout.delete(did);
       this.endDestinyBreath(did);
     }, castLockMs);
@@ -18329,6 +18540,144 @@ class EnemyAI {
     }
   }
 
+  canDestinyWingAttack(destiny, distance, now) {
+    if (!destiny || destiny.isDying || destiny.health <= 0) return false;
+    if (destiny.destinyPhase && destiny.destinyPhase !== 'ground') return false;
+    if (destiny.breathActive || destiny.wingActive) return false;
+    if (this.room?.isEnemyAffectedBy(destiny.id, 'freeze')) return false;
+    if (this.room?.isEnemyAffectedBy(destiny.id, 'stun')) return false;
+    if (distance > DESTINY_WING_CAST_RANGE) return false;
+    const readyAt = this.destinyGroundSpecialReadyAt.get(destiny.id) || 0;
+    if (now < readyAt) return false;
+    const last = this.destinyWingCooldown.get(destiny.id) || 0;
+    if (now - last < DESTINY_WING_COOLDOWN_MS) return false;
+    return true;
+  }
+
+  tryDestinyWingAttack(destiny, resolved, distance, now) {
+    if (!this.canDestinyWingAttack(destiny, distance, now)) return false;
+    this.startDestinyWingAttack(destiny, resolved);
+    return true;
+  }
+
+  clearDestinyWingPillarTimers(destinyId) {
+    const arr = this.destinyWingPillarTimeouts.get(destinyId);
+    if (arr) {
+      for (const h of arr) clearTimeout(h);
+    }
+    this.destinyWingPillarTimeouts.delete(destinyId);
+  }
+
+  addDestinyWingPillarTimeout(destinyId, handle) {
+    const arr = this.destinyWingPillarTimeouts.get(destinyId) || [];
+    arr.push(handle);
+    this.destinyWingPillarTimeouts.set(destinyId, arr);
+  }
+
+  startDestinyWingAttack(destiny, resolved) {
+    const now = Date.now();
+    const did = destiny.id;
+    if (destiny.wingActive) return;
+
+    const staleEnd = this.destinyWingEndTimeout.get(did);
+    if (staleEnd) clearTimeout(staleEnd);
+    this.clearDestinyWingPillarTimers(did);
+
+    destiny.wingActive = true;
+    this.destinyWingCooldown.set(did, now);
+
+    const castLockMs = DESTINY_WING_CAST_LOCK_MS;
+    this.meleeLockUntil.set(did, now + castLockMs);
+    this.destinyGroundSpecialReadyAt.set(did, now + castLockMs + DESTINY_GROUND_SPECIAL_GAP_MS);
+
+    const aimPos = this.combatTargetPosition(resolved);
+    if (aimPos) {
+      this._smoothRotateEnemyTowardPoint(destiny, aimPos, { instant: true });
+      if (this.io) this._queueMove(destiny.id, destiny.position, destiny.rotation);
+    }
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('destiny-wing-telegraph', {
+        destinyId: did,
+        durationMs: castLockMs,
+        position: destiny.position,
+        timestamp: now,
+      });
+    }
+
+    const r = destiny.rotation || 0;
+    const lx = Math.cos(r);
+    const lz = -Math.sin(r);
+    const py = destiny.position.y ?? 0;
+    const ox = destiny.position.x;
+    const oz = destiny.position.z;
+    const wingCastId = now;
+    destiny.wingCastId = wingCastId;
+
+    const erupt = (center) => {
+      const live = this.room?.getEnemy?.(did);
+      if (!this.room?.getGameStarted() || !live || live.isDying || live.health <= 0) return;
+      if (live.type !== 'destiny' || live.wingCastId !== wingCastId) return;
+      if (live.destinyPhase && live.destinyPhase !== 'ground') return;
+      if (this.io) {
+        this.io.to(this.roomId).emit('destiny-wing-pillar', {
+          destinyId: did,
+          position: { x: center.x, y: center.y, z: center.z },
+          timestamp: Date.now(),
+        });
+      }
+      this.room.damagePlayersInHorizontalRing(
+        center,
+        DESTINY_WING_PILLAR_RADIUS,
+        DESTINY_WING_PILLAR_DAMAGE,
+        'destiny_wing_pillar',
+      );
+    };
+
+    for (let i = 0; i < DESTINY_WING_PILLAR_COUNT; i++) {
+      const dist = DESTINY_WING_PILLAR_BASE_OFFSET + i * DESTINY_WING_PILLAR_STEP;
+      const delay = DESTINY_WING_PILLAR_FIRST_DELAY_MS + i * DESTINY_WING_PILLAR_STAGGER_MS;
+      for (const side of [-1, 1]) {
+        const center = {
+          x: ox + lx * side * dist,
+          y: py,
+          z: oz + lz * side * dist,
+        };
+        const h = this._scheduleTimeout(() => erupt(center), delay);
+        this.addDestinyWingPillarTimeout(did, h);
+      }
+    }
+
+    const endHandle = this._scheduleTimeout(() => {
+      this.destinyWingEndTimeout.delete(did);
+      this.endDestinyWingAttack(did);
+    }, castLockMs);
+    this.destinyWingEndTimeout.set(did, endHandle);
+
+    _enemyAiLog(`🐉 Destiny ${did} casting wing attack (${castLockMs}ms).`);
+  }
+
+  endDestinyWingAttack(destinyId) {
+    const endHandle = this.destinyWingEndTimeout.get(destinyId);
+    if (endHandle) {
+      clearTimeout(endHandle);
+      this.destinyWingEndTimeout.delete(destinyId);
+    }
+    // Do not clear pillar timers here — waves may still be in flight; takeoff/death clears them.
+
+    const destiny = this.room?.getEnemy?.(destinyId);
+    if (destiny) {
+      destiny.wingActive = false;
+    }
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('destiny-wing-end', {
+        destinyId,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
   /** Destiny roar: simultaneous 5-bolt fan. */
   destinyLaunchRoarFanVolley(destiny, resolved) {
     this._launchRoarFanVolley(
@@ -18336,16 +18685,16 @@ class EnemyAI {
       resolved,
       DESTINY_BREATH_ROAR_FAN_ANGLES_RAD,
       2.2,
-      (did, start, fanTarget, fanIndex, volleyTs) => {
+      (did, start, fanTarget, fanIndex, volleyTs, volleyHits) => {
         this._simulateDestinyBreathFirebolt(
-          did, start, fanTarget, `${did}-roar-${fanIndex}-${volleyTs}`,
+          did, start, fanTarget, `${did}-roar-${fanIndex}-${volleyTs}`, false, volleyHits,
         );
       },
     );
     _enemyAiLog(`🐉 Destiny ${destiny.id} roar fan volley (${DESTINY_BREATH_ROAR_FAN_ANGLES_RAD.length} bolts)`);
   }
 
-  _simulateDestinyBreathFirebolt(did, start, target, fireboltId, fromAir = false) {
+  _simulateDestinyBreathFirebolt(did, start, target, fireboltId, fromAir = false, volleyHits = null) {
     if (this.io) {
       this.io.to(this.roomId).emit('destiny-breath-firebolt', {
         destinyId: did,
@@ -18365,20 +18714,52 @@ class EnemyAI {
     const maxSteps = Math.ceil((dirLen / GREED_FIREBALL_SPEED) * (1000 / STEP_MS)) + 4;
     let steps = 0;
     const hitRadiusSq = GREED_FIREBALL_HIT_RADIUS * GREED_FIREBALL_HIT_RADIUS;
+    // Prefer shared volley registry so fan bolts don't multi-hit the same target.
+    const hitPlayerIds = volleyHits?.players ?? new Set();
+    const hitAllyIds = volleyHits?.allies ?? new Set();
+
     const applyBreathImpact = () => {
-      this.room.damagePlayersInHorizontalRing(
-        { x: pos.x, z: pos.z },
-        GREED_FIREBALL_HIT_RADIUS,
-        DESTINY_BREATH_DAMAGE,
-        'destiny_breath',
-        { sourceEnemyId: did },
-      );
-      this.room.tryDamageAlliedKnightInXZDisk(
-        { x: pos.x, z: pos.z },
-        GREED_FIREBALL_HIT_RADIUS,
-        DESTINY_BREATH_DAMAGE,
-        { sourceEnemyId: did, damageType: 'destiny_breath' },
-      );
+      const livePlayers = this.room?.getPlayers() || [];
+      for (const p of livePlayers) {
+        if (!p || p.health <= 0 || hitPlayerIds.has(p.id)) continue;
+        const hdx = p.position.x - pos.x;
+        const hdz = p.position.z - pos.z;
+        if (hdx * hdx + hdz * hdz > hitRadiusSq) continue;
+        hitPlayerIds.add(p.id);
+        if (this.room?.isCoopCombatTransitionActive?.()) continue;
+        const { wasKilled, persephoneTriggered, dodged, negationType, appliedDamage } =
+          this.room._applyCoopPlayerIncomingDamage(p, DESTINY_BREATH_DAMAGE);
+        if (persephoneTriggered) this.room._emitPersephoneTriggered(p.id, p);
+        this.room._emitCoopIncomingDamageResult(p.id, p, {
+          damage: appliedDamage,
+          damageType: 'destiny_breath',
+          wasKilled,
+          persephoneTriggered,
+          dodged,
+          negationType,
+          meta: { sourceEnemyId: did },
+        });
+        this.room._tryEmitCoopRoomWhisper?.();
+      }
+      // Allied units: disk damage once per volley (mark all currently-in-range allies).
+      let anyUnhitAllyInDisk = false;
+      for (const ally of this.room?.getEnemies?.() || []) {
+        if (!ally?.alliedUnit || ally.isDying || ally.health <= 0) continue;
+        const hdx = (ally.position?.x ?? 0) - pos.x;
+        const hdz = (ally.position?.z ?? 0) - pos.z;
+        if (hdx * hdx + hdz * hdz > hitRadiusSq) continue;
+        if (hitAllyIds.has(ally.id)) continue;
+        hitAllyIds.add(ally.id);
+        anyUnhitAllyInDisk = true;
+      }
+      if (anyUnhitAllyInDisk) {
+        this.room.tryDamageAlliedKnightInXZDisk(
+          { x: pos.x, z: pos.z },
+          GREED_FIREBALL_HIT_RADIUS,
+          DESTINY_BREATH_DAMAGE,
+          { sourceEnemyId: did, damageType: 'destiny_breath' },
+        );
+      }
       this.io?.to(this.roomId).emit('destiny-breath-impact', {
         destinyId: did, fireboltId, position: pos, hit: true, timestamp: Date.now(),
       });
@@ -18394,7 +18775,7 @@ class EnemyAI {
       pos.z += dir.z * GREED_FIREBALL_SPEED * (STEP_MS / 1000);
       const livePlayers = this.room?.getPlayers() || [];
       for (const p of livePlayers) {
-        if (p.health <= 0) continue;
+        if (!p || p.health <= 0 || hitPlayerIds.has(p.id)) continue;
         const hdx = p.position.x - pos.x;
         const hdz = p.position.z - pos.z;
         if (hdx * hdx + hdz * hdz <= hitRadiusSq) {
@@ -18406,6 +18787,7 @@ class EnemyAI {
       }
       for (const ally of this.room?.getEnemies?.() || []) {
         if (!ally?.alliedUnit || ally.isDying || ally.health <= 0) continue;
+        if (hitAllyIds.has(ally.id)) continue;
         const hdx = (ally.position?.x ?? 0) - pos.x;
         const hdz = (ally.position?.z ?? 0) - pos.z;
         if (hdx * hdx + hdz * hdz <= hitRadiusSq) {
@@ -18892,6 +19274,7 @@ class EnemyAI {
     this.clearHostileEnemyAsAggroTarget(enemyId);
     this._clearEnemyTimeouts(enemyId);
     this._clearEnemyHazardIntervals(enemyId);
+    this._closestPlayerCache.delete(enemyId);
     this.wolfHowlEmitted.delete(enemyId);
     this.boneSpiderShotCooldown.delete(enemyId);
     const tst = this.tentacleSlamTimeouts.get(enemyId);
@@ -19127,6 +19510,25 @@ class EnemyAI {
       this.destinyBreathLaunchTimeout.delete(enemyId);
     }
     this.destinyBreathCooldown.delete(enemyId);
+    const destinyWingEndT = this.destinyWingEndTimeout.get(enemyId);
+    if (destinyWingEndT) {
+      clearTimeout(destinyWingEndT);
+      this.destinyWingEndTimeout.delete(enemyId);
+      if (this.io) {
+        this.io.to(this.roomId).emit('destiny-wing-end', {
+          destinyId: enemyId,
+          timestamp: Date.now(),
+        });
+      }
+    }
+    this.clearDestinyWingPillarTimers(enemyId);
+    this.destinyWingCooldown.delete(enemyId);
+    this.destinyGroundSpecialReadyAt.delete(enemyId);
+    const dyingDestiny = this.room?.getEnemy?.(enemyId);
+    if (dyingDestiny) {
+      dyingDestiny.wingActive = false;
+      dyingDestiny.wingCastId = null;
+    }
     const destinyFlyAttackEndT = this.destinyFlyAttackEndTimeout.get(enemyId);
     if (destinyFlyAttackEndT) {
       clearTimeout(destinyFlyAttackEndT);
@@ -19502,7 +19904,7 @@ class EnemyAI {
     if (this._aggroDebugSnapshotTimer) {
       clearTimeout(this._aggroDebugSnapshotTimer);
     }
-    this._aggroDebugSnapshotTimer = setTimeout(() => {
+    this._aggroDebugSnapshotTimer = this._scheduleTimeout(() => {
       this._aggroDebugSnapshotTimer = null;
       const rows = [];
       this.enemyAggro.forEach((data, enemyId) => {
@@ -19633,7 +20035,7 @@ class EnemyAI {
       }
     }
 
-    for (const e of this.room.getEnemies()) {
+    for (const e of this.room.enemies.values()) {
       if (!e || e.id === trap.id || e.isDying || e.health <= 0) continue;
       if (e.type === 'tentacle-spine' || e.type === 'training-dummy') continue;
       if (e.type === 'boss' || e.type === 'boss2' || e.type === 'boss3' || e.type === 'destiny' || e.type === 'boss-skeleton') continue;
@@ -19668,7 +20070,7 @@ class EnemyAI {
     }
 
     const trapId = trap.id;
-    const tid = setTimeout(() => {
+    const tid = this._scheduleTimeout(() => {
       this.tentacleSlamTimeouts.delete(trapId);
       this._executeTentacleSpineSlam(trapId, dirX, dirZ);
     }, TENTACLE_SPINE_WINDUP_MS);
@@ -19703,7 +20105,7 @@ class EnemyAI {
     );
 
     const hit = new Set();
-    for (const e of this.room.getEnemies()) {
+    for (const e of this.room.enemies.values()) {
       if (!e || e.id === trapId || e.isDying || e.health <= 0) continue;
       if (e.type === 'tentacle-spine' || e.type === 'training-dummy') continue;
       if (e.type === 'boss' || e.type === 'boss2' || e.type === 'boss3' || e.type === 'destiny' || e.type === 'boss-skeleton') continue;
@@ -19897,7 +20299,7 @@ class EnemyAI {
     /** Match ShadeDaggerProjectile HIT_RADIUS / viper_arrow halfWidth. */
     const SHADE_DAGGER_HALF_WIDTH = 1.05;
     delaysMs.forEach((delayMs) => {
-      setTimeout(() => {
+      this._scheduleTimeout(() => {
         if (!this.room?.getGameStarted()) return;
         const sh = this.room?.getEnemy(shadeId);
         if (!sh || sh.isDying) return;

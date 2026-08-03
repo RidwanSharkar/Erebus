@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import type { RoomBorderTheme } from './SimpleBorderEffects';
-import CustomSky, { GATE_SKY_PRESET_BY_THEME } from './CustomSky';
+import CustomSky from './CustomSky';
 import PillarCollision from './PillarCollision';
 import InstancedForest from './InstancedForest';
 import ArenaFallingSnow from './ArenaFallingSnow';
@@ -54,6 +54,8 @@ interface EnvironmentProps {
   coopCurrentRoomKind?: string | null;
   /** When false, sky cloud FBM stops updating (combat LOD). */
   animateClouds?: boolean;
+  /** Server-authoritative random CustomSky preset index. */
+  skyPresetIndex?: number;
 }
 
 /**
@@ -76,6 +78,7 @@ const Environment: React.FC<EnvironmentProps> = ({
   coopTerrainTheme,
   coopCurrentRoomKind,
   animateClouds = true,
+  skyPresetIndex,
 }) => {
   // Define pillar positions - use PVP positions if provided, otherwise default triangle
   const pillarPositions: Array<[number, number, number]> = useMemo(() => {
@@ -130,7 +133,7 @@ const Environment: React.FC<EnvironmentProps> = ({
 
       {enableSky && (
         <CustomSky
-          skyPreset={GATE_SKY_PRESET_BY_THEME[sealTheme]}
+          skyPresetIndex={skyPresetIndex}
           animateClouds={animateClouds}
         />
       )}

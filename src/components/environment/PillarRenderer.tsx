@@ -1,11 +1,15 @@
 'use client';
 
-import React, { useRef, useMemo } from 'react';
-import { useFrame } from '@react-three/fiber';
-import { Vector3, Color, Group, Mesh, MeshStandardMaterial } from '@/utils/three-exports';
+import React, { useEffect, useRef, useMemo } from 'react';
+import { useFrame, useLoader } from '@react-three/fiber';
+import { Vector3, Color, Group, Mesh, MeshStandardMaterial, TextureLoader } from '@/utils/three-exports';
 import { World } from '@/ecs/World';
 import { PILLAR_SHARED_GEOMETRIES, PILLAR_STONE_MATERIAL } from './Pillar';
 import { PooledEffectLight } from '@/components/effects/DynamicLightPool';
+import {
+  PEDESTAL_BRICK_TEXTURE_PATH,
+  configurePedestalBrickTexture,
+} from '@/utils/pedestalBrickTexture';
 
 interface PillarRendererProps {
   entityId: number;
@@ -37,6 +41,14 @@ function PillarRenderer({
   const groupRef = useRef<Group>(null);
   const healthBarRef = useRef<Group>(null);
   const orbRef = useRef<Mesh>(null);
+  const brickTexture = useLoader(TextureLoader, PEDESTAL_BRICK_TEXTURE_PATH);
+
+  useEffect(() => {
+    configurePedestalBrickTexture(brickTexture);
+    PILLAR_STONE_MATERIAL.map = brickTexture;
+    PILLAR_STONE_MATERIAL.emissiveMap = brickTexture;
+    PILLAR_STONE_MATERIAL.needsUpdate = true;
+  }, [brickTexture]);
 
   // Default colors for different players
   const playerColors = useMemo(() => [

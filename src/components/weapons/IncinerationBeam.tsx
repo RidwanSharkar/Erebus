@@ -239,8 +239,12 @@ export default function IncinerationBeam({
       beamGeometries.outermost.dispose();
       muzzleGeometries.puff.dispose();
       muzzleGeometries.jet.dispose();
+      fireCylinderMaterials.core.dispose();
+      fireCylinderMaterials.inner.dispose();
+      fireCylinderMaterials.outer.dispose();
+      fireCylinderMaterials.outermost.dispose();
     };
-  }, [beamGeometries, muzzleGeometries]);
+  }, [beamGeometries, muzzleGeometries, fireCylinderMaterials]);
 
   useFrame((_, delta) => {
     if (!beamRef.current) return;

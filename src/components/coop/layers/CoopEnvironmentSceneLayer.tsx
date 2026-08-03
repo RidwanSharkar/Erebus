@@ -27,10 +27,11 @@ import type { SunkenSentinelEncounterRef } from '@/utils/sunkenSentinelEncounter
 import type { EternityPalaceEncounterRef } from '@/utils/eternityPalaceEncounter';
 import type { CoopAllyKind } from '@/utils/coopAllyTargeting';
 import {
-  ThronePortalRing,
+  CoopPortalRingsWithTooltips,
   normalizeCoopPortalKind,
   MAIN_COMBAT_BOSS_PORTAL_POSITION,
   CASTLE_ROOM_CHOICE_PORTAL_POSITIONS,
+  type CoopPortalTooltipEntry,
 } from '@/components/environment/ThroneRoom';
 import type { CoopTerrainTheme, DeliriumStructureState, DreamLayerPurchaseState, DreamLayerStockItem, MerchantPurchaseState, MerchantStockItem } from '@/contexts/MultiplayerContext';
 import type { World } from '@/ecs/World';
@@ -100,6 +101,8 @@ type CoopEnvironmentSceneLayerProps = {
   merchantPurchaseState: MerchantPurchaseState;
   dreamLayerInventory: DreamLayerStockItem[];
   dreamLayerPurchaseState: DreamLayerPurchaseState;
+  /** Server-authoritative random CustomSky preset index. */
+  skyPresetIndex: number;
 };
 
 function edenResumePortalCampType(kind: string | null | undefined) {
@@ -160,6 +163,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
   merchantPurchaseState,
   dreamLayerInventory,
   dreamLayerPurchaseState,
+  skyPresetIndex,
 }: CoopEnvironmentSceneLayerProps) {
   void isIntroCastleRoom;
 
@@ -187,6 +191,33 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
   const deepSanctumPedestalReady = isDeepSanctum && deepSanctumRewardKind != null;
   const edenExitPortalCamp = edenResumePortalCampType(coopEdenResumeKind);
 
+  const fountainChoicePortals: CoopPortalTooltipEntry[] = [
+    {
+      key: 'fountain-left',
+      kind: leftCamp,
+      x: CASTLE_ROOM_CHOICE_PORTAL_POSITIONS[0]!.x,
+      y: CASTLE_ROOM_CHOICE_PORTAL_POSITIONS[0]!.y,
+      z: CASTLE_ROOM_CHOICE_PORTAL_POSITIONS[0]!.z,
+    },
+    {
+      key: 'fountain-right',
+      kind: rightCamp,
+      x: CASTLE_ROOM_CHOICE_PORTAL_POSITIONS[1]!.x,
+      y: CASTLE_ROOM_CHOICE_PORTAL_POSITIONS[1]!.y,
+      z: CASTLE_ROOM_CHOICE_PORTAL_POSITIONS[1]!.z,
+    },
+  ];
+
+  const surpriseExitPortals: CoopPortalTooltipEntry[] = [
+    {
+      key: 'surprise-exit',
+      kind: edenExitPortalCamp,
+      x: MAIN_COMBAT_BOSS_PORTAL_POSITION.x,
+      y: MAIN_COMBAT_BOSS_PORTAL_POSITION.y,
+      z: MAIN_COMBAT_BOSS_PORTAL_POSITION.z,
+    },
+  ];
+
   const specialMapRoomIndex = isDeepSanctum
     ? coopDeepSanctumLevel
     : isSunkenTemple
@@ -213,11 +244,13 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           key={`coop-fae-env-${coopCombatArenaEnterSeq}`}
           combatActive={combatArenaActive && enemiesCount > 0}
           hiddenIndices={mushroomHiddenIndices}
+          skyPresetIndex={skyPresetIndex}
         />
       ) : isCastleRoom ? (
         <CastleRoom
           key={`coop-castle-env-${coopCombatArenaEnterSeq}`}
           combatActive={combatArenaActive && enemiesCount > 0}
+          skyPresetIndex={skyPresetIndex}
         />
       ) : isSunkenTemple ? (
         <SunkenTempleRoom
@@ -228,11 +261,13 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
         <EternityPalaceRoom
           key={`coop-eternity-env-${coopCombatArenaEnterSeq}`}
           combatActive={combatArenaActive && enemiesCount > 0}
+          skyPresetIndex={skyPresetIndex}
         />
       ) : isErebusGateRoom ? (
         <ErebusGateRoom
           key={`coop-erebus-env-${coopCombatArenaEnterSeq}`}
           combatActive={combatArenaActive && enemiesCount > 0}
+          skyPresetIndex={skyPresetIndex}
         />
       ) : isHexCombatArena ? (
         <HexCombatArena
@@ -240,6 +275,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           variant={hexArenaVariant}
           combatActive={combatArenaActive && enemiesCount > 0}
           hiddenIndices={mushroomHiddenIndices}
+          skyPresetIndex={skyPresetIndex}
         />
       ) : (
         <Environment
@@ -253,6 +289,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           coopTerrainTheme={coopTerrainTheme}
           coopCurrentRoomKind={coopCurrentRoomKind}
           animateClouds={!(combatArenaActive && enemiesCount > 0)}
+          skyPresetIndex={skyPresetIndex}
         />
       )}
       {isFaeRealm && coopFaeRealmPortalOpen && (
@@ -275,14 +312,11 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           )}
           {coopIntroAllyChoiceMade && coopIntroFountainUsed && o.length >= 2 && (
             <group name="intro-fountain-portals">
-              {CASTLE_ROOM_CHOICE_PORTAL_POSITIONS.map((pos, i) => (
-                <group key={`intro-fountain-portal-${i}`} position={[pos.x, pos.y, pos.z]}>
-                  <ThronePortalRing
-                    campType={i === 0 ? leftCamp : rightCamp}
-                    locked={false}
-                  />
-                </group>
-              ))}
+              <CoopPortalRingsWithTooltips
+                portals={fountainChoicePortals}
+                playerPositionRef={realTimePlayerPositionRef}
+                locked={false}
+              />
             </group>
           )}
         </>
@@ -302,14 +336,11 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           )}
           {coopSunkenLootPhaseComplete && coopSunkenFountainUsed && o.length >= 2 && (
             <group name="sunken-fountain-portals">
-              {CASTLE_ROOM_CHOICE_PORTAL_POSITIONS.map((pos, i) => (
-                <group key={`sunken-fountain-portal-${i}`} position={[pos.x, pos.y, pos.z]}>
-                  <ThronePortalRing
-                    campType={i === 0 ? leftCamp : rightCamp}
-                    locked={false}
-                  />
-                </group>
-              ))}
+              <CoopPortalRingsWithTooltips
+                portals={fountainChoicePortals}
+                playerPositionRef={realTimePlayerPositionRef}
+                locked={false}
+              />
             </group>
           )}
         </>
@@ -329,14 +360,11 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           )}
           {coopEternityLootPhaseComplete && coopEternityFountainUsed && o.length >= 2 && (
             <group name="eternity-fountain-portals">
-              {CASTLE_ROOM_CHOICE_PORTAL_POSITIONS.map((pos, i) => (
-                <group key={`eternity-fountain-portal-${i}`} position={[pos.x, pos.y, pos.z]}>
-                  <ThronePortalRing
-                    campType={i === 0 ? leftCamp : rightCamp}
-                    locked={false}
-                  />
-                </group>
-              ))}
+              <CoopPortalRingsWithTooltips
+                portals={fountainChoicePortals}
+                playerPositionRef={realTimePlayerPositionRef}
+                locked={false}
+              />
             </group>
           )}
         </>
@@ -345,15 +373,12 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
         <>
           <HealingFountain active used={coopEdenFountainUsed} />
           {showSurpriseExitPortal && coopEdenResumeKind && (
-            <group
-              name="eden-exit-portal"
-              position={[
-                MAIN_COMBAT_BOSS_PORTAL_POSITION.x,
-                MAIN_COMBAT_BOSS_PORTAL_POSITION.y,
-                MAIN_COMBAT_BOSS_PORTAL_POSITION.z,
-              ]}
-            >
-              <ThronePortalRing campType={edenExitPortalCamp} locked={false} />
+            <group name="eden-exit-portal">
+              <CoopPortalRingsWithTooltips
+                portals={surpriseExitPortals}
+                playerPositionRef={realTimePlayerPositionRef}
+                locked={false}
+              />
             </group>
           )}
         </>
@@ -362,15 +387,12 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
         <>
           <HealingFountain active used={coopEdenFountainUsed} />
           {showSurpriseExitPortal && coopEdenResumeKind && (
-            <group
-              name="false-eden-exit-portal"
-              position={[
-                MAIN_COMBAT_BOSS_PORTAL_POSITION.x,
-                MAIN_COMBAT_BOSS_PORTAL_POSITION.y,
-                MAIN_COMBAT_BOSS_PORTAL_POSITION.z,
-              ]}
-            >
-              <ThronePortalRing campType={edenExitPortalCamp} locked={false} />
+            <group name="false-eden-exit-portal">
+              <CoopPortalRingsWithTooltips
+                portals={surpriseExitPortals}
+                playerPositionRef={realTimePlayerPositionRef}
+                locked={false}
+              />
             </group>
           )}
         </>
@@ -379,39 +401,30 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
         <DeliriumStructure structure={deliriumStructure} />
       )}
       {isDeliriumRoom && showSurpriseExitPortal && coopEdenResumeKind && (
-        <group
-          name="delirium-exit-portal"
-          position={[
-            MAIN_COMBAT_BOSS_PORTAL_POSITION.x,
-            MAIN_COMBAT_BOSS_PORTAL_POSITION.y,
-            MAIN_COMBAT_BOSS_PORTAL_POSITION.z,
-          ]}
-        >
-          <ThronePortalRing campType={edenExitPortalCamp} locked={false} />
+        <group name="delirium-exit-portal">
+          <CoopPortalRingsWithTooltips
+            portals={surpriseExitPortals}
+            playerPositionRef={realTimePlayerPositionRef}
+            locked={false}
+          />
         </group>
       )}
       {isErebusGateRoom && showSurpriseExitPortal && coopEdenResumeKind && (
-        <group
-          name="erebus-exit-portal"
-          position={[
-            MAIN_COMBAT_BOSS_PORTAL_POSITION.x,
-            MAIN_COMBAT_BOSS_PORTAL_POSITION.y,
-            MAIN_COMBAT_BOSS_PORTAL_POSITION.z,
-          ]}
-        >
-          <ThronePortalRing campType={edenExitPortalCamp} locked={false} />
+        <group name="erebus-exit-portal">
+          <CoopPortalRingsWithTooltips
+            portals={surpriseExitPortals}
+            playerPositionRef={realTimePlayerPositionRef}
+            locked={false}
+          />
         </group>
       )}
       {isDreamLayerRoom && showSurpriseExitPortal && coopEdenResumeKind && (
-        <group
-          name="dream-layer-exit-portal"
-          position={[
-            MAIN_COMBAT_BOSS_PORTAL_POSITION.x,
-            MAIN_COMBAT_BOSS_PORTAL_POSITION.y,
-            MAIN_COMBAT_BOSS_PORTAL_POSITION.z,
-          ]}
-        >
-          <ThronePortalRing campType={edenExitPortalCamp} locked={false} />
+        <group name="dream-layer-exit-portal">
+          <CoopPortalRingsWithTooltips
+            portals={surpriseExitPortals}
+            playerPositionRef={realTimePlayerPositionRef}
+            locked={false}
+          />
         </group>
       )}
       {combatArenaActive && coopMainArenaPortalPhase && !isCastleRoom && !isSunkenTemple && !isEternityPalace && !isSurpriseRoom && (
@@ -421,6 +434,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           portalsUnlocked={portalsUnlocked}
           coopVoidPortalOffered={coopVoidPortalOffered}
           portalGroundY={isHexCombatArena ? 0 : MAIN_COMBAT_BOSS_PORTAL_POSITION.y}
+          playerPositionRef={realTimePlayerPositionRef}
         />
       )}
       {combatArenaActive && !isCastleRoom && !isSunkenTemple && !isEternityPalace && coopCurrentRoomKind !== 'merchant' && coopCurrentRoomKind !== 'dream_layer' && coopCurrentRoomKind !== 'fae_realm' && !isSurpriseRoom && (

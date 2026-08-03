@@ -305,7 +305,7 @@ export interface InventoryItem {
 
 export interface DreamLayerStockItem {
   id: string;
-  kind: 'warding_pendant' | 'exodia' | 'ring';
+  kind: 'warding_pendant' | 'exodia' | 'legendary_a' | 'legendary_b' | 'ring';
   cost: number;
   sold?: boolean;
   label?: string;
@@ -316,7 +316,8 @@ export interface DreamLayerStockItem {
 export interface DreamLayerPurchaseState {
   healPurchasedThisVisit: boolean;
   wardingPurchasedThisVisit: boolean;
-  exodiaPurchasedThisVisit: boolean;
+  legendaryAPurchasedThisVisit: boolean;
+  legendaryBPurchasedThisVisit: boolean;
   ringPurchasedThisVisit: boolean;
 }
 
@@ -511,6 +512,11 @@ interface MultiplayerContextType {
   coopColoredRoomVisitIndex: number | null;
   /** Co-op: 1-based boss chamber visit index (CHAMBER OF DEATH I/II/III); null outside boss entry. */
   coopBossRoomVisitIndex: number | null;
+  /**
+   * Co-op: server-authoritative CustomSky preset index for the current room.
+   * From `game-started`, `combat-arena-entered`, `coop-throne-sync`, `room-joined`.
+   */
+  coopSkyPresetIndex: number;
   /**
    * Co-op: stripped throne shell (boss fight + post-boss portal pause). False on prep throne and main castle map.
    * Authoritative from server (`room-joined`, `combat-arena-entered`, `coop-main-arena-intermission`).
@@ -1039,7 +1045,13 @@ function normalizeDreamLayerInventory(v: unknown): DreamLayerStockItem[] {
     if (entry == null || typeof entry !== 'object') return false;
     const e = entry as DreamLayerStockItem;
     if (typeof e.id !== 'string' || typeof e.cost !== 'number') return false;
-    return e.kind === 'warding_pendant' || e.kind === 'exodia' || e.kind === 'ring';
+    return (
+      e.kind === 'warding_pendant'
+      || e.kind === 'exodia'
+      || e.kind === 'legendary_a'
+      || e.kind === 'legendary_b'
+      || e.kind === 'ring'
+    );
   });
 }
 
@@ -1048,7 +1060,8 @@ function normalizeDreamLayerPurchaseState(v: unknown): DreamLayerPurchaseState {
     return {
       healPurchasedThisVisit: false,
       wardingPurchasedThisVisit: false,
-      exodiaPurchasedThisVisit: false,
+      legendaryAPurchasedThisVisit: false,
+      legendaryBPurchasedThisVisit: false,
       ringPurchasedThisVisit: false,
     };
   }
@@ -1056,7 +1069,8 @@ function normalizeDreamLayerPurchaseState(v: unknown): DreamLayerPurchaseState {
   return {
     healPurchasedThisVisit: !!s.healPurchasedThisVisit,
     wardingPurchasedThisVisit: !!s.wardingPurchasedThisVisit,
-    exodiaPurchasedThisVisit: !!s.exodiaPurchasedThisVisit,
+    legendaryAPurchasedThisVisit: !!s.legendaryAPurchasedThisVisit,
+    legendaryBPurchasedThisVisit: !!s.legendaryBPurchasedThisVisit,
     ringPurchasedThisVisit: !!s.ringPurchasedThisVisit,
   };
 }
@@ -1173,6 +1187,7 @@ type CoopSessionSnapshotPayload = {
   coopClearedRoomKind?: string;
   coopColoredRoomVisitIndex?: unknown;
   coopBossRoomVisitIndex?: unknown;
+  coopSkyPresetIndex?: unknown;
   merchantInventory?: unknown;
   mushroomState?: { health?: number[]; maxHealth?: number };
   coopIntroPending?: boolean;
@@ -1257,6 +1272,7 @@ type CoopSnapshotSetters = {
   setCoopClearedRoomKind: React.Dispatch<React.SetStateAction<CoopRoomKind | null>>;
   setCoopColoredRoomVisitIndex: React.Dispatch<React.SetStateAction<number | null>>;
   setCoopBossRoomVisitIndex: React.Dispatch<React.SetStateAction<number | null>>;
+  setCoopSkyPresetIndex: React.Dispatch<React.SetStateAction<number>>;
   setMerchantInventory: React.Dispatch<React.SetStateAction<MerchantStockItem[]>>;
   setMerchantPurchaseState: React.Dispatch<React.SetStateAction<MerchantPurchaseState>>;
   setMushroomState: React.Dispatch<
@@ -1633,6 +1649,12 @@ function applyCoopSessionSnapshot(
   setters.setCoopTerrainTheme(normalizeCoopTerrainTheme(data?.coopTerrainTheme));
   setters.setCoopCurrentRoomKind(normalizeCoopRoomKind(data?.coopCurrentRoomKind));
   setters.setCoopClearedRoomKind(normalizeCoopRoomKind(data?.coopClearedRoomKind));
+  if (data && 'coopSkyPresetIndex' in data) {
+    const skyIdx = Number(data.coopSkyPresetIndex);
+    if (Number.isFinite(skyIdx)) {
+      setters.setCoopSkyPresetIndex(Math.max(0, Math.floor(skyIdx)));
+    }
+  }
   if (resetVisitIndices) {
     setters.setCoopColoredRoomVisitIndex(null);
     setters.setCoopBossRoomVisitIndex(null);
@@ -1767,6 +1789,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopClearedRoomKind, setCoopClearedRoomKind] = useState<CoopRoomKind | null>(null);
   const [coopColoredRoomVisitIndex, setCoopColoredRoomVisitIndex] = useState<number | null>(null);
   const [coopBossRoomVisitIndex, setCoopBossRoomVisitIndex] = useState<number | null>(null);
+  /** Server-authoritative CustomSky preset index for the current co-op room. */
+  const [coopSkyPresetIndex, setCoopSkyPresetIndex] = useState(0);
   const [coopBossThroneArena, setCoopBossThroneArena] = useState(false);
   const [coopThroneBossKind, setCoopThroneBossKind] = useState<'boss' | 'boss2' | 'boss3' | 'destiny' | 'boss_all' | null>(null);
   const [coopTerrainTheme, setCoopTerrainTheme] = useState<CoopTerrainTheme>('purple');
@@ -1887,7 +1911,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [dreamLayerPurchaseState, setDreamLayerPurchaseState] = useState<DreamLayerPurchaseState>({
     healPurchasedThisVisit: false,
     wardingPurchasedThisVisit: false,
-    exodiaPurchasedThisVisit: false,
+    legendaryAPurchasedThisVisit: false,
+    legendaryBPurchasedThisVisit: false,
     ringPurchasedThisVisit: false,
   });
   const merchantPurchaseSuccessHandlersRef = useRef<
@@ -2027,6 +2052,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       playersTransformsRef.current.clear();
       setCampTypes([]);
       setCoopTerrainTheme('purple');
+      setCoopSkyPresetIndex(0);
       setSkeletonKillCount(0);
       setSkeletonKillRequired(8);
       setDroppedItems(new Map());
@@ -2037,7 +2063,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setDreamLayerPurchaseState({
         healPurchasedThisVisit: false,
         wardingPurchasedThisVisit: false,
-        exodiaPurchasedThisVisit: false,
+        legendaryAPurchasedThisVisit: false,
+        legendaryBPurchasedThisVisit: false,
         ringPurchasedThisVisit: false,
       });
 
@@ -2131,6 +2158,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopBossRoomVisitIndex(
         normalizeCoopBossRoomVisitIndex((data as { coopBossRoomVisitIndex?: unknown }).coopBossRoomVisitIndex),
       );
+      if ('coopSkyPresetIndex' in (data as object)) {
+        const skyIdx = Number((data as { coopSkyPresetIndex?: unknown }).coopSkyPresetIndex);
+        if (Number.isFinite(skyIdx)) {
+          setCoopSkyPresetIndex(Math.max(0, Math.floor(skyIdx)));
+        }
+      }
       setMerchantInventory(normalizeMerchantInventory((data as { merchantInventory?: unknown }).merchantInventory));
       const ms = (data as { mushroomState?: { health?: number[]; maxHealth?: number } }).mushroomState;
       if (ms?.health && Array.isArray(ms.health)) {
@@ -2634,12 +2667,16 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       }]);
     });
 
-    // Update enemy health when a Weaver heals an ally
+    // Update enemy health when a Weaver heals an ally (supports batched oak aura heals).
     addEventHandler('enemy-healed', (data) => {
-      patchEnemyRef(enemiesRef, data.enemyId, {
-        health: data.newHealth,
-        maxHealth: data.maxHealth,
-      });
+      const entries = Array.isArray(data?.heals) ? data.heals : [data];
+      for (const entry of entries) {
+        if (!entry?.enemyId) continue;
+        patchEnemyRef(enemiesRef, entry.enemyId, {
+          health: entry.newHealth,
+          maxHealth: entry.maxHealth,
+        });
+      }
     });
 
     addEventHandler('kill-count-updated', (data) => {
@@ -2831,12 +2868,20 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       playerFateChangedHandlersRef.current.forEach((handler) => handler(data));
     });
 
-    addEventHandler('merchant-inventory-updated', (data: { inventory?: unknown }) => {
+    addEventHandler('merchant-inventory-updated', (data: {
+      inventory?: unknown;
+      merchantPurchaseStates?: Record<string, unknown>;
+    }) => {
       setMerchantInventory(normalizeMerchantInventory(data?.inventory));
+      applyLocalMerchantPurchaseStatesFromPayload(data, newSocket.id, setMerchantPurchaseState);
     });
 
-    addEventHandler('dream-layer-inventory-updated', (data: { inventory?: unknown }) => {
+    addEventHandler('dream-layer-inventory-updated', (data: {
+      inventory?: unknown;
+      dreamLayerPurchaseStates?: Record<string, unknown>;
+    }) => {
       setDreamLayerInventory(normalizeDreamLayerInventory(data?.inventory));
+      applyLocalDreamLayerPurchaseStatesFromPayload(data, newSocket.id, setDreamLayerPurchaseState);
     });
 
     addEventHandler('dream-layer-purchase-succeeded', (data: { dreamLayerPurchaseState?: unknown }) => {
@@ -2896,6 +2941,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           setCoopClearedRoomKind,
           setCoopColoredRoomVisitIndex,
           setCoopBossRoomVisitIndex,
+          setCoopSkyPresetIndex,
           setMerchantInventory,
           setMerchantPurchaseState,
           setMushroomState,
@@ -2970,6 +3016,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           setCoopClearedRoomKind,
           setCoopColoredRoomVisitIndex,
           setCoopBossRoomVisitIndex,
+          setCoopSkyPresetIndex,
           setMerchantInventory,
           setMerchantPurchaseState,
           setMushroomState,
@@ -3393,10 +3440,16 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       } else {
         setCoopClearedRoomKind(normalizeCoopRoomKind(data?.coopClearedRoomColor));
       }
+      if (data && 'coopSkyPresetIndex' in data) {
+        const skyIdx = Number(data.coopSkyPresetIndex);
+        if (Number.isFinite(skyIdx)) {
+          setCoopSkyPresetIndex(Math.max(0, Math.floor(skyIdx)));
+        }
+      }
       setMerchantInventory(normalizeMerchantInventory(data?.merchantInventory));
-      applyLocalMerchantPurchaseStatesFromPayload(data, socket?.id, setMerchantPurchaseState);
+      applyLocalMerchantPurchaseStatesFromPayload(data, newSocket.id, setMerchantPurchaseState);
       setDreamLayerInventory(normalizeDreamLayerInventory(data?.dreamLayerInventory));
-      applyLocalDreamLayerPurchaseStatesFromPayload(data, socket?.id, setDreamLayerPurchaseState);
+      applyLocalDreamLayerPurchaseStatesFromPayload(data, newSocket.id, setDreamLayerPurchaseState);
       if (data?.players && Array.isArray(data.players)) {
         setPlayers((prev) => {
           const next = new Map(prev);
@@ -3457,6 +3510,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopTerrainTheme(normalizeCoopTerrainTheme(data?.coopTerrainTheme));
       setCoopCurrentRoomKind(normalizeCoopRoomKind(data?.coopCurrentRoomKind));
       setCoopClearedRoomKind(null);
+      if (data && 'coopSkyPresetIndex' in data) {
+        const skyIdx = Number(data.coopSkyPresetIndex);
+        if (Number.isFinite(skyIdx)) {
+          setCoopSkyPresetIndex(Math.max(0, Math.floor(skyIdx)));
+        }
+      }
       applyIntroSnapshot(data, {
         setCoopIntroPending,
         setCoopIntroActive,
@@ -3524,9 +3583,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopColoredRoomVisitIndex(normalizeCoopColoredRoomVisitIndex(data?.coopColoredRoomVisitIndex));
       setCoopBossRoomVisitIndex(normalizeCoopBossRoomVisitIndex(data?.coopBossRoomVisitIndex));
       setMerchantInventory(normalizeMerchantInventory(data?.merchantInventory));
-      applyLocalMerchantPurchaseStatesFromPayload(data, socket?.id, setMerchantPurchaseState);
+      applyLocalMerchantPurchaseStatesFromPayload(data, newSocket.id, setMerchantPurchaseState);
       setDreamLayerInventory(normalizeDreamLayerInventory(data?.dreamLayerInventory));
-      applyLocalDreamLayerPurchaseStatesFromPayload(data, socket?.id, setDreamLayerPurchaseState);
+      applyLocalDreamLayerPurchaseStatesFromPayload(data, newSocket.id, setDreamLayerPurchaseState);
       if (data?.mushroomState?.health && Array.isArray(data.mushroomState.health)) {
         setMushroomState({
           health: [...data.mushroomState.health],
@@ -3743,6 +3802,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       playersTransformsRef.current.clear();
       setCampTypes([]);
       setCoopTerrainTheme('purple');
+      setCoopSkyPresetIndex(0);
       setDroppedItems(new Map());
       setGoldDrops(new Map());
       setInventory([]);
@@ -3751,7 +3811,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setDreamLayerPurchaseState({
         healPurchasedThisVisit: false,
         wardingPurchasedThisVisit: false,
-        exodiaPurchasedThisVisit: false,
+        legendaryAPurchasedThisVisit: false,
+        legendaryBPurchasedThisVisit: false,
         ringPurchasedThisVisit: false,
       });
 
@@ -3830,6 +3891,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setGameMode('multiplayer');
     setCampTypes([]);
     setCoopTerrainTheme('purple');
+    setCoopSkyPresetIndex(0);
     setThronePortalOffer([]);
     setThronePortalLayout('rim');
     setCoopMainArenaPortalPhase(null);
@@ -3856,7 +3918,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setDreamLayerPurchaseState({
       healPurchasedThisVisit: false,
       wardingPurchasedThisVisit: false,
-      exodiaPurchasedThisVisit: false,
+      legendaryAPurchasedThisVisit: false,
+      legendaryBPurchasedThisVisit: false,
       ringPurchasedThisVisit: false,
     });
     setSelectedWeaponsState({ primary: WeaponType.NONE, secondary: WeaponType.NONE });
@@ -4812,6 +4875,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     coopClearedRoomKind,
     coopColoredRoomVisitIndex,
     coopBossRoomVisitIndex,
+    coopSkyPresetIndex,
     coopBossThroneArena,
     coopThroneBossKind,
     coopTransitionOverlay,
@@ -4982,7 +5046,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     closeChat,
     setPlayers
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, playerRosterMetaRev, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, lateJoinCombatLoadout, clearLateJoinCombatLoadout, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, leaveRoom, previewRoom, clearPreview, startGame, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerArchetype, updatePlayerWeaponAspect, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastAlliedHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, selectedArchetype, selectedWeaponAspect, weaponAspectByWeapon, setSelectedWeapons, setSelectedArchetype, setSelectedWeaponAspect, rememberWeaponAspect, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, registerMerchantNpcGreetHandler, registerPlayerGoldChangedHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
+  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, playerRosterMetaRev, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopSkyPresetIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, lateJoinCombatLoadout, clearLateJoinCombatLoadout, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, leaveRoom, previewRoom, clearPreview, startGame, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerArchetype, updatePlayerWeaponAspect, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastAlliedHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, selectedArchetype, selectedWeaponAspect, weaponAspectByWeapon, setSelectedWeapons, setSelectedArchetype, setSelectedWeaponAspect, rememberWeaponAspect, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, registerMerchantNpcGreetHandler, registerPlayerGoldChangedHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
 
   const actionsValue: MultiplayerActionsContextType = useMemo(
     () => ({
@@ -5198,6 +5262,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopClearedRoomKind,
       coopColoredRoomVisitIndex,
       coopBossRoomVisitIndex,
+      coopSkyPresetIndex,
       coopBossThroneArena,
       coopThroneBossKind,
       coopTransitionOverlay,
@@ -5303,6 +5368,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopClearedRoomKind,
       coopColoredRoomVisitIndex,
       coopBossRoomVisitIndex,
+      coopSkyPresetIndex,
       coopBossThroneArena,
       coopThroneBossKind,
       coopTransitionOverlay,

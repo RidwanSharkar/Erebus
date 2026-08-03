@@ -1,8 +1,11 @@
 import React, { useMemo } from 'react';
+import type { MutableRefObject } from 'react';
+import type { Vector3 } from 'three';
 import {
-  ThronePortalRing,
+  CoopPortalRingsWithTooltips,
   normalizeCoopPortalKind,
   type CoopPortalKind,
+  type CoopPortalTooltipEntry,
   MAIN_COMBAT_CHOICE_PORTAL_POSITIONS,
   MAIN_COMBAT_BOSS_PORTAL_POSITION,
 } from '@/components/environment/ThroneRoom';
@@ -26,6 +29,7 @@ export function CoopMainArenaPortals({
   portalsUnlocked = false,
   coopVoidPortalOffered = false,
   portalGroundY = MAIN_COMBAT_BOSS_PORTAL_POSITION.y,
+  playerPositionRef,
 }: {
   thronePortalOffer: readonly string[];
   phase: Phase;
@@ -35,6 +39,8 @@ export function CoopMainArenaPortals({
   coopVoidPortalOffered?: boolean;
   /** Y offset for the boss void portal group (0 on flat hex arenas, THRONE_PORTAL_Y on main map). */
   portalGroundY?: number;
+  /** Local player foot position — drives portal choice tooltips. */
+  playerPositionRef: MutableRefObject<Vector3>;
 }) {
   const isBoss = phase === 'pick_boss' || phase === 'pre_boss_merchant';
   const isDualChoice = phase === 'pick_wave2' || phase === 'pick_pre_boss' || phase === 'pick_post_boss';
@@ -51,6 +57,15 @@ export function CoopMainArenaPortals({
       right: o[1] ? normalizeCoopPortalKind(o[1]) : 'red',
     };
   }, [isBoss, isSunkenEntry, isEternityEntry, o]);
+
+  const dualPortals = useMemo((): CoopPortalTooltipEntry[] => {
+    const leftPos = MAIN_COMBAT_CHOICE_PORTAL_POSITIONS[0]!;
+    const rightPos = MAIN_COMBAT_CHOICE_PORTAL_POSITIONS[1]!;
+    return [
+      { key: 'main-arena-left', kind: left, x: leftPos.x, y: leftPos.y, z: leftPos.z },
+      { key: 'main-arena-right', kind: right, x: rightPos.x, y: rightPos.y, z: rightPos.z },
+    ];
+  }, [left, right]);
 
   if (isBoss || isSunkenEntry || isEternityEntry) {
     const groundY = isSunkenEntry || isEternityEntry ? 0 : portalGroundY;
@@ -81,11 +96,11 @@ export function CoopMainArenaPortals({
 
   return (
     <group name="coop-main-arena-choice-portals">
-      {MAIN_COMBAT_CHOICE_PORTAL_POSITIONS.map((pos, i) => (
-        <group key={`main-arena-portal-${i}`} position={[pos.x, pos.y, pos.z]}>
-          <ThronePortalRing campType={i === 0 ? left : right} locked={!portalsUnlocked} />
-        </group>
-      ))}
+      <CoopPortalRingsWithTooltips
+        portals={dualPortals}
+        playerPositionRef={playerPositionRef}
+        locked={!portalsUnlocked}
+      />
       {coopVoidPortalOffered && (
         <group
           name="main-arena-void-portal"

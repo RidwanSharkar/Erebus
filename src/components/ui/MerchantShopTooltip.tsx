@@ -81,10 +81,14 @@ export default function MerchantShopTooltip({
           '0 8px 32px rgba(0,0,0,0.75), 0 0 0 1px rgba(255,255,255,0.04)',
       }}
     >
-      <div className="font-semibold text-blue-300 mb-1 text-[13px]">
+      <div
+        className={`font-semibold text-blue-300 text-[13px]${description ? ' mb-1' : ''}`}
+      >
         {cost != null ? `${name} — ${cost}${costSuffix}` : name}
       </div>
-      <div className="text-gray-400 text-xs leading-relaxed">{description}</div>
+      {description ? (
+        <div className="text-gray-400 text-xs leading-relaxed">{description}</div>
+      ) : null}
       {limitLabel ? (
         <div className="text-gray-500 text-[11px] mt-1.5 tracking-wide">{limitLabel}</div>
       ) : null}

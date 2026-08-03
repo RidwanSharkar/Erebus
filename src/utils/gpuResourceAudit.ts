@@ -1,6 +1,6 @@
 'use client';
 
-import type { Material, Mesh, Object3D, Scene, WebGLRenderer } from 'three';
+import type { Material, Mesh, Object3D, Scene, Skeleton, SkinnedMesh, WebGLRenderer } from 'three';
 
 export interface GpuProgramGroup {
   programId: number;
@@ -19,6 +19,9 @@ export interface GpuResourceAuditResult {
   scene: {
     objects: number;
     meshes: number;
+    skinnedMeshes: number;
+    skeletons: number;
+    boneTextures: number;
     troikaTextMeshes: number;
     troikaTextures: number;
   };
@@ -78,8 +81,11 @@ export function runGpuResourceAudit(
     { count: number; sampleOwner: string; sampleType: string; isTroika: boolean }
   >();
   const troikaTextures = new Set<unknown>();
+  const skeletons = new Set<Skeleton>();
   let troikaTextMeshes = 0;
   let meshes = 0;
+  let skinnedMeshes = 0;
+  let boneTextures = 0;
   let objects = 0;
   let troikaMaterials = 0;
 
@@ -88,6 +94,17 @@ export function runGpuResourceAudit(
     const mesh = obj as Mesh & { isMesh?: boolean; material?: Material | Material[] };
     if (!mesh.isMesh) return;
     meshes++;
+
+    const skinned = obj as SkinnedMesh;
+    if (skinned.isSkinnedMesh && skinned.skeleton) {
+      skinnedMeshes++;
+      if (!skeletons.has(skinned.skeleton)) {
+        skeletons.add(skinned.skeleton);
+        if (skinned.skeleton.boneTexture) {
+          boneTextures++;
+        }
+      }
+    }
 
     if (isTroikaTextMesh(mesh)) {
       troikaTextMeshes++;
@@ -146,6 +163,9 @@ export function runGpuResourceAudit(
     scene: {
       objects,
       meshes,
+      skinnedMeshes,
+      skeletons: skeletons.size,
+      boneTextures,
       troikaTextMeshes,
       troikaTextures: troikaTextures.size,
     },
@@ -165,6 +185,10 @@ export function logGpuResourceAudit(gl: WebGLRenderer, scene: Scene): GpuResourc
   console.log('renderer.info.memory', result.memory);
   // eslint-disable-next-line no-console
   console.log('scene complexity', result.scene);
+  // eslint-disable-next-line no-console
+  console.log(
+    `skeletons: ${result.scene.skinnedMeshes} skinned meshes, ${result.scene.skeletons} skeletons, ${result.scene.boneTextures} bone textures`,
+  );
   // eslint-disable-next-line no-console
   console.log(
     `troika: ${result.scene.troikaTextMeshes} text meshes, ${result.troikaMaterials} materials, ${result.scene.troikaTextures} textures`,

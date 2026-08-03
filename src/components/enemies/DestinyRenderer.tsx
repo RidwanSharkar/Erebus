@@ -21,7 +21,9 @@ import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
 import {
+  DESTINY_BREATH_ROAR_CAST_LOCK_MS,
   DESTINY_FLY_ATTACK_CAST_MS,
+  DESTINY_WING_CAST_LOCK_MS,
   isDestinyAirPhase,
   type DestinyPhase,
 } from '@/utils/destinyCoopConstants';
@@ -39,7 +41,8 @@ interface DestinyRendererProps {
 }
 
 const ATTACK_DURATION = 1500; // matches backend DESTINY_SWING_LOCK_MS
-const BREATH_DURATION_MS = 2000; // matches DESTINY_BREATH_ROAR_CAST_LOCK_MS
+const BREATH_DURATION_MS = DESTINY_BREATH_ROAR_CAST_LOCK_MS;
+const WING_DURATION_MS = DESTINY_WING_CAST_LOCK_MS;
 /** Short pulse when an air firebolt arrives without a prior telegraph. */
 const FLY_ATTACK_FIREBOLT_PULSE_MS = 500;
 const FADE_DURATION = 1.5;
@@ -71,12 +74,14 @@ export default function DestinyRenderer({
   const [isAttacking, setIsAttacking] = useState(false);
   const [meleeTelegraph, setMeleeTelegraph] = useState<MeleeTelegraphVisual | null>(null);
   const [isBreathing, setIsBreathing] = useState(false);
+  const [isWingAttacking, setIsWingAttacking] = useState(false);
   const [isFlyAttacking, setIsFlyAttacking] = useState(false);
   const [swipeVariant, setSwipeVariant] = useState<1 | 2>(1);
 
   const isWalkingRef = useRef(false);
   const isAttackingRef = useRef(false);
   const isBreathingRef = useRef(false);
+  const isWingAttackingRef = useRef(false);
   const isFlyAttackingRef = useRef(false);
   const phaseRef = useRef<DestinyPhase>(initialPhase);
   const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
@@ -84,6 +89,7 @@ export default function DestinyRenderer({
   const lastMoveTimeRef = useRef(0);
   const attackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const breathFailsafeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wingFailsafeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flyAttackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer = useRef(0);
   const opacity = useRef(1);
@@ -103,6 +109,7 @@ export default function DestinyRenderer({
     if (
       !isAttackingRef.current &&
       !isBreathingRef.current &&
+      !isWingAttackingRef.current &&
       !isFlyAttackingRef.current &&
       !isDyingRef.current &&
       phaseRef.current === 'ground'
@@ -114,13 +121,19 @@ export default function DestinyRenderer({
 
   const startFlyAttackAnim = useCallback((durationMs: number = DESTINY_FLY_ATTACK_CAST_MS) => {
     if (flyAttackTimer.current) clearTimeout(flyAttackTimer.current);
-    // Cancel any lingering ground breath so roar cannot stick through air volleys.
+    // Cancel any lingering ground breath / wing so they cannot stick through air volleys.
     if (breathFailsafeTimer.current) {
       clearTimeout(breathFailsafeTimer.current);
       breathFailsafeTimer.current = null;
     }
+    if (wingFailsafeTimer.current) {
+      clearTimeout(wingFailsafeTimer.current);
+      wingFailsafeTimer.current = null;
+    }
     setIsBreathing(false);
     isBreathingRef.current = false;
+    setIsWingAttacking(false);
+    isWingAttackingRef.current = false;
     setIsAttacking(false);
     isAttackingRef.current = false;
     setPhase('fly_attack');
@@ -145,7 +158,11 @@ export default function DestinyRenderer({
 
   useEffect(() => {
     const dist = targetPosition.current.distanceTo(positionScratch.set(position.x, position.y, position.z));
-    const locked = isAttackingRef.current || isBreathingRef.current || isFlyAttackingRef.current;
+    const locked =
+      isAttackingRef.current ||
+      isBreathingRef.current ||
+      isWingAttackingRef.current ||
+      isFlyAttackingRef.current;
     if (!locked) targetPosition.current.set(position.x, position.y, position.z);
     if (dist > 5.0 && groupRef.current && !locked) {
       groupRef.current.position.set(position.x, position.y, position.z);
@@ -160,6 +177,7 @@ export default function DestinyRenderer({
     return () => {
       if (attackTimer.current) clearTimeout(attackTimer.current);
       if (breathFailsafeTimer.current) clearTimeout(breathFailsafeTimer.current);
+      if (wingFailsafeTimer.current) clearTimeout(wingFailsafeTimer.current);
       if (flyAttackTimer.current) clearTimeout(flyAttackTimer.current);
     };
   }, []);
@@ -179,7 +197,7 @@ export default function DestinyRenderer({
       timestamp?: number;
     }) => {
       if (data.destinyId !== id) return;
-      if (isBreathingRef.current || isFlyAttackingRef.current) return;
+      if (isBreathingRef.current || isWingAttackingRef.current || isFlyAttackingRef.current) return;
       if (phaseRef.current !== 'ground') return;
       if (attackTimer.current) clearTimeout(attackTimer.current);
       setSwipeVariant(data.swipeVariant === 2 ? 2 : 1);
@@ -210,12 +228,20 @@ export default function DestinyRenderer({
       }
     };
 
+    const clearWingFailsafe = () => {
+      if (wingFailsafeTimer.current) {
+        clearTimeout(wingFailsafeTimer.current);
+        wingFailsafeTimer.current = null;
+      }
+    };
+
     const handleBreathTelegraph = (data: {
       destinyId?: string;
       durationMs?: number;
     }) => {
       if (data.destinyId !== id) return;
       if (phaseRef.current !== 'ground') return;
+      if (isWingAttackingRef.current) return;
       if (attackTimer.current) {
         clearTimeout(attackTimer.current);
         attackTimer.current = null;
@@ -244,6 +270,43 @@ export default function DestinyRenderer({
       restoreWalkIfUnlocked();
     };
 
+    const handleWingTelegraph = (data: {
+      destinyId?: string;
+      durationMs?: number;
+    }) => {
+      if (data.destinyId !== id) return;
+      if (phaseRef.current !== 'ground') return;
+      if (attackTimer.current) {
+        clearTimeout(attackTimer.current);
+        attackTimer.current = null;
+      }
+      clearBreathFailsafe();
+      setIsAttacking(false);
+      setMeleeTelegraph(null);
+      isAttackingRef.current = false;
+      setIsBreathing(false);
+      isBreathingRef.current = false;
+      setIsWingAttacking(true);
+      isWingAttackingRef.current = true;
+      isWalkingRef.current = false;
+      setIsWalking(false);
+      clearWingFailsafe();
+      const duration = data.durationMs ?? WING_DURATION_MS;
+      wingFailsafeTimer.current = setTimeout(() => {
+        setIsWingAttacking(false);
+        isWingAttackingRef.current = false;
+        restoreWalkIfUnlocked();
+      }, duration + 250);
+    };
+
+    const handleWingEnd = (data: { destinyId?: string }) => {
+      if (data.destinyId !== id) return;
+      clearWingFailsafe();
+      setIsWingAttacking(false);
+      isWingAttackingRef.current = false;
+      restoreWalkIfUnlocked();
+    };
+
     const handleTakeoff = (data: { destinyId?: string }) => {
       if (data.destinyId !== id) return;
       if (attackTimer.current) {
@@ -251,10 +314,13 @@ export default function DestinyRenderer({
         attackTimer.current = null;
       }
       clearBreathFailsafe();
+      clearWingFailsafe();
       setIsAttacking(false);
       isAttackingRef.current = false;
       setIsBreathing(false);
       isBreathingRef.current = false;
+      setIsWingAttacking(false);
+      isWingAttackingRef.current = false;
       setIsFlyAttacking(false);
       isFlyAttackingRef.current = false;
       isWalkingRef.current = false;
@@ -287,6 +353,8 @@ export default function DestinyRenderer({
       isFlyAttackingRef.current = false;
       setIsBreathing(false);
       isBreathingRef.current = false;
+      setIsWingAttacking(false);
+      isWingAttackingRef.current = false;
       setPhase('land');
       phaseRef.current = 'land';
     };
@@ -295,6 +363,8 @@ export default function DestinyRenderer({
     socket.on('destiny-attack-whiff', handleDestinyWhiff);
     socket.on('destiny-breath-telegraph', handleBreathTelegraph);
     socket.on('destiny-breath-end', handleBreathEnd);
+    socket.on('destiny-wing-telegraph', handleWingTelegraph);
+    socket.on('destiny-wing-end', handleWingEnd);
     socket.on('destiny-takeoff-start', handleTakeoff);
     socket.on('destiny-fly-attack-telegraph', handleFlyAttack);
     socket.on('destiny-breath-firebolt', handleAirFirebolt);
@@ -304,6 +374,8 @@ export default function DestinyRenderer({
       socket.off('destiny-attack-whiff', handleDestinyWhiff);
       socket.off('destiny-breath-telegraph', handleBreathTelegraph);
       socket.off('destiny-breath-end', handleBreathEnd);
+      socket.off('destiny-wing-telegraph', handleWingTelegraph);
+      socket.off('destiny-wing-end', handleWingEnd);
       socket.off('destiny-takeoff-start', handleTakeoff);
       socket.off('destiny-fly-attack-telegraph', handleFlyAttack);
       socket.off('destiny-breath-firebolt', handleAirFirebolt);
@@ -340,6 +412,7 @@ export default function DestinyRenderer({
     const locked =
       isAttackingRef.current ||
       isBreathingRef.current ||
+      isWingAttackingRef.current ||
       isFlyAttackingRef.current;
 
     let dist = 0;
@@ -401,15 +474,16 @@ export default function DestinyRenderer({
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0} scale={VISUAL_SCALE}>
       <DestinyModel
-        isWalking={isWalking && !isAttacking && !isBreathing && phase === 'ground'}
-        isAttacking={isAttacking && !isBreathing && phase === 'ground'}
+        isWalking={isWalking && !isAttacking && !isBreathing && !isWingAttacking && phase === 'ground'}
+        isAttacking={isAttacking && !isBreathing && !isWingAttacking && phase === 'ground'}
         swipeVariant={swipeVariant}
         isBreathing={isBreathing && phase === 'ground'}
+        isWingAttacking={isWingAttacking && phase === 'ground'}
         isFlyAttacking={isFlyAttacking}
         phase={phase}
         isDying={isDying}
       />
-      {isAttacking && !isDying && phase === 'ground' && (
+      {isAttacking && !isDying && phase === 'ground' && !isWingAttacking && (
         <EnemyMeleeAttackRangeRing
           radius={meleeTelegraph?.attackRange ?? DESTINY_MELEE_ATTACK_RANGE / VISUAL_SCALE}
           hitDelayMs={meleeTelegraph?.hitDelayMs}

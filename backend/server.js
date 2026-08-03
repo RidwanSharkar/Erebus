@@ -162,6 +162,7 @@ io.on('connection', (socket) => {
       })(),
       ...(typeof room._getDeepSanctumPayloadFields === 'function' ? room._getDeepSanctumPayloadFields() : {}),
       ...(typeof room._getEdenPayloadFields === 'function' ? room._getEdenPayloadFields() : {}),
+      ...(typeof room._getCoopSkyPayloadFields === 'function' ? room._getCoopSkyPayloadFields() : {}),
     });
 
     if (typeof room.isInCoopThronePrep === 'function' && room.isInCoopThronePrep()) {

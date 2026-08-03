@@ -4,6 +4,7 @@ import React, { forwardRef, memo, useCallback, useImperativeHandle, useState } f
 import GreedEmberPatch from '@/components/enemies/GreedEmberPatch';
 import SabreReaperMistEffect from '@/components/weapons/SabreReaperMistEffect';
 import type {
+  DestinyEmberZoneState,
   GreedEmberZoneState,
   MistEffectState,
   WarlockMeteorEmberZoneState,
@@ -15,6 +16,8 @@ export type CoopGroundHazardLayerHandle = {
   removeEmberZone: (id: string) => void;
   addWarlockMeteorEmberZone: (zone: WarlockMeteorEmberZoneState) => void;
   removeWarlockEmberZone: (id: string) => void;
+  addDestinyEmberZone: (zone: DestinyEmberZoneState) => void;
+  removeDestinyEmberZone: (id: string) => void;
   addMistEffect: (effect: MistEffectState) => void;
   removeMistEffect: (id: string) => void;
 };
@@ -23,11 +26,13 @@ const CoopGroundHazardLayer = memo(forwardRef<CoopGroundHazardLayerHandle, objec
   function CoopGroundHazardLayer(_props, ref) {
     const [greedEmberZones, setGreedEmberZones] = useState<GreedEmberZoneState[]>([]);
     const [warlockMeteorEmberZones, setWarlockMeteorEmberZones] = useState<WarlockMeteorEmberZoneState[]>([]);
+    const [destinyEmberZones, setDestinyEmberZones] = useState<DestinyEmberZoneState[]>([]);
     const [activeMistEffects, setActiveMistEffects] = useState<MistEffectState[]>([]);
 
     const clearAll = useCallback(() => {
       setGreedEmberZones([]);
       setWarlockMeteorEmberZones([]);
+      setDestinyEmberZones([]);
       setActiveMistEffects([]);
     }, []);
 
@@ -47,6 +52,14 @@ const CoopGroundHazardLayer = memo(forwardRef<CoopGroundHazardLayerHandle, objec
       setWarlockMeteorEmberZones((prev) => prev.filter((z) => z.id !== id));
     }, []);
 
+    const addDestinyEmberZone = useCallback((zone: DestinyEmberZoneState) => {
+      setDestinyEmberZones((prev) => [...prev, zone]);
+    }, []);
+
+    const removeDestinyEmberZone = useCallback((id: string) => {
+      setDestinyEmberZones((prev) => prev.filter((z) => z.id !== id));
+    }, []);
+
     const addMistEffect = useCallback((effect: MistEffectState) => {
       setActiveMistEffects((prev) => [...prev, effect]);
     }, []);
@@ -61,6 +74,8 @@ const CoopGroundHazardLayer = memo(forwardRef<CoopGroundHazardLayerHandle, objec
       removeEmberZone,
       addWarlockMeteorEmberZone,
       removeWarlockEmberZone,
+      addDestinyEmberZone,
+      removeDestinyEmberZone,
       addMistEffect,
       removeMistEffect,
     }), [
@@ -69,6 +84,8 @@ const CoopGroundHazardLayer = memo(forwardRef<CoopGroundHazardLayerHandle, objec
       removeEmberZone,
       addWarlockMeteorEmberZone,
       removeWarlockEmberZone,
+      addDestinyEmberZone,
+      removeDestinyEmberZone,
       addMistEffect,
       removeMistEffect,
     ]);
@@ -93,6 +110,17 @@ const CoopGroundHazardLayer = memo(forwardRef<CoopGroundHazardLayerHandle, objec
             radius={zone.radius}
             durationMs={zone.durationMs}
             onComplete={() => setWarlockMeteorEmberZones(prev => prev.filter(z => z.id !== zone.id))}
+          />
+        ))}
+
+        {destinyEmberZones.map(zone => (
+          <GreedEmberPatch
+            key={zone.id}
+            variant="orange"
+            position={zone.position}
+            radius={zone.radius}
+            durationMs={zone.durationMs}
+            onComplete={() => setDestinyEmberZones(prev => prev.filter(z => z.id !== zone.id))}
           />
         ))}
 

@@ -1,5 +1,5 @@
 import { useMemo, useRef } from 'react';
-import { Group } from 'three';
+import { Group, Mesh, MeshStandardMaterial } from 'three';
 import { useFrame } from '@react-three/fiber';
 import type { TotemBoltVariant } from '@/utils/talents';
 
@@ -59,14 +59,59 @@ interface UnholyAuraProps {
 
 export default function UnholyAura({ totemBoltVariant }: UnholyAuraProps) {
   const auraRef = useRef<Group>(null);
+  const runeGroupRef = useRef<Group>(null);
+  const sigilGroupRef = useRef<Group>(null);
+  const streamGroupRef = useRef<Group>(null);
+  const runeMatsRef = useRef<(MeshStandardMaterial | null)[]>([]);
+  const sigilMatsRef = useRef<(MeshStandardMaterial | null)[]>([]);
+  const streamMatsRef = useRef<(MeshStandardMaterial | null)[]>([]);
+  const streamMeshesRef = useRef<(Mesh | null)[]>([]);
   const rotationSpeed = 0.12;
 
   const pal = useMemo(() => auraPalette(totemBoltVariant), [totemBoltVariant]);
 
   useFrame(() => {
+    const now = Date.now();
     if (auraRef.current) {
       auraRef.current.position.set(0, -0.925, 0);
       auraRef.current.rotation.y += rotationSpeed * 0.008;
+    }
+
+    if (runeGroupRef.current) {
+      for (let i = 0; i < runeGroupRef.current.children.length; i++) {
+        const mesh = runeGroupRef.current.children[i] as Mesh;
+        mesh.rotation.set(-Math.PI / 2, 0, (i / 8) * Math.PI * 2 + now * 0.001);
+        const mat = runeMatsRef.current[i];
+        if (mat) mat.opacity = 0.4 + Math.sin(now * 0.003 + i) * 0.2;
+      }
+    }
+
+    if (sigilGroupRef.current) {
+      for (let i = 0; i < sigilGroupRef.current.children.length; i++) {
+        const mesh = sigilGroupRef.current.children[i] as Mesh;
+        const angle = (i / 5) * Math.PI * 2;
+        const radius = 0.6;
+        mesh.position.set(
+          Math.cos(angle + now * 0.001) * radius,
+          0,
+          Math.sin(angle + now * 0.001) * radius,
+        );
+        const mat = sigilMatsRef.current[i];
+        if (mat) mat.opacity = 0.3 + Math.sin(now * 0.002 + i * 0.5) * 0.2;
+      }
+    }
+
+    if (streamGroupRef.current) {
+      for (let i = 0; i < streamMeshesRef.current.length; i++) {
+        const mesh = streamMeshesRef.current[i];
+        if (!mesh) continue;
+        const angle = (i / 12) * Math.PI * 2;
+        const radius = 0.9 + Math.sin(now * 0.002 + i) * 0.1;
+        mesh.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+        mesh.rotation.set(-Math.PI / 2, 0, angle + now * 0.0015);
+        const mat = streamMatsRef.current[i];
+        if (mat) mat.opacity = 0.2 + Math.sin(now * 0.004 + i) * 0.1;
+      }
     }
   });
 
@@ -86,20 +131,23 @@ export default function UnholyAura({ totemBoltVariant }: UnholyAuraProps) {
       </mesh>
 
       {/* Spinning rune marks */}
-      <group position={[0, 0.02, 0]}>
+      <group ref={runeGroupRef} position={[0, 0.02, 0]}>
         {[...Array(8)].map((_, i) => (
           <mesh
             key={i}
-            rotation={[-Math.PI / 2, 0, (i / 8) * Math.PI * 2 + Date.now() * 0.001]}
+            rotation={[-Math.PI / 2, 0, (i / 8) * Math.PI * 2]}
             position={[0, 0, 0]}
           >
             <planeGeometry args={[0.2, 1.3]} />
             <meshStandardMaterial
+              ref={(m) => {
+                runeMatsRef.current[i] = m;
+              }}
               color={pal.plane}
               emissive={pal.plane}
               emissiveIntensity={2}
               transparent
-              opacity={0.4 + Math.sin(Date.now() * 0.003 + i) * 0.2}
+              opacity={0.4}
               depthWrite={false}
             />
           </mesh>
@@ -107,27 +155,26 @@ export default function UnholyAura({ totemBoltVariant }: UnholyAuraProps) {
       </group>
 
       {/* Inner pulsing sigils */}
-      <group position={[0, 0.03, 0]}>
+      <group ref={sigilGroupRef} position={[0, 0.03, 0]}>
         {[...Array(5)].map((_, i) => {
           const angle = (i / 5) * Math.PI * 2;
           const radius = 0.6;
           return (
             <mesh
               key={i}
-              position={[
-                Math.cos(angle + Date.now() * 0.001) * radius,
-                0,
-                Math.sin(angle + Date.now() * 0.001) * radius
-              ]}
+              position={[Math.cos(angle) * radius, 0, Math.sin(angle) * radius]}
               rotation={[-Math.PI / 2, 0, angle + Math.PI / 2]}
             >
               <planeGeometry args={[0.3, 0.3]} />
               <meshStandardMaterial
+                ref={(m) => {
+                  sigilMatsRef.current[i] = m;
+                }}
                 color={pal.innerColor}
                 emissive={pal.outer}
                 emissiveIntensity={2}
                 transparent
-                opacity={0.3 + Math.sin(Date.now() * 0.002 + i * 0.5) * 0.2}
+                opacity={0.3}
                 depthWrite={false}
               />
             </mesh>
@@ -136,27 +183,29 @@ export default function UnholyAura({ totemBoltVariant }: UnholyAuraProps) {
       </group>
 
       {/* Corrupted energy streams */}
-      <group position={[0, 0.01, 0]}>
+      <group ref={streamGroupRef} position={[0, 0.01, 0]}>
         {[...Array(12)].map((_, i) => {
           const angle = (i / 12) * Math.PI * 2;
-          const radius = 0.9 + Math.sin(Date.now() * 0.002 + i) * 0.1;
+          const radius = 0.9;
           return (
             <mesh
               key={i}
-              position={[
-                Math.cos(angle) * radius,
-                0,
-                Math.sin(angle) * radius
-              ]}
-              rotation={[-Math.PI / 2, 0, angle + Date.now() * 0.0015]}
+              ref={(m) => {
+                streamMeshesRef.current[i] = m;
+              }}
+              position={[Math.cos(angle) * radius, 0, Math.sin(angle) * radius]}
+              rotation={[-Math.PI / 2, 0, angle]}
             >
               <planeGeometry args={[0.1, 0.4]} />
               <meshStandardMaterial
+                ref={(m) => {
+                  streamMatsRef.current[i] = m;
+                }}
                 color={pal.streamColor}
                 emissive={pal.streamEmissive}
                 emissiveIntensity={3}
                 transparent
-                opacity={0.2 + Math.sin(Date.now() * 0.004 + i) * 0.1}
+                opacity={0.2}
                 depthWrite={false}
               />
             </mesh>

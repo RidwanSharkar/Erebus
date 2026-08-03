@@ -873,6 +873,87 @@ type CoopWeaponStateSnapshot = {
 
 const PROGRESS_EPSILON = 0.03;
 
+// Remote-peer animation/ability state mirrored from socket broadcasts.
+type RemotePlayerAnimState = {
+  isCharging: boolean;
+  chargeProgress: number;
+  isSwinging: boolean;
+  swordComboStep: 1 | 2 | 3;
+  isSpinning: boolean;
+  isSwordCharging: boolean;
+  isDeflecting: boolean;
+  /** Shift-tap Deflect-Block — independent gold shield, unrelated to the Q-Aegis `isDeflecting` above. */
+  isBlockingDeflect?: boolean;
+  isViperStingCharging: boolean;
+  viperStingChargeProgress: number;
+  isBarrageCharging: boolean;
+  barrageChargeProgress: number;
+  isCobraShotCharging: boolean;
+  cobraShotChargeProgress: number;
+  isRejuvenatingShotCharging?: boolean;
+  rejuvenatingShotChargeProgress?: number;
+  isSkyfalling: boolean;
+  isBackstabbing: boolean;
+  backstabVorpalGust?: boolean;
+  backstabVorpalGustTheme?: VorpalGustStabBoonBeamTheme;
+  isSmiting: boolean;
+  isColossusStriking?: boolean;
+  isWindShearing?: boolean;
+  isWindShearCharging?: boolean;
+  windShearChargeProgress?: number;
+  isDeathGrasping: boolean;
+  isWraithStriking: boolean;
+  isCorruptedAuraActive: boolean;
+  isSundering?: boolean;
+  isCrossentropyCharging?: boolean;
+  isSummonTotemCharging?: boolean;
+  summonTotemChargeProgress?: number;
+  isFrozen?: boolean;
+  lastAttackType?: string;
+  lastAttackTime?: number;
+  lastAnimationUpdate?: number;
+  runebladeStoredCharge?: boolean;
+  tempestBurstShotSeq?: number;
+};
+
+const DEFAULT_REMOTE_PLAYER_ANIM_STATE: Readonly<RemotePlayerAnimState> = Object.freeze({
+  isCharging: false,
+  chargeProgress: 0,
+  isSwinging: false,
+  swordComboStep: 1 as 1 | 2 | 3,
+  isSpinning: false,
+  isSwordCharging: false,
+  isDeflecting: false,
+  isBlockingDeflect: false,
+  isViperStingCharging: false,
+  viperStingChargeProgress: 0,
+  isBarrageCharging: false,
+  barrageChargeProgress: 0,
+  isCobraShotCharging: false,
+  cobraShotChargeProgress: 0,
+  isRejuvenatingShotCharging: false,
+  rejuvenatingShotChargeProgress: 0,
+  isSkyfalling: false,
+  isBackstabbing: false,
+  isSmiting: false,
+  isDeathGrasping: false,
+  isWraithStriking: false,
+  isCorruptedAuraActive: false,
+  isCrossentropyCharging: false,
+  isSummonTotemCharging: false,
+  summonTotemChargeProgress: 0,
+  isFrozen: false,
+  runebladeStoredCharge: false,
+  tempestBurstShotSeq: 0,
+});
+
+function readEnemyIsStunned(world: World | undefined | null, entityId: number): boolean {
+  if (!world) return false;
+  const entity = world.getEntity(entityId);
+  const enemyComponent = entity?.getComponent(Enemy);
+  return enemyComponent ? enemyComponent.isStunned : false;
+}
+
 function remoteAnimStateNeedsReactUpdate(
   prev: Record<string, unknown>,
   next: Record<string, unknown>,
@@ -1893,6 +1974,7 @@ export function CoopGameScene({
     coopTransitionOverlay,
     coopClearedRoomColor,
     coopTerrainTheme,
+    coopSkyPresetIndex,
     coopCurrentRoomKind,
     coopClearedRoomKind,
     selectedArchetype,
@@ -2182,6 +2264,8 @@ export function CoopGameScene({
   const skyrayPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const terrorhawkPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const wyvernPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  /** Throttle fan-volley firebolt impact SFX so 5 bolts don't stack 5 sounds. */
+  const breathImpactSfxAtRef = useRef(new Map<string, number>());
   const bossPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const nemesisPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const titanPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -2277,6 +2361,7 @@ export function CoopGameScene({
   }, [registerMerchantNpcGreetHandler, registerMerchantPurchaseSuccessHandler]);
   // Real-time position refs for enemy players to enable ghost trail updates
   const enemyPlayerPositionRefs = useRef<Map<string, { current: Vector3 }>>(new Map());
+  const remotePlayerPosScratchRef = useRef<Map<string, Vector3>>(new Map());
   const [playerEntity, setPlayerEntity] = useState<any>(null);
 
   useEffect(() => {
@@ -2562,6 +2647,9 @@ export function CoopGameScene({
       portalUseSentRef.current = false;
       void import('@/components/environment/ThroneStatueDecor').then((mod) => {
         mod.preloadThroneStatueDecor();
+      });
+      void import('@/components/environment/ThronePerimeterPylonDecor').then((mod) => {
+        mod.preloadThronePerimeterPylonDecor();
       });
       // Necromancer spirits may spawn on dummy hits — warm Summon/Attack clips early.
       void import('./enemies/VengefulSpiritModel').then((mod) => {
@@ -5577,47 +5665,6 @@ export function CoopGameScene({
   });
   
   // Track multiplayer player states for animations
-  type RemotePlayerAnimState = {
-    isCharging: boolean;
-    chargeProgress: number;
-    isSwinging: boolean;
-    swordComboStep: 1 | 2 | 3;
-    isSpinning: boolean;
-    isSwordCharging: boolean;
-    isDeflecting: boolean;
-    /** Shift-tap Deflect-Block — independent gold shield, unrelated to the Q-Aegis `isDeflecting` above. */
-    isBlockingDeflect?: boolean;
-    isViperStingCharging: boolean;
-    viperStingChargeProgress: number;
-    isBarrageCharging: boolean;
-    barrageChargeProgress: number;
-    isCobraShotCharging: boolean;
-    cobraShotChargeProgress: number;
-    isRejuvenatingShotCharging?: boolean;
-    rejuvenatingShotChargeProgress?: number;
-    isSkyfalling: boolean;
-    isBackstabbing: boolean;
-    backstabVorpalGust?: boolean;
-    backstabVorpalGustTheme?: VorpalGustStabBoonBeamTheme;
-    isSmiting: boolean;
-    isColossusStriking?: boolean;
-    isWindShearing?: boolean;
-    isWindShearCharging?: boolean;
-    windShearChargeProgress?: number;
-    isDeathGrasping: boolean;
-    isWraithStriking: boolean;
-    isCorruptedAuraActive: boolean;
-    isSundering?: boolean;
-    isCrossentropyCharging?: boolean;
-    isSummonTotemCharging?: boolean;
-    summonTotemChargeProgress?: number;
-    isFrozen?: boolean;
-    lastAttackType?: string;
-    lastAttackTime?: number;
-    lastAnimationUpdate?: number;
-    runebladeStoredCharge?: boolean;
-    tempestBurstShotSeq?: number;
-  };
   const multiplayerPlayerStatesRef = useRef<Map<string, RemotePlayerAnimState>>(new Map());
   const [multiplayerPlayerStates, setMultiplayerPlayerStates] = useState<Map<string, RemotePlayerAnimState>>(
     () => new Map(),
@@ -10176,35 +10223,44 @@ export function CoopGameScene({
       healAmount?: number;
       healingType?: string;
       position?: { x: number; y: number; z: number };
+      heals?: Array<{
+        enemyId?: string;
+        healAmount?: number;
+        healingType?: string;
+        position?: { x: number; y: number; z: number };
+      }>;
     }) => {
-      const healAmount = data.healAmount ?? 0;
-      if (
-        healAmount <= 0
-        || (data.healingType !== 'rejuvenating_shot' && data.healingType !== 'beast_regen_wolf')
-      ) return;
+      const entries = Array.isArray(data.heals) ? data.heals : [data];
+      for (const entry of entries) {
+        const healAmount = entry.healAmount ?? 0;
+        if (
+          healAmount <= 0
+          || (entry.healingType !== 'rejuvenating_shot' && entry.healingType !== 'beast_regen_wolf')
+        ) continue;
 
-      let healingPosition: Vector3 | null = null;
-      if (data.position) {
-        healingPosition = new Vector3(data.position.x, data.position.y, data.position.z);
-      } else if (data.enemyId) {
-        const enemy = enemiesRef.current.get(data.enemyId);
-        if (enemy?.position) {
-          healingPosition = new Vector3(enemy.position.x, enemy.position.y, enemy.position.z);
+        let healingPosition: Vector3 | null = null;
+        if (entry.position) {
+          healingPosition = new Vector3(entry.position.x, entry.position.y, entry.position.z);
+        } else if (entry.enemyId) {
+          const enemy = enemiesRef.current.get(entry.enemyId);
+          if (enemy?.position) {
+            healingPosition = new Vector3(enemy.position.x, enemy.position.y, enemy.position.z);
+          }
         }
-      }
-      if (!healingPosition) return;
+        if (!healingPosition) continue;
 
-      healingPosition.y += 1.6;
+        healingPosition.y += 1.6;
 
-      const damageNumberManager = (window as any).damageNumberManager;
-      if (damageNumberManager?.addDamageNumber) {
-        damageNumberManager.addDamageNumber(
-          healAmount,
-          false,
-          healingPosition,
-          data.healingType === 'beast_regen_wolf' ? 'beast_regen_healing' : 'rejuvenating_shot_healing',
-          false,
-        );
+        const damageNumberManager = (window as any).damageNumberManager;
+        if (damageNumberManager?.addDamageNumber) {
+          damageNumberManager.addDamageNumber(
+            healAmount,
+            false,
+            healingPosition,
+            entry.healingType === 'beast_regen_wolf' ? 'beast_regen_healing' : 'rejuvenating_shot_healing',
+            false,
+          );
+        }
       }
     };
 
@@ -11774,6 +11830,23 @@ export function CoopGameScene({
 
     socket.on('wyvern-breath-firebolt', handleWyvernBreathFirebolt);
 
+    const BREATH_IMPACT_SFX_THROTTLE_MS = 150;
+    const playThrottledBreathImpactSfx = (
+      enemyId: string,
+      position: { x: number; y?: number; z: number },
+      hit: boolean,
+    ) => {
+      const now = performance.now();
+      const last = breathImpactSfxAtRef.current.get(enemyId) ?? 0;
+      if (now - last < BREATH_IMPACT_SFX_THROTTLE_MS) return;
+      breathImpactSfxAtRef.current.set(enemyId, now);
+      const pos = new Vector3(position.x, position.y ?? 0, position.z);
+      window.audioSystem?.playFireboltImpactSound(
+        pos,
+        hit ? undefined : { volume: 0.45 },
+      );
+    };
+
     const handleWyvernBreathImpact = (data: {
       wyvernId: string;
       fireboltId?: string;
@@ -11785,11 +11858,7 @@ export function CoopGameScene({
       } else {
         projectileLayerRef.current?.removeWyvernBreathFireboltByWyvernId(data.wyvernId);
       }
-      const pos = new Vector3(data.position.x, data.position.y ?? 0, data.position.z);
-      window.audioSystem?.playFireboltImpactSound(
-        pos,
-        data.hit ? undefined : { volume: 0.45 },
-      );
+      playThrottledBreathImpactSfx(data.wyvernId, data.position, data.hit);
     };
 
     socket.on('wyvern-breath-impact', handleWyvernBreathImpact);
@@ -11825,6 +11894,7 @@ export function CoopGameScene({
       } else {
         projectileLayerRef.current?.removeDestinyBreathFireboltByDestinyId(data.destinyId);
       }
+      playThrottledBreathImpactSfx(data.destinyId, data.position, data.hit);
     };
 
     socket.on('destiny-breath-impact', handleDestinyBreathImpact);
@@ -11994,6 +12064,28 @@ export function CoopGameScene({
 
     socket.on('warlock-meteor-ember-zone-expired', handleWarlockMeteorEmberZoneExpired);
 
+    const handleDestinyEmberZoneSpawned = (data: {
+      id: string;
+      position: { x: number; z: number };
+      radius: number;
+      durationMs: number;
+    }) => {
+      groundHazardLayerRef.current?.addDestinyEmberZone({
+          id: data.id,
+          position: new Vector3(data.position.x, 0, data.position.z),
+          radius: data.radius,
+          durationMs: data.durationMs
+        });
+    };
+
+    socket.on('destiny-ember-zone-spawned', handleDestinyEmberZoneSpawned);
+
+    const handleDestinyEmberZoneExpired = (data: { id: string }) => {
+      groundHazardLayerRef.current?.removeDestinyEmberZone(data.id);
+    };
+
+    socket.on('destiny-ember-zone-expired', handleDestinyEmberZoneExpired);
+
     // Blink animation duration — must match BLINK_ANIMATION_DURATION in WarlockRenderer.tsx
     const WARLOCK_BLINK_ANIM_MS = 800;
 
@@ -12037,6 +12129,22 @@ export function CoopGameScene({
     };
 
     socket.on('boss2-flame-pillar', handleBoss2FlamePillar);
+
+    const handleDestinyWingPillar = (data: {
+      destinyId: string;
+      position: { x: number; y: number; z: number };
+      timestamp?: number;
+    }) => {
+      if (!coopServerEnemyLiving(data.destinyId)) return;
+      const strikePos = new Vector3(data.position.x, data.position.y, data.position.z);
+      (window as any).audioSystem?.playWarlockImmolateSound(strikePos);
+      bossTelegraphLayerRef.current?.addWarlockFlameStrike({
+        id: `destiny-wing-pillar-${data.destinyId}-${data.timestamp ?? Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        position: strikePos.clone(),
+      });
+    };
+
+    socket.on('destiny-wing-pillar', handleDestinyWingPillar);
 
     const handleArchmageFlamePillar = (data: {
       enemyId?: string;
@@ -12727,8 +12835,11 @@ export function CoopGameScene({
       socket.off('greed-ember-zone-expired', handleGreedEmberZoneExpired);
       socket.off('warlock-meteor-ember-zone-spawned', handleWarlockMeteorEmberZoneSpawned);
       socket.off('warlock-meteor-ember-zone-expired', handleWarlockMeteorEmberZoneExpired);
+      socket.off('destiny-ember-zone-spawned', handleDestinyEmberZoneSpawned);
+      socket.off('destiny-ember-zone-expired', handleDestinyEmberZoneExpired);
       socket.off('warlock-flame-strike', handleWarlockFlameStrike);
       socket.off('boss2-flame-pillar', handleBoss2FlamePillar);
+      socket.off('destiny-wing-pillar', handleDestinyWingPillar);
       socket.off('archmage-flame-pillar', handleArchmageFlamePillar);
       socket.off('ghoul-attack', handleGhoulAttack);
       socket.off('titan-attack', handleTitanAttack);
@@ -13128,6 +13239,7 @@ export function CoopGameScene({
     entitiesToRemove.forEach(playerId => {
       serverPlayerEntities.current.delete(playerId);
       enemyPlayerPositionRefs.current.delete(playerId);
+      remotePlayerPosScratchRef.current.delete(playerId);
     });
 
     if (registeredNewRemotePeer) {
@@ -13532,6 +13644,7 @@ export function CoopGameScene({
     enemyPlayerPositionRefs.current.forEach((_, key) => {
       if (!playerIds.includes(key)) {
         enemyPlayerPositionRefs.current.delete(key);
+        remotePlayerPosScratchRef.current.delete(key);
       }
     });
 
@@ -14708,10 +14821,11 @@ export function CoopGameScene({
           };
         }
 
-        // Throttle React state updates to prevent infinite re-renders
+        // Throttle React state updates — ref stays live every frame for weapons/HUD that
+        // read weaponStateRef; React commits are for discrete visual edges only.
         const now = Date.now();
         if (
-          now - lastWeaponStateUpdate.current > 16 &&
+          now - lastWeaponStateUpdate.current > 100 &&
           weaponStateNeedsReactUpdate(lastCommittedWeaponStateRef.current, newWeaponState)
         ) {
           setWeaponState(newWeaponState);
@@ -16148,6 +16262,7 @@ export function CoopGameScene({
                 playerPositionRef={realTimePlayerPositionRef}
                 voidPortalOpen={throneVoidPortalOpen}
                 voidPortalOpenProgress={throneVoidPortalOpenProgress}
+                skyPresetIndex={coopSkyPresetIndex}
               />
               {engineRef.current?.getWorld() && (
                 <PillarCollision world={engineRef.current.getWorld()} positions={THRONE_PILLAR_POSITIONS} />
@@ -16161,12 +16276,14 @@ export function CoopGameScene({
                 thronePortalOffer={thronePortalOffer}
                 campTypes={campTypes}
                 coopClearedRoomColor={coopClearedRoomColor}
+                skyPresetIndex={coopSkyPresetIndex}
               />
               {combatArenaActive && coopMainArenaPortalPhase && (
                 <CoopMainArenaPortals
                   thronePortalOffer={thronePortalOffer}
                   phase={coopMainArenaPortalPhase}
                   portalsUnlocked={portalsUnlocked}
+                  playerPositionRef={realTimePlayerPositionRef}
                 />
               )}
               {combatArenaActive && coopMainArenaPortalPhase && (
@@ -16230,6 +16347,7 @@ export function CoopGameScene({
               merchantPurchaseState={merchantPurchaseState}
               dreamLayerInventory={dreamLayerInventory}
               dreamLayerPurchaseState={dreamLayerPurchaseState}
+              skyPresetIndex={coopSkyPresetIndex}
             />
           )}
 
@@ -16569,36 +16687,22 @@ export function CoopGameScene({
           return null; // Don't render invisible players
         }
 
-        const playerState = multiplayerPlayerStates.get(player.id) || {
-          isCharging: false,
-          chargeProgress: 0,
-          isSwinging: false,
-          swordComboStep: 1 as 1 | 2 | 3,
-          isSpinning: false,
-          isSwordCharging: false,
-          isDeflecting: false,
-          isViperStingCharging: false,
-          viperStingChargeProgress: 0,
-          isBarrageCharging: false,
-          barrageChargeProgress: 0,
-          isCobraShotCharging: false,
-          cobraShotChargeProgress: 0,
-          isSkyfalling: false,
-          isBackstabbing: false,
-          // Add missing Runeblade animation states
-          isSmiting: false,
-          isDeathGrasping: false,
-          isWraithStriking: false,
-          isCorruptedAuraActive: false,
-          isFrozen: false,
-          runebladeStoredCharge: false,
-          tempestBurstShotSeq: 0,
-        };
+        const playerState = multiplayerPlayerStates.get(player.id) || DEFAULT_REMOTE_PLAYER_ANIM_STATE;
 
         // Get the real-time position ref for this enemy player
         const enemyPositionRef = enemyPlayerPositionRefs.current.get(player.id);
 
-        const playerPos = new Vector3(player.position.x, player.position.y, player.position.z);
+        let playerPos = enemyPositionRef?.current;
+        if (!playerPos) {
+          // Fallback until the useFrame sync creates a live ref for this peer.
+          let scratch = remotePlayerPosScratchRef.current.get(player.id);
+          if (!scratch) {
+            scratch = new Vector3();
+            remotePlayerPosScratchRef.current.set(player.id, scratch);
+          }
+          scratch.set(player.position.x, player.position.y, player.position.z);
+          playerPos = scratch;
+        }
 
         const remotePeerEntityId = serverPlayerEntities.current.get(player.id);
         if (remotePeerEntityId == null) {
@@ -16737,12 +16841,7 @@ export function CoopGameScene({
                 rotation={enemy.rotation}
                 isDying={!!enemy.isDying}
                 staggerBuildup={enemy.staggerBuildup ?? 0}
-                isStunned={(() => {
-                  const world = engineRef.current!.getWorld();
-                  const entity = world.getEntity(entityId);
-                  const enemyComponent = entity?.getComponent(Enemy);
-                  return enemyComponent ? enemyComponent.isStunned : false;
-                })()}
+                isStunned={readEnemyIsStunned(engineRef.current?.getWorld(), entityId)}
               />
             </React.Suspense>
 

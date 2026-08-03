@@ -1309,8 +1309,8 @@ export const INFESTING_ENTROPIC_BOLT_DAMAGE = 89;
 export const INFESTED_ENTROPIC_BEAM_KILL_HEAL = 5;
 /** Scythe LMB — wind-up before first bolt/beam in a hold stream (seconds). */
 export const SCYTHE_LMB_WINDUP_SEC = 0.25;
-/** Blitz Cannon — Crossentropy charge duration (matches Entropic Bolt wind-up). */
-export const BLITZ_CANNON_CHARGE_MS = Math.round(SCYTHE_LMB_WINDUP_SEC * 1000);
+/** Blitz Cannon — Crossentropy charge duration. */
+export const BLITZ_CANNON_CHARGE_MS = 712;
 /** Blitz Cannon — constant rocket travel speed. */
 export const BLITZ_CANNON_ROCKET_SPEED = 21.5;
 /** Blitz Cannon — reduced max travel distance (Reaper keeps full range). */

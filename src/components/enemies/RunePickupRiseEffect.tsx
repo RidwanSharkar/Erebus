@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   AdditiveBlending,
   Color,
@@ -58,6 +58,17 @@ export default function RunePickupRiseEffect({
   const sparkMats = useRef(
     Array.from({ length: SPARK_COUNT }, () => makeAdditiveMaterial(color, 0.55)),
   );
+
+  useEffect(() => {
+    const ring = ringMat.current;
+    const pillar = pillarMat.current;
+    const sparks = sparkMats.current;
+    return () => {
+      ring.dispose();
+      pillar.dispose();
+      sparks.forEach((m) => m.dispose());
+    };
+  }, []);
 
   const riseLight = useDynamicLight({ color, distance: 4, priority: 1 });
 

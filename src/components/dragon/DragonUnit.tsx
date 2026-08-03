@@ -26,6 +26,7 @@ import ShoulderTrinketPlates from './ShoulderTrinketPlates';
 import SpellCastingAura from '../weapons/SpellCastingAura';
 import PrimeMateriaAura from '../weapons/PrimeMateriaAura';
 import IncinerationChargeAura from '../weapons/IncinerationChargeAura';
+import IncinerationVerticalChargeRing from '../weapons/IncinerationVerticalChargeRing';
 import SpellCastingHalos from '../weapons/SpellCastingHalos';
 import DeflectShield from '../weapons/DeflectShield';
 import type { AegisPaletteVariant } from '@/utils/aegisShieldPalette';
@@ -922,6 +923,8 @@ export default function DragonUnit({
             parentRef={groupRef}
             isActive={isIncinerationCharging}
           />
+
+          <IncinerationVerticalChargeRing isActive={isCrossentropyCharging} />
         </>
       )}
 

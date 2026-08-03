@@ -7,7 +7,7 @@ export type ThroneStatueModel = 'deathwing' | 'giantSpine';
 
 export const THRONE_STATUE_PATHS: Record<ThroneStatueModel, string> = {
   deathwing: '/models/trinket/Deathwing.glb',
-  giantSpine: '/models/trinket/GIANTSPINE.glb',
+  giantSpine: '/models/trinket/pylons/GIANTSPINE.glb',
 };
 
 export type ThroneStatueDef = {

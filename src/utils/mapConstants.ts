@@ -12,7 +12,7 @@ export const MAIN_ARENA_FLOOR_RADIUS = MAIN_ARENA_HEX_RADIUS - MAIN_ARENA_FLOOR_
 /** Stat/trial hex combat arena — must match `HexCombatArena.tsx`. */
 export const HEX_ARENA_RADIUS = 18;
 /** Fae Realm pre-intro hex arena — slightly larger than Inner Sanctum (r=14). */
-export const FAE_REALM_HEX_RADIUS = 15;
+export const FAE_REALM_HEX_RADIUS = 18;
 /** Intro castle rooms — must match `backend/coopArenaLayout.js` CASTLE_ROOM_HALF_SIZE. */
 export const CASTLE_ROOM_HALF_SIZE = 14;
 export const CASTLE_ROOM_BOUNDS: MainArenaBounds = {

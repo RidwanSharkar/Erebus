@@ -367,6 +367,13 @@ export interface WarlockMeteorEmberZoneState {
   durationMs: number;
 }
 
+export interface DestinyEmberZoneState {
+  id: string;
+  position: Vector3;
+  radius: number;
+  durationMs: number;
+}
+
 export interface MistEffectState {
   id: string;
   position: Vector3;
