@@ -14,7 +14,7 @@ import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStat
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { applyEnemyHealthBarFill, syncEnemyHealthBarFillFromRef, syncEnemyHealthBarNumericTextFromRef } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
-import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
+import { getUnitNameplateName } from '@/utils/enemyDisplayNames';
 import { campHpTheme } from '@/utils/campHpTheme';
 
 const TIGER_HP_BAR_WIDTH = 1.8;
@@ -307,7 +307,7 @@ function TigerRenderer({
             </mesh>
 
             <EnemyHealthBarTextLabel
-              name={getEnemyDisplayName('tiger')}
+              name={getUnitNameplateName('tiger', campType)}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

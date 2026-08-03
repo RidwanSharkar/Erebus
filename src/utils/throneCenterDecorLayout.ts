@@ -110,7 +110,7 @@ export const MAP_CENTER_PRISM_MODELS: readonly MapCenterPrismModel[] = [
   'goldCracked',
 ] as const;
 
-export const THRONE_GOLD_SHARD_CRACKED_PATH = '/models/trinket/pylons/7.glb';
+export const THRONE_GOLD_SHARD_CRACKED_PATH = '/models/trinket/goldShard_cracked.glb';
 
 export const MAP_CENTER_PRISM_PATHS: Record<MapCenterPrismModel, string> = {
   prismGold: THRONE_PRISM_GOLD_PATH,

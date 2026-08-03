@@ -1,6 +1,6 @@
-# 🌑  Erebus β
+# 🌑  Erebus III
 
-A cooperative 1-3 player 3D boss battle action game featuring fast-paced real-time combat with a unique weapon/class system and boss encounter mechanics, emphasizing tactical positioning, resource management and coordinated party strategies within a fantasy/sci-fi arena.
+A co-op 3D action roguelike with a unique weapon/class system. Descend through the void - clear combat rooms to acquire allies and powerful rewards to customize each build. Fast real-time combat where positioning, resources, and party coordination decide whether the run survives.
 
 ## Table of Contents
 
@@ -22,10 +22,7 @@ A cooperative 1-3 player 3D boss battle action game featuring fast-paced real-ti
   - [15. Items, Merchant & Economy](#15-items-merchant--economy)
 - [Legacy README](#legacy-readme)
 
-<!-- GAME_GUIDE:START -->
 ## Game Guide
-
-Player-facing reference generated from the same data as the in-game Rulebook. Regenerate with `npm run readme:generate`.
 
 ### 1. Basics
 
@@ -72,17 +69,13 @@ In the throne room, stand by a floating weapon and press X to equip it. Use the 
 
 #### Runeblade
 
-*Arcane runeblade — combo melee with smite and void grasp.*
-
 **Left-click** — Melee combo chain — three hits that escalate in power.
 
 - **Q** — **Wraith Strike**: A swift strike that briefly applies SLOW and TAUNT to enemies hit. 5 second cooldown.
 - **E** — **Colossus Strike**: Calls down a pillar of radiant energy, dealing damage to enemy players in a small area, healing you for 10 HP. 8 second cooldown.
-- **R** — **Death Grasp**: Launch a spectral claw that grabs an enemy, dealing 80 damage and TAUNTING them. Non-elite enemies are pulled in front of you.
+- **R** — (unlocked later / empty by default)
 
 #### Sabres
-
-*Frost dual blades — flurries, shadow step, and skyfall.*
 
 **Left-click** — Fast dual-blade flurry with stacking pressure on the same target.
 
@@ -92,8 +85,6 @@ In the throne room, stand by a floating weapon and press X to equip it. Use the 
 
 #### Bow
 
-*Elemental bow — charged shots and ethereal volleys.*
-
 **Left-click** — Hold left-click to charge a shot. Release while the bow flashes for a Perfect Shot.
 
 - **Q** — **Frostbite**: Fires 5 arrows in an arc. An enemy can be hit by multiple arrows at close range. 8 second cooldown.
@@ -101,8 +92,6 @@ In the throne room, stand by a floating weapon and press X to equip it. Use the 
 - **R** — (unlocked later / empty by default)
 
 #### Scythe
-
-*Chaos scythe — mantra, sunwell, and cryoflame.*
 
 **Left-click** — Hold left-click to fire Entropic Bolts in a stream (or Icebeam if that talent is active).
 
@@ -114,13 +103,13 @@ In the throne room, stand by a floating weapon and press X to equip it. Use the 
 
 Choose an archetype from a west-rim pedestal in the throne room (press X). **Shift** activates its power.
 
-- **Rogue** — Hold Shift to sprint.
+- **Rogue** — Hold Shift to Sprint.
 
-- **Gladiator** — Press Shift to deflect.
+- **Gladiator** — Press Shift to Deflect.
 
-- **Acolyte** — Hold Shift to channel Locusts.
+- **Acolyte** — Hold Shift to channel homing Locusts.
 
-- **Alchemist** — Toggle Shift to activate Prime Materia.
+- **Alchemist** — Toggle Shift to activate Prime Materia, draining health from enemies within the transmutation circle. 
 
 - **Sorceress** — Hold Shift to charge Incineration. Left-click to fire. Over 90 charge becomes Plasma, draining shield for bonus damage and forward lightning bolts. 2s cooldown after firing.
 
@@ -227,7 +216,7 @@ Each run has four mutually exclusive primary slots: Left-Click, Q, E, and Dash. 
 
 ##### Left-Click
 
-*Primary shot modifiers (+ Wyvern Sting from green rooms)*
+*Primary shot modifiers*
 
 - **Charged Shots** — Bow basic attacks apply STAGGER. At 100 STAGGER, the target is struck by a Lightning Bolt that inflicts STUN for 1.0 seconds.
 - **Arctic Sting** — The first enemy hit by Perfect Shot spawns a concentrated BLIZZARD that deals 30 damage every 0.5 seconds to enemies within. Each tick applies CHILL; at 5 stacks the target is FROZEN for 6 seconds.
@@ -236,7 +225,7 @@ Each run has four mutually exclusive primary slots: Left-Click, Q, E, and Dash. 
 
 ##### Q — Frostbite
 
-*Bite modifiers (requires Frostbite on Q)*
+*Bite modifiers*
 
 - **Wyvern Bite** — Each Frostbite arrow hit now applies Concentrated VENOM: 31 damage per second per stack (max 5 stacks) over 8 seconds.
 - **Wrathful Bite** — Frostbite arrows gain +40% critical strike chance and +40% critical strike damage.
@@ -245,7 +234,7 @@ Each run has four mutually exclusive primary slots: Left-Click, Q, E, and Dash. 
 
 ##### E — Reaping Talons
 
-*Talons modifiers (requires Reaping Talons)*
+*Talons modifiers*
 
 - **Wyvern Talons** — Reaping Talons (E) now detonates active VENOM, dealing all remaining DoT damage and instantly ending the effect. Reaping Talons and detonation kills raise an infested ZOMBIE ally for 30s (max 3).
 - **Wrathful Talons** — Reaping Talons' backward return arrow gains +50% critical strike chance and +100% critical strike damage.
@@ -265,7 +254,7 @@ Each run has four mutually exclusive primary slots: Left-Click, Q, E, and Dash. 
 
 ##### Q — Wraith Strike
 
-*Strike modifiers (requires Wraith Strike)*
+*Strike modifiers*
 
 - **Infested Strike** — Wraith Strike gains increased base damage and applies 1 stack of Concentrated Venom per hit; killing an enemy with Wraith Strike raises a ZOMBIE ally for 30s (max 3).
 - **Wrathful Strike** — Wraith Strike gains +20% critical strike chance and +50% critical strike damage.
@@ -274,7 +263,7 @@ Each run has four mutually exclusive primary slots: Left-Click, Q, E, and Dash. 
 
 ##### E — Colossus Smite
 
-*Smite modifiers (requires Colossus Smite)*
+*Smite modifiers*
 
 - **Infested Smite** — Each Smite beam heals you for 5 health per enemy hit by that beam. Killing an enemy with Smite raises a ZOMBIE ally for 30s (max 3)..
 - **Infernal Smite** — Each Smite beam gains +50% critical strike chance and applies IGNITE: dealing bonus damage equal to 80% of that beam’s hit damage over 4 seconds.
@@ -285,7 +274,7 @@ Each run has four mutually exclusive primary slots: Left-Click, Q, E, and Dash. 
 
 ##### Left-Click — Entropic
 
-*Entropic bolt / beam branch*
+*Entropic Bolt / Particle Beam branch*
 
 - **Wrathful Bolts** — Entropic Bolts gain +40% critical strike chance.
 - **Charged Bolts** — Entropic Bolts now apply STAGGER. At 100 STAGGER, the target is struck by a Lightning Bolt that inflicts STUN for 1.0 seconds.
@@ -294,7 +283,7 @@ Each run has four mutually exclusive primary slots: Left-Click, Q, E, and Dash. 
 
 ##### Q — Mantra (Totem)
 
-*Totem modifiers (requires Mantra)*
+*Totem modifiers*
 
 - **Wrathful Totem** — Mantra's Totem shots now gain increased base damage and +40% critical strike chance.
 - **Storm Totem** — Mantra's Totem shots now apply STAGGER. At 100 STAGGER, the target is struck by a Lightning Bolt that inflicts STUN for 1.0 seconds.
@@ -303,7 +292,7 @@ Each run has four mutually exclusive primary slots: Left-Click, Q, E, and Dash. 
 
 ##### E — Crossentropy
 
-*Crossentropy modifiers (requires Crossentropy)*
+*Crossentropy modifiers*
 
 - **Tempest** — Crossentropy now applies 100 STAGGER on hit. At 100 STAGGER, the target is struck by a Lightning Bolt that inflicts STUN for 1.0 seconds.
 - **Plague** — Crossentropy now deals 340 base damage and applies 3 stacks of Concentrated Venom per hit. Each enemy killed by Crossentropy raises up to two ZOMBIE allies for 30s (max 3).
@@ -323,7 +312,7 @@ Each run has four mutually exclusive primary slots: Left-Click, Q, E, and Dash. 
 
 ##### Q — Backstab
 
-*Backstab modifiers (requires Backstab on Q)*
+*Backstab modifiers*
 
 - **Charged Stab** — Backstab now applies 80 STAGGER on hit. At 100 STAGGER, the target is struck by a Lightning Bolt that inflicts STUN for 1.0 seconds.
 - **Wrathful Stab** — Backstab now gains +30% critical strike chance and +80% critical strike damage.
@@ -332,7 +321,7 @@ Each run has four mutually exclusive primary slots: Left-Click, Q, E, and Dash. 
 
 ##### E — Flourish
 
-*Flourish modifiers (requires Flourish)*
+*Flourish modifiers*
 
 - **Storm Flourish** — Flourish now applies STAGGER on hit. At 100 STAGGER, the target is struck by a Lightning Bolt that inflicts STUN for 1.0 seconds.
 - **Wrathful Flourish** — Flourish gains +35% critical strike chance and +15% critical strike damage.
@@ -417,7 +406,7 @@ To unlock a duo boon, own at least one primary weapon-ability room boon (Left-Cl
 
 #### Red + Purple
 
-- **Frost Queen** — Any enemy that becomes FROZEN is immediately struck by a METEOR at their location, dealing the same damage as your Meteor Strike. Gain a pair of small BONE WINGS.
+- **Frost Queen** — Any enemy that becomes FROZEN is immediately struck by a METEOR at their location, dealing the same damage as your Meteor Strike. 
 - **Duality** — All IGNITE damage ticks have a 15% chance to summon a BLIZZARD at the ignited enemy’s location.
 
 #### Green + Purple
@@ -461,7 +450,7 @@ After clearing a combat room: approach the pedestal and press X → choose a rew
 - **(Yellow) Trial Room** — +250 GOLD from the pedestal.
 - **(Orange) Stat Room** — +5 STAT points from the pedestal.
 - **(Pink) Merchant** — Buy heal, dash charge, weapon talent, and items with GOLD.
-- **(Red Void) Boss Room** — Defeat the boss, then pick a CLASS TALENT from your weapon pool.
+- **Boss Room** — Defeat the boss, then pick a CLASS TALENT from your weapon pool.
 
 ### 11. Aspects
 
@@ -516,7 +505,7 @@ Clearing Fae Realm III grants a spirit animal companion that follows you between
 
 #### Tiger
 
-*600 HP · 29 Melee Damage · 1100ms Attack Cooldown · 10 Aggro Radius*
+*525 HP · 29 Melee Damage · 1100ms Attack Cooldown · 10 Aggro Radius*
 
 Regenerates 15 HP every 5s.
 
@@ -528,7 +517,7 @@ Regenerates 15 HP every 5s.
 
 #### Wolf
 
-*400 HP · 33 Melee Damage · 1100ms Attack Cooldown · 10 Aggro Radius*
+*400 HP · 26 Melee Damage · 850ms Attack Cooldown · 10 Aggro Radius*
 
 Regenerates 30 HP every 5s.
 
@@ -540,7 +529,7 @@ Regenerates 30 HP every 5s.
 
 #### Bear
 
-*800 HP · 47 Melee Damage · 1400ms Attack Cooldown · 10 Aggro Radius*
+*725 HP · 43 Melee Damage · 1400ms Attack Cooldown · 10 Aggro Radius*
 
 Regenerates 40 HP every 5s.
 
@@ -609,8 +598,8 @@ Between combat rooms you return to the Throne Room. Equip weapons and aspects, p
 
 Occasionally portals lead to special destinations:
 
-- **Eden / Distorted Eden / Eden Finale**
-- **Delirium Gate** — defend the structure (or clear ghouls on failure)
+- **Eden / Distorted Eden**
+- **Delirium Gate** 
 - **Erebus Gate**
 - **Dream Layer** — legendary item shop and set pieces
 
@@ -618,23 +607,11 @@ Occasionally portals lead to special destinations:
 
 - Trial Room (Crypt of Currency) pedestal: **+250 GOLD**
 - Stat Room (Crypt of Skill) pedestal: **+5 STAT points**
-- Leveling grants +20 max HP and +5 STAT points per level (base crit chance 11%, base crit damage 2.0×).
+- Leveling grants +20 max HP and +5 STAT points per level
 
 ### 14. Enemies
 
-Enemy nameplates as they appear in co-op. Combat profiles vary by type; bosses and titans are pull-immune to Death Grasp.
-
-#### Beasts
-
-- TIGER
-- WOLF
-- BEAR
-- SERPENT
-- RECLUSE
-- WYVERN
-- TERRORHAWK
-
-#### Elites
+#### Core
 
 - KNIGHT
 - WARLOCK
@@ -643,38 +620,46 @@ Enemy nameplates as they appear in co-op. Combat profiles vary by type; bosses a
 - GHOUL
 - TEMPLAR
 - VIPER
-- COLOSSUS
+- WRAITH
+- MARTYR
+- SENTINEL
+
+#### Beasts
+- TIGER
+- WOLF
+- BEAR
+- SERPENT
+- RECLUSE
+- SKY RAY
+- TERRORHAWK
+
+#### Elites
+- WYVERN
+- VALKYRIE
+- NEMESIS
 - STONE GIANT
 - ETERNAL OAK
+- COLOSSUS
+
+#### Champions
+- DEATH KNIGHT
 - SPECTRE
 - ASSASSIN
 - SHAMAN
-- FROST QUEEN
 - MEDUSA
-- DEATHKNIGHT
-- SKYRAY
-- WRAITH
-- MARTYR
-- GREED
-- ZOMBIE
+- FROST QUEEN
 
 #### Bosses
-
 - HATE
 - ENVY
 - FEAR
 - DESTINY
-- NEMESIS
-- VALKYRIE
-- SENTINEL
 
 #### Titans
-
-- TITAN
-- STORM TITAN
-- TITAN OF MERCY
 - TITAN OF WRATH
+- TITAN OF MERCY
 - PLAGUE TITAN
+- STORM TITAN
 
 ### 15. Items, Merchant & Economy
 
@@ -710,7 +695,6 @@ Legendary armor, rings, and pendants found in the Dream Layer and related loot.
 - **Razed Diamond** (*Bloodrose Ember*) — Q abilities deal increased damage based on missing HP, up to +250%.
 - **Hunter's Mark** (*Hunter's Mark*) — Your beast companions deal +30 melee damage.
 - **Soul Ward** (*Soul Bond*) — Negate a hit and deal double the damage to your ally instead. 6s cooldown.
-<!-- GAME_GUIDE:END -->
 
 ---
 

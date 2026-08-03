@@ -32,16 +32,16 @@ const COOP_BOSS_MAX_HEALTH_PRE_TRINITY = { boss: 5000, boss2: 8500, boss3: 12500
 const COOP_BOSS_MAX_HEALTH_POST_TRINITY = { boss: 12500, boss2: 20000, boss3: 30000, destiny: 55000 };
 /** Knight damage by boss-kill tier: [base, after boss 1, after boss 2, after boss 3+]. */
 const KNIGHT_DAMAGE_BY_TIER = {
-  green:  [17, 27, 37, 47],
-  red:    [23, 33, 43, 53],
-  blue:   [14, 24, 34, 44],
-  purple: [15, 25, 35, 45],
+  green:  [21, 27, 37, 47],
+  red:    [27, 36, 44, 58],
+  blue:   [18, 27, 36, 44],
+  purple: [19, 29, 39, 49],
 };
 const KNIGHT_SOUL_STATS = {
   green:  { health: 1250, maxHealth: 1250, attackCooldown: 2500, moveSpeed: 2.0 },
   red:    { health: 1000, maxHealth: 1000, attackCooldown: 2500, moveSpeed: 2.0 },
-  blue:   { health: 900,  maxHealth: 900,  attackCooldown: 1250, moveSpeed: 3.25 },
-  purple: { health: 900,  maxHealth: 900,  attackCooldown: 2500, moveSpeed: 2.0 },
+  blue:   { health: 900,  maxHealth: 900,  attackCooldown: 1250, moveSpeed: 2.25 },
+  purple: { health: 900,  maxHealth: 900,  attackCooldown: 2500, moveSpeed: 3.25 },
 };
 const KNIGHT_SOUL_TYPES = ['red', 'blue', 'purple', 'green'];
 /** Max freeze duration (ms) for boss-tier enemies (server + client). */
@@ -50,7 +50,7 @@ const ENTANGLEMENT_DURATION_MS = 5000;
 const ENTANGLEMENT_DAMAGE_PER_SECOND = 31;
 /** Keep in sync with `STAGGER_MAX` / `STAGGER_MAX_BOSS` in `src/utils/talents.ts`. */
 const STAGGER_CAP_NORMAL = 100;
-const STAGGER_CAP_BOSS = 300;
+const STAGGER_CAP_BOSS = 225;
 // Safety-net only: released when every connected player sends 'coop-combat-transition-ready'
 // (after their loading screen fully fades).  This fallback only fires if a client crashes or
 // disconnects mid-transition and never sends the confirmation.  Keep it large enough to never
@@ -155,7 +155,7 @@ const ARCHMAGE_ENTROPIC_IGNITE_TICKS = 4;
 const ARCHMAGE_FLAME_PILLAR_BASE_DAMAGE = 125;
 const ARCHMAGE_FLAME_PILLAR_DAMAGE_PER_INTELLECT = 5;
 /** Keep in sync with Blademaster Shadowflame constants in src/utils/weaponAspects.ts */
-const BLADEMASTER_SHADOWFLAME_DOT_FRACTION = 0.6;
+const BLADEMASTER_SHADOWFLAME_DOT_FRACTION = 0.7;
 const BLADEMASTER_SHADOWFLAME_DURATION_MS = 2500;
 const BLADEMASTER_SHADOWFLAME_TICKS = 5;
 const METEOR_IGNITE_DOT_BASE_FRACTION = 0.8;
@@ -175,7 +175,7 @@ const WARLORD_BACKSTAB_CONCENTRATED_VENOM_STACKS = 1;
 /** Keep in sync with `POISON_DART_CONCENTRATED_VENOM_STACKS` in src/utils/weaponAspects.ts */
 const POISON_DART_CONCENTRATED_VENOM_STACKS = 1;
 /** Keep in sync with `DEATHDEALER_THIRD_HIT_STAGGER_PROC_CHANCE` in src/utils/weaponAspects.ts */
-const DEATHDEALER_THIRD_HIT_STAGGER_PROC_CHANCE = 0.45;
+const DEATHDEALER_THIRD_HIT_STAGGER_PROC_CHANCE = 0.5;
 /** Keep in sync with `INFESTED_COMBO_VENOM_PROC_CHANCE` in src/utils/talents.ts */
 const INFESTED_COMBO_VENOM_PROC_CHANCE = 0.30;
 /** Keep in sync with `INFESTING_SABRES_SWIPES_VENOM_PROC_CHANCE` in src/utils/talents.ts */
@@ -190,7 +190,7 @@ const STORM_SHIELD_BASE_RESTORE = 30;
 /** Keep in sync with `STORM_SHIELD_AGILITY_PER_POINT` in src/utils/talents.ts */
 const STORM_SHIELD_AGILITY_PER_POINT = 5;
 /** Keep in sync with `PYROMANIA_METEOR_ICD_MS` in src/utils/talents.ts */
-const PYROMANIA_METEOR_ICD_MS = 1000;
+const PYROMANIA_METEOR_ICD_MS = 1250;
 /** Keep in sync with `DIVINE_COLD_BLIZZARD_ICD_MS` in src/utils/talents.ts */
 const DIVINE_COLD_BLIZZARD_ICD_MS = 2000;
 /** Keep in sync with `DIVINE_COLD_FORWARD_RANGE` in src/utils/talents.ts */
@@ -228,7 +228,7 @@ const INCINERATION_PLASMA_DAMAGE_PER_SHIELD = 4;
 /** Keep in sync with `ACID_RAIN_VENOM_STACKS_PER_TICK` in src/utils/talents.ts */
 const ACID_RAIN_VENOM_STACKS_PER_TICK = 1;
 const ALLIED_KNIGHT_ID = 'allied-knight';
-const ALLIED_KNIGHT_MAX_HP = 600;
+const ALLIED_KNIGHT_MAX_HP = 550;
 const ALLIED_KNIGHT_DAMAGE = 50;
 const ALLIED_KNIGHT_MOVE_SPEED = 2.85;
 const ALLIED_KNIGHT_ATTACK_COOLDOWN_MS = 1375;
@@ -249,11 +249,11 @@ const ALLIED_DEMON_DAMAGE = 48;
 const ALLIED_DEMON_MOVE_SPEED = 3.0;
 const ALLIED_DEMON_ATTACK_COOLDOWN_MS = 900;
 const ALLIED_ENCHANTRESS_ID = 'allied-enchantress';
-const ALLIED_ENCHANTRESS_MAX_HP = 400;
+const ALLIED_ENCHANTRESS_MAX_HP = 375;
 const ALLIED_ENCHANTRESS_MOVE_SPEED = 2.25;
 const ALLIED_HEALER_ID = 'allied-healer';
 /** Beastmaster bow companion — keep in sync with `BEASTMASTER_TIGER_*` in weaponAspects.ts */
-const BEASTMASTER_TIGER_MAX_HP = 600;
+const BEASTMASTER_TIGER_MAX_HP = 525;
 const BEASTMASTER_TIGER_DAMAGE = 29;
 const BEASTMASTER_TIGER_AGGRO_RADIUS = 10;
 const BEASTMASTER_TIGER_FOLLOW_DISTANCE = 3.0;
@@ -328,7 +328,7 @@ const ALLIED_BEAST_ENEMY_TYPES = new Set([
 const FAE_BEAST_STATS = Object.freeze({
   tiger: {
     enemyType: 'allied-tiger',
-    maxHp: 600,
+    maxHp: 525,
     damage: 29,
     walkSpeed: 2.85,
     attackCooldownMs: 1100,
@@ -348,8 +348,8 @@ const FAE_BEAST_STATS = Object.freeze({
   },
   bear: {
     enemyType: 'allied-bear',
-    maxHp: 800,
-    damage: 47,
+    maxHp: 675,
+    damage: 41,
     walkSpeed: 2.85,
     attackCooldownMs: 1400,
     visualScale: 1.0,
@@ -521,9 +521,9 @@ const BOSS1_ELITE_HEALTH_MULT = 4;
 const COOP_BOSS2_WEAVER_EARLY_CHANCE = 0.50;
 /** Of the remaining Boss-2 slot rolls: 60% Archon warlock, 40% Weaver. */
 const COOP_BOSS2_WARLOCK_CHANCE = 0.60;
-const COOP_WAVE_GREED_SPAWN_CHANCE = 0.20; // 10% chance for a bonus Greed enemy on any countable combat room's wave init
+const COOP_WAVE_GREED_SPAWN_CHANCE = 0.175; // 10% chance for a bonus Greed enemy on any countable combat room's wave init
 const COOP_WAVE_WRAITH_ROOM_CHANCE = 0.33; // 33% chance for 1–2 bonus Wraiths on any countable combat room's wave init
-const GREED_LIFETIME_MS = 30000; // Greed despawns 30s after spawning if not killed
+const GREED_LIFETIME_MS = 27500; // Greed despawns 30s after spawning if not killed
 const GREED_COLORS = ['green', 'red', 'blue', 'purple'];
 /** Client default kill-bar target until first server `required` emit (see ExperienceBar.tsx). */
 const COOP_MIXED_WAVE_COUNT = 8;
@@ -552,10 +552,10 @@ const MERCHANT_OXYGEN_COST = 375;
 const MERCHANT_WARPDRIVE_COST = 375;
 const MERCHANT_BACKFILL_COST = 1200;
 const MERCHANT_BOSS_ITEM_POOL = Object.freeze([
-  { type: 'MANA_SHIELD', label: 'Mana Shield', stat: 'intellect', bonuses: { common: 7, rare: 12, epic: 16, legendary: 20 } },
-  { type: 'COLOSSUS_LUNGS', label: 'Colossus Lungs', stat: 'stamina', bonuses: { common: 5, rare: 8, epic: 12, legendary: 18 } },
-  { type: 'REAPER_CLAWS', label: 'Reaper Claws', stat: 'agility', bonuses: { common: 5, rare: 8, epic: 12, legendary: 16 } },
-  { type: 'TITAN_HEART', label: 'Titan Heart', stat: 'strength', bonuses: { common: 5, rare: 8, epic: 12, legendary: 16 } },
+  { type: 'MANA_SHIELD', label: 'Mana Shield', stat: 'intellect', bonuses: { common: 7, rare: 10, epic: 13, legendary: 17 } },
+  { type: 'COLOSSUS_LUNGS', label: 'Colossus Lungs', stat: 'stamina', bonuses: { common: 5, rare: 8, epic: 11, legendary: 15 } },
+  { type: 'REAPER_CLAWS', label: 'Reaper Claws', stat: 'agility', bonuses: { common: 6, rare: 9, epic: 12, legendary: 16 } },
+  { type: 'TITAN_HEART', label: 'Titan Heart', stat: 'strength', bonuses: { common: 6, rare: 9, epic: 12, legendary: 16 } },
 ]);
 /** Premium relics that replace dash/talent pedestals when those are sold out for the run. */
 const MERCHANT_BACKFILL_POOL = Object.freeze([
@@ -610,12 +610,12 @@ const EXODIA_ITEM_POOL = Object.freeze([
   { type: 'HEXMETAL_VAMBRACES', label: 'Hexmetal Vambraces' },
 ]);
 const DREAM_LAYER_RING_POOL = Object.freeze([
-  { type: 'PERSEPHONE', label: 'Persephone', cost: 90 },
-  { type: 'WYVERN_AMETHYST', label: 'Wyvern Amethyst', cost: 65 },
-  { type: 'INFINITE_AMBER', label: 'Infinite Amber', cost: 65 },
-  { type: 'LIQUID_SAPPHIRE', label: 'Liquid Sapphire', cost: 65 },
-  { type: 'JAGUAR_EMERALD', label: 'Jaguar Emerald', cost: 65 },
-  { type: 'RAZED_DIAMOND', label: 'Razed Diamond', cost: 65 },
+  { type: 'PERSEPHONE', label: 'Persephone', cost: 60 },
+  { type: 'WYVERN_AMETHYST', label: 'Wyvern Amethyst', cost: 60 },
+  { type: 'INFINITE_AMBER', label: 'Infinite Amber', cost: 60 },
+  { type: 'LIQUID_SAPPHIRE', label: 'Liquid Sapphire', cost: 60 },
+  { type: 'JAGUAR_EMERALD', label: 'Jaguar Emerald', cost: 60 },
+  { type: 'RAZED_DIAMOND', label: 'Razed Diamond', cost: 60 },
 ]);
 /** Combined armor-set + ring pool for Dream Layer legendary pedestals A/B. */
 const DREAM_LAYER_COMBINED_LEGENDARY_POOL = Object.freeze([
@@ -8889,31 +8889,31 @@ class GameRoom {
     }
     if (type === 'spectre') {
       return { id: `spectre-${campIndex}-${slotIndex}-${ts}`, type: 'spectre', ...base,
-        health: 2750 + hpBonus, maxHealth: 1350 + hpBonus,
+        health: 2750 + hpBonus, maxHealth: 2750 + hpBonus,
         damage: 45, attackCooldown: 1600, moveSpeed: 2.75,
         soulType: campDef.knightSoulType, attackVariant: 1 };
     }
     if (type === 'death-knight') {
       return { id: `death-knight-${campIndex}-${slotIndex}-${ts}`, type: 'death-knight', ...base,
-        health: 3150 + hpBonus, maxHealth: 2200 + hpBonus,
+        health: 3150 + hpBonus, maxHealth: 3150 + hpBonus,
         damage: 49, attackCooldown: 1600, moveSpeed: 2.5,
         soulType: campDef.knightSoulType, attackVariant: 1, heartstrikeVariant: 1 };
     }
     if (type === 'shaman') {
       return { id: `shaman-${campIndex}-${slotIndex}-${ts}`, type: 'shaman', ...base,
-        health: 2600 + hpBonus, maxHealth: 2200 + hpBonus,
+        health: 2600 + hpBonus, maxHealth: 2600 + hpBonus,
         damage: 32, attackCooldown: 950, moveSpeed: 2.45,
         soulType: campDef.knightSoulType, attackVariant: 1 };
     }
     if (type === 'assassin') {
       return { id: `assassin-${campIndex}-${slotIndex}-${ts}`, type: 'assassin', ...base,
-        health: 6200 + hpBonus, maxHealth: 3600 + hpBonus,
+        health: 6200 + hpBonus, maxHealth: 6200 + hpBonus,
         damage: 0, attackCooldown: 5000, moveSpeed: 2.25,
         soulType: campDef.knightSoulType, spawnedAt: ts };
     }
     if (type === 'serpent') {
       return { id: `serpent-${campIndex}-${slotIndex}-${ts}`, type: 'serpent', ...base,
-        health: 1270 + hpBonus, maxHealth: 1400 + hpBonus,
+        health: 1270 + hpBonus, maxHealth: 1270 + hpBonus,
         damage: 17, attackCooldown: 1000, moveSpeed: 2.5,
         soulType: campDef.knightSoulType, attackVariant: 1 };
     }
@@ -8926,19 +8926,19 @@ class GameRoom {
     }
     if (type === 'frost-queen') {
       return { id: `frost-queen-${campIndex}-${slotIndex}-${ts}`, type: 'frost-queen', ...base,
-        health: 6700 + hpBonus, maxHealth: 4300 + hpBonus,
+        health: 6700 + hpBonus, maxHealth: 6700 + hpBonus,
         damage: 0, moveSpeed: 0,
         soulType: campDef.knightSoulType };
     }
     if (type === 'medusa') {
       return { id: `medusa-${campIndex}-${slotIndex}-${ts}`, type: 'medusa', ...base,
-        health: 6900 + hpBonus, maxHealth: 6900 + hpBonus,
+        health: 8350 + hpBonus, maxHealth: 8350 + hpBonus,
         damage: 0, moveSpeed: 0,
         soulType: campDef.knightSoulType, attackVariant: 1 };
     }
     if (type === 'wyvern') {
       return { id: `wyvern-${campIndex}-${slotIndex}-${ts}`, type: 'wyvern', ...base,
-        health: 4900 + hpBonus, maxHealth: 4900 + hpBonus,
+        health: 4660 + hpBonus, maxHealth: 4660 + hpBonus,
         damage: 42, attackCooldown: 1700, moveSpeed: 2.85,
         soulType: campDef.knightSoulType, attackVariant: 1, breathVariant: 1 };
     }
@@ -9011,7 +9011,7 @@ class GameRoom {
     }
     if (type === 'bone-spider') {
       return { id: `bone-spider-${campIndex}-${slotIndex}-${ts}`, type: 'bone-spider', ...base,
-        health: 3700 + hpBonus, maxHealth: 3700 + hpBonus,
+        health: 4200 + hpBonus, maxHealth: 4200 + hpBonus,
         damage: 56, attackCooldown: 2100, moveSpeed: 2.5,
         soulType: campDef.knightSoulType, attackVariant: 1, spawnedAt: ts };
     }
@@ -9029,24 +9029,24 @@ class GameRoom {
     if (type === 'stone-giant') {
       // Excluded from HP scaling — Eternity Palace elite.
       return { id: `stone-giant-${campIndex}-${slotIndex}-${ts}`, type: 'stone-giant', ...base,
-        health: 7200, maxHealth: 6400, damage: 66, attackCooldown: 2900,
+        health: 7200, maxHealth: 7200, damage: 66, attackCooldown: 2900,
         moveSpeed: 2.25, patrolSpeed: 1.35, attackVariant: 1, spawnedAt: ts };
     }
     if (type === 'eternal-oak') {
       // Excluded from HP scaling — Eternity Palace elite.
       return { id: `eternal-oak-${campIndex}-${slotIndex}-${ts}`, type: 'eternal-oak', ...base,
-        health: 8600, maxHealth: 7200, damage: 91, attackCooldown: 3300,
+        health: 8600, maxHealth: 8600, damage: 91, attackCooldown: 3300,
         moveSpeed: 2.0, patrolSpeed: 1.2, attackVariant: 1, spawnedAt: ts };
     }
     if (type === 'colossus') {
       // Excluded from HP scaling — Eternity Palace elite.
       return { id: `colossus-${campIndex}-${slotIndex}-${ts}`, type: 'colossus', ...base,
-        health: 10520, maxHealth: 9600, damage: 111, attackCooldown: 2100,
+        health: 10520, maxHealth: 10520, damage: 111, attackCooldown: 2100,
         moveSpeed: 2.65, patrolSpeed: 1.59, attackVariant: 1, spawnedAt: ts };
     }
     if (type === 'valkyrie') {
       return { id: `valkyrie-${campIndex}-${slotIndex}-${ts}`, type: 'valkyrie', ...base,
-        health: 2450 + hpBonus, maxHealth: 2450 + hpBonus,
+        health: 2650 + hpBonus, maxHealth: 2650 + hpBonus,
         damage: 56, moveSpeed: 0.6, soulType: campDef.knightSoulType };
     }
     // viper

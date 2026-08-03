@@ -337,7 +337,6 @@ function HomeContent() {
     coopColoredRoomVisitIndex,
     coopBossRoomVisitIndex,
     coopBossThroneArena,
-    coopIntroPending,
     lateJoinCombatLoadout,
     selectedArchetype,
     selectedWeaponAspect,
@@ -1754,11 +1753,7 @@ function HomeContent() {
       lastCoopIntermissionBgmRef.current = coopMainArenaIntermissionSeq;
       lastCoopEnterBgmRef.current = coopCombatArenaEnterSeq;
       lastCoopBossBgmRef.current = coopBossClearedBgmSeq;
-      if (coopIntroPending) {
-        void audio.coopEnterThronePrepMusic();
-      } else {
-        audio.coopEnterHubMusic();
-      }
+      void audio.coopEnterThronePrepMusic();
       return;
     }
     if (coopMainArenaIntermissionSeq > lastCoopIntermissionBgmRef.current) {
@@ -1788,7 +1783,6 @@ function HomeContent() {
     coopBossClearedBgmSeq,
     coopCurrentRoomKind,
     coopBossThroneArena,
-    coopIntroPending,
   ]);
 
   // Co-op room clear: portal phase unlocks (pedestal) — plays once per null → phase transition.

@@ -20,7 +20,7 @@ const FAE_REALM_INNER_APOTHEM = FAE_REALM_HEX_RADIUS * Math.cos(Math.PI / 6) - H
 const EREBUS_GATE_RADIUS = 14;
 const EREBUS_GATE_INNER_RADIUS = EREBUS_GATE_RADIUS - 0.5;
 /** Match `backend/gameRoom.js` COOP_THRONE_ROOM_RADIUS — prep disc; wall resolve when combat not active. */
-const COOP_THRONE_ROOM_RADIUS = 17;
+const COOP_THRONE_ROOM_RADIUS = 16;
 /** Match `ThroneRoom.tsx` THRONE_RIM_INSET — inset from grass rim for portals / foot clearance. */
 const THRONE_RIM_INSET = 1.25;
 const ENEMY_WALL_COLLISION_RADIUS = 0.5;
@@ -93,16 +93,16 @@ function clampToPentagonXZ(x, z, radius = EREBUS_GATE_RADIUS, inset = 0.5) {
 const MELEE_CLOSE_INSET = 0.35;
 const KNIGHT_MELEE_WINDUP_STEP = 0.3;
 const KNIGHT_MELEE_WINDUP_STEP_DELAY_MS = 450;
-const KNIGHT_DASH_COOLDOWN_MS = 6000;
+const KNIGHT_DASH_COOLDOWN_MS = 7000;
 const KNIGHT_DASH_DISTANCE = 3.5;
 const KNIGHT_DASH_DURATION_MS = 350;
 const KNIGHT_DASH_MIN_DISTANCE = 3.25;
-const KNIGHT_SPIN_COOLDOWN_MS = 7250;
+const KNIGHT_SPIN_COOLDOWN_MS = 7000;
 const KNIGHT_SPIN_CAST_RANGE = 4.5;
 const KNIGHT_SPIN_CHARGE_MS = 500;
 const KNIGHT_SPIN_DISTANCE = 4.5;
 const KNIGHT_SPIN_TRAVEL_MS = 400; // 31 frames at 30fps
-const KNIGHT_SPIN_DAMAGE = 18;
+const KNIGHT_SPIN_DAMAGE = 21;
 const KNIGHT_SPIN_STRIP_HALF_WIDTH = 0.75;
 
 // Assassin — hybrid spin / bow / evade (no basic melee).
@@ -151,7 +151,7 @@ const TITAN_BLADESTORM_DAMAGE = 15;
 const TITAN_BLADESTORM_SPIN_SPEED = 18.0; // rad/s — calm circular orbit (~1 rotation/sec)
 const TITAN_BLADESTORM_HIT_RADIUS = 4.75;
 const TITAN_STOMP_COOLDOWN_MS = 11_000;
-const TITAN_STOMP_WINDUP_MS = 1500;
+const TITAN_STOMP_WINDUP_MS = 1150;
 const TITAN_STOMP_MIN_DISTANCE = 3;
 const TITAN_STOMP_MAX_RANGE = 12;
 const TITAN_STOMP_STUN_MS = 2100;
@@ -225,12 +225,12 @@ const SPECTRE_MELEE_RANGE = 2.725;
 const SPECTRE_AGGRO_RADIUS = 15;
 const SPECTRE_SWING_LOCK_MS = 1200;
 const SPECTRE_HIT_DELAY_MS = 1000;
-const SPECTRE_WHIRLWIND_COOLDOWN_MS = 30000;
-const SPECTRE_WHIRLWIND_DURATION_MS = 5000;
+const SPECTRE_WHIRLWIND_COOLDOWN_MS = 20000;
+const SPECTRE_WHIRLWIND_DURATION_MS = 7000;
 const SPECTRE_WHIRLWIND_TICK_MS = 500;
 const SPECTRE_WHIRLWIND_RADIUS = 3;
 const SPECTRE_WHIRLWIND_DAMAGE = 23;
-const SPECTRE_WHIRLWIND_MOVE_SPEED_MULT = 1.0;
+const SPECTRE_WHIRLWIND_MOVE_SPEED_MULT = 1.225;
 const SPECTRE_WHIRLWIND_CAST_RANGE = 3.5;
 
 // Death Knight — spectre-style melee with Heartstrike cone ability
@@ -239,8 +239,8 @@ const DEATH_KNIGHT_AGGRO_RADIUS = 15;
 const DEATH_KNIGHT_SWING_LOCK_MS = 1000;
 const DEATH_KNIGHT_HIT_DELAY_MS = 750;
 const DEATH_KNIGHT_BASE_DAMAGE = 49;
-const DEATH_KNIGHT_HEARTSTRIKE_COOLDOWN_MS = 6000;
-const DEATH_KNIGHT_HEARTSTRIKE_DAMAGE = 39;
+const DEATH_KNIGHT_HEARTSTRIKE_COOLDOWN_MS = 9000;
+const DEATH_KNIGHT_HEARTSTRIKE_DAMAGE = 59;
 const DEATH_KNIGHT_HEARTSTRIKE_RANGE = DEATH_KNIGHT_MELEE_RANGE;
 const DEATH_KNIGHT_HEARTSTRIKE_HALF_ANGLE_RAD = Math.PI / 4;
 const DEATH_KNIGHT_HEARTSTRIKE_CAST_RANGE = 4.0;
@@ -251,12 +251,12 @@ const DEATH_KNIGHT_FROST_PILLARS_COUNT = 6;
 const DEATH_KNIGHT_FROST_PILLARS_BASE_OFFSET = 2.0;
 const DEATH_KNIGHT_FROST_PILLARS_STEP = 0.9;
 const DEATH_KNIGHT_FROST_PILLARS_STAGGER_MS = 120;
-const DEATH_KNIGHT_FROST_PILLARS_DAMAGE = 35;
+const DEATH_KNIGHT_FROST_PILLARS_DAMAGE = 37;
 const DEATH_KNIGHT_FROST_PILLARS_RADIUS = 2.0;
 
 const SHAMAN_MELEE_RANGE = 2.725;
 const SHAMAN_AGGRO_RADIUS = 15;
-const SHAMAN_SWING_LOCK_MS = 950;
+const SHAMAN_SWING_LOCK_MS = 1150;
 const SHAMAN_HIT_DELAY_MS = 800;
 const SHAMAN_BASE_DAMAGE = 32;
 const SHAMAN_STORM_SHOCK_COOLDOWN_MS = 6000;
@@ -277,7 +277,7 @@ const SHAMAN_SPIRIT_WOLF_DAMAGE = 14;
 // Serpent — basic melee (slither move, alternating attacks)
 const SERPENT_MELEE_RANGE = 2.75;
 const SERPENT_AGGRO_RADIUS = 25;
-const SERPENT_SWING_LOCK_MS = 2250;
+const SERPENT_SWING_LOCK_MS = 1650;
 const SERPENT_HIT_DELAY_MS = 750;
 const SERPENT_BASE_DAMAGE = 21;
 const SERPENT_BASE_MOVE_SPEED = 2.5;
@@ -286,16 +286,16 @@ const SERPENT_BASE_MOVE_SPEED = 2.5;
 const TIGER_MELEE_RANGE = 2.6;
 const TIGER_AGGRO_RADIUS = 10;
 const TIGER_WALK_SPEED = 1.45;
-const TIGER_RUN_SPEED = 3.125;
-const TIGER_SWING_LOCK_MS = 1500;
+const TIGER_RUN_SPEED = 3.195;
+const TIGER_SWING_LOCK_MS = 1450;
 const TIGER_HIT_DELAY_MS = 750;
-const TIGER_BASE_DAMAGE = 19;
+const TIGER_BASE_DAMAGE = 23;
 const TIGER_WANDER_RADIUS = 7;
 const TIGER_WANDER_REPICK_MS = 3500;
 const TIGER_WANDER_REACH = 1.0;
-const TIGER_POUNCE_MAX_TRAVEL = 6.5;
+const TIGER_POUNCE_MAX_TRAVEL = 6.875;
 const TIGER_POUNCE_COOLDOWN_MS = 5_000;
-const TIGER_POUNCE_DAMAGE = 23;
+const TIGER_POUNCE_DAMAGE = 19;
 const TIGER_POUNCE_LANDING_RADIUS = 2.25;
 const TIGER_POUNCE_LAND_STANDOFF_M = 0.1;
 const TIGER_POUNCE_MIN_RANGE = 2.7;
@@ -313,24 +313,24 @@ const WOLF_HOWL_DURATION_MS = 2000;
 // Bear — Fae Realm III melee (alternating attacks, no howl)
 const BEAR_MELEE_RANGE = 2.75;
 const BEAR_AGGRO_RADIUS = 17;
-const BEAR_MOVE_SPEED = 2.85;
+const BEAR_MOVE_SPEED = 3.125;
 const BEAR_SWING_LOCK_MS = 1500;
 const BEAR_HIT_DELAY_MS = 750;
-const BEAR_BASE_DAMAGE = 33;
+const BEAR_BASE_DAMAGE = 38;
 
 // Bone Spider — Fae Realm III ensnaring caster + entangled melee
 const BONE_SPIDER_MELEE_RANGE = 3.0;
 const BONE_SPIDER_AGGRO_RADIUS = 20;
 const BONE_SPIDER_MOVE_SPEED = 2.5;
 const BONE_SPIDER_MELEE_DAMAGE = 53;
-const BONE_SPIDER_MELEE_COOLDOWN_MS = 2100;
-const BONE_SPIDER_SWING_LOCK_MS = 900;
+const BONE_SPIDER_MELEE_COOLDOWN_MS = 1850;
+const BONE_SPIDER_SWING_LOCK_MS = 1100;
 const BONE_SPIDER_HIT_DELAY_MS = 700;
 const BONE_SPIDER_SHOT_RANGE = 14;
-const BONE_SPIDER_SHOT_COOLDOWN_MS = 2500;
+const BONE_SPIDER_SHOT_COOLDOWN_MS = 1950;
 /** Keep in sync with CoopGameScene / BoneSpiderRenderer BONE_SPIDER_CAST_MS */
 const BONE_SPIDER_CAST_MS = 1200;
-const BONE_SPIDER_SHOT_SPEED = 10;
+const BONE_SPIDER_SHOT_SPEED = 14;
 const BONE_SPIDER_SHOT_HIT_RADIUS = 1.1;
 const BONE_SPIDER_ENTANGLE_DURATION_MS = 3000;
 
@@ -349,9 +349,9 @@ const SKYRAY_WANDER_REACH = 1.0;
 const WYVERN_MELEE_RANGE = 3.075;
 const WYVERN_AGGRO_RADIUS = 20;
 const WYVERN_SWING_LOCK_MS = 1250;
-const WYVERN_HIT_DELAY_MS = 1150;
+const WYVERN_HIT_DELAY_MS = 950;
 const WYVERN_BASE_DAMAGE = 42;
-const WYVERN_BASE_MOVE_SPEED = 2.85;
+const WYVERN_BASE_MOVE_SPEED = 2.95;
 const WYVERN_BREATH_COOLDOWN_MS = 5000;
 const WYVERN_BREATH_CAST_LOCK_MS = 1500;
 const WYVERN_BREATH_ROAR_CAST_LOCK_MS = 2000; // +500ms over base cast (drake_roar)
@@ -372,10 +372,10 @@ const WYVERN_BREATH_MAX_RANGE = WYVERN_BREATH_CAST_RANGE; // bolt always travels
 const TERRORHAWK_HOVER_Y = 9.0; // keep in sync with client terrorhawkCoopConstants
 const TERRORHAWK_AGGRO_RADIUS = 12;
 const TERRORHAWK_FLY_SPEED = 3.7;
-const TERRORHAWK_MELEE_RANGE = 3.0;
+const TERRORHAWK_MELEE_RANGE = 3.125;
 const TERRORHAWK_LANDING_RADIUS = 2.0;
-const TERRORHAWK_LANDING_DAMAGE = 17;
-const TERRORHAWK_MELEE_DAMAGE = 23;
+const TERRORHAWK_LANDING_DAMAGE = 21;
+const TERRORHAWK_MELEE_DAMAGE = 26;
 const TERRORHAWK_DIVE_XZ_THRESHOLD = 2.5;
 const TERRORHAWK_DIVE_SPEED = 22.5;
 /** Brief hold at hover Y after dive telegraph SFX before descending. */
@@ -383,33 +383,33 @@ const TERRORHAWK_DIVE_TELEGRAPH_MS = 300;
 const TERRORHAWK_TAKEOFF_MS = 1250;
 const TERRORHAWK_JUMPEND_MS = 800;
 const TERRORHAWK_SWING_LOCK_MS = 3100;
-const TERRORHAWK_HIT_DELAY_MS = 750;
+const TERRORHAWK_HIT_DELAY_MS = 875;
 const TERRORHAWK_APPROACH_STOP = 0.75;
 /** Minimum time on the ground after landing before takeoff may begin. */
 const TERRORHAWK_MIN_GROUND_MS = 2000;
 
 // Destiny — dragon boss (Wyvern-style melee + roar breath + 70% fly phase)
-const DESTINY_MELEE_RANGE = 4.0;
+const DESTINY_MELEE_RANGE = 3.875;
 const DESTINY_AGGRO_RADIUS = 18;
 const DESTINY_SWING_LOCK_MS = 1500;
-const DESTINY_HIT_DELAY_MS = 1200;
-const DESTINY_BASE_DAMAGE = 55;
+const DESTINY_HIT_DELAY_MS = 1070;
+const DESTINY_BASE_DAMAGE = 71;
 const DESTINY_BASE_MOVE_SPEED = 2.5;
 const DESTINY_BREATH_COOLDOWN_MS = 9000;
 const DESTINY_BREATH_ROAR_CAST_LOCK_MS = 3200;
-const DESTINY_BREATH_LAUNCH_EARLY_MS = 650;
+const DESTINY_BREATH_LAUNCH_EARLY_MS = 875;
 // Simultaneous fan: far left (+36°), left (+18°), center, right (−18°), far right (−36°)
 const DESTINY_BREATH_ROAR_FAN_ANGLES_RAD = [
-  Math.PI / 5,
-  Math.PI / 10,
+  Math.PI / 4,
+  Math.PI / 8,
   0,
-  -Math.PI / 10,
-  -Math.PI / 5,
+  -Math.PI / 8,
+  -Math.PI / 4,
 ];
-const DESTINY_BREATH_DAMAGE = 45;
+const DESTINY_BREATH_DAMAGE = 53;
 const DESTINY_BREATH_CAST_RANGE = 12;
 /** Prefer melee when this close; leave room for walk-in between roars. */
-const DESTINY_BREATH_MIN_RANGE = 5.0;
+const DESTINY_BREATH_MIN_RANGE = 4.75;
 const DESTINY_ATTACK_COOLDOWN_MS = 2000;
 // Fly phase (one-shot at ≤70% HP) — keep in sync with src/utils/destinyCoopConstants.ts
 const DESTINY_FLY_HEALTH_PCT = 0.70;
@@ -422,7 +422,7 @@ const DESTINY_FLY_TAKEOFF_MS = 2000;
 const DESTINY_FLY_LAND_MS = 2200;
 const DESTINY_FLY_IDLE_HOLD_MS = 600;
 const DESTINY_FLY_ATTACK_CAST_MS = 1800;
-const DESTINY_FLY_ATTACK_LAUNCH_EARLY_MS = 650;
+const DESTINY_FLY_ATTACK_LAUNCH_EARLY_MS = 875;
 const DESTINY_FLY_ATTACK_COOLDOWN_MS = 3000;
 const DESTINY_FLY_ATTACK_VOLLEYS = 5;
 const DESTINY_FLY_APPROACH_STOP = 6.0;
@@ -430,7 +430,7 @@ const DESTINY_FLY_CENTER_HOLD = 1.5;
 const DESTINY_FLY_ATTACK_RANGE = 18;
 const DESTINY_FLY_MUZZLE_Y_OFFSET = 1.5;
 /** Air-only ember patches dropped on combat target — damage matches GREED_BLUE_EMBER_*. */
-const DESTINY_AIR_EMBER_INTERVAL_MS = 6000;
+const DESTINY_AIR_EMBER_INTERVAL_MS = 5000;
 const DESTINY_AIR_EMBER_DURATION_MS = 12000;
 const DESTINY_AIR_EMBER_TICK_MS = 750;
 const DESTINY_AIR_EMBER_DAMAGE = 20;
@@ -463,10 +463,10 @@ function rotateXZDir(x, z, angleRad) {
 }
 
 // Nemesis — titan-style melee (Sunken Temple III)
-const NEMESIS_AGGRO_RADIUS = 6;
+const NEMESIS_AGGRO_RADIUS = 8;
 const NEMESIS_ATTACK_RANGE = 3.0;
-const NEMESIS_SWING_LOCK_MS = 750;
-const NEMESIS_HIT_DELAY_MS = 2000;
+const NEMESIS_SWING_LOCK_MS = 1050;
+const NEMESIS_HIT_DELAY_MS = 850;
 const NEMESIS_KNOCKBACK_DISTANCE = 5;
 const NEMESIS_KNOCKBACK_DURATION = 0.4;
 
@@ -488,13 +488,13 @@ const VALKYRIE_JUDGMENT_CAST_RANGE = 12;
 const VALKYRIE_JUDGMENT_CAST_MS = 1500;
 const VALKYRIE_JUDGMENT_HOVER_MS = 125;
 const VALKYRIE_JUDGMENT_FALL_MS = 700;
-const VALKYRIE_JUDGMENT_DAMAGE = 38;
+const VALKYRIE_JUDGMENT_DAMAGE = 37;
 const VALKYRIE_JUDGMENT_AOE_RADIUS = 1.75;
-const VALKYRIE_JUDGMENT_CORRUPTED_MS = 6000;
+const VALKYRIE_JUDGMENT_CORRUPTED_MS = 5000;
 const VALKYRIE_JUDGMENT_SKY_HEIGHT = 22;
 
 // Sentinel — stand-and-cast (mirrors purple warlock movement; entangle primary)
-const SENTINEL_WALK_SPEED = 2.25;
+const SENTINEL_WALK_SPEED = 2.025;
 const SENTINEL_PREFERRED_STAND_RANGE = 8.25; // match WARLOCK_PREFERRED_STAND_RANGE
 const SENTINEL_ENTANGLE_COOLDOWN_MS = 20000;
 const SENTINEL_ENTANGLE_RANGE = 6;
@@ -502,10 +502,10 @@ const SENTINEL_ENTANGLE_DURATION_MS = 3000;
 const SENTINEL_ENTANGLE_CAST_MS = 1000;
 const SENTINEL_ENTANGLE_MOVE_LOCK_MS = 1000;
 const SENTINEL_ENTANGLE_DELAY_MS = 500;
-const SENTINEL_ORB_COOLDOWN_MS = 20000;
+const SENTINEL_ORB_COOLDOWN_MS = 4000;
 const SENTINEL_ORB_CAST_MS = 2000;
-const SENTINEL_ORB_DAMAGE = 43;
-const SENTINEL_ORB_SPEED = 10;
+const SENTINEL_ORB_DAMAGE = 23;
+const SENTINEL_ORB_SPEED = 12;
 const SENTINEL_ORB_HIT_RADIUS = 1.1;
 const SENTINEL_AGGRO_RADIUS = 15;
 
@@ -522,8 +522,8 @@ const FROST_QUEEN_ICE_SHARDS_CAST_LOCK_MS = 1500;
 const FROST_QUEEN_ICE_SHARDS_LAUNCH_MS = 1000;
 const FROST_QUEEN_ICE_SHARDS_TRAVEL_MS = 550;
 const FROST_QUEEN_ICE_SHARDS_HIT_RADIUS = 1.35;
-const FROST_QUEEN_ICE_SHARDS_DAMAGE = 17;
-const FROST_QUEEN_ICE_SHARDS_ALLY_DAMAGE = 100;
+const FROST_QUEEN_ICE_SHARDS_DAMAGE = 24;
+const FROST_QUEEN_ICE_SHARDS_ALLY_DAMAGE = 140;
 const FROST_QUEEN_ICE_SHARDS_FREEZE_MS = 2000;
 const FROST_QUEEN_ICE_SHARDS_LATERAL = 0.4;
 const FROST_QUEEN_ICE_STORM_COOLDOWN_MS = 20000;
@@ -541,7 +541,7 @@ const MEDUSA_VOIDWARP_COOLDOWN_MS = 20000;
 const MEDUSA_VOIDWARP_DURATION_MS = 4000;
 const MEDUSA_VOIDWARP_CAST_LOCK_MS = 4000;
 // Projectile — keep in sync with MedusaProjectile.tsx
-const MEDUSA_PROJECTILE_DAMAGE = 12;
+const MEDUSA_PROJECTILE_DAMAGE = 18;
 const MEDUSA_HOMING_DELAY_SEC = 0.55;
 const MEDUSA_START_SPEED = 4;
 const MEDUSA_MAX_SPEED = 14;
@@ -557,12 +557,12 @@ const MEDUSA_PROJECTILE_LAUNCH_Y = 1.6;
 const INFESTED_ZOMBIE_SUMMON_LOCK_MS = 2800;
 
 /** Necromancer Vengeful Spirit — keep in sync with `VENGEFUL_SPIRIT_*` in weaponAspects.ts */
-const VENGEFUL_SPIRIT_BASE_DAMAGE = 47;
+const VENGEFUL_SPIRIT_BASE_DAMAGE = 50;
 const VENGEFUL_SPIRIT_DAMAGE_PER_STAT_POINT = 1;
-const VENGEFUL_SPIRIT_ATTACK_RANGE = 3.0;
+const VENGEFUL_SPIRIT_ATTACK_RANGE = 3.15;
 const VENGEFUL_SPIRIT_ATTACK_COOLDOWN_MS = 1050;
-const VENGEFUL_SPIRIT_DURATION_MS = 14000;
-const VENGEFUL_SPIRIT_SUMMON_LOCK_MS = 3000;
+const VENGEFUL_SPIRIT_DURATION_MS = 12000;
+const VENGEFUL_SPIRIT_SUMMON_LOCK_MS = 2400;
 const VENGEFUL_SPIRIT_EXPIRE_ANIM_MS = 2200;
 const VENGEFUL_SPIRIT_MAX_ACTIVE = 4;
 const VENGEFUL_SPIRIT_HIT_DELAY_MS = 400;
@@ -624,7 +624,7 @@ const BEASTMASTER_TIGER_RUN_SPEED = 3.9;
 const BEASTMASTER_TIGER_ATTACK_COOLDOWN_MS = 1100;
 const BEASTMASTER_TIGER_DAMAGE_FALLBACK = 29;
 const BEASTMASTER_TIGER_SWING_LOCK_MS = 1000;
-const BEASTMASTER_TIGER_HIT_DELAY_MS = 400;
+const BEASTMASTER_TIGER_HIT_DELAY_MS = 500;
 
 /**
  * Allied beast companion configs — keep in sync with src/utils/faeBeastCompanion.ts
@@ -658,10 +658,10 @@ const ALLIED_BEAST_CONFIGS = Object.freeze({
     attackRange: 2.4,
     walkSpeed: 3.0,
     runSpeed: 4.2,
-    attackCooldownMs: 1100,
+    attackCooldownMs: 860,
     swingLockMs: 600,
     hitDelayMs: 350,
-    damageFallback: 33,
+    damageFallback: 26,
     telegraphEvent: 'allied-wolf-attack-telegraph',
     telegraphIdKey: 'wolfId',
     damageType: 'allied_wolf_melee',
@@ -679,7 +679,7 @@ const ALLIED_BEAST_CONFIGS = Object.freeze({
     attackCooldownMs: 1400,
     swingLockMs: 1500,
     hitDelayMs: 500,
-    damageFallback: 47,
+    damageFallback: 44,
     telegraphEvent: 'allied-bear-attack-telegraph',
     telegraphIdKey: 'bearId',
     damageType: 'allied_bear_melee',
@@ -694,7 +694,7 @@ const ALLIED_BEAST_CONFIGS = Object.freeze({
     attackRange: 2.6,
     walkSpeed: 2.0,
     runSpeed: 3.0,
-    attackCooldownMs: 1100,
+    attackCooldownMs: 1250,
     swingLockMs: 1000,
     hitDelayMs: 400,
     damageFallback: 37,
@@ -715,7 +715,7 @@ const ALLIED_BEAST_CONFIGS = Object.freeze({
     attackCooldownMs: 1400,
     swingLockMs: 900,
     hitDelayMs: 500,
-    damageFallback: 32,
+    damageFallback: 31,
     telegraphEvent: 'allied-spider-attack-telegraph',
     telegraphIdKey: 'spiderId',
     damageType: 'allied_spider_melee',
@@ -731,7 +731,7 @@ function getAlliedBeastConfig(enemyType) {
 }
 
 /** Eternity pet upgrades — keep in sync with src/utils/petCompanionUpgrades.ts / gameRoom.js */
-const PET_UPGRADE_SIEGEBREAKER_TAUNT_RANGE = 7;
+const PET_UPGRADE_SIEGEBREAKER_TAUNT_RANGE = 8;
 const PET_UPGRADE_SIEGEBREAKER_TAUNT_CD_MS = 6000;
 const PET_UPGRADE_SIEGEBREAKER_TAUNT_DURATION_MS = 6000;
 const PET_UPGRADE_APEX_KILLER_CRIT_CHANCE = 0.2;
@@ -753,7 +753,7 @@ const ALLIED_ENCHANTRESS_EARTH_SHOCK_CHARGE_MS = 875;
 const ALLIED_ENCHANTRESS_EARTH_SHOCK_COOLDOWN_MS = 6000;
 const ALLIED_ENCHANTRESS_GRASPING_VINES_RANGE = 10;
 const ALLIED_ENCHANTRESS_GRASPING_VINES_CHARGE_MS = 500;
-const ALLIED_ENCHANTRESS_GRASPING_VINES_COOLDOWN_MS = 7500;
+const ALLIED_ENCHANTRESS_GRASPING_VINES_COOLDOWN_MS = 8500;
 const ALLIED_ENCHANTRESS_GRASPING_VINES_MAX_TARGETS = 2;
 /** Living players within this range take priority over allied-knight redirects (solo always). */
 const PLAYER_PROXIMITY_AGGRO_OVERRIDE_RADIUS = 15;
@@ -837,7 +837,7 @@ const SHADE_POST_ATTACK_BLINK_DELAY_MS =
   SHADE_THROW_ANIMATION_MS +
   Math.ceil((VIPER_ARROW_MAX_RANGE / SHADE_DAGGER_PROJECTILE_SPEED) * 1000) +
   SHADE_POST_ATTACK_BLINK_BUFFER_MS;
-const SHADE_DAGGER_DELAYS_MS = [750, 950, 1200];       // default/purple — 3 daggers
+const SHADE_DAGGER_DELAYS_MS = [675, 975, 1225];       // default/purple — 3 daggers
 const SHADE_DAGGER_DELAYS_MS_BLUE = [750, 950];         // blue — 2 daggers
 
 // Templar Blink Smite: first cast 15s after aggro, then every 15s; windup 1s then AOE in front of templar
@@ -865,7 +865,7 @@ const WRAITH_AGGRO_RADIUS = 18;
 // Co-op main boss (GLB): melee + leap + tectonic
 const BOSS_MELEE_RANGE = 2.9;
 const BOSS_MELEE_COOLDOWN_MS = 2750;
-const BOSS_MELEE_DAMAGE = 23;
+const BOSS_MELEE_DAMAGE = 41;
 /** No translation during melee swing (matches knight `SWING_LOCK_MS`). */
 const BOSS_MELEE_ATTACK_LOCK_MS = 1200;
 /** Windup before melee damage lands (matches `TITAN_HIT_DELAY_MS`). */
@@ -882,8 +882,8 @@ const COOP_BOSS_THRONE_ARENA_CLAMP_R =
   COOP_THRONE_ROOM_RADIUS - THRONE_RIM_INSET - ENEMY_WALL_COLLISION_RADIUS;
 const BOSS_LEAP_DURATION_MS = 1325;
 const BOSS_LEAP_LANDING_RADIUS = 3.5;
-const BOSS_LEAP_DAMAGE = 21;
-const BOSS_TECTONIC_COOLDOWN_MS = 30000;
+const BOSS_LEAP_DAMAGE = 27;
+const BOSS_TECTONIC_COOLDOWN_MS = 25000;
 const BOSS_TECTONIC_MAX_HP_PCT = 0.75;
 const BOSS_TECTONIC_CENTER_DIST = 0.85;
 const BOSS_TECTONIC_JUMP_INTERVAL_MS = 900;
@@ -891,7 +891,7 @@ const BOSS_TECTONIC_JUMP_COUNT = 10;
 const BOSS_TECTONIC_SPIKE_WARN_MS = 750;
 // Keep in sync with TECTONIC_HIT_RADIUS in src/components/enemies/BossTectonicSpikeTelegraph.tsx
 const BOSS_TECTONIC_SHARD_RADIUS = 2.5;
-const BOSS_TECTONIC_SHARD_DAMAGE = 30;
+const BOSS_TECTONIC_SHARD_DAMAGE = 34;
 const BOSS_STATIONARY_EPS = 0.03;
 const BOSS_TECTONIC_CENTER = { x: 0, y: 0, z: 0 };
 // Boss throw-spear ability
@@ -900,7 +900,7 @@ const BOSS_THROW_MAX_RANGE     = 18;
 const BOSS_THROW_DAMAGE        = 40;
 const BOSS_THROW_COOLDOWN_MS   = 10_000;
 /** When the spear projectile / `boss-throw-spear` fires during the throw animation. */
-const BOSS_THROW_SPEAR_RELEASE_MS = 900;
+const BOSS_THROW_SPEAR_RELEASE_MS = 600;
 /** Boss cannot move until this elapses after `boss-throw-start` (full throw clip). */
 const BOSS_THROW_MOVE_LOCK_MS = 2_000;
 /** Boss 1 cannot use spear throw as an opener. */
@@ -921,9 +921,9 @@ const GHOUL_LEAP_DAMAGE = 25;
 const GHOUL_LEAP_STUN_MS = 2250;
 /** Minimum gap between enemy ghoul leap starts in the same room (prevents synchronized Delirium spikes). */
 const GHOUL_LEAP_ROOM_SLOT_MS = 750;
-const GHOUL_BASE_DAMAGE = 28;
+const GHOUL_BASE_DAMAGE = 29;
 const GHOUL_BASE_MOVE_SPEED = 2.5;
-const GHOUL_SUMMON_HP = 450;
+const GHOUL_SUMMON_HP = 525;
 const BOSS3_SUMMONED_GHOUL_HP = 1200;
 const BOSS3_SUMMONED_GHOUL_VISUAL_SCALE = 1.45;
 const BOSS3_SUMMONED_GHOUL_SPEED_MULT = 1.25;
@@ -975,7 +975,7 @@ const BOSS2_DEATH_GRASP_HIT_RADIUS = 1.35;
 const BOSS2_DEATH_GRASP_STANDOFF = 1.2;
 const BOSS2_DEATH_GRASP_RANGE = 13;
 const BOSS2_DEATH_GRASP_ARC_RADIANS = Math.PI / 9;
-const BOSS2_FLAME_PILLAR_DAMAGE = 50;
+const BOSS2_FLAME_PILLAR_DAMAGE = 47;
 const BOSS2_FLAME_PILLAR_RADIUS = 2.25;
 /** Same as WarlockRenderer / CoopGameScene blink slide — pillars erupt after landing. */
 const BOSS2_FLAME_PILLAR_BLINK_DELAY_MS = 800;
@@ -1009,7 +1009,7 @@ const BOSS3_LIGHTNING_OFFSET_MIN = 2;
 const BOSS3_LIGHTNING_OFFSET_MAX = 6;
 const BOSS3_GREEN_BEAM_DURATION_MS = 8000;
 const BOSS3_GREEN_BEAM_TICK_MS = 333;
-const BOSS3_GREEN_BEAM_DPS = 67;
+const BOSS3_GREEN_BEAM_DPS = 71;
 const BOSS3_GREEN_BEAM_RANGE = 18;
 /** Model-local cast-heal orb forward offset (matches Boss3GreenBeam.tsx). */
 const BOSS3_GREEN_BEAM_START_OFFSET = 2.25;
@@ -1104,7 +1104,7 @@ const WARLOCK_METEOR_EMBER_RADIUS = WARLOCK_METEOR_DISK_RADIUS;
 /** Warlock blink flame — CoopGameScene WARLOCK_BLINK_ANIM_MS */
 const WARLOCK_BLINK_FLAME_DELAY_MS = 1000;
 /** Post-boss-2 unlock: single-beam Archon Shock (Boss2 phase-0 clone, purple VFX). */
-const WARLOCK_ARCHON_SHOCK_UNLOCK_BOSS_COUNT = 2;
+const WARLOCK_ARCHON_SHOCK_UNLOCK_BOSS_COUNT = 1;
 const WARLOCK_ARCHON_SHOCK_COOLDOWN_MS = 7500;
 const WARLOCK_ARCHON_SHOCK_WINDUP_MS = 825;
 const WARLOCK_ARCHON_SHOCK_DAMAGE = 47;
@@ -1117,7 +1117,7 @@ const WARLOCK_ARCHON_SHOCK_SKY_Y_OFFSET = 1.85;
 const KNIGHT_SMITE_UNLOCK_BOSS_COUNT = 2;
 const KNIGHT_SMITE_COOLDOWN_MS = 7000;
 const KNIGHT_SMITE_LOCK_MS = 1200;
-const KNIGHT_STORM_LASH_COOLDOWN_MS = 12000;
+const KNIGHT_STORM_LASH_COOLDOWN_MS = 14000;
 const KNIGHT_STORM_LASH_RANGE = 6.0;
 const KNIGHT_STORM_LASH_DURATION_MS = 4000;
 const KNIGHT_STORM_LASH_ZAP_INTERVAL_MS = 750;
@@ -1150,7 +1150,7 @@ const KNIGHT_BLOCK_COOLDOWN_MS = {
   purple: 12000,
   green: 15000,
 };
-const KNIGHT_ELITE_BLOCK_DURATION_MS = 8000;
+const KNIGHT_ELITE_BLOCK_DURATION_MS = 6750;
 const KNIGHT_ELITE_BLOCK_HEALTH_THRESHOLDS = [0.9, 0.5, 0.2];
 const KNIGHT_BLOCK_UNLOCK_BOSS_COUNT = 2;
 const KNIGHT_DEATH_GRASP_UNLOCK_BOSS_COUNT = 1;
@@ -1186,7 +1186,7 @@ const GREED_BLUE_EMBER_TICK_MS = 750;
 const GREED_BLUE_EMBER_DAMAGE = 20;
 const GREED_BLUE_EMBER_RADIUS = 2.0;
 const GREED_FIREBALL_SPEED = 10;
-const GREED_FIREBALL_HIT_RADIUS = 1.1;
+const GREED_FIREBALL_HIT_RADIUS = 1.025;
 
 class EnemyAI {
   constructor(roomId, io) {

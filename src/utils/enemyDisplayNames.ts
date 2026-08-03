@@ -52,3 +52,29 @@ export function getEnemyDisplayName(type: string): string {
   const key = type.toLowerCase();
   return ENEMY_DISPLAY_NAMES[key] ?? key.replace(/-/g, ' ').toUpperCase();
 }
+
+const SPIRIT_ANIMAL_NAMEPLATE_TYPES = new Set([
+  'tiger',
+  'wolf',
+  'bear',
+  'serpent',
+  'bone-spider',
+]);
+
+const ANCESTOR_NAMEPLATE_TYPES = new Set([
+  'ghoul',
+  'knight',
+  'shade',
+  'viper',
+  'greed',
+]);
+
+/** Ally nameplates use SPIRIT ANIMAL / ANCESTOR; enemies keep type labels. */
+export function getUnitNameplateName(type: string, campType?: string): string {
+  if (campType === 'ally-yellow' || campType === 'ally-green') {
+    const key = type.toLowerCase();
+    if (SPIRIT_ANIMAL_NAMEPLATE_TYPES.has(key)) return 'SPIRIT ANIMAL';
+    if (ANCESTOR_NAMEPLATE_TYPES.has(key)) return 'ANCESTOR';
+  }
+  return getEnemyDisplayName(type);
+}

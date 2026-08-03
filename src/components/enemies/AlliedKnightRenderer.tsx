@@ -43,7 +43,7 @@ function AlliedKnightRenderer({
       health={health}
       maxHealth={maxHealth}
       isDying={isDying}
-      campType="ally-green"
+      campType="ally-yellow"
       soulType="yellow"
       showMeleeRangeRing={false}
       staggerBuildup={staggerBuildup}

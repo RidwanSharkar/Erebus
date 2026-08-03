@@ -23,7 +23,7 @@ import {
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
-import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
+import { getUnitNameplateName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import { KNIGHT_CAST_ABILITY_LOCK_MS, KNIGHT_STORM_LASH_DURATION_MS } from '@/utils/knightCoopAbilitiesConstants';
 import GhostTrail from '../dragon/GhostTrail';
@@ -689,7 +689,7 @@ function KnightRenderer({
             />
 
             <EnemyHealthBarTextLabel
-              name={getEnemyDisplayName('knight')}
+              name={getUnitNameplateName('knight', campType)}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

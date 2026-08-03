@@ -6,8 +6,8 @@ import { Group, Mesh, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard } from '@react-three/drei';
 import ZombieModel from './ZombieModel';
-import EnemyMeleeAttackRangeRing, { GHOUL_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
-import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type MeleeTelegraphVisual } from '@/utils/meleeTelegraphVisual';
+import { GHOUL_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
+import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph } from '@/utils/meleeTelegraphVisual';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import {
@@ -58,7 +58,6 @@ function ZombieRenderer({
   const hpTextRef = useRef<any>(null);
 
   const [isAttacking, setIsAttacking] = useState(false);
-  const [meleeTelegraph, setMeleeTelegraph] = useState<MeleeTelegraphVisual | null>(null);
   const [isWalking, setIsWalking] = useState(false);
   const [isSummoning, setIsSummoning] = useState(true);
   const isSummoningRef = useRef(true);
@@ -127,13 +126,11 @@ function ZombieRenderer({
       if (isSummoningRef.current) return;
       if (attackTimerRef.current) clearTimeout(attackTimerRef.current);
       const visual = parseMeleeTelegraphPayload(data, GHOUL_MELEE_ATTACK_RANGE, ATTACK_DURATION);
-      setMeleeTelegraph(visual);
       setIsAttacking(true);
       isAttackingRef.current = true;
       const duration = meleeAttackDurationFromTelegraph(visual, ATTACK_DURATION);
       attackTimerRef.current = setTimeout(() => {
         setIsAttacking(false);
-        setMeleeTelegraph(null);
         isAttackingRef.current = false;
         attackTimerRef.current = null;
       }, duration);
@@ -210,20 +207,6 @@ function ZombieRenderer({
         isSummoning={isSummoning}
         isDying={isDying}
       />
-
-      {isAttacking && !isDying && (
-        <EnemyMeleeAttackRangeRing
-          radius={meleeTelegraph?.attackRange ?? GHOUL_MELEE_ATTACK_RANGE}
-          hitDelayMs={meleeTelegraph?.hitDelayMs}
-          swingLockMs={meleeTelegraph?.swingLockMs}
-          arcDeg={meleeTelegraph?.arcDeg}
-          facing={meleeTelegraph?.facing}
-          weightClass={meleeTelegraph?.weightClass}
-          whiffed={meleeTelegraph?.whiffed}
-          startedAtMs={meleeTelegraph?.startedAtMs}
-          commitAtMs={meleeTelegraph?.commitAtMs}
-        />
-      )}
 
       <Billboard position={[0, 2.8, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && !isSummoning && (

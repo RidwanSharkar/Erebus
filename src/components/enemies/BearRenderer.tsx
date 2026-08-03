@@ -18,7 +18,7 @@ import {
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
-import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
+import { getUnitNameplateName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface BearRendererProps {
@@ -257,7 +257,7 @@ export default function BearRenderer({
           <>
             <EnemyHpBarPlanes fillRef={hpFillRef} backgroundColor={theme.background} fillColor={theme.fill} />
             <EnemyHealthBarTextLabel
-              name={getEnemyDisplayName('bear')}
+              name={getUnitNameplateName('bear', campType)}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

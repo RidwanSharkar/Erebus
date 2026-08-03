@@ -35,6 +35,7 @@ function AlliedDemonRenderer({
       campType="ally-yellow"
       skipSummon
       soulType="yellow"
+      showMeleeRangeRing={false}
     />
   );
 }

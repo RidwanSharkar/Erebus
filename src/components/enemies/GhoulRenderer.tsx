@@ -14,7 +14,7 @@ import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStat
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { applyEnemyHealthBarFill, syncEnemyHealthBarFillFromRef, syncEnemyHealthBarNumericTextFromRef } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
-import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
+import { getUnitNameplateName } from '@/utils/enemyDisplayNames';
 import { campHpTheme } from '@/utils/campHpTheme';
 
 const GHOUL_HP_BAR_WIDTH = 1.8;
@@ -34,6 +34,8 @@ interface GhoulRendererProps {
   skipSummon?: boolean;
   /** Compact ground soul ring + orb (e.g. allied demon yellow). */
   soulType?: 'yellow' | 'green' | 'red' | 'blue' | 'purple' | 'orange';
+  /** When false, hides the red melee telegraph ring (e.g. allied demon). */
+  showMeleeRangeRing?: boolean;
 }
 
 const ATTACK_DURATION  = 1200; // ms — matches ghoul attack clip; backend `meleeLockUntil` uses the same window
@@ -54,6 +56,7 @@ function GhoulRenderer({
   campType,
   skipSummon = false,
   soulType,
+  showMeleeRangeRing = true,
 }: GhoulRendererProps) {
   const hpTheme = campHpTheme(campType);
   const { socket, enemyTransformsRef, enemyVisualRotationsRef, enemiesRef } = useMultiplayerActions();
@@ -281,7 +284,7 @@ function GhoulRenderer({
         scaleMultiplier={visualScale}
       />
 
-      {isAttacking && !isDying && (
+      {showMeleeRangeRing && isAttacking && !isDying && (
         <EnemyMeleeAttackRangeRing
           radius={meleeTelegraph?.attackRange ?? GHOUL_MELEE_ATTACK_RANGE}
           hitDelayMs={meleeTelegraph?.hitDelayMs}
@@ -315,7 +318,7 @@ function GhoulRenderer({
             </mesh>
 
             <EnemyHealthBarTextLabel
-              name={getEnemyDisplayName('ghoul')}
+              name={getUnitNameplateName('ghoul', campType)}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

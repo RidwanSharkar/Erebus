@@ -64,14 +64,6 @@ export const FAE_REALM_DECOR_LAYOUT: readonly FaeRealmDecorDef[] = [
     scale: 0.9,
   },
 
-  // pylon1 — mid ring
- 
-  { model: 'pylon1', position: [6.8, 0, -10.5], rotationY: 0.2, scale: 0.88 },
-
-
-  // pylon6
-  { model: 'pylon6', position: [0, 0, 9.6], rotationY: -1.6, scale: 1.0 },
-
 
 ];
 

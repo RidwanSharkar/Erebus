@@ -18,7 +18,7 @@ import {
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
-import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
+import { getUnitNameplateName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface BoneSpiderRendererProps {
@@ -292,7 +292,7 @@ export default function BoneSpiderRenderer({
           <>
             <EnemyHpBarPlanes fillRef={hpFillRef} backgroundColor={theme.background} fillColor={theme.fill} />
             <EnemyHealthBarTextLabel
-              name={getEnemyDisplayName('bone-spider')}
+              name={getUnitNameplateName('bone-spider', campType)}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

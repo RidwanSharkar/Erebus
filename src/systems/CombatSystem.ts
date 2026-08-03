@@ -473,9 +473,9 @@ export class CombatSystem extends System {
     if (damageType === 'cloudkill' && damageEvent.cloudkillDamage === true) {
       return true;
     }
-    if (damageType === 'crossentropy' && damageEvent.crossentropyMeteor === true) {
-      return true;
-    }
+    // Note: do NOT defer on crossentropyMeteor (talent routing flag). That only
+    // tells the server to schedule meteors; the bolt hit still needs its local float.
+    // Meteor impact floats use crossentropyMeteorDamage and arrive via server echo.
     return false;
   }
 

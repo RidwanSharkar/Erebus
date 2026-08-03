@@ -56,10 +56,10 @@ export default function FaeRealmRoom({
         hiddenIndices={hiddenIndices}
         hexRadius={FAE_REALM_HEX_RADIUS}
       />
-      <ThronePerimeterPylonDecor
+      { /* <ThronePerimeterPylonDecor
         layout={FAE_REALM_PERIMETER_PYLON_LAYOUT}
         groundY={0}
-      />
+      /> */ }
       <FaeRealmDecor />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
