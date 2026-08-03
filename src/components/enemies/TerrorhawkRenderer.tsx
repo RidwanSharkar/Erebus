@@ -18,6 +18,7 @@ import {
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import {
   TERRORHAWK_SWING_LOCK_MS,
@@ -280,7 +281,7 @@ export default function TerrorhawkRenderer({
           <>
             <EnemyHpBarPlanes fillRef={hpFillRef} backgroundColor={theme.background} fillColor={theme.fill} />
             <EnemyHealthBarTextLabel
-              leading="HP"
+              name={getEnemyDisplayName('terrorhawk')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

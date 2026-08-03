@@ -20,6 +20,7 @@ import {
 } from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import TemplarSoulCrest from './TemplarSoulCrest';
 import SoulGroundRing from './SoulGroundRing';
@@ -499,7 +500,7 @@ function TemplarRenderer({
             />
 
             <EnemyHealthBarTextLabel
-              leading="🛡"
+              name={getEnemyDisplayName('templar')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

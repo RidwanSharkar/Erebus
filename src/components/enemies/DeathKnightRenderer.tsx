@@ -18,6 +18,7 @@ import {
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface DeathKnightRendererProps {
@@ -354,7 +355,7 @@ export default function DeathKnightRenderer({
           <>
             <EnemyHpBarPlanes fillRef={hpFillRef} backgroundColor={theme.background} fillColor={theme.fill} />
             <EnemyHealthBarTextLabel
-              leading="HP"
+              name={getEnemyDisplayName('death-knight')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

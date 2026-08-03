@@ -18,6 +18,7 @@ import {
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface WolfRendererProps {
@@ -303,7 +304,7 @@ export default function WolfRenderer({
           <>
             <EnemyHpBarPlanes fillRef={hpFillRef} backgroundColor={theme.background} fillColor={theme.fill} />
             <EnemyHealthBarTextLabel
-              leading="HP"
+              name={getEnemyDisplayName('wolf')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

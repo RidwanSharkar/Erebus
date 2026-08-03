@@ -18,6 +18,7 @@ import {
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface WyvernRendererProps {
@@ -292,7 +293,7 @@ export default function WyvernRenderer({
           <>
             <EnemyHpBarPlanes fillRef={hpFillRef} backgroundColor={theme.background} fillColor={theme.fill} />
             <EnemyHealthBarTextLabel
-              leading="HP"
+              name={getEnemyDisplayName('wyvern')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

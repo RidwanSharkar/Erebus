@@ -20,6 +20,7 @@ import { campHpTheme } from '@/utils/campHpTheme';
 import BossBoneWings from './BossBoneWings';
 import { ENEMY_HP_BAR_WIDTH, applyEnemyHealthBarFill, syncEnemyHealthBarFillFromRef, syncEnemyHealthBarNumericTextFromRef } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface Boss2RendererProps {
@@ -269,7 +270,7 @@ function Boss2Renderer({
                 fillColor={theme.fill}
               />
               <EnemyHealthBarTextLabel
-                leading="ENVY"
+                name={getEnemyDisplayName('boss2')}
                 numericRef={hpTextRef}
                 health={health}
                 maxHealth={maxHealth}

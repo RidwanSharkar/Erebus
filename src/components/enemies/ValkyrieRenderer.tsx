@@ -19,6 +19,7 @@ import {
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import GhostTrail from '../dragon/GhostTrail';
 import AscendantBoneWings from '../dragon/AscendantBoneWings';
@@ -278,7 +279,7 @@ export default function ValkyrieRenderer({
             <>
               <EnemyHpBarPlanes fillRef={hpFillRef} backgroundColor={theme.background} fillColor={theme.fill} />
               <EnemyHealthBarTextLabel
-                leading="HP"
+                name={getEnemyDisplayName('valkyrie')}
                 numericRef={hpTextRef}
                 health={health}
                 maxHealth={maxHealth}

@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "readme:generate": "npx tsx --tsconfig tsconfig.json scripts/generate-readme.mts",
     "backend": "cd backend && npm install && npm run dev",
     "assets:startup-report": "node scripts/startup-asset-report.mjs",
     "assets:optimize-models": "node scripts/optimize-model-assets.mjs",

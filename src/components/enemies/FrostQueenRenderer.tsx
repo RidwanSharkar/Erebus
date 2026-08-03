@@ -17,6 +17,7 @@ import {
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import {
   FROST_QUEEN_TELEPORT_LOCK_MS,
@@ -257,7 +258,7 @@ export default function FrostQueenRenderer({
               fillColor={theme.fill}
             />
             <EnemyHealthBarTextLabel
-              leading="❄️"
+              name={getEnemyDisplayName('frost-queen')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

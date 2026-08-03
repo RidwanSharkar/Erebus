@@ -17,6 +17,7 @@ import {
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import {
   MEDUSA_RAPIDFIRE_CAST_LOCK_MS,
@@ -198,7 +199,7 @@ export default function MedusaRenderer({
               fillColor={theme.fill}
             />
             <EnemyHealthBarTextLabel
-              leading="🐍"
+              name={getEnemyDisplayName('medusa')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

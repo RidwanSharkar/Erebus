@@ -14,6 +14,7 @@ import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStat
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { applyEnemyHealthBarFill, syncEnemyHealthBarFillFromRef, syncEnemyHealthBarNumericTextFromRef } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import { campHpTheme } from '@/utils/campHpTheme';
 
 const GHOUL_HP_BAR_WIDTH = 1.8;
@@ -314,7 +315,7 @@ function GhoulRenderer({
             </mesh>
 
             <EnemyHealthBarTextLabel
-              leading="💀"
+              name={getEnemyDisplayName('ghoul')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

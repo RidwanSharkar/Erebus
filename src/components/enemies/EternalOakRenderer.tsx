@@ -18,6 +18,7 @@ import {
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface EternalOakRendererProps {
@@ -220,7 +221,7 @@ export default function EternalOakRenderer({
               fillColor={theme.fill}
             />
             <EnemyHealthBarTextLabel
-              leading="HP"
+              name={getEnemyDisplayName('eternal-oak')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

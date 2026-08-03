@@ -18,7 +18,7 @@ import {
 
 export const ARCHMAGE_SCYTHE_ITEM_MODEL_PATH = '/models/items/bloodElf.glb';
 export const NECROMANCER_SCYTHE_ITEM_MODEL_PATH = '/models/items/necromancer1.glb';
-export const DRACONIC_SCYTHE_ITEM_MODEL_PATH = '/models/items/Scythe1.glb';
+export const DRACONIC_SCYTHE_ITEM_MODEL_PATH = '/models/items/scythe1.glb';
 
 export type ScytheAspectKey = 'ARCHMAGE' | 'NECROMANCER' | 'DRACONIC';
 

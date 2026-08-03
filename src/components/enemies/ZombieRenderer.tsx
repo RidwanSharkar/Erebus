@@ -19,6 +19,7 @@ import {
 } from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 
 interface ZombieRendererProps {
   id: string;
@@ -242,7 +243,7 @@ function ZombieRenderer({
             </mesh>
 
             <EnemyHealthBarTextLabel
-              leading="🧟"
+              name={getEnemyDisplayName('player-zombie')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

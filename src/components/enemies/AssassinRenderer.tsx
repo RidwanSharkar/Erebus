@@ -19,6 +19,7 @@ import {
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface AssassinRendererProps {
@@ -398,7 +399,7 @@ function AssassinRenderer({
               fillColor={theme.fill}
             />
             <EnemyHealthBarTextLabel
-              leading="🗡️"
+              name={getEnemyDisplayName('assassin')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

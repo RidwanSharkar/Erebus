@@ -17,7 +17,7 @@ import {
 } from '@/utils/weaponAspects';
 
 export const SABRE_ITEM_MODEL_PATH = '/models/items/warlord1.glb';
-export const FROST_AFFINITY_SABRE_MODEL_PATH = '/models/items/frostaff.glb';
+export const FROST_AFFINITY_SABRE_MODEL_PATH = '/models/items/frostAff.glb';
 export const WARLORD_SABRE_MODEL_PATH = '/models/items/warlord0.glb';
 
 /**

@@ -19,6 +19,7 @@ import {
 } from '@/utils/enemyHealthBar';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 const WALK_STOP_DELAY = 250;
@@ -381,7 +382,7 @@ function BossRenderer({
               fillColor={theme.fill}
             />
             <EnemyHealthBarTextLabel
-              leading="HATE"
+              name={getEnemyDisplayName('boss')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

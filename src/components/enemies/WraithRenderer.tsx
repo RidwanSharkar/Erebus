@@ -19,6 +19,7 @@ import {
 } from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface WraithRendererProps {
@@ -247,7 +248,7 @@ function WraithRenderer({
               fillColor={theme.fill}
             />
             <EnemyHealthBarTextLabel
-              leading="👻"
+              name={getEnemyDisplayName('wraith')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

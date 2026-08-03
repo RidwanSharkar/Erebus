@@ -17,6 +17,7 @@ import {
 } from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface ViperRendererProps {
@@ -247,7 +248,7 @@ function ViperRenderer({
             />
 
             <EnemyHealthBarTextLabel
-              leading="🐍"
+              name={getEnemyDisplayName('viper')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

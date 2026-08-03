@@ -18,6 +18,7 @@ import {
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface ColossusRendererProps {
@@ -193,7 +194,7 @@ export default function ColossusRenderer({
               fillColor={theme.fill}
             />
             <EnemyHealthBarTextLabel
-              leading="HP"
+              name={getEnemyDisplayName('colossus')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

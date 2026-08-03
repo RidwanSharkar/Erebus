@@ -19,21 +19,21 @@ interface DeathKnightModelProps {
   isDying: boolean;
 }
 
-const DEATH_KNIGHT_IDLE_PATH = '/models/deathknight/deathKnight_idle.glb';
+const DEATH_KNIGHT_IDLE_PATH = '/models/deathknight/deathknight_idle.glb';
 /** attack0–3 GLBs are byte-identical WoW bundles — load once and pick distinct 2H clips. */
-const DEATH_KNIGHT_ATTACK_BUNDLE_PATH = '/models/deathknight/deathKnight_attack0.glb';
+const DEATH_KNIGHT_ATTACK_BUNDLE_PATH = '/models/deathknight/deathknight_attack0.glb';
 const DEATH_KNIGHT_CAST_PATH = '/models/deathknight/deathknight_cast.glb';
 
 const DEATH_KNIGHT_MODEL_PATHS = [
   DEATH_KNIGHT_IDLE_PATH,
-  '/models/deathknight/deathKnight_walk.glb',
+  '/models/deathknight/deathknight_walk.glb',
   DEATH_KNIGHT_ATTACK_BUNDLE_PATH,
   DEATH_KNIGHT_CAST_PATH,
   '/models/deathknight/deathKnight_death.glb',
 ];
 
 const DEATH_KNIGHT_DEFERRED_PATHS = {
-  Walk: '/models/deathknight/deathKnight_walk.glb',
+  Walk: '/models/deathknight/deathknight_walk.glb',
   Attacks: DEATH_KNIGHT_ATTACK_BUNDLE_PATH,
   Cast: DEATH_KNIGHT_CAST_PATH,
   Death: '/models/deathknight/deathKnight_death.glb',

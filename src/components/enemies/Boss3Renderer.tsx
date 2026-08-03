@@ -17,6 +17,7 @@ import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
 import { ENEMY_HP_BAR_WIDTH, applyEnemyHealthBarFill, syncEnemyHealthBarFillFromRef, syncEnemyHealthBarNumericTextFromRef } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface Boss3RendererProps {
@@ -372,7 +373,7 @@ function Boss3Renderer({
               fillColor={theme.fill}
             />
             <EnemyHealthBarTextLabel
-              leading="FEAR"
+              name={getEnemyDisplayName('boss3')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

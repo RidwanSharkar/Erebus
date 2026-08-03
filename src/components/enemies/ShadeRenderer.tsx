@@ -18,6 +18,7 @@ import {
 } from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import GhostTrail from '../dragon/GhostTrail';
 import { WeaponType } from '../dragon/weapons';
@@ -330,7 +331,7 @@ function ShadeRenderer({
             />
 
             <EnemyHealthBarTextLabel
-              leading="👻"
+              name={getEnemyDisplayName('shade')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

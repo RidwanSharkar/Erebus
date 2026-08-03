@@ -15,6 +15,7 @@ import {
 } from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import GreedModel, { GreedAbilityClip } from './GreedModel';
 import KnightSoulEffect from './KnightSoulEffect';
@@ -176,7 +177,7 @@ function GreedRenderer({
             />
 
             <EnemyHealthBarTextLabel
-              leading="HP"
+              name={getEnemyDisplayName('greed')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

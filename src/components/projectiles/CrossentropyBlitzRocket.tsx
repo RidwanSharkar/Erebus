@@ -224,7 +224,7 @@ export default function CrossentropyBlitzRocket({
         <mesh ref={exhaustRef} position={[0, -0.42, 0]}>
           <coneGeometry args={[0.12, 0.42, 6]} />
           <meshStandardMaterial
-            color={trail.getHexString()}
+            color={`#${trail.getHexString()}`}
             emissive={emissive}
             emissiveIntensity={3}
             transparent
@@ -236,7 +236,7 @@ export default function CrossentropyBlitzRocket({
         <mesh position={[0, -0.65, 0]} rotation={[Math.PI, 0, 0]}>
           <coneGeometry args={[0.072, 0.6, 6]} />
           <meshStandardMaterial
-            color={trail.getHexString()}
+            color={`#${trail.getHexString()}`}
             emissive={emissive}
             emissiveIntensity={2}
             transparent

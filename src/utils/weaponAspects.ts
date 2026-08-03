@@ -72,94 +72,94 @@ export interface WeaponAspectDisplayMeta {
 export const WEAPON_ASPECT_DISPLAY: Record<WeaponAspect, WeaponAspectDisplayMeta> = {
   LEGIONNAIRE: {
     id: 'LEGIONNAIRE',
-    label: 'Legionnaire',
+    label: 'Aspect of Mania',
     shortLabel: 'Legionnaire',
     description:
-      'Standard Runeblade damage and attack speed. R starts with Death Grasp. Colossus Smite (E) has a 6s cooldown and heals 30 HP.',
+      'Reduces the cooldown of Colossus Smite (E) by 2 seconds and triples its base heal. Death Grasp (R) pulls and taunts target.',
   },
   BLADEMASTER: {
     id: 'BLADEMASTER',
-    label: 'Blademaster',
+    label: 'Aspect of Envy',
     shortLabel: 'Blademaster',
     description:
-      'Same damage as Legionnaire with faster attack speed. Light purple blade with a broader tip. Wraith Strike applies Shadowflame (60% of hit damage over 2.5s).',
+      'Increases attack speed by 20%. Wraith Strike applies Shadowflame (ignites for 60% of hit damage over 2.5s).',
   },
   DEATHDEALER: {
     id: 'DEATHDEALER',
-    label: 'Deathdealer',
+    label: 'Aspect of Regret',
     shortLabel: 'Deathdealer',
     description:
-      'Warhammer form: higher base damage, slower swings. Yellow crystalline maul head. Third combo hit has a 25% chance to immediately trigger a Stagger Lightning Bolt on the target.',
+      'Higher base damage, slower swings. Third combo hit has a 50% chance to immediately trigger a Stagger Lightning Bolt on the target.',
   },
   ROYAL_GUARD: {
     id: 'ROYAL_GUARD',
-    label: 'Royal Guard',
+    label: 'Aspect of Pride',
     shortLabel: 'Royal Guard',
     description:
-      'Spear form with Legionnaire damage/speed. E keeps Colossus Smite; R becomes Tempest Sweep (hold to charge, release to sweep). Charging R for at least 1.5s Ignites hit enemies for 80% of impact damage over 4 seconds.',
+      'Tempest Sweep: Charging R for at least 1.5s Ignites hit enemies for 80% of impact damage over 4 seconds.',
   },
   ARCHMAGE: {
     id: 'ARCHMAGE',
-    label: 'Archmage',
+    label: 'Aspect of Arrogance',
     shortLabel: 'Archmage',
     description:
       'Every third Entropic Bolt Ignites the enemy for 200% of that bolt\'s damage over 4 seconds. Crossentropy hits on Ignited enemies create a pillar of fire dealing 125 + 5 damage per Intellect.',
   },
   NECROMANCER: {
     id: 'NECROMANCER',
-    label: 'Necromancer',
+    label: 'Aspect of Madness',
     shortLabel: 'Necromancer',
     description:
-      'Crossentropy hits summon a stationary Vengeful Spirit (15 + 1 per STR/STA/INT/AGI, 3.0 range, 7s) next to the target. Max 4 spirits. Mantra totems Entangle the closest enemy within 4.5 every 2s (5s root, 20 DPS).',
+      'Vengeful Spirit: Crossentropy hits summon a stationary apparition that attacks nearby enemies. Binding Totem: Mantra totems Entangle the closest enemy within 4.5 every 2s.',
   },
   DRACONIC: {
     id: 'DRACONIC',
-    label: 'Draconic',
+    label: 'Aspect of Vanity',
     shortLabel: 'Draconic',
     description:
-      'Purple blades with a classic crescent tip. Entropic Bolts fire 0.125s faster (stacks with Arcane Synergy). Grants +1 dash charge (stacks with Merchant for 5 max). After each dash, release 3 Locusts that seek enemies (no energy cost).',
+      'Entropic Bolts fire 20% faster. After each dash, release 3 Locusts that seek enemies. Grants +1 dash charge.',
   },
   FIRE_AFFINITY: {
     id: 'FIRE_AFFINITY',
-    label: 'Fire Affinity',
+    label: 'Aspect of Havoc',
     shortLabel: 'Fire',
     description:
-      'Divebomb has a 6s cooldown, deals 125 + 1 damage per point of STRENGTH, AGILITY, STAMINA, and INTELLECT, and applies Ignite (80% of impact damage over 3s).',
+      'Reduces the cooldown of Divebomb by 2 seconds, increasing its damage and it now applies Ignite (80% of impact damage over 3s).',
   },
   FROST_AFFINITY: {
     id: 'FROST_AFFINITY',
-    label: 'Frost Affinity',
+    label: 'Aspect of Apathy',
     shortLabel: 'Frost',
     description:
-      'Light-blue sabre blades. Primary attacks apply Avalanche on hit enemies — Arctic Blizzard damage and chill every 0.5s for 6s (refreshes on re-hit).',
+      'Primary attacks apply Avalanche on hit enemies — Arctic Blizzard damage and chill every 0.5s for 6s.',
   },
   WARLORD: {
     id: 'WARLORD',
-    label: 'Warlord',
+    label: 'Aspect of Cruelty',
     shortLabel: 'Warlord',
     description:
-      'No Divebomb (R empty for room boons). Longer dash distance. Poison Dart: after each dash, the next primary attack fires a dart dealing 20 + 5 per AGILITY and applying 1 stack of Concentrated Venom (no cooldown). Backstab (Q) applies Concentrated Venom (stacks with Infested Stab).',
+      'Poison Dart: after each dash, the next primary attack fires a dart dealing 20 + 5 per AGILITY and applying 1 stack of Concentrated Venom. Backstab (Q) applies 1 stack ofConcentrated Venom. Dash distance is doubled.',
   },
   SNIPER: {
     id: 'SNIPER',
-    label: 'Sniper',
+    label: 'Aspect of Vengeance',
     shortLabel: 'Sniper',
     description:
-      "Hunter's Mark: Barrage marks enemies for 5s (1 mark per target). Perfect Shot on a marked enemy detonates into stagger lightning (upgradable with Tempest room boons). Terminal Velocity: Perfect Shot and Reaping Talons (forward and return) deal +20 + 2 per AGILITY bonus damage when the target is hit from over 10 range away.",
+      "Hunter's Mark: Barrage marks enemies for 5s. A Perfect Shot on a marked enemy creates a lightning bolt at the enemy location. Terminal Velocity: Perfect Shot and Reaping Talons (forward and return) deal +20 + 2 per AGILITY bonus damage when the target is hit from over 10 meters away.",
   },
   DRUID: {
     id: 'DRUID',
-    label: 'Druid',
+    label: 'Aspect of Resent',
     shortLabel: 'Druid',
     description:
-      'Bow wrapped in vines with leaf clusters. Unlocks R — Rejuvenating Shot: heals allies, or Entangles enemies hit (same as Entanglement talent).',
+      'Rejuvenating Shot: heals allies, or Entangles enemies hit.',
   },
   BEASTMASTER: {
     id: 'BEASTMASTER',
-    label: 'Beastmaster',
+    label: 'Aspect of Infamy',
     shortLabel: 'Beastmaster',
     description:
-      'Bone-and-fang hunter\'s bow. Always accompanied by a tiger companion (600 HP, 29 melee damage) that follows between rooms and in the throne.',
+      'Always accompanied by a loyal tiger companion.',
   },
 };
 

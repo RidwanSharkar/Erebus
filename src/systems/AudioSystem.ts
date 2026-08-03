@@ -125,7 +125,7 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'enemy_blink', file: 'versus/blink.mp3' },
   { id: 'wraith_buzzsaw', file: 'versus/buzzsaw.mp3' },
   { id: 'enemy_death', file: 'versus/deathSFX.mp3' },
-  { id: 'enemy_death_ghoul', file: 'versus/1beastDeath.mp3' },
+  { id: 'enemy_death_ghoul', file: 'versus/1beastdeath.mp3' },
   { id: 'enemy_death_warlock', file: 'versus/warlockdeath.mp3' },
   { id: 'enemy_death_shade', file: 'versus/shadedeath.mp3' },
   { id: 'enemy_death_viper', file: 'versus/viperdeath.mp3' },

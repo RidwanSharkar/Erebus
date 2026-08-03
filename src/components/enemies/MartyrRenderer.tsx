@@ -16,6 +16,7 @@ import {
 } from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 
 interface MartyrRendererProps {
   id: string;
@@ -168,7 +169,7 @@ function MartyrRenderer({
               <meshBasicMaterial color="#cc2200" opacity={0.95} transparent />
             </mesh>
             <EnemyHealthBarTextLabel
-              leading="💣"
+              name={getEnemyDisplayName('martyr')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

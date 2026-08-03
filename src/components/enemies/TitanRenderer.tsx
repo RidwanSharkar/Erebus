@@ -353,7 +353,7 @@ function TitanRenderer({
             </mesh>
 
             <EnemyHealthBarTextLabel
-              leading={`${TITAN_DISPLAY_NAMES[soulType]}  `}
+              name={TITAN_DISPLAY_NAMES[soulType]}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}

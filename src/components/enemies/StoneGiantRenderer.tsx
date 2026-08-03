@@ -18,6 +18,7 @@ import {
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface StoneGiantRendererProps {
@@ -193,7 +194,7 @@ export default function StoneGiantRenderer({
               fillColor={theme.fill}
             />
             <EnemyHealthBarTextLabel
-              leading="HP"
+              name={getEnemyDisplayName('stone-giant')}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}
