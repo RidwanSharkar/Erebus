@@ -15,23 +15,27 @@ interface DeathKnightModelProps {
   attackVariant: 1 | 2;
   isHeartstriking: boolean;
   heartstrikeVariant: 1 | 2;
+  isCasting: boolean;
   isDying: boolean;
 }
 
 const DEATH_KNIGHT_IDLE_PATH = '/models/deathknight/deathKnight_idle.glb';
 /** attack0–3 GLBs are byte-identical WoW bundles — load once and pick distinct 2H clips. */
 const DEATH_KNIGHT_ATTACK_BUNDLE_PATH = '/models/deathknight/deathKnight_attack0.glb';
+const DEATH_KNIGHT_CAST_PATH = '/models/deathknight/deathknight_cast.glb';
 
 const DEATH_KNIGHT_MODEL_PATHS = [
   DEATH_KNIGHT_IDLE_PATH,
   '/models/deathknight/deathKnight_walk.glb',
   DEATH_KNIGHT_ATTACK_BUNDLE_PATH,
+  DEATH_KNIGHT_CAST_PATH,
   '/models/deathknight/deathKnight_death.glb',
 ];
 
 const DEATH_KNIGHT_DEFERRED_PATHS = {
   Walk: '/models/deathknight/deathKnight_walk.glb',
   Attacks: DEATH_KNIGHT_ATTACK_BUNDLE_PATH,
+  Cast: DEATH_KNIGHT_CAST_PATH,
   Death: '/models/deathknight/deathKnight_death.glb',
 } as const;
 
@@ -59,6 +63,7 @@ export default React.memo(function DeathKnightModel({
   attackVariant,
   isHeartstriking,
   heartstrikeVariant,
+  isCasting,
   isDying,
 }: DeathKnightModelProps) {
   const sceneGroupRef = useRef<Group>(null);
@@ -142,6 +147,10 @@ export default React.memo(function DeathKnightModel({
       ),
     [extraAnims.Attacks],
   );
+  const castSource = useMemo(
+    () => pickWowClip(extraAnims.Cast ?? [], 'Spell', 'Cast', 'Ready', 'Attack'),
+    [extraAnims.Cast],
+  );
   const deathSource = useMemo(
     () => pickWowClip(extraAnims.Death ?? [], 'Death'),
     [extraAnims.Death],
@@ -166,6 +175,7 @@ export default React.memo(function DeathKnightModel({
         ...getCachedProcessedClips('death-knight-attack3', heartstrike2Source, {
           renameTo: 'Heartstrike2',
         }),
+        ...getCachedProcessedClips('death-knight-cast', castSource, { renameTo: 'Cast' }),
         ...getCachedProcessedClips('death-knight-death', deathSource, { renameTo: 'Death' }),
       ];
       return clips.map((clip) => filterAnimationTracksForRoot(clonedScene, clip));
@@ -177,6 +187,7 @@ export default React.memo(function DeathKnightModel({
       attack2Source,
       heartstrikeSource,
       heartstrike2Source,
+      castSource,
       deathSource,
       clonedScene,
     ],
@@ -185,12 +196,12 @@ export default React.memo(function DeathKnightModel({
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
   const getAction = (
-    name: 'Idle' | 'Walk' | 'Attack' | 'Attack2' | 'Heartstrike' | 'Heartstrike2' | 'Death',
+    name: 'Idle' | 'Walk' | 'Attack' | 'Attack2' | 'Heartstrike' | 'Heartstrike2' | 'Cast' | 'Death',
   ): AnimationAction | null => actions[name] ?? null;
 
   const posed = useEnemyIdlePose({ actions, mixer, currentActionRef });
 
-  // Priority: Death > Heartstrike > Attack > Walk > Idle
+  // Priority: Death > Cast > Heartstrike > Attack > Walk > Idle
   useEffect(() => {
     if (!actions) return;
 
@@ -198,21 +209,23 @@ export default React.memo(function DeathKnightModel({
     const heartstrikeClip = heartstrikeVariant === 2 ? 'Heartstrike2' : 'Heartstrike';
     const nextAction = isDying
       ? getAction('Death')
-      : isHeartstriking
-        ? getAction(heartstrikeClip)
-        : isAttacking
-          ? getAction(attackClip)
-          : isWalking
-            ? getAction('Walk')
-            : getAction('Idle');
+      : isCasting
+        ? getAction('Cast')
+        : isHeartstriking
+          ? getAction(heartstrikeClip)
+          : isAttacking
+            ? getAction(attackClip)
+            : isWalking
+              ? getAction('Walk')
+              : getAction('Idle');
 
     if (!nextAction) return;
 
     playEnemyAction(nextAction, currentActionRef, mixer, {
-      loopOnce: isDying || isAttacking || isHeartstriking,
-      clampWhenFinished: isDying || isAttacking || isHeartstriking,
+      loopOnce: isDying || isAttacking || isHeartstriking || isCasting,
+      clampWhenFinished: isDying || isAttacking || isHeartstriking || isCasting,
     });
-  }, [isWalking, isAttacking, isHeartstriking, isDying, attackVariant, heartstrikeVariant, actions, mixer]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isWalking, isAttacking, isHeartstriking, isCasting, isDying, attackVariant, heartstrikeVariant, actions, mixer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!mixer || isDying) return;
@@ -225,8 +238,11 @@ export default React.memo(function DeathKnightModel({
         name === 'Attack' ||
         name === 'Attack2' ||
         name === 'Heartstrike' ||
-        name === 'Heartstrike2'
+        name === 'Heartstrike2' ||
+        name === 'Cast'
       ) {
+        // Hold Cast while isCasting remains true; otherwise fall back to walk/idle.
+        if (name === 'Cast' && isCasting) return;
         const fallback = isWalking ? getAction('Walk') : getAction('Idle');
         playEnemyAction(fallback, currentActionRef, mixer, { fadeIn: 0.15, fadeOut: 0.15 });
       }
@@ -234,7 +250,7 @@ export default React.memo(function DeathKnightModel({
 
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
-  }, [mixer, isDying, isWalking, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mixer, isDying, isWalking, isCasting, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <group ref={sceneGroupRef} visible={posed}>

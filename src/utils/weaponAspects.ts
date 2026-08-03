@@ -110,7 +110,7 @@ export const WEAPON_ASPECT_DISPLAY: Record<WeaponAspect, WeaponAspectDisplayMeta
     label: 'Necromancer',
     shortLabel: 'Necromancer',
     description:
-      'Crossentropy hits summon a stationary Vengeful Spirit (15 + 1 per STR/STA/INT/AGI, 3.0 range, 7s) next to the target. Max 4 spirits.',
+      'Crossentropy hits summon a stationary Vengeful Spirit (15 + 1 per STR/STA/INT/AGI, 3.0 range, 7s) next to the target. Max 4 spirits. Mantra totems Entangle the closest enemy within 4.5 every 2s (5s root, 20 DPS).',
   },
   DRACONIC: {
     id: 'DRACONIC',
@@ -138,14 +138,14 @@ export const WEAPON_ASPECT_DISPLAY: Record<WeaponAspect, WeaponAspectDisplayMeta
     label: 'Warlord',
     shortLabel: 'Warlord',
     description:
-      'Backstab (Q) applies 2 stacks of Concentrated Venom (stacks with Infested Stab).',
+      'No Divebomb (R empty for room boons). Longer dash distance. Poison Dart: after each dash, the next primary attack fires a dart dealing 20 + 5 per AGILITY and applying 1 stack of Concentrated Venom (no cooldown). Backstab (Q) applies Concentrated Venom (stacks with Infested Stab).',
   },
   SNIPER: {
     id: 'SNIPER',
     label: 'Sniper',
     shortLabel: 'Sniper',
     description:
-      'Terminal Velocity: Perfect Shot and Reaping Talons (forward and return) deal +20 + 2 per AGILITY bonus damage when the target is hit from over 10 range away.',
+      "Hunter's Mark: Barrage marks enemies for 5s (1 mark per target). Perfect Shot on a marked enemy detonates into stagger lightning (upgradable with Tempest room boons). Terminal Velocity: Perfect Shot and Reaping Talons (forward and return) deal +20 + 2 per AGILITY bonus damage when the target is hit from over 10 range away.",
   },
   DRUID: {
     id: 'DRUID',
@@ -188,6 +188,16 @@ export function getAspectsForWeapon(weapon: WeaponType): readonly WeaponAspect[]
 export function defaultWeaponAspect(weapon: WeaponType): WeaponAspect {
   const aspects = getAspectsForWeapon(weapon);
   return aspects[0] ?? ASPECT_LEGIONNAIRE;
+}
+
+/** Interval for throne pedestal aspect showcase rotation. */
+export const THRONE_ASPECT_SHOWCASE_INTERVAL_MS = 10_000;
+
+/** Pedestal showcase aspect for a rotating display tick (index 0 = default). */
+export function getShowcaseWeaponAspect(weapon: WeaponType, tick: number): WeaponAspect {
+  const aspects = getAspectsForWeapon(weapon);
+  if (aspects.length === 0) return defaultWeaponAspect(weapon);
+  return aspects[((tick % aspects.length) + aspects.length) % aspects.length]!;
 }
 
 /** Per-weapon last-chosen aspect map (throne pedestal memory). */
@@ -517,10 +527,43 @@ export function getSabresSkyfallCooldownSec(
 /** Warlord Backstab — Concentrated Venom stacks per hit (stacks with Infested Stab). */
 export const WARLORD_BACKSTAB_CONCENTRATED_VENOM_STACKS = 1;
 
+/**
+ * Warlord dash distance by Warpdrive purchase count (0–3).
+ * Same relative steps as the default table, +2.0 on each tier.
+ */
+export const WARLORD_WARPDRIVE_DASH_DISTANCES = [7.125, 8.125, 9.125, 10.125] as const;
+
 export function isSabresWarlordAspect(
   aspect: WeaponAspect | null | undefined,
 ): boolean {
   return aspect === ASPECT_WARLORD;
+}
+
+// ── Warlord Poison Dart (keep in sync with backend/gameRoom.js / ControlSystem) ─
+
+/** Flat base damage on the post-dash Poison Dart projectile. */
+export const POISON_DART_BASE_DAMAGE = 20;
+/** Bonus damage per point of effective AGILITY. */
+export const POISON_DART_AGI_PER_POINT = 5;
+/** Max travel distance (Scorpion Lance 7 + 4). */
+export const POISON_DART_RANGE = 11;
+/** Seconds the next primary can consume the armed dart after a dash. */
+export const POISON_DART_WINDOW_SEC = 2;
+/** Concentrated Venom stacks applied on Poison Dart hit. */
+export const POISON_DART_CONCENTRATED_VENOM_STACKS = 1;
+
+/** Poison Dart damage: 20 + 5 × AGI. */
+export function getPoisonDartDamage(agility: number): number {
+  return POISON_DART_BASE_DAMAGE + POISON_DART_AGI_PER_POINT * Math.max(0, agility);
+}
+
+/**
+ * Physical R hotkey ability for Sabres aspects (`SABRES_R` Divebomb, or none on Warlord).
+ */
+export function resolveSabresRAbilityId(
+  aspect: WeaponAspect | null | undefined,
+): 'SABRES_R' | null {
+  return isSabresWarlordAspect(aspect) ? null : 'SABRES_R';
 }
 
 // ── Scythe aspect combat (Entropic Bolt fire rate + default colors) ────────
@@ -569,6 +612,11 @@ export function isScytheNecromancerAspect(
 ): boolean {
   return aspect === ASPECT_NECROMANCER;
 }
+
+/** Necromancer Mantra totem — Entangle pulse radius (units). */
+export const NECROMANCER_TOTEM_ENTANGLE_RADIUS = 4.5;
+/** Necromancer Mantra totem — Entangle pulse interval (ms). */
+export const NECROMANCER_TOTEM_ENTANGLE_INTERVAL_MS = 2000;
 
 // ── Necromancer Vengeful Spirit (keep in sync with backend/gameRoom.js / enemyAI.js) ─
 
@@ -910,6 +958,9 @@ export function isDruidBowAspect(aspect: WeaponAspect | null | undefined): boole
 export function isSniperBowAspect(aspect: WeaponAspect | null | undefined): boolean {
   return aspect === ASPECT_SNIPER;
 }
+
+/** Sniper Hunter's Mark duration from Barrage hits (keep in sync with backend/gameRoom.js). */
+export const SNIPER_HUNTERS_MARK_DURATION_MS = 5000;
 
 // ── Sniper Terminal Velocity (keep in sync with ControlSystem / ProjectileSystem / useViperSting) ─
 

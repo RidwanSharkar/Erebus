@@ -113,6 +113,143 @@ const ORANGE_FIELD_COLORS: TerrainPalette = {
   groundLightIntensity: 0.34,
 };
 
+/** Prep throne legacy bright green (former hard-coded base/tip overrides). */
+const THRONE_ORIGINAL_COLORS: TerrainPalette = {
+  baseColor: '#1a6b1a',
+  tipColor: '#66dd66',
+  groundColor: '#1a3e14',
+  groundLightColor: '#4a9a3a',
+  groundLightIntensity: 0.42,
+};
+
+const HONEY_GOLD_COLORS: TerrainPalette = {
+  baseColor: '#5c3d10',
+  tipColor: '#f0c14a',
+  groundColor: '#2e1e08',
+  groundLightColor: '#b8860b',
+  groundLightIntensity: 0.36,
+};
+
+const APRICOT_DAWN_COLORS: TerrainPalette = {
+  baseColor: '#6b3a1e',
+  tipColor: '#ffb07a',
+  groundColor: '#3a1e10',
+  groundLightColor: '#d4784a',
+  groundLightIntensity: 0.34,
+};
+
+const DUSTY_ROSE_COLORS: TerrainPalette = {
+  baseColor: '#5a2a3a',
+  tipColor: '#e8a0b0',
+  groundColor: '#2e1520',
+  groundLightColor: '#c06078',
+  groundLightIntensity: 0.32,
+};
+
+const ARCTIC_MINT_COLORS: TerrainPalette = {
+  baseColor: '#1a4a48',
+  tipColor: '#7dffd4',
+  groundColor: '#0e2e2c',
+  groundLightColor: '#3ab89a',
+  groundLightIntensity: 0.34,
+};
+
+const MAGENTA_BLOOM_COLORS: TerrainPalette = {
+  baseColor: '#4a1040',
+  tipColor: '#ff66cc',
+  groundColor: '#280820',
+  groundLightColor: '#c040a0',
+  groundLightIntensity: 0.34,
+};
+
+const LIME_AURORA_COLORS: TerrainPalette = {
+  baseColor: '#2a4a08',
+  tipColor: '#b8f040',
+  groundColor: '#1a2e06',
+  groundLightColor: '#6aaa20',
+  groundLightIntensity: 0.38,
+};
+
+const CHERRY_SUNSET_COLORS: TerrainPalette = {
+  baseColor: '#5a1020',
+  tipColor: '#ff6b6b',
+  groundColor: '#2e0810',
+  groundLightColor: '#c04040',
+  groundLightIntensity: 0.34,
+};
+
+const SAPPHIRE_NOON_COLORS: TerrainPalette = {
+  baseColor: '#0e2a5a',
+  tipColor: '#4a9eff',
+  groundColor: '#081830',
+  groundLightColor: '#2a6acc',
+  groundLightIntensity: 0.32,
+};
+
+const CORAL_REEF_COLORS: TerrainPalette = {
+  baseColor: '#5a2a28',
+  tipColor: '#ff8a70',
+  groundColor: '#2e1414',
+  groundLightColor: '#d06050',
+  groundLightIntensity: 0.34,
+};
+
+const LAVENDER_MEADOW_COLORS: TerrainPalette = {
+  baseColor: '#3a2a5a',
+  tipColor: '#c4a0ff',
+  groundColor: '#1e1830',
+  groundLightColor: '#8060c0',
+  groundLightIntensity: 0.32,
+};
+
+const SUNFLOWER_COLORS: TerrainPalette = {
+  baseColor: '#4a3a08',
+  tipColor: '#ffe066',
+  groundColor: '#2a2006',
+  groundLightColor: '#c0a020',
+  groundLightIntensity: 0.38,
+};
+
+const ROSE_QUARTZ_COLORS: TerrainPalette = {
+  baseColor: '#5a3040',
+  tipColor: '#ffb6c8',
+  groundColor: '#2e1820',
+  groundLightColor: '#d08098',
+  groundLightIntensity: 0.32,
+};
+
+const JADE_GROVE_COLORS: TerrainPalette = {
+  baseColor: '#0e3a2e',
+  tipColor: '#4ade80',
+  groundColor: '#082018',
+  groundLightColor: '#2a9a60',
+  groundLightIntensity: 0.36,
+};
+
+const SUNSET_AMBER_COLORS: TerrainPalette = {
+  baseColor: '#5a2808',
+  tipColor: '#ffb347',
+  groundColor: '#2e1404',
+  groundLightColor: '#d07820',
+  groundLightIntensity: 0.36,
+};
+
+const SPRING_BLOSSOM_COLORS: TerrainPalette = {
+  baseColor: '#3a4a2a',
+  tipColor: '#f0a0c8',
+  groundColor: '#1e2818',
+  groundLightColor: '#90c070',
+  groundLightIntensity: 0.34,
+};
+
+const AZURE_FIELD_COLORS: TerrainPalette = {
+  baseColor: '#1a3a5a',
+  tipColor: '#60d0ff',
+  groundColor: '#0e2030',
+  groundLightColor: '#3a90c0',
+  groundLightIntensity: 0.32,
+};
+
 const THEME_COUNTS: Record<RoomBorderTheme, number> = {
   green: 16_000,
   red: 16_000,
@@ -135,6 +272,82 @@ function resolveRoomTheme(
   return 'green';
 }
 
+/** Named grass palettes (includes theme defaults + random throne pool keys). Purple/grey excluded from random pool. */
+export type GrassPaletteKey =
+  | 'theme'
+  | 'throne'
+  | 'eden'
+  | 'crimson'
+  | 'delirium'
+  | 'dream'
+  | 'purple'
+  | 'grey'
+  | 'ocean'
+  | 'teal'
+  | 'orange'
+  | 'arid'
+  | 'etherealBlue'
+  | 'honeyGold'
+  | 'apricotDawn'
+  | 'dustyRose'
+  | 'arcticMint'
+  | 'magentaBloom'
+  | 'limeAurora'
+  | 'cherrySunset'
+  | 'sapphireNoon'
+  | 'coralReef'
+  | 'lavenderMeadow'
+  | 'sunflower'
+  | 'roseQuartz'
+  | 'jadeGrove'
+  | 'sunsetAmber'
+  | 'springBlossom'
+  | 'azureField';
+
+/**
+ * Server-authoritative random grass pool for prep ThroneRoom.
+ * Keep count in sync with `COOP_RANDOM_GRASS_PRESET_COUNT` in backend/coopGrassPresets.js.
+ * Excludes purple/grey (boss / ash-black look).
+ */
+export const RANDOM_GRASS_PRESETS: readonly GrassPaletteKey[] = [
+  'throne',
+  'eden',
+  'dream',
+  'teal',
+  'orange',
+  'crimson',
+  'delirium',
+  'ocean',
+  'arid',
+  'etherealBlue',
+  'honeyGold',
+  'apricotDawn',
+  'dustyRose',
+  'arcticMint',
+  'magentaBloom',
+  'limeAurora',
+  'cherrySunset',
+  'sapphireNoon',
+  'coralReef',
+  'lavenderMeadow',
+  'sunflower',
+  'roseQuartz',
+  'jadeGrove',
+  'sunsetAmber',
+  'springBlossom',
+  'azureField',
+] as const;
+
+export const RANDOM_GRASS_PRESET_COUNT = RANDOM_GRASS_PRESETS.length;
+
+export function resolveGrassPresetByIndex(index: number | undefined | null): GrassPaletteKey {
+  const n = RANDOM_GRASS_PRESET_COUNT;
+  if (n <= 0) return 'throne';
+  const i = Number.isFinite(index as number) ? Math.floor(index as number) : 0;
+  const wrapped = ((i % n) + n) % n;
+  return RANDOM_GRASS_PRESETS[wrapped] ?? 'throne';
+}
+
 interface StylizedGrassProps {
   /** `disc` = throne / circular fields; `hex` = main arena; `square` = legacy rectangle. */
   fieldShape?: 'disc' | 'square' | 'hex';
@@ -147,7 +360,7 @@ interface StylizedGrassProps {
   /** Coop room archetype — drives default palette, density (purple), and wind. */
   roomTheme?: RoomBorderTheme;
   /** Override palette; fixed palettes instead of theme defaults. */
-  grassPalette?: 'theme' | 'crimson' | 'delirium' | 'dream' | 'purple' | 'grey' | 'ocean' | 'teal' | 'orange';
+  grassPalette?: GrassPaletteKey;
   /** Legacy: when true, same as `roomTheme="blue"`. Ignored if `roomTheme` is set. */
   isSnowTheme?: boolean;
   baseColor?: string;
@@ -254,6 +467,70 @@ const GRASS_COLORS: TerrainPalette = {
   groundLightIntensity: 0.45,
 };
 
+export function grassPaletteForKey(key: GrassPaletteKey): TerrainPalette {
+  switch (key) {
+    case 'throne':
+      return THRONE_ORIGINAL_COLORS;
+    case 'eden':
+    case 'theme':
+      return GRASS_COLORS;
+    case 'crimson':
+      return DEEP_CRIMSON_COLORS;
+    case 'delirium':
+      return DELIRIUM_COLORS;
+    case 'dream':
+      return DREAM_LAYER_COLORS;
+    case 'purple':
+      return PURPLE_FIELD_COLORS;
+    case 'grey':
+      return GREY_FIELD_COLORS;
+    case 'ocean':
+      return OCEAN_FIELD_COLORS;
+    case 'teal':
+      return TEAL_FIELD_COLORS;
+    case 'orange':
+      return ORANGE_FIELD_COLORS;
+    case 'arid':
+      return ARID_COLORS;
+    case 'etherealBlue':
+      return ETHEREAL_BLUE_COLORS;
+    case 'honeyGold':
+      return HONEY_GOLD_COLORS;
+    case 'apricotDawn':
+      return APRICOT_DAWN_COLORS;
+    case 'dustyRose':
+      return DUSTY_ROSE_COLORS;
+    case 'arcticMint':
+      return ARCTIC_MINT_COLORS;
+    case 'magentaBloom':
+      return MAGENTA_BLOOM_COLORS;
+    case 'limeAurora':
+      return LIME_AURORA_COLORS;
+    case 'cherrySunset':
+      return CHERRY_SUNSET_COLORS;
+    case 'sapphireNoon':
+      return SAPPHIRE_NOON_COLORS;
+    case 'coralReef':
+      return CORAL_REEF_COLORS;
+    case 'lavenderMeadow':
+      return LAVENDER_MEADOW_COLORS;
+    case 'sunflower':
+      return SUNFLOWER_COLORS;
+    case 'roseQuartz':
+      return ROSE_QUARTZ_COLORS;
+    case 'jadeGrove':
+      return JADE_GROVE_COLORS;
+    case 'sunsetAmber':
+      return SUNSET_AMBER_COLORS;
+    case 'springBlossom':
+      return SPRING_BLOSSOM_COLORS;
+    case 'azureField':
+      return AZURE_FIELD_COLORS;
+    default:
+      return GRASS_COLORS;
+  }
+}
+
 function paletteForTheme(theme: RoomBorderTheme): TerrainPalette {
   switch (theme) {
     case 'red':
@@ -292,23 +569,9 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
   const defaultCount = THEME_COUNTS[effectiveTheme];
   const count = countOverride ?? defaultCount;
   const palette =
-    grassPalette === 'crimson'
-      ? DEEP_CRIMSON_COLORS
-      : grassPalette === 'delirium'
-        ? DELIRIUM_COLORS
-        : grassPalette === 'dream'
-          ? DREAM_LAYER_COLORS
-          : grassPalette === 'purple'
-            ? PURPLE_FIELD_COLORS
-            : grassPalette === 'grey'
-              ? GREY_FIELD_COLORS
-              : grassPalette === 'ocean'
-                ? OCEAN_FIELD_COLORS
-                : grassPalette === 'teal'
-                  ? TEAL_FIELD_COLORS
-                  : grassPalette === 'orange'
-                    ? ORANGE_FIELD_COLORS
-                    : paletteForTheme(effectiveTheme);
+    grassPalette === 'theme'
+      ? paletteForTheme(effectiveTheme)
+      : grassPaletteForKey(grassPalette);
 
   const resolvedBaseColor        = baseColor        ?? palette.baseColor;
   const resolvedTipColor         = tipColor         ?? palette.tipColor;

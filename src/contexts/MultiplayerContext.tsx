@@ -38,7 +38,7 @@ import {
 import { cancelKnightStyleMiss, playKnightStyleHit } from '@/utils/knightStyleMeleeSound';
 import { playVengefulSpiritHitSound } from '@/utils/beastAudioSounds';
 
-export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'merchant' | 'boss' | 'intro' | 'deep_sanctum' | 'sunken_temple' | 'eternity_palace' | 'eden' | 'false_eden' | 'delirium_gate' | 'erebus_gate' | 'dream_layer' | 'fae_realm';
+export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'merchant' | 'boss' | 'intro' | 'deep_sanctum' | 'sunken_temple' | 'eternity_palace' | 'eden' | 'false_eden' | 'delirium_gate' | 'erebus_gate' | 'dream_layer' | 'fae_realm' | 'eden_finale';
 export type DeliriumStructureState = {
   hp: number;
   maxHp: number;
@@ -178,8 +178,14 @@ export interface EnemyDamageMeta {
   glacialTalons?: boolean;
   /** Entanglement — Barrage hit roots and squeezes target on server. */
   entanglementBarrage?: boolean;
+  /** Sniper Hunter's Mark — Barrage hit marks target on server. */
+  huntersMark?: boolean;
+  /** Bow Perfect Shot — Sniper may detonate Hunter's Mark on server. */
+  perfectShot?: boolean;
   /** Druid Rejuvenating Shot — enemy hit applies Entanglement on server. */
   rejuvenatingShotEntangle?: boolean;
+  /** Necromancer Mantra totem — pulse applies Entanglement on server. */
+  necromancerTotemEntangle?: boolean;
   /** Tempest Rounds burst — Arctic Sting chill on hit. */
   tempestBurstArcticChill?: boolean;
   /** Tempest Rounds burst — Wyvern Sting zombie on kill. */
@@ -500,6 +506,7 @@ interface MultiplayerContextType {
     | 'pick_sunken_entry'
     | 'pick_eternity_entry'
     | 'pick_eternity_late_entry'
+    | 'pick_trinity_finale'
     | 'eden_exit'
     | null;
   /** Co-op: act terrain theme, independent from the selected room color/reward kind. */
@@ -517,6 +524,11 @@ interface MultiplayerContextType {
    * From `game-started`, `combat-arena-entered`, `coop-throne-sync`, `room-joined`.
    */
   coopSkyPresetIndex: number;
+  /**
+   * Co-op: server-authoritative StylizedGrass preset index for prep ThroneRoom.
+   * From `game-started`, `coop-throne-sync`, `room-joined`.
+   */
+  coopGrassPresetIndex: number;
   /**
    * Co-op: stripped throne shell (boss fight + post-boss portal pause). False on prep throne and main castle map.
    * Authoritative from server (`room-joined`, `combat-arena-entered`, `coop-main-arena-intermission`).
@@ -695,7 +707,7 @@ interface MultiplayerContextType {
   
   // Player actions
   updatePlayerPosition: (position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number }, movementDirection?: PlayerMovementDirection) => void;
-  updatePlayerWeapon: (weapon: WeaponType, subclass?: WeaponSubclass) => void;
+  updatePlayerWeapon: (weapon: WeaponType, subclass?: WeaponSubclass, aspect?: WeaponAspect) => void;
   updatePlayerArchetype: (archetype: Archetype) => void;
   updatePlayerWeaponAspect: (aspect: WeaponAspect) => void;
   updatePlayerHealth: (health: number, maxHealth?: number) => void;
@@ -969,7 +981,7 @@ interface MultiplayerProviderProps {
 }
 
 const VALID_CAMP_KEYS = new Set(['red', 'blue', 'green', 'purple']);
-const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'trial', 'merchant', 'boss', 'intro', 'deep_sanctum', 'sunken_temple', 'eternity_palace', 'eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer', 'fae_realm']);
+const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'trial', 'merchant', 'boss', 'intro', 'deep_sanctum', 'sunken_temple', 'eternity_palace', 'eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer', 'fae_realm', 'eden_finale']);
 const VALID_COOP_TERRAIN_THEMES = new Set(['purple', 'blue', 'green']);
 
 function normalizeThronePortalLayout(v: unknown): 'rim' | 'center' {
@@ -986,6 +998,7 @@ function normalizeCoopMainArenaPhase(v: unknown):
   | 'pick_sunken_entry'
   | 'pick_eternity_entry'
   | 'pick_eternity_late_entry'
+  | 'pick_trinity_finale'
   | 'eden_exit'
   | null {
   if (
@@ -998,6 +1011,7 @@ function normalizeCoopMainArenaPhase(v: unknown):
     || v === 'pick_sunken_entry'
     || v === 'pick_eternity_entry'
     || v === 'pick_eternity_late_entry'
+    || v === 'pick_trinity_finale'
     || v === 'eden_exit'
   ) {
     return v;
@@ -1188,6 +1202,7 @@ type CoopSessionSnapshotPayload = {
   coopColoredRoomVisitIndex?: unknown;
   coopBossRoomVisitIndex?: unknown;
   coopSkyPresetIndex?: unknown;
+  coopGrassPresetIndex?: unknown;
   merchantInventory?: unknown;
   mushroomState?: { health?: number[]; maxHealth?: number };
   coopIntroPending?: boolean;
@@ -1259,6 +1274,7 @@ type CoopSnapshotSetters = {
       | 'pick_sunken_entry'
       | 'pick_eternity_entry'
       | 'pick_eternity_late_entry'
+      | 'pick_trinity_finale'
       | 'eden_exit'
       | null
     >
@@ -1273,6 +1289,7 @@ type CoopSnapshotSetters = {
   setCoopColoredRoomVisitIndex: React.Dispatch<React.SetStateAction<number | null>>;
   setCoopBossRoomVisitIndex: React.Dispatch<React.SetStateAction<number | null>>;
   setCoopSkyPresetIndex: React.Dispatch<React.SetStateAction<number>>;
+  setCoopGrassPresetIndex: React.Dispatch<React.SetStateAction<number>>;
   setMerchantInventory: React.Dispatch<React.SetStateAction<MerchantStockItem[]>>;
   setMerchantPurchaseState: React.Dispatch<React.SetStateAction<MerchantPurchaseState>>;
   setMushroomState: React.Dispatch<
@@ -1655,6 +1672,12 @@ function applyCoopSessionSnapshot(
       setters.setCoopSkyPresetIndex(Math.max(0, Math.floor(skyIdx)));
     }
   }
+  if (data && 'coopGrassPresetIndex' in data) {
+    const grassIdx = Number(data.coopGrassPresetIndex);
+    if (Number.isFinite(grassIdx)) {
+      setters.setCoopGrassPresetIndex(Math.max(0, Math.floor(grassIdx)));
+    }
+  }
   if (resetVisitIndices) {
     setters.setCoopColoredRoomVisitIndex(null);
     setters.setCoopBossRoomVisitIndex(null);
@@ -1782,6 +1805,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     | 'pick_sunken_entry'
     | 'pick_eternity_entry'
     | 'pick_eternity_late_entry'
+    | 'pick_trinity_finale'
     | 'eden_exit'
     | null
   >(null);
@@ -1791,6 +1815,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopBossRoomVisitIndex, setCoopBossRoomVisitIndex] = useState<number | null>(null);
   /** Server-authoritative CustomSky preset index for the current co-op room. */
   const [coopSkyPresetIndex, setCoopSkyPresetIndex] = useState(0);
+  /** Server-authoritative StylizedGrass preset index for prep ThroneRoom. */
+  const [coopGrassPresetIndex, setCoopGrassPresetIndex] = useState(0);
   const [coopBossThroneArena, setCoopBossThroneArena] = useState(false);
   const [coopThroneBossKind, setCoopThroneBossKind] = useState<'boss' | 'boss2' | 'boss3' | 'destiny' | 'boss_all' | null>(null);
   const [coopTerrainTheme, setCoopTerrainTheme] = useState<CoopTerrainTheme>('purple');
@@ -2053,6 +2079,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCampTypes([]);
       setCoopTerrainTheme('purple');
       setCoopSkyPresetIndex(0);
+      setCoopGrassPresetIndex(0);
       setSkeletonKillCount(0);
       setSkeletonKillRequired(8);
       setDroppedItems(new Map());
@@ -2162,6 +2189,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         const skyIdx = Number((data as { coopSkyPresetIndex?: unknown }).coopSkyPresetIndex);
         if (Number.isFinite(skyIdx)) {
           setCoopSkyPresetIndex(Math.max(0, Math.floor(skyIdx)));
+        }
+      }
+      if ('coopGrassPresetIndex' in (data as object)) {
+        const grassIdx = Number((data as { coopGrassPresetIndex?: unknown }).coopGrassPresetIndex);
+        if (Number.isFinite(grassIdx)) {
+          setCoopGrassPresetIndex(Math.max(0, Math.floor(grassIdx)));
         }
       }
       setMerchantInventory(normalizeMerchantInventory((data as { merchantInventory?: unknown }).merchantInventory));
@@ -2942,6 +2975,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           setCoopColoredRoomVisitIndex,
           setCoopBossRoomVisitIndex,
           setCoopSkyPresetIndex,
+          setCoopGrassPresetIndex,
           setMerchantInventory,
           setMerchantPurchaseState,
           setMushroomState,
@@ -3017,6 +3051,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           setCoopColoredRoomVisitIndex,
           setCoopBossRoomVisitIndex,
           setCoopSkyPresetIndex,
+          setCoopGrassPresetIndex,
           setMerchantInventory,
           setMerchantPurchaseState,
           setMushroomState,
@@ -3803,6 +3838,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCampTypes([]);
       setCoopTerrainTheme('purple');
       setCoopSkyPresetIndex(0);
+      setCoopGrassPresetIndex(0);
       setDroppedItems(new Map());
       setGoldDrops(new Map());
       setInventory([]);
@@ -3892,6 +3928,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setCampTypes([]);
     setCoopTerrainTheme('purple');
     setCoopSkyPresetIndex(0);
+    setCoopGrassPresetIndex(0);
     setThronePortalOffer([]);
     setThronePortalLayout('rim');
     setCoopMainArenaPortalPhase(null);
@@ -4095,12 +4132,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
   }, [socket, currentRoomId]);
 
-  const updatePlayerWeapon = useCallback((weapon: WeaponType, subclass?: WeaponSubclass) => {
+  const updatePlayerWeapon = useCallback((weapon: WeaponType, subclass?: WeaponSubclass, aspect?: WeaponAspect) => {
     if (socket && currentRoomId) {
       socket.emit('weapon-changed', {
         roomId: currentRoomId,
         weapon,
-        subclass
+        subclass,
+        ...(aspect != null ? { aspect } : {}),
       });
     }
   }, [socket, currentRoomId]);
@@ -4224,7 +4262,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ...(meta?.glacialBiteChill ? { glacialBiteChill: true } : {}),
         ...(meta?.glacialTalons ? { glacialTalons: true } : {}),
         ...(meta?.entanglementBarrage ? { entanglementBarrage: true } : {}),
+        ...(meta?.huntersMark ? { huntersMark: true } : {}),
+        ...(meta?.perfectShot ? { perfectShot: true } : {}),
         ...(meta?.rejuvenatingShotEntangle ? { rejuvenatingShotEntangle: true } : {}),
+        ...(meta?.necromancerTotemEntangle ? { necromancerTotemEntangle: true } : {}),
         ...(meta?.tempestBurstArcticChill ? { tempestBurstArcticChill: true } : {}),
         ...(meta?.tempestBurstWyvernZombie ? { tempestBurstWyvernZombie: true } : {}),
         ...(meta?.explosiveTalonsDetonation ? { explosiveTalonsDetonation: true } : {}),
@@ -4876,6 +4917,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     coopColoredRoomVisitIndex,
     coopBossRoomVisitIndex,
     coopSkyPresetIndex,
+    coopGrassPresetIndex,
     coopBossThroneArena,
     coopThroneBossKind,
     coopTransitionOverlay,
@@ -5046,7 +5088,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     closeChat,
     setPlayers
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, playerRosterMetaRev, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopSkyPresetIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, lateJoinCombatLoadout, clearLateJoinCombatLoadout, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, leaveRoom, previewRoom, clearPreview, startGame, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerArchetype, updatePlayerWeaponAspect, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastAlliedHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, selectedArchetype, selectedWeaponAspect, weaponAspectByWeapon, setSelectedWeapons, setSelectedArchetype, setSelectedWeaponAspect, rememberWeaponAspect, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, registerMerchantNpcGreetHandler, registerPlayerGoldChangedHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
+  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, playerRosterMetaRev, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopSkyPresetIndex, coopGrassPresetIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, lateJoinCombatLoadout, clearLateJoinCombatLoadout, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, leaveRoom, previewRoom, clearPreview, startGame, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerArchetype, updatePlayerWeaponAspect, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastAlliedHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, selectedArchetype, selectedWeaponAspect, weaponAspectByWeapon, setSelectedWeapons, setSelectedArchetype, setSelectedWeaponAspect, rememberWeaponAspect, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, registerMerchantNpcGreetHandler, registerPlayerGoldChangedHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
 
   const actionsValue: MultiplayerActionsContextType = useMemo(
     () => ({
@@ -5263,6 +5305,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopColoredRoomVisitIndex,
       coopBossRoomVisitIndex,
       coopSkyPresetIndex,
+      coopGrassPresetIndex,
       coopBossThroneArena,
       coopThroneBossKind,
       coopTransitionOverlay,
@@ -5369,6 +5412,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopColoredRoomVisitIndex,
       coopBossRoomVisitIndex,
       coopSkyPresetIndex,
+      coopGrassPresetIndex,
       coopBossThroneArena,
       coopThroneBossKind,
       coopTransitionOverlay,

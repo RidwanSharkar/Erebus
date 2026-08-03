@@ -18,6 +18,7 @@ import ArchitectNpcRenderer from '@/components/environment/ArchitectNpcRenderer'
 import DreamLayerPedestals from '@/components/environment/DreamLayerPedestals';
 import VoidPortal from '@/components/environment/VoidPortal';
 import HealingFountain from '@/components/environment/HealingFountain';
+import EdenFinaleDaisy from '@/components/environment/EdenFinaleDaisy';
 import DeliriumStructure from '@/components/environment/DeliriumStructure';
 import IntroAllyChoiceEncounter from '@/components/coop/IntroAllyChoiceEncounter';
 import SunkenSentinelEncounter from '@/components/coop/SunkenSentinelEncounter';
@@ -36,6 +37,7 @@ import {
 import type { CoopTerrainTheme, DeliriumStructureState, DreamLayerPurchaseState, DreamLayerStockItem, MerchantPurchaseState, MerchantStockItem } from '@/contexts/MultiplayerContext';
 import type { World } from '@/ecs/World';
 import type { Vector3 } from 'three';
+import type { WeaponAspect } from '@/utils/weaponAspects';
 
 type CoopEnvironmentSceneLayerProps = {
   inThroneRoom: boolean;
@@ -62,6 +64,7 @@ type CoopEnvironmentSceneLayerProps = {
     | 'pick_sunken_entry'
     | 'pick_eternity_entry'
     | 'pick_eternity_late_entry'
+    | 'pick_trinity_finale'
     | 'eden_exit'
     | null;
   thronePortalOffer: readonly string[];
@@ -99,10 +102,12 @@ type CoopEnvironmentSceneLayerProps = {
   realTimePlayerPositionRef: React.MutableRefObject<Vector3>;
   merchantInventory: MerchantStockItem[];
   merchantPurchaseState: MerchantPurchaseState;
+  weaponAspect?: WeaponAspect | null;
   dreamLayerInventory: DreamLayerStockItem[];
   dreamLayerPurchaseState: DreamLayerPurchaseState;
   /** Server-authoritative random CustomSky preset index. */
   skyPresetIndex: number;
+  onEdenFinaleDaisyInteract?: () => void;
 };
 
 function edenResumePortalCampType(kind: string | null | undefined) {
@@ -161,9 +166,11 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
   realTimePlayerPositionRef,
   merchantInventory,
   merchantPurchaseState,
+  weaponAspect,
   dreamLayerInventory,
   dreamLayerPurchaseState,
   skyPresetIndex,
+  onEdenFinaleDaisyInteract,
 }: CoopEnvironmentSceneLayerProps) {
   void isIntroCastleRoom;
 
@@ -176,6 +183,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
   const rightCamp = o && o.length >= 2 ? normalizeCoopPortalKind(o[1]) : 'red';
 
   const isCastleRoom = coopCurrentRoomKind === 'intro' || coopCurrentRoomKind === 'deep_sanctum';  const isSunkenTemple = coopCurrentRoomKind === 'sunken_temple';  const isEternityPalace = coopCurrentRoomKind === 'eternity_palace';  const isFaeRealm = coopCurrentRoomKind === 'fae_realm';  const isDeepSanctum = coopCurrentRoomKind === 'deep_sanctum';  const isEdenRoom = coopCurrentRoomKind === 'eden';
+  const isEdenFinaleRoom = coopCurrentRoomKind === 'eden_finale';
   const isFalseEdenRoom = coopCurrentRoomKind === 'false_eden';
   const isDeliriumRoom = coopCurrentRoomKind === 'delirium_gate';
   const isErebusGateRoom = coopCurrentRoomKind === 'erebus_gate';
@@ -383,6 +391,9 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           )}
         </>
       )}
+      {isEdenFinaleRoom && (
+        <EdenFinaleDaisy onInteract={onEdenFinaleDaisyInteract} />
+      )}
       {isFalseEdenRoom && showFalseEdenFountain && (
         <>
           <HealingFountain active used={coopEdenFountainUsed} />
@@ -437,7 +448,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           playerPositionRef={realTimePlayerPositionRef}
         />
       )}
-      {combatArenaActive && !isCastleRoom && !isSunkenTemple && !isEternityPalace && coopCurrentRoomKind !== 'merchant' && coopCurrentRoomKind !== 'dream_layer' && coopCurrentRoomKind !== 'fae_realm' && !isSurpriseRoom && (
+      {combatArenaActive && !isCastleRoom && !isSunkenTemple && !isEternityPalace && coopCurrentRoomKind !== 'merchant' && coopCurrentRoomKind !== 'dream_layer' && coopCurrentRoomKind !== 'fae_realm' && coopCurrentRoomKind !== 'eden_finale' && !isSurpriseRoom && (
         <CombatArenaPedestal
           campType={((k) => (k === 'red' ? 'purple' : k))(
             normalizeCoopPortalKind(coopClearedRoomKind ?? coopCurrentRoomKind ?? campTypes[0]),
@@ -457,6 +468,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
             inventory={merchantInventory}
             purchaseState={merchantPurchaseState}
             playerPositionRef={realTimePlayerPositionRef}
+            weaponAspect={weaponAspect}
           />
           <MerchantNpcRenderer playerPositionRef={realTimePlayerPositionRef} />
         </>

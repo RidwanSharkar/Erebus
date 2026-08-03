@@ -760,6 +760,7 @@ export class ProjectileSystem extends System {
       const wyvernBiteConcentratedVenom = renderer?.mesh?.userData?.barrageWyvernBite === true;
       const glacialBiteChill = isBarrageArrow === true && renderer?.mesh?.userData?.barrageGlacialBite === true;
       const entanglementBarrage = isBarrageArrow === true && renderer?.mesh?.userData?.barrageEntanglement === true;
+      const huntersMarkBarrage = isBarrageArrow === true && renderer?.mesh?.userData?.barrageHuntersMark === true;
 
       let damageType = 'projectile';
       if (isCrossentropyBolt) {
@@ -772,6 +773,8 @@ export class ProjectileSystem extends System {
         damageType = 'fan_of_knives';
       } else if (isWindShear) {
         damageType = 'wind_shear';
+      } else if (projectile.projectileType === 'poison_dart') {
+        damageType = 'poison_dart';
       }
 
       const isBowPrimary =
@@ -911,6 +914,8 @@ export class ProjectileSystem extends System {
         undefined, // wyvernTalonsZombie
         tempestBurstArcticChill || projectile.tempestBurstArcticChill === true,
         tempestBurstWyvernZombie || projectile.tempestBurstWyvernZombie === true,
+        huntersMarkBarrage,
+        projectile.isPerfectShot === true,
       );
       }
 
@@ -925,6 +930,10 @@ export class ProjectileSystem extends System {
             projectile.perfectShotVolleyId,
             target,
           );
+          // Solo: detonate Hunter's Mark into stagger lightning.
+          if (this.combatSystem?.usesNetworkedEnemyDamage() !== true) {
+            cs?.trySniperHuntersMarkDetonate?.(target);
+          }
         }
       }
 
@@ -1763,6 +1772,8 @@ export class ProjectileSystem extends System {
       glacialBiteBarrage?: boolean;
       /** Entanglement — Barrage hit roots and damages over time. */
       entanglementBarrage?: boolean;
+      /** Sniper Hunter's Mark — Barrage hit marks target. */
+      huntersMarkBarrage?: boolean;
       dualCoilLane?: 0 | 1;
       /** Bow perfect — Wrathful Shots. */
       isPerfectShot?: boolean;
@@ -1844,16 +1855,20 @@ export class ProjectileSystem extends System {
     // Create a simple placeholder mesh that will be replaced by the React component
     const projectileType = config?.projectileType || 'generic';
     const isScorpionShard = projectileType === 'scorpion_shard';
+    const isPoisonDart = projectileType === 'poison_dart';
+    // Scorpion shard keeps ECS placeholder; Poison Dart uses React VFX (hidden placeholder).
     const placeholderGeometry = new SphereGeometry(isScorpionShard ? 0.22 : 0.15, 8, 8);
     const placeholderMaterial = new MeshStandardMaterial({
       color: isScorpionShard ? '#c8ff4a' : '#ffaa00',
       emissive: isScorpionShard ? '#88ff22' : '#ffaa00',
       emissiveIntensity: isScorpionShard ? 4 : 3,
       transparent: true,
-      // Scorpion shard has no React VFX — keep placeholder visible
-      opacity: isScorpionShard ? 0.85 : 0.1
+      opacity: isScorpionShard ? 0.85 : 0.1,
     });
     const placeholderMesh = new Mesh(placeholderGeometry, placeholderMaterial);
+    if (isPoisonDart) {
+      placeholderMesh.visible = false;
+    }
 
     // Only mark as RegularArrow if it's actually a regular arrow or generic projectile
     // Don't mark special projectile types like wind_shear

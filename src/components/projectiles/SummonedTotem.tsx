@@ -10,13 +10,8 @@ import { WeaponType } from '@/components/dragon/weapons';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import type { EnemyDamageMeta } from '@/contexts/MultiplayerContext';
 import type { TotemBoltVariant } from '@/utils/talents';
-import type { WeaponAspect } from '@/utils/weaponAspects';
 import {
-  refreshTotemEnemyTargetScratch,
-  type TotemTargetEntry,
-} from '@/utils/enemyLiveTransform';
-import { getPlayerLivePosition } from '@/utils/playerLiveTransform';
-import {
+  ENTANGLEMENT_DURATION_MS,
   SUPERCONDUCTOR_INFESTING_DAMAGE,
   SUPERCONDUCTOR_STAGGERING_STRIKE_STAGGER,
   SUPERCONDUCTOR_TOTEM_COOLDOWN_SEC,
@@ -25,6 +20,18 @@ import {
   WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD,
   STAGGERING_TOTEM_STAGGER,
 } from '@/utils/talents';
+import type { WeaponAspect } from '@/utils/weaponAspects';
+import {
+  isScytheNecromancerAspect,
+  NECROMANCER_TOTEM_ENTANGLE_INTERVAL_MS,
+  NECROMANCER_TOTEM_ENTANGLE_RADIUS,
+} from '@/utils/weaponAspects';
+import {
+  refreshTotemEnemyTargetScratch,
+  type TotemTargetEntry,
+} from '@/utils/enemyLiveTransform';
+import { getPlayerLivePosition } from '@/utils/playerLiveTransform';
+import { addGlobalEntangledEnemy } from '@/components/weapons/EntangleManager';
 
 function totemBoltBaseDamage(variant?: TotemBoltVariant): number {
   if (variant === 'wrathful') return 30;
@@ -203,6 +210,7 @@ export default function SummonedTotem({
   const constants = useRef({
     lastAttackTime: 0,
     lastSuperconductorTime: Date.now(),
+    lastNecromancerEntangleTime: 0,
     startTime: Date.now(),
     hasTriggeredCleanup: false,
     mountId: Date.now(),
@@ -294,7 +302,10 @@ export default function SummonedTotem({
     }
   }, [findLiveTargetById]);
 
-  const findNewTarget = useCallback((excludeCurrentTarget: boolean = false): { id: string; position: Vector3; health: number } | null => {
+  const findNewTarget = useCallback((
+    excludeCurrentTarget: boolean = false,
+    maxRange: number = constants.RANGE,
+  ): { id: string; position: Vector3; health: number } | null => {
     if (!groupRef.current) {
       return null;
     }
@@ -308,7 +319,7 @@ export default function SummonedTotem({
     const totemWorldPosition = new Vector3();
     groupRef.current.getWorldPosition(totemWorldPosition);
 
-    let closestDistance = constants.RANGE;
+    let closestDistance = maxRange;
     let closestTarget: { id: string; position: Vector3; health: number } | null = null;
 
     for (let i = 0; i < currentEnemyData.length; i++) {
@@ -502,6 +513,25 @@ export default function SummonedTotem({
     refreshLiveTargets();
     syncActiveBoltTargets();
 
+    // Necromancer Mantra — Entangle closest enemy within 4.5 every 2s (owner client only).
+    if (
+      onDamage &&
+      isScytheNecromancerAspect(weaponAspect) &&
+      now - constants.lastNecromancerEntangleTime >= NECROMANCER_TOTEM_ENTANGLE_INTERVAL_MS
+    ) {
+      const entangleTarget = findNewTarget(false, NECROMANCER_TOTEM_ENTANGLE_RADIUS);
+      if (entangleTarget && entangleTarget.health > 0) {
+        constants.lastNecromancerEntangleTime = now;
+        const impactPos = entangleTarget.position.clone();
+        impactPos.y = Math.max(impactPos.y, 0.35) + 0.5;
+        onDamage(entangleTarget.id, 0, impactPos, false, {
+          damageType: 'summon_totem',
+          necromancerTotemEntangle: true,
+        });
+        addGlobalEntangledEnemy(entangleTarget.id, impactPos, ENTANGLEMENT_DURATION_MS);
+      }
+    }
+
     // Continuously check for the closest enemy in range
     const closestEnemy = findNewTarget();
 
@@ -595,8 +625,12 @@ export default function SummonedTotem({
   return (
     <>
       <group ref={groupRef} position={position.toArray()}>
-        <TotemModel isAttackingRef={isAttackingRef} totemBoltVariant={totemBoltVariant} />
-        <UnholyAura totemBoltVariant={totemBoltVariant} />
+        <TotemModel
+          isAttackingRef={isAttackingRef}
+          totemBoltVariant={totemBoltVariant}
+          weaponAspect={weaponAspect}
+        />
+        <UnholyAura totemBoltVariant={totemBoltVariant} weaponAspect={weaponAspect} />
       </group>
       {boltPool.current.map((slot, i) => (
         <TotemEntropicBolt

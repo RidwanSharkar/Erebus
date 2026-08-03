@@ -150,8 +150,9 @@ function filterRoomBoonPool(
   primaryWeapon: WeaponType,
   talentLoadout: TalentLoadout | null | undefined,
   exclusions: RoomBoonExclusionSets,
+  aspect?: WeaponAspect | null,
 ): TalentId[] {
-  const rawPool = buildRoomBoonPoolForColor(color, primaryWeapon);
+  const rawPool = buildRoomBoonPoolForColor(color, primaryWeapon, aspect);
   let pool = filterTalentIdsByExclusionSet(rawPool, exclusions.universalGreen);
   pool = filterTalentIdsByExclusionSet(pool, exclusions.roomBoomDash);
   if (primaryWeapon === WeaponType.RUNEBLADE) {
@@ -183,11 +184,12 @@ function rollRoomBoonOptions(
   talentLoadout: TalentLoadout | null | undefined,
   abilityLoadout: AbilityLoadout | null | undefined,
   exclusions: RoomBoonExclusionSets,
+  aspect?: WeaponAspect | null,
 ): TalentId[] {
   const TOTAL_OPTIONS = 3;
   const lowerColor = String(color ?? '').toLowerCase();
 
-  const regularPool = filterRoomBoonPool(color, primaryWeapon, talentLoadout, exclusions);
+  const regularPool = filterRoomBoonPool(color, primaryWeapon, talentLoadout, exclusions, aspect);
 
   const eligibleSpecials = isCoopRoomColor(lowerColor)
     ? [
@@ -1325,6 +1327,7 @@ function HomeContent() {
           sabres: sabresRoomBoonExcludedIdsRef.current,
           bow: bowRoomBoonExcludedIdsRef.current,
         },
+        selectedWeaponAspect,
       );
       if (options.length > 0) {
         playPedestalInteractAndDelay(() => {
@@ -1353,6 +1356,7 @@ function HomeContent() {
     clearCoopClearedRoomColor,
     talentLoadout,
     abilityLoadout,
+    selectedWeaponAspect,
     socket?.id,
     enqueueAnnouncement,
     playPedestalInteractAndDelay,
@@ -1406,6 +1410,7 @@ function HomeContent() {
           sabres: sabresRoomBoonExcludedIdsRef.current,
           bow: bowRoomBoonExcludedIdsRef.current,
         },
+        selectedWeaponAspect,
       );
       return options.length > 0 ? { ...prev, options } : prev;
     });
@@ -1417,6 +1422,7 @@ function HomeContent() {
     talentLoadout,
     abilityLoadout,
     selectedWeapons.primary,
+    selectedWeaponAspect,
     coopClearedRoomColor,
     coopClearedRoomKind,
     campTypes,
@@ -1803,7 +1809,10 @@ function HomeContent() {
       coopMainArenaPortalPhase !== null
     ) {
       audio?.playCoopRoomClearFinish?.();
-      if (claimRewardAnnouncedSeqRef.current !== coopMainArenaIntermissionSeq) {
+      if (
+        coopMainArenaPortalPhase !== 'pick_trinity_finale'
+        && claimRewardAnnouncedSeqRef.current !== coopMainArenaIntermissionSeq
+      ) {
         claimRewardAnnouncedSeqRef.current = coopMainArenaIntermissionSeq;
         const { title, color } = GUIDE_ANNOUNCEMENTS.claimReward;
         enqueueAnnouncement(title, color, `claim-${coopMainArenaIntermissionSeq}`);
@@ -1821,9 +1830,10 @@ function HomeContent() {
   ]);
 
   // Pre-boss sequence: boss portal appears after merchant — no pedestal reward at pick_boss.
+  // Trinity finale: yellow void appears after clear — no pedestal reward.
   useEffect(() => {
     if (gameMode !== 'coop') return;
-    if (coopMainArenaPortalPhase === 'pick_boss') {
+    if (coopMainArenaPortalPhase === 'pick_boss' || coopMainArenaPortalPhase === 'pick_trinity_finale') {
       setPortalsUnlocked(true);
     }
   }, [gameMode, coopMainArenaPortalPhase]);
@@ -1854,6 +1864,9 @@ function HomeContent() {
       ) {
         const { title, color } = GUIDE_ANNOUNCEMENTS.descendPortal;
         enqueueAnnouncement(title, color, `eternity-entry-${coopMainArenaIntermissionSeq}`);
+      } else if (coopMainArenaPortalPhase === 'pick_trinity_finale') {
+        const { title, color } = GUIDE_ANNOUNCEMENTS.descendVoid;
+        enqueueAnnouncement(title, color, `trinity-finale-${coopMainArenaIntermissionSeq}`);
       } else {
         announceChooseGateway(coopMainArenaIntermissionSeq);
       }
@@ -1982,6 +1995,7 @@ function HomeContent() {
                       coopMainArenaPortalPhase !== null
                       && coopMainArenaPortalPhase !== 'pick_boss'
                       && coopMainArenaPortalPhase !== 'pre_boss_merchant'
+                      && coopMainArenaPortalPhase !== 'pick_trinity_finale'
                       && coopCurrentRoomKind !== 'merchant'
                       && !pedestalInteracted
                     )

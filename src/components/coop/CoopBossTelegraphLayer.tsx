@@ -107,6 +107,7 @@ const CoopBossTelegraphLayer = memo(forwardRef<CoopBossTelegraphLayerHandle, Coo
           <WarlockFlameStrike
             key={strike.id}
             position={strike.position}
+            theme={strike.theme}
             onComplete={() => setWarlockFlameStrikes((prev) => prev.filter((s) => s.id !== strike.id))}
           />
         ))}

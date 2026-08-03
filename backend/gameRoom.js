@@ -20,6 +20,7 @@ const {
   ETERNITY_PALACE_ENTRY_Z,
 } = require('./coopArenaLayout');
 const { rollCoopSkyPresetIndex } = require('./coopSkyPresets');
+const { rollCoopGrassPresetIndex } = require('./coopGrassPresets');
 const mushroomLayout = require('./mushroomLayout');
 const mushroomConstants = require('./mushroomConstants');
 const dreamLayerItems = require('./dreamLayerItems');
@@ -97,6 +98,8 @@ const COOP_ALL_WEAPON_ASPECTS = new Set([
   'DRUID',
   'BEASTMASTER',
 ]);
+/** Keep in sync with `SNIPER_HUNTERS_MARK_DURATION_MS` in src/utils/weaponAspects.ts */
+const SNIPER_HUNTERS_MARK_DURATION_MS = 5000;
 /** Damage types whose HP sync is throttled in damageEnemy (avoid allocating per hit). */
 const DOT_DAMAGE_TYPES = new Set([
   'ignite',
@@ -169,6 +172,8 @@ const CROSSENTROPY_PLAGUE_VENOM_STACKS = 3;
 const INFESTED_TALENT_CONCENTRATED_VENOM_STACKS = 1;
 /** Keep in sync with `WARLORD_BACKSTAB_CONCENTRATED_VENOM_STACKS` in src/utils/weaponAspects.ts */
 const WARLORD_BACKSTAB_CONCENTRATED_VENOM_STACKS = 1;
+/** Keep in sync with `POISON_DART_CONCENTRATED_VENOM_STACKS` in src/utils/weaponAspects.ts */
+const POISON_DART_CONCENTRATED_VENOM_STACKS = 1;
 /** Keep in sync with `DEATHDEALER_THIRD_HIT_STAGGER_PROC_CHANCE` in src/utils/weaponAspects.ts */
 const DEATHDEALER_THIRD_HIT_STAGGER_PROC_CHANCE = 0.45;
 /** Keep in sync with `INFESTED_COMBO_VENOM_PROC_CHANCE` in src/utils/talents.ts */
@@ -471,7 +476,7 @@ const COOP_SPECIAL_ROOM_TYPES = Object.freeze(['stat', 'trial', 'merchant']);
 const COOP_MID_ACT_SPECIAL_ROOM_TYPES = Object.freeze(['stat', 'trial']);
 const COOP_PRE_BOSS_SPECIAL_TYPES = Object.freeze(['stat', 'trial']);
 const COOP_PRE_BOSS_REWARD_TO_MERCHANT_MS = 5000;
-const COOP_ROOM_TYPES = Object.freeze([...COOP_COLORED_ROOM_TYPES, ...COOP_SPECIAL_ROOM_TYPES, 'boss', 'intro', 'deep_sanctum', 'sunken_temple', 'eternity_palace', 'eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer', 'fae_realm']);
+const COOP_ROOM_TYPES = Object.freeze([...COOP_COLORED_ROOM_TYPES, ...COOP_SPECIAL_ROOM_TYPES, 'boss', 'intro', 'deep_sanctum', 'sunken_temple', 'eternity_palace', 'eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer', 'fae_realm', 'eden_finale']);
 const COOP_SURPRISE_CHANCE = 0.29;
 const COOP_SURPRISE_KINDS = Object.freeze(['eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer']);
 const EREBUS_GATE_RADIUS = CASTLE_ROOM_HALF_SIZE;
@@ -890,7 +895,7 @@ class GameRoom {
     this.coopBossRoomVisitCount = 0;
     /**
      * Set between waves on the main combat map (not throne): players pick next wave / boss in arena center.
-     * @type {null | 'pick_wave2' | 'pick_pre_boss' | 'pre_boss_reward' | 'pre_boss_merchant' | 'pick_boss' | 'pick_post_boss' | 'pick_sunken_entry' | 'pick_eternity_entry' | 'pick_eternity_late_entry' | 'eden_exit'}
+     * @type {null | 'pick_wave2' | 'pick_pre_boss' | 'pre_boss_reward' | 'pre_boss_merchant' | 'pick_boss' | 'pick_post_boss' | 'pick_sunken_entry' | 'pick_eternity_entry' | 'pick_eternity_late_entry' | 'pick_trinity_finale' | 'eden_exit'}
      */
     this.coopMainArenaPortalPhase = null;
     /** Co-op: true during the mandatory Trial/Stat → Merchant → Boss sequence before each boss. */
@@ -968,6 +973,11 @@ class GameRoom {
      * Rolled on each room entry (including throne prep); sunken temple keeps its fixed underwater sky.
      */
     this.coopSkyPresetIndex = 0;
+    /**
+     * Co-op: server-authoritative StylizedGrass preset index for prep ThroneRoom.
+     * Rolled once on throne prep entry (startGame); bossArena keeps fixed purple.
+     */
+    this.coopGrassPresetIndex = 0;
     /** Co-op colored room: one whisper SFX per room visit on first combat engagement. */
     this.coopRoomWhisperPlayed = false;
     /** Co-op: pending post-teleport initial wave spawn (`_schedulePostTeleportEnemyWave`). */
@@ -1480,6 +1490,7 @@ class GameRoom {
     this.coopPostTeleportPositionGuardUntil = 0;
     this.coopRoomEntryToken = 0;
     this.coopSkyPresetIndex = 0;
+    this.coopGrassPresetIndex = 0;
     this._devSpawnBoss2 = false;
     this._devSpawnBoss3 = false;
     this._devSpawnDestiny = false;
@@ -1573,6 +1584,7 @@ class GameRoom {
       this.coopIntroPending = false;
       this.thronePortalOffer = [];
       this._rollCoopSkyPresetForEntry(null);
+      this._rollCoopGrassPresetForEntry();
       this.teleportAllPlayersToThroneRoom();
       this.spawnThroneTrainingDummy();
       this.syncAllBeastmasterTigers();
@@ -1621,6 +1633,7 @@ class GameRoom {
         ...this.gameMode === 'coop' ? this._getDeepSanctumPayloadFields() : {},
         ...this.gameMode === 'coop' ? this._getEdenPayloadFields() : {},
         ...this.gameMode === 'coop' ? this._getCoopSkyPayloadFields() : {},
+        ...this.gameMode === 'coop' ? this._getCoopGrassPayloadFields() : {},
       });
     }
     
@@ -1661,6 +1674,7 @@ class GameRoom {
       ...this._getDeepSanctumPayloadFields(),
       ...this._getEdenPayloadFields(),
       ...this._getCoopSkyPayloadFields(),
+      ...this._getCoopGrassPayloadFields(),
     };
   }
 
@@ -2410,6 +2424,7 @@ class GameRoom {
       || this.currentCoopRoomKind === 'eternity_palace'
       || this.currentCoopRoomKind === 'eden'
       || this.currentCoopRoomKind === 'false_eden'
+      || this.currentCoopRoomKind === 'eden_finale'
       || this.currentCoopRoomKind === 'delirium_gate'
       || this.currentCoopRoomKind === 'erebus_gate'
     ) {
@@ -2637,12 +2652,27 @@ class GameRoom {
   }
 
   /**
+   * Server-authoritative StylizedGrass index for prep ThroneRoom.
+   * Clients resolve via `resolveGrassPresetByIndex` (excludes purple/grey).
+   */
+  _getCoopGrassPayloadFields() {
+    return {
+      coopGrassPresetIndex: this.coopGrassPresetIndex,
+    };
+  }
+
+  /**
    * Roll a new random sky for a room entry. Sunken temple keeps its fixed underwater sky.
    * @param {string|null|undefined} roomKind
    */
   _rollCoopSkyPresetForEntry(roomKind) {
     if (roomKind === 'sunken_temple') return;
     this.coopSkyPresetIndex = rollCoopSkyPresetIndex();
+  }
+
+  /** Roll a new random grass palette for prep ThroneRoom entry. */
+  _rollCoopGrassPresetForEntry() {
+    this.coopGrassPresetIndex = rollCoopGrassPresetIndex();
   }
 
   _getFaeRealmPayloadFields() {
@@ -4022,6 +4052,61 @@ class GameRoom {
       ...extra,
       timestamp: Date.now(),
     });
+  }
+
+  /**
+   * Enter the post-Trinity finale room (Eden lookalike with center daisy).
+   * @returns {boolean}
+   */
+  beginEdenFinaleRoom() {
+    if (!this.gameStarted || this.gameMode !== 'coop' || !this.combatArenaActive) return false;
+    if (this.coopMainArenaPortalPhase !== 'pick_trinity_finale') return false;
+
+    this._clearAllCombatEnemies();
+    this.coopVoidPortalOffered = false;
+    this.thronePortalOffer = [];
+    this.coopMainArenaPortalPhase = null;
+    this.coopBossThroneArena = false;
+    this.coopThroneBossKind = null;
+    this.currentCoopRoomKind = 'eden_finale';
+    this.clearedCoopRoomKind = null;
+    this.combatArenaActive = true;
+    this.skeletonKillCount = 0;
+    this.bossSpawned = false;
+    this.merchantInventory = [];
+    this.sessionCampTypes = [];
+    this._resetMushroomState();
+
+    const coopCombatTransitionId = this._beginCoopCombatTransition({
+      startAIOnRelease: false,
+      spawnInitialWave: false,
+    });
+    this.teleportAllPlayersToCombatSpawn();
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('combat-arena-entered', {
+        players: this.getPlayers(),
+        coopBossThroneArena: false,
+        coopThroneBossKind: null,
+        coopTerrainTheme: this.getCoopTerrainTheme(),
+        coopCurrentRoomKind: this.currentCoopRoomKind,
+        coopClearedRoomKind: null,
+        campTypes: this.sessionCampTypes,
+        merchantInventory: this.getMerchantInventory(),
+        coopMainArenaPortalPhase: null,
+        thronePortalOffer: [],
+        coopColoredRoomVisitIndex: null,
+        coopBossRoomVisitIndex: null,
+        coopCombatTransitionId,
+        coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
+        mushroomState: this.getMushroomState(),
+        ...this._getDeepSanctumPayloadFields(),
+        timestamp: Date.now(),
+      });
+    }
+    console.log('🌼 Eden finale room entered — run complete');
+    return true;
   }
 
   /**
@@ -7167,6 +7252,12 @@ class GameRoom {
       return this.beginEternityRoom(4);
     }
 
+    if (phase === 'pick_trinity_finale') {
+      const pick = chosenCampType != null ? String(chosenCampType).toLowerCase() : '';
+      if (pick !== 'void') return false;
+      return this.beginEdenFinaleRoom();
+    }
+
     if (phase === 'pick_post_boss') {
       const offer = this.thronePortalOffer;
       if (!offer || offer.length !== 2) {
@@ -7228,6 +7319,57 @@ class GameRoom {
     }
 
     return false;
+  }
+
+  /**
+   * After Trinity clear: no pedestal / dual portals — yellow void appears after 5s for the finale room.
+   */
+  _scheduleTrinityFinaleIntermission() {
+    if (this.gameMode !== 'coop' || !this.combatArenaActive) return;
+    if (!this.coopBossThroneArena) return;
+    if (this._postBossIntermissionScheduled) return;
+    this._postBossIntermissionScheduled = true;
+
+    this._scheduleTimeout(() => {
+      if (!this.gameStarted || this.gameMode !== 'coop' || !this.combatArenaActive) return;
+      if (!this.coopBossThroneArena) return;
+
+      this._clearOrphanedBossSummonedAdds();
+
+      this.bossSpawned = false;
+      this.skeletonKillCount = 0;
+      this.coopSegmentCombatRoomsCleared = 0;
+      this._resetEdenSegmentState();
+      this._clearPreBossSequenceState();
+      this.pendingCoopArchetype = null;
+      this.pendingCoopRoomKind = null;
+      this.clearedCoopRoomKind = null;
+      this.coopThroneBossKind = null;
+      this.merchantInventory = [];
+      this.sessionCampTypes = [];
+      this.thronePortalOffer = [];
+      this.coopMainArenaPortalPhase = 'pick_trinity_finale';
+      this.coopVoidPortalOffered = false;
+
+      if (this.io) {
+        this.io.to(this.roomId).emit('coop-main-arena-intermission', {
+          combatArenaActive: true,
+          thronePortalOffer: [],
+          coopMainArenaPortalPhase: this.coopMainArenaPortalPhase,
+          coopBossThroneArena: true,
+          coopThroneBossKind: null,
+          coopTerrainTheme: this.getCoopTerrainTheme(),
+          coopClearedRoomColor: null,
+          coopCurrentRoomKind: this.currentCoopRoomKind,
+          coopClearedRoomKind: null,
+          merchantInventory: this.getMerchantInventory(),
+          players: this.getPlayers(),
+          enemies: this.getEnemies(),
+          ...this._getDeepSanctumPayloadFields(),
+          timestamp: Date.now(),
+        });
+      }
+    }, 5000);
   }
 
   /**
@@ -10612,6 +10754,18 @@ class GameRoom {
       this._addConcentratedVenomStacks(enemyId, WARLORD_BACKSTAB_CONCENTRATED_VENOM_STACKS, fromPlayerId);
     }
 
+    // Warlord Poison Dart — 1 stack of Concentrated Venom on dart hit
+    if (
+      !result.wasKilled &&
+      hitMeta &&
+      hitMeta.damageType === 'poison_dart' &&
+      damage > 0 &&
+      !enemy.isDying &&
+      enemy.health > 0
+    ) {
+      this._addConcentratedVenomStacks(enemyId, POISON_DART_CONCENTRATED_VENOM_STACKS, fromPlayerId);
+    }
+
     // Infested Flourish — 1 stack of Concentrated Venom per Flourish / Fan of Knives hit
     if (
       !result.wasKilled &&
@@ -10666,11 +10820,54 @@ class GameRoom {
       this.applyEntanglementOnHit(enemyId, fromPlayerId, player);
     }
 
+    // Sniper Hunter's Mark — Barrage marks target for 5s (refresh, no stacks).
+    if (
+      !result.wasKilled &&
+      hitMeta &&
+      hitMeta.damageType === 'barrage' &&
+      hitMeta.huntersMark &&
+      damage > 0 &&
+      !enemy.isDying &&
+      enemy.health > 0 &&
+      String(player?.weaponAspect || '').toUpperCase() === 'SNIPER'
+    ) {
+      this.applyStatusEffect(enemyId, 'huntersMark', SNIPER_HUNTERS_MARK_DURATION_MS, {
+        fromPlayerId,
+        player,
+      });
+    }
+
+    // Sniper Hunter's Mark detonation — Perfect Shot consumes mark → stagger lightning.
+    if (
+      !result.wasKilled &&
+      hitMeta &&
+      hitMeta.perfectShot &&
+      damage > 0 &&
+      !enemy.isDying &&
+      enemy.health > 0 &&
+      String(player?.weaponAspect || '').toUpperCase() === 'SNIPER' &&
+      this.isEnemyAffectedBy(enemyId, 'huntersMark')
+    ) {
+      this._clearHuntersMark(enemyId);
+      this._triggerStaggerLightningProc(enemyId, fromPlayerId, player);
+    }
+
     // Druid Rejuvenating Shot — enemy hit applies Entanglement (same DoT as talent).
     if (
       !result.wasKilled &&
       hitMeta &&
       hitMeta.rejuvenatingShotEntangle &&
+      !enemy.isDying &&
+      enemy.health > 0
+    ) {
+      this.applyEntanglementOnHit(enemyId, fromPlayerId, player);
+    }
+
+    // Necromancer Mantra totem — pulse applies Entanglement (same DoT as talent).
+    if (
+      !result.wasKilled &&
+      hitMeta &&
+      hitMeta.necromancerTotemEntangle &&
       !enemy.isDying &&
       enemy.health > 0
     ) {
@@ -11312,7 +11509,7 @@ class GameRoom {
               });
             }
             this.coopBossesDefeatedCount += 1;
-            this._schedulePostBossPortalIntermission();
+            this._scheduleTrinityFinaleIntermission();
             console.log(`🎉 ALL THREE BOSSES DEFEATED — triple encounter cleared by player ${fromPlayerId}!`);
           }
         } else {
@@ -12641,7 +12838,9 @@ class GameRoom {
 
     for (const cfg of spawnConfigs) {
       const bossId = `${cfg.type}-trinity-${now}-${rand()}`;
-      const maxHealth = this.getCoopBossMaxHealth(cfg.type);
+      // Trinity is the finale — always use post-Trinity HP on the first (only) fight.
+      const maxHealth = COOP_BOSS_MAX_HEALTH_POST_TRINITY[cfg.type]
+        ?? COOP_BOSS_MAX_HEALTH_POST_TRINITY.boss;
       const bossData = {
         id: bossId,
         type: cfg.type,
@@ -12695,7 +12894,7 @@ class GameRoom {
     const enemy = this.enemies.get(enemyId);
     if (!enemy) return false;
 
-    const PLAYER_DEBUFF_TYPES = new Set(['stun', 'freeze', 'ignite', 'shadowflame', 'corrupted', 'entangle', 'slow']);
+    const PLAYER_DEBUFF_TYPES = new Set(['stun', 'freeze', 'ignite', 'shadowflame', 'corrupted', 'entangle', 'slow', 'huntersMark']);
     const HOSTILE_ONLY_ALLY_TYPES = new Set(['hostileRoot', 'hostileFreeze']);
     if (PLAYER_DEBUFF_TYPES.has(effectType) && this._isCoopPlayerAllyEnemy(enemy)) {
       return false;
@@ -12755,6 +12954,21 @@ class GameRoom {
     }
 
     return true;
+  }
+
+  /** Clear Sniper Hunter's Mark and broadcast duration 0 so clients drop the reticle. */
+  _clearHuntersMark(enemyId) {
+    const effects = this.enemyStatusEffects.get(enemyId);
+    if (!effects || !effects.huntersMark) return;
+    delete effects.huntersMark;
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-status-effect', {
+        enemyId,
+        effectType: 'huntersMark',
+        duration: 0,
+        timestamp: Date.now(),
+      });
+    }
   }
 
   /** Sentinel entangle — roots allied units, player-zombies, and players. */
@@ -14316,6 +14530,7 @@ class GameRoom {
     this.coopPostTeleportPositionGuardUntil = 0;
     this.coopRoomEntryToken = 0;
     this.coopSkyPresetIndex = 0;
+    this.coopGrassPresetIndex = 0;
   }
 
   // Get room summary for debugging
@@ -14349,13 +14564,15 @@ class GameRoom {
     }
   }
 
-  updatePlayerWeapon(playerId, weapon, subclass) {
+  updatePlayerWeapon(playerId, weapon, subclass, aspect) {
     const player = this.players.get(playerId);
     if (player) {
       player.weapon = weapon;
       player.subclass = subclass;
-      // Switching weapons resets aspect to that weapon's default.
-      player.weaponAspect = defaultWeaponAspectForWeapon(weapon);
+      // Optional aspect (throne pedestal / ControlSystem rebroadcast); else reset to default.
+      player.weaponAspect = aspect != null
+        ? normalizeWeaponAspectForWeapon(aspect, weapon)
+        : defaultWeaponAspectForWeapon(weapon);
       this.syncBeastmasterTigerForPlayer(playerId);
     }
   }

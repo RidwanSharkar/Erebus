@@ -33,6 +33,7 @@ interface DeathKnightRendererProps {
 
 const ATTACK_DURATION = 1200; // ms — matches backend meleeLockUntil / attack clip window
 const HEARTSTRIKE_DURATION_MS = 1200;
+const FROST_PILLARS_DURATION_MS = 1100;
 const FADE_DURATION = 1.5;
 const LERP_SPEED = 14;
 const WALK_STOP_DELAY = 250;
@@ -57,17 +58,20 @@ export default function DeathKnightRenderer({
   const [isAttacking, setIsAttacking] = useState(false);
   const [meleeTelegraph, setMeleeTelegraph] = useState<MeleeTelegraphVisual | null>(null);
   const [isHeartstriking, setIsHeartstriking] = useState(false);
+  const [isCasting, setIsCasting] = useState(false);
   const [attackVariant, setAttackVariant] = useState<1 | 2>(1);
   const [heartstrikeVariant, setHeartstrikeVariant] = useState<1 | 2>(1);
 
   const isWalkingRef = useRef(false);
   const isAttackingRef = useRef(false);
   const isHeartstrikingRef = useRef(false);
+  const isCastingRef = useRef(false);
   const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation = useRef(rotation);
   const lastMoveTimeRef = useRef(0);
   const attackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const heartstrikeFailsafeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const frostPillarsFailsafeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fadeTimer = useRef(0);
   const opacity = useRef(1);
   const cachedDeathMats = useRef<any[]>([]);
@@ -79,7 +83,12 @@ export default function DeathKnightRenderer({
   }, [isDying]);
 
   const restoreWalkIfUnlocked = () => {
-    if (!isAttackingRef.current && !isHeartstrikingRef.current && !isDyingRef.current) {
+    if (
+      !isAttackingRef.current &&
+      !isHeartstrikingRef.current &&
+      !isCastingRef.current &&
+      !isDyingRef.current
+    ) {
       isWalkingRef.current = true;
       setIsWalking(true);
     }
@@ -95,7 +104,7 @@ export default function DeathKnightRenderer({
 
   useEffect(() => {
     const dist = targetPosition.current.distanceTo(positionScratch.set(position.x, position.y, position.z));
-    const locked = isAttackingRef.current || isHeartstrikingRef.current;
+    const locked = isAttackingRef.current || isHeartstrikingRef.current || isCastingRef.current;
     if (!locked) targetPosition.current.set(position.x, position.y, position.z);
     if (dist > 5.0 && groupRef.current && !locked) {
       groupRef.current.position.set(position.x, position.y, position.z);
@@ -110,10 +119,11 @@ export default function DeathKnightRenderer({
     return () => {
       if (attackTimer.current) clearTimeout(attackTimer.current);
       if (heartstrikeFailsafeTimer.current) clearTimeout(heartstrikeFailsafeTimer.current);
+      if (frostPillarsFailsafeTimer.current) clearTimeout(frostPillarsFailsafeTimer.current);
     };
   }, []);
 
-  // Attack + Heartstrike animations — driven by server telegraphs.
+  // Attack + Heartstrike + Frost Pillars animations — driven by server telegraphs.
   useEffect(() => {
     if (!socket) return;
 
@@ -129,7 +139,7 @@ export default function DeathKnightRenderer({
       timestamp?: number;
     }) => {
       if (data.deathKnightId !== id) return;
-      if (isHeartstrikingRef.current) return;
+      if (isHeartstrikingRef.current || isCastingRef.current) return;
       if (attackTimer.current) clearTimeout(attackTimer.current);
       setAttackVariant(data.attackVariant === 2 ? 2 : 1);
       const visual = parseMeleeTelegraphPayload(data, DEATH_KNIGHT_MELEE_ATTACK_RANGE, ATTACK_DURATION);
@@ -159,12 +169,20 @@ export default function DeathKnightRenderer({
       }
     };
 
+    const clearFrostPillarsFailsafe = () => {
+      if (frostPillarsFailsafeTimer.current) {
+        clearTimeout(frostPillarsFailsafeTimer.current);
+        frostPillarsFailsafeTimer.current = null;
+      }
+    };
+
     const handleHeartstrikeTelegraph = (data: {
       deathKnightId?: string;
       heartstrikeVariant?: 1 | 2;
       durationMs?: number;
     }) => {
       if (data.deathKnightId !== id) return;
+      if (isCastingRef.current) return;
       if (attackTimer.current) {
         clearTimeout(attackTimer.current);
         attackTimer.current = null;
@@ -194,15 +212,55 @@ export default function DeathKnightRenderer({
       restoreWalkIfUnlocked();
     };
 
+    const handleFrostPillarsTelegraph = (data: {
+      deathKnightId?: string;
+      durationMs?: number;
+    }) => {
+      if (data.deathKnightId !== id) return;
+      if (attackTimer.current) {
+        clearTimeout(attackTimer.current);
+        attackTimer.current = null;
+      }
+      clearHeartstrikeFailsafe();
+      setIsAttacking(false);
+      setMeleeTelegraph(null);
+      isAttackingRef.current = false;
+      setIsHeartstriking(false);
+      isHeartstrikingRef.current = false;
+      setIsCasting(true);
+      isCastingRef.current = true;
+      isWalkingRef.current = false;
+      setIsWalking(false);
+      clearFrostPillarsFailsafe();
+      const duration = data.durationMs ?? FROST_PILLARS_DURATION_MS;
+      frostPillarsFailsafeTimer.current = setTimeout(() => {
+        setIsCasting(false);
+        isCastingRef.current = false;
+        restoreWalkIfUnlocked();
+      }, duration + 250);
+    };
+
+    const handleFrostPillarsEnd = (data: { deathKnightId?: string }) => {
+      if (data.deathKnightId !== id) return;
+      clearFrostPillarsFailsafe();
+      setIsCasting(false);
+      isCastingRef.current = false;
+      restoreWalkIfUnlocked();
+    };
+
     socket.on('death-knight-attack-telegraph', handleDeathKnightTelegraph);
     socket.on('death-knight-attack-whiff', handleDeathKnightWhiff);
     socket.on('death-knight-heartstrike-telegraph', handleHeartstrikeTelegraph);
     socket.on('death-knight-heartstrike-end', handleHeartstrikeEnd);
+    socket.on('death-knight-frost-pillars-telegraph', handleFrostPillarsTelegraph);
+    socket.on('death-knight-frost-pillars-end', handleFrostPillarsEnd);
     return () => {
       socket.off('death-knight-attack-telegraph', handleDeathKnightTelegraph);
       socket.off('death-knight-attack-whiff', handleDeathKnightWhiff);
       socket.off('death-knight-heartstrike-telegraph', handleHeartstrikeTelegraph);
       socket.off('death-knight-heartstrike-end', handleHeartstrikeEnd);
+      socket.off('death-knight-frost-pillars-telegraph', handleFrostPillarsTelegraph);
+      socket.off('death-knight-frost-pillars-end', handleFrostPillarsEnd);
     };
   }, [id, socket]);
 
@@ -216,8 +274,8 @@ export default function DeathKnightRenderer({
     syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth);
     syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
 
-    // Melee swings and Heartstrike lock transform.
-    const locked = isAttackingRef.current || isHeartstrikingRef.current;
+    // Melee swings, Heartstrike, and Frost Pillars lock transform.
+    const locked = isAttackingRef.current || isHeartstrikingRef.current || isCastingRef.current;
     let dist = 0;
     if (!locked) {
       dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
@@ -270,14 +328,15 @@ export default function DeathKnightRenderer({
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <DeathKnightModel
-        isWalking={isWalking && !isAttacking && !isHeartstriking}
-        isAttacking={isAttacking && !isHeartstriking}
+        isWalking={isWalking && !isAttacking && !isHeartstriking && !isCasting}
+        isAttacking={isAttacking && !isHeartstriking && !isCasting}
         attackVariant={attackVariant}
-        isHeartstriking={isHeartstriking}
+        isHeartstriking={isHeartstriking && !isCasting}
         heartstrikeVariant={heartstrikeVariant}
+        isCasting={isCasting}
         isDying={isDying}
       />
-      {(isAttacking || isHeartstriking) && !isDying && (
+      {(isAttacking || isHeartstriking) && !isCasting && !isDying && (
         <EnemyMeleeAttackRangeRing
           radius={meleeTelegraph?.attackRange ?? DEATH_KNIGHT_MELEE_ATTACK_RANGE}
           hitDelayMs={meleeTelegraph?.hitDelayMs}

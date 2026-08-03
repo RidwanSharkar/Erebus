@@ -214,7 +214,7 @@ export function buildRoomTitleAnnouncement(
     };
   }
 
-  if (kind === 'eden') {
+  if (kind === 'eden' || kind === 'eden_finale') {
     return {
       title: 'EDEN',
       color: '#86efac',

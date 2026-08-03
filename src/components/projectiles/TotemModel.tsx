@@ -2,9 +2,11 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Group, MeshStandardMaterial, CylinderGeometry, ConeGeometry, PlaneGeometry, SphereGeometry } from 'three';
 import type { TotemBoltVariant } from '@/utils/talents';
+import type { WeaponAspect } from '@/utils/weaponAspects';
+import { isScytheNecromancerAspect } from '@/utils/weaponAspects';
 
-/** Baseline blue is default Mantra; colored boons retint runic glow only. */
-function totemGlowForVariant(variant?: TotemBoltVariant): string {
+/** Baseline blue is default Mantra; colored boons / Necromancer aspect retint runic glow. */
+function totemGlowForVariant(variant?: TotemBoltVariant, weaponAspect?: WeaponAspect | null): string {
   switch (variant) {
     case 'wrathful':
       return '#ef4444';
@@ -15,6 +17,7 @@ function totemGlowForVariant(variant?: TotemBoltVariant): string {
     case 'frost':
       return '#0284c7';
     default:
+      if (isScytheNecromancerAspect(weaponAspect)) return '#22c55e';
       return '#0099ff';
   }
 }
@@ -51,20 +54,21 @@ interface TotemModelProps {
   isAttacking?: boolean;
   isAttackingRef?: React.MutableRefObject<boolean>;
   totemBoltVariant?: TotemBoltVariant;
+  weaponAspect?: WeaponAspect | null;
 }
 
-export default function TotemModel({ isAttacking, isAttackingRef, totemBoltVariant }: TotemModelProps) {
+export default function TotemModel({ isAttacking, isAttackingRef, totemBoltVariant, weaponAspect }: TotemModelProps) {
   const totemRef = useRef<Group>(null);
 
   const runesMat = useMemo(() => {
-    const hex = totemGlowForVariant(totemBoltVariant);
+    const hex = totemGlowForVariant(totemBoltVariant, weaponAspect);
     return new MeshStandardMaterial({
       color: hex,
       emissive: hex,
       transparent: true,
       opacity: 0.9,
     });
-  }, [totemBoltVariant]);
+  }, [totemBoltVariant, weaponAspect]);
 
   useEffect(() => {
     const m = runesMat;

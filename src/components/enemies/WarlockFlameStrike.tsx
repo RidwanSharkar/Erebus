@@ -5,13 +5,33 @@ import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 
+export type FlameStrikeTheme = 'fire' | 'frost';
+
 interface WarlockFlameStrikeProps {
   position: Vector3;
   onComplete: () => void;
+  theme?: FlameStrikeTheme;
 }
 
 const DURATION     = 1.1;  // seconds — total effect lifetime
 const PILLAR_COUNT = 6;    // centre + 6 ring pillars
+
+const THEME_COLORS = {
+  fire: {
+    core: '#fff8c0',
+    flame: '#ff6600',
+    ember: '#cc2200',
+    scorch: '#ff3300',
+    light: '#ff5500',
+  },
+  frost: {
+    core: '#e8f7ff',
+    flame: '#66ccff',
+    ember: '#1a6cff',
+    scorch: '#4db8ff',
+    light: '#66ccff',
+  },
+} as const;
 
 interface PillarCfg {
   x: number;
@@ -20,15 +40,16 @@ interface PillarCfg {
   delay: number; // normalised 0–1 stagger offset within the animation
 }
 
-export default function WarlockFlameStrike({ position, onComplete }: WarlockFlameStrikeProps) {
+export default function WarlockFlameStrike({ position, onComplete, theme = 'fire' }: WarlockFlameStrikeProps) {
   const groupRef   = useRef<Group>(null);
   const pillarRefs = useRef<(Group | null)[]>([]);
   const timeRef    = useRef(0);
   const doneRef    = useRef(false);
+  const colors = THEME_COLORS[theme] ?? THEME_COLORS.fire;
 
   // One pooled heat-glow light at the strike centre (collapses the 6 per-pillar
   // <pointLight>s → 1; pillars all converge within a ~1.4u radius).
-  const heatLight = useDynamicLight({ color: new Color('#ff5500'), distance: 5, decay: 2, priority: 1 });
+  const heatLight = useDynamicLight({ color: new Color(colors.light), distance: 5, decay: 2, priority: 1 });
 
   // Stable random pillar layout, generated once per mount.
   const pillars = useMemo<PillarCfg[]>(() => {
@@ -52,11 +73,11 @@ export default function WarlockFlameStrike({ position, onComplete }: WarlockFlam
 
   // Shared materials — updated once per frame; disposed on unmount.
   const mats = useMemo(() => ({
-    core:   new MeshBasicMaterial({ color: new Color('#fff8c0'), transparent: true, opacity: 1.0, blending: AdditiveBlending, depthWrite: false }),
-    flame:  new MeshBasicMaterial({ color: new Color('#ff6600'), transparent: true, opacity: 0.9, blending: AdditiveBlending, depthWrite: false }),
-    ember:  new MeshBasicMaterial({ color: new Color('#cc2200'), transparent: true, opacity: 0.7, blending: AdditiveBlending, depthWrite: false }),
-    scorch: new MeshBasicMaterial({ color: new Color('#ff3300'), transparent: true, opacity: 0.45, blending: AdditiveBlending, depthWrite: false }),
-  }), []);
+    core:   new MeshBasicMaterial({ color: new Color(colors.core), transparent: true, opacity: 1.0, blending: AdditiveBlending, depthWrite: false }),
+    flame:  new MeshBasicMaterial({ color: new Color(colors.flame), transparent: true, opacity: 0.9, blending: AdditiveBlending, depthWrite: false }),
+    ember:  new MeshBasicMaterial({ color: new Color(colors.ember), transparent: true, opacity: 0.7, blending: AdditiveBlending, depthWrite: false }),
+    scorch: new MeshBasicMaterial({ color: new Color(colors.scorch), transparent: true, opacity: 0.45, blending: AdditiveBlending, depthWrite: false }),
+  }), [colors.core, colors.flame, colors.ember, colors.scorch]);
 
   // Dispose materials when the component unmounts — only persistent GPU allocations here.
   useEffect(() => {

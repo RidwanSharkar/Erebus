@@ -2,8 +2,10 @@ import { useMemo, useRef } from 'react';
 import { Group, Mesh, MeshStandardMaterial } from 'three';
 import { useFrame } from '@react-three/fiber';
 import type { TotemBoltVariant } from '@/utils/talents';
+import type { WeaponAspect } from '@/utils/weaponAspects';
+import { isScytheNecromancerAspect } from '@/utils/weaponAspects';
 
-function auraPalette(variant?: TotemBoltVariant) {
+function auraPalette(variant?: TotemBoltVariant, weaponAspect?: WeaponAspect | null) {
   switch (variant) {
     case 'wrathful':
       return {
@@ -42,6 +44,16 @@ function auraPalette(variant?: TotemBoltVariant) {
         ambient: '#bae6fd',
       };
     default:
+      if (isScytheNecromancerAspect(weaponAspect)) {
+        return {
+          outer: '#22c55e',
+          plane: '#86efac',
+          innerColor: '#15803d',
+          streamColor: '#14532d',
+          streamEmissive: '#22c55e',
+          ambient: '#86efac',
+        };
+      }
       return {
         outer: '#0099ff',
         plane: '#0099ff',
@@ -55,9 +67,10 @@ function auraPalette(variant?: TotemBoltVariant) {
 
 interface UnholyAuraProps {
   totemBoltVariant?: TotemBoltVariant;
+  weaponAspect?: WeaponAspect | null;
 }
 
-export default function UnholyAura({ totemBoltVariant }: UnholyAuraProps) {
+export default function UnholyAura({ totemBoltVariant, weaponAspect }: UnholyAuraProps) {
   const auraRef = useRef<Group>(null);
   const runeGroupRef = useRef<Group>(null);
   const sigilGroupRef = useRef<Group>(null);
@@ -68,7 +81,7 @@ export default function UnholyAura({ totemBoltVariant }: UnholyAuraProps) {
   const streamMeshesRef = useRef<(Mesh | null)[]>([]);
   const rotationSpeed = 0.12;
 
-  const pal = useMemo(() => auraPalette(totemBoltVariant), [totemBoltVariant]);
+  const pal = useMemo(() => auraPalette(totemBoltVariant, weaponAspect), [totemBoltVariant, weaponAspect]);
 
   useFrame(() => {
     const now = Date.now();

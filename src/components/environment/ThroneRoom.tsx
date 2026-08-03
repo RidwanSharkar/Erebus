@@ -8,7 +8,7 @@ import ThroneOuterFloor from './ThroneOuterFloor';
 import SanctumIncinerationRuneDisc, {
   sanctumRuneDiscScaleForBandInner,
 } from './SanctumIncinerationRuneDisc';
-import StylizedGrass from './StylizedGrass';
+import StylizedGrass, { resolveGrassPresetByIndex } from './StylizedGrass';
 import ThroneNatureProps from './ThroneNatureProps';
 import ThroneTurretProps from './ThroneTurretProps';
 import VoidPortal from './VoidPortal';
@@ -22,6 +22,7 @@ import Sabres from '@/components/weapons/Sabres';
 import Runeblade from '@/components/weapons/Runeblade';
 import type { WeaponAspectByWeapon } from '@/utils/weaponAspects';
 import {
+  getShowcaseWeaponAspect,
   getWeaponAspectTooltipData,
   resolvePedestalWeaponAspect,
 } from '@/utils/weaponAspects';
@@ -714,13 +715,17 @@ const THRONE_PILLAR_WEAPONS: WeaponType[] = [
 function ThronePrepPedestalTooltips({
   playerPositionRef,
   selectedArchetype,
+  equippedWeapon = WeaponType.NONE,
   weaponAspectByWeapon,
+  showcaseTick,
   symbolRefs,
   hoveredKey,
 }: {
   playerPositionRef: React.MutableRefObject<Vector3>;
   selectedArchetype: Archetype;
+  equippedWeapon?: WeaponType;
   weaponAspectByWeapon?: WeaponAspectByWeapon;
+  showcaseTick: number;
   symbolRefs: React.MutableRefObject<Partial<Record<ThronePedestalTooltipKey, Group | null>>>;
   hoveredKey: ThronePedestalTooltipKey | null;
 }) {
@@ -802,7 +807,9 @@ function ThronePrepPedestalTooltips({
     const tooltipData =
       slot.kind === 'weapon'
         ? getWeaponAspectTooltipData(
-            resolvePedestalWeaponAspect(slot.weapon, weaponAspectByWeapon),
+            slot.weapon === equippedWeapon
+              ? resolvePedestalWeaponAspect(slot.weapon, weaponAspectByWeapon)
+              : getShowcaseWeaponAspect(slot.weapon, showcaseTick),
           )
         : getThroneArchetypeTooltipData(slot.archetype);
     if (!tooltipData) {
@@ -858,11 +865,13 @@ function ThronePrepSelectionPedestals({
   equippedWeapon = WeaponType.NONE,
   selectedArchetype = 'NONE',
   weaponAspectByWeapon,
+  showcaseTick = 0,
 }: {
   playerPositionRef: React.MutableRefObject<Vector3>;
   equippedWeapon?: WeaponType;
   selectedArchetype?: Archetype;
   weaponAspectByWeapon?: WeaponAspectByWeapon;
+  showcaseTick?: number;
 }) {
   const symbolRefs = useRef<Partial<Record<ThronePedestalTooltipKey, Group | null>>>({});
   const [hoveredKey, setHoveredKey] = useState<ThronePedestalTooltipKey | null>(null);
@@ -876,13 +885,15 @@ function ThronePrepSelectionPedestals({
       <ThronePrepPedestalTooltips
         playerPositionRef={playerPositionRef}
         selectedArchetype={selectedArchetype}
+        equippedWeapon={equippedWeapon}
         weaponAspectByWeapon={weaponAspectByWeapon}
+        showcaseTick={showcaseTick}
         symbolRefs={symbolRefs}
         hoveredKey={hoveredKey}
       />
       <ThroneWeaponPedestals
         equippedWeapon={equippedWeapon}
-        weaponAspectByWeapon={weaponAspectByWeapon}
+        showcaseTick={showcaseTick}
         symbolRefs={symbolRefs}
         onHoverChange={handleHoverChange}
       />
@@ -900,12 +911,12 @@ function ThronePrepSelectionPedestals({
  */
 function ThroneWeaponPedestals({
   equippedWeapon = WeaponType.NONE,
-  weaponAspectByWeapon,
+  showcaseTick,
   symbolRefs,
   onHoverChange,
 }: {
   equippedWeapon?: WeaponType;
-  weaponAspectByWeapon?: WeaponAspectByWeapon;
+  showcaseTick: number;
   symbolRefs: React.MutableRefObject<Partial<Record<ThronePedestalTooltipKey, Group | null>>>;
   onHoverChange: (key: ThronePedestalTooltipKey | null) => void;
 }) {
@@ -953,7 +964,7 @@ function ThroneWeaponPedestals({
       {slots.map((slot) => {
         const isTaken =
           equippedWeapon !== WeaponType.NONE && equippedWeapon === slot.weapon;
-        const slotAspect = resolvePedestalWeaponAspect(slot.weapon, weaponAspectByWeapon);
+        const slotAspect = getShowcaseWeaponAspect(slot.weapon, showcaseTick);
         return (
         <ThroneFloatingWeapon
           key={slot.key}
@@ -1389,6 +1400,8 @@ interface ThroneRoomProps {
   selectedArchetype?: Archetype;
   /** Per-weapon last-chosen aspects — drives unequipped pedestal replica visuals. */
   weaponAspectByWeapon?: WeaponAspectByWeapon;
+  /** Shared 10s aspect showcase tick from CoopGameScene (drives pedestal meshes + equip). */
+  showcaseTick?: number;
   /** Local player foot position — drives pedestal proximity tooltips. */
   playerPositionRef?: React.MutableRefObject<Vector3>;
   /** Co-op intro: center void portal opens after weapon selection delay. */
@@ -1396,6 +1409,8 @@ interface ThroneRoomProps {
   voidPortalOpenProgress?: number;
   /** Server-authoritative random CustomSky preset index. */
   skyPresetIndex?: number;
+  /** Server-authoritative random StylizedGrass preset index (prep only). */
+  grassPresetIndex?: number;
 }
 
 /**
@@ -1407,14 +1422,17 @@ function ThroneRoom({
   equippedWeapon = WeaponType.NONE,
   selectedArchetype = 'NONE',
   weaponAspectByWeapon,
+  showcaseTick = 0,
   playerPositionRef,
   voidPortalOpen = false,
   voidPortalOpenProgress = 0,
   skyPresetIndex,
+  grassPresetIndex,
 }: ThroneRoomProps) {
   /** All co-op boss tiers + post-boss intermission share the same purple shell (legacy Boss 2 / Archon look). */
   const usePurpleBossArenaShell = layout === 'bossArena';
   const isPrep = layout === 'prep';
+  const prepGrassPalette = resolveGrassPresetByIndex(grassPresetIndex);
 
   return (
     <group name="throne-room">
@@ -1444,12 +1462,9 @@ function ThroneRoom({
           excludeInnerRadius={usePurpleBossArenaShell ? 0 : THRONE_CENTER_SEAL_RADIUS}
           count={THRONE_GRASS_COUNT}
           roomTheme={usePurpleBossArenaShell ? undefined : 'green'}
-          grassPalette={usePurpleBossArenaShell ? 'purple' : undefined}
+          grassPalette={usePurpleBossArenaShell ? 'purple' : prepGrassPalette}
           bladeHeight={0.42}
           windStrength={0.22}
-          {...(usePurpleBossArenaShell
-            ? {}
-            : { baseColor: '#1a6b1a', tipColor: '#66dd66' })}
         />
         <ThroneNatureProps />
         {/* <ThroneTurretProps /> */}
@@ -1488,6 +1503,7 @@ function ThroneRoom({
               equippedWeapon={equippedWeapon}
               selectedArchetype={selectedArchetype}
               weaponAspectByWeapon={weaponAspectByWeapon}
+              showcaseTick={showcaseTick}
             />
           ) : null}
           <VoidPortal

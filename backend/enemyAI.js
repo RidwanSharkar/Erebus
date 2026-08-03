@@ -244,6 +244,15 @@ const DEATH_KNIGHT_HEARTSTRIKE_DAMAGE = 39;
 const DEATH_KNIGHT_HEARTSTRIKE_RANGE = DEATH_KNIGHT_MELEE_RANGE;
 const DEATH_KNIGHT_HEARTSTRIKE_HALF_ANGLE_RAD = Math.PI / 4;
 const DEATH_KNIGHT_HEARTSTRIKE_CAST_RANGE = 4.0;
+const DEATH_KNIGHT_FROST_PILLARS_COOLDOWN_MS = 7000;
+const DEATH_KNIGHT_FROST_PILLARS_CAST_MS = 1100;
+const DEATH_KNIGHT_FROST_PILLARS_CAST_RANGE = 8.0;
+const DEATH_KNIGHT_FROST_PILLARS_COUNT = 6;
+const DEATH_KNIGHT_FROST_PILLARS_BASE_OFFSET = 2.0;
+const DEATH_KNIGHT_FROST_PILLARS_STEP = 0.9;
+const DEATH_KNIGHT_FROST_PILLARS_STAGGER_MS = 120;
+const DEATH_KNIGHT_FROST_PILLARS_DAMAGE = 35;
+const DEATH_KNIGHT_FROST_PILLARS_RADIUS = 2.0;
 
 const SHAMAN_MELEE_RANGE = 2.725;
 const SHAMAN_AGGRO_RADIUS = 15;
@@ -935,10 +944,15 @@ const TIGER_POUNCE_DURATION_MS = 850;
 const PLAYER_COOP_MAX_SPEED = 3.575;
 const PLAYER_COOP_SPRINT_MULTIPLIER = 1.5;
 const PLAYER_DASH_DISTANCE = 4.125;
-const WARPDRIVE_DASH_DISTANCES = [4.125, 4.625, 5.125, 5.625];
+const WARPDRIVE_DASH_DISTANCES = [4.125, 5.125, 6.125, 7.125];
+/** Keep in sync with `WARLORD_WARPDRIVE_DASH_DISTANCES` in weaponAspects.ts */
+const WARLORD_WARPDRIVE_DASH_DISTANCES = [7.125, 8.125, 9.125, 10.125];
 
 function getPlayerDashDistance(player) {
   const purchases = Math.max(0, Math.min(3, Number(player?.merchantWarpdrivePurchases) || 0));
+  if (String(player?.weaponAspect || '').toUpperCase() === 'WARLORD') {
+    return WARLORD_WARPDRIVE_DASH_DISTANCES[purchases] ?? WARLORD_WARPDRIVE_DASH_DISTANCES[0];
+  }
   return WARPDRIVE_DASH_DISTANCES[purchases] ?? PLAYER_DASH_DISTANCE;
 }
 const PLAYER_DASH_DURATION_S = 0.35;
@@ -1372,6 +1386,10 @@ class EnemyAI {
     // Death Knight Heartstrike
     this.deathKnightHeartstrikeCooldown = new Map();
     this.deathKnightHeartstrikeEndTimeout = new Map();
+    // Death Knight Frost Pillars
+    this.deathKnightFrostPillarsCooldown = new Map();
+    this.deathKnightFrostPillarsEndTimeout = new Map();
+    this.deathKnightFrostPillarTimeouts = new Map(); // deathKnightId -> timeout[]
 
     // Shaman Storm Shock
     this.shamanStormShockCooldown = new Map();
@@ -1750,6 +1768,13 @@ class EnemyAI {
     this.deathKnightHeartstrikeEndTimeout.forEach((t) => clearTimeout(t));
     this.deathKnightHeartstrikeEndTimeout.clear();
     this.deathKnightHeartstrikeCooldown.clear();
+    this.deathKnightFrostPillarsEndTimeout.forEach((t) => clearTimeout(t));
+    this.deathKnightFrostPillarsEndTimeout.clear();
+    this.deathKnightFrostPillarsCooldown.clear();
+    this.deathKnightFrostPillarTimeouts.forEach((arr) => {
+      for (const t of arr) clearTimeout(t);
+    });
+    this.deathKnightFrostPillarTimeouts.clear();
     this.shamanStormShockEndTimeout.forEach((t) => clearTimeout(t));
     this.shamanStormShockEndTimeout.clear();
     this.shamanStormShockZapTimeout.forEach((t) => clearTimeout(t));
@@ -16968,8 +16993,13 @@ class EnemyAI {
 
     const now = Date.now();
 
+    // While Frost Pillars cast is active: hold position.
+    if (deathKnight.frostPillarsActive) return;
+
     // While Heartstrike is active: hold position (single swing, not a channel).
     if (deathKnight.heartstrikeActive) return;
+
+    if (this.tryDeathKnightFrostPillars(deathKnight, resolved, distance, now)) return;
 
     if (this.tryDeathKnightHeartstrike(deathKnight, resolved, distance, now)) return;
 
@@ -16981,6 +17011,122 @@ class EnemyAI {
 
     const profile = getMeleeProfile('death-knight');
     this.tryMeleeEngage(deathKnight, resolved, moveTarget, profile, { now, distance });
+  }
+
+  tryDeathKnightFrostPillars(deathKnight, resolved, distance, now) {
+    if (!deathKnight || deathKnight.isDying || deathKnight.health <= 0) return false;
+    if (deathKnight.frostPillarsActive || deathKnight.heartstrikeActive) return false;
+    if (this.room?.isEnemyAffectedBy(deathKnight.id, 'freeze')) return false;
+    if (this.room?.isEnemyAffectedBy(deathKnight.id, 'stun')) return false;
+    if (distance > DEATH_KNIGHT_FROST_PILLARS_CAST_RANGE) return false;
+
+    const last = this.deathKnightFrostPillarsCooldown.get(deathKnight.id) || 0;
+    if (now - last < DEATH_KNIGHT_FROST_PILLARS_COOLDOWN_MS) return false;
+
+    this.startDeathKnightFrostPillars(deathKnight, resolved);
+    return true;
+  }
+
+  clearDeathKnightFrostPillarTimers(deathKnightId) {
+    const arr = this.deathKnightFrostPillarTimeouts.get(deathKnightId);
+    if (arr) {
+      for (const h of arr) clearTimeout(h);
+    }
+    this.deathKnightFrostPillarTimeouts.delete(deathKnightId);
+  }
+
+  addDeathKnightFrostPillarTimeout(deathKnightId, handle) {
+    const arr = this.deathKnightFrostPillarTimeouts.get(deathKnightId) || [];
+    arr.push(handle);
+    this.deathKnightFrostPillarTimeouts.set(deathKnightId, arr);
+  }
+
+  startDeathKnightFrostPillars(deathKnight, resolved) {
+    const now = Date.now();
+    const sid = deathKnight.id;
+    if (deathKnight.frostPillarsActive) return;
+
+    const staleEnd = this.deathKnightFrostPillarsEndTimeout.get(sid);
+    if (staleEnd) clearTimeout(staleEnd);
+    this.clearDeathKnightFrostPillarTimers(sid);
+
+    deathKnight.frostPillarsActive = true;
+    this.deathKnightFrostPillarsCooldown.set(sid, now);
+    this.meleeLockUntil.set(sid, now + DEATH_KNIGHT_FROST_PILLARS_CAST_MS);
+
+    const aimPos = this.combatTargetPosition(resolved);
+    if (aimPos) {
+      this._smoothRotateEnemyTowardPoint(deathKnight, aimPos, { instant: true });
+      if (this.io) this._queueMove(deathKnight.id, deathKnight.position, deathKnight.rotation);
+    }
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('death-knight-frost-pillars-telegraph', {
+        deathKnightId: sid,
+        durationMs: DEATH_KNIGHT_FROST_PILLARS_CAST_MS,
+        position: deathKnight.position,
+        timestamp: now,
+      });
+    }
+
+    const r = deathKnight.rotation || 0;
+    const fx = Math.sin(r);
+    const fz = Math.cos(r);
+    const py = deathKnight.position.y ?? 0;
+    const ox = deathKnight.position.x;
+    const oz = deathKnight.position.z;
+    const frostCastId = now;
+    deathKnight.frostPillarsCastId = frostCastId;
+
+    const erupt = (center) => {
+      const live = this.room?.getEnemy?.(sid);
+      if (!this.room?.getGameStarted() || !live || live.isDying || live.health <= 0) return;
+      if (live.type !== 'death-knight' || live.frostPillarsCastId !== frostCastId) return;
+      if (this.io) {
+        this.io.to(this.roomId).emit('death-knight-frost-pillar', {
+          deathKnightId: sid,
+          position: { x: center.x, y: center.y, z: center.z },
+          timestamp: Date.now(),
+        });
+      }
+      this.room.damagePlayersInHorizontalRing(
+        center,
+        DEATH_KNIGHT_FROST_PILLARS_RADIUS,
+        DEATH_KNIGHT_FROST_PILLARS_DAMAGE,
+        'death_knight_frost_pillar',
+      );
+    };
+
+    for (let i = 0; i < DEATH_KNIGHT_FROST_PILLARS_COUNT; i++) {
+      const dist = DEATH_KNIGHT_FROST_PILLARS_BASE_OFFSET + i * DEATH_KNIGHT_FROST_PILLARS_STEP;
+      const delay = DEATH_KNIGHT_FROST_PILLARS_CAST_MS + i * DEATH_KNIGHT_FROST_PILLARS_STAGGER_MS;
+      const center = {
+        x: ox + fx * dist,
+        y: py,
+        z: oz + fz * dist,
+      };
+      const h = this._scheduleTimeout(() => erupt(center), delay);
+      this.addDeathKnightFrostPillarTimeout(sid, h);
+    }
+
+    const endHandle = this._scheduleTimeout(() => {
+      this.deathKnightFrostPillarsEndTimeout.delete(sid);
+      this.endDeathKnightFrostPillars(sid);
+    }, DEATH_KNIGHT_FROST_PILLARS_CAST_MS);
+    this.deathKnightFrostPillarsEndTimeout.set(sid, endHandle);
+
+    _enemyAiLog(`❄️ Death Knight ${sid} cast Frost Pillars.`);
+  }
+
+  endDeathKnightFrostPillars(deathKnightId) {
+    const live = this.room?.getEnemy?.(deathKnightId);
+    if (live) live.frostPillarsActive = false;
+    if (this.io) {
+      this.io.to(this.roomId).emit('death-knight-frost-pillars-end', {
+        deathKnightId,
+        timestamp: Date.now(),
+      });
+    }
   }
 
   tryDeathKnightHeartstrike(deathKnight, resolved, distance, now) {
@@ -19445,6 +19591,19 @@ class EnemyAI {
       }
     }
     this.deathKnightHeartstrikeCooldown.delete(enemyId);
+    const deathKnightFrostPillarsEndT = this.deathKnightFrostPillarsEndTimeout.get(enemyId);
+    if (deathKnightFrostPillarsEndT) {
+      clearTimeout(deathKnightFrostPillarsEndT);
+      this.deathKnightFrostPillarsEndTimeout.delete(enemyId);
+      if (this.io) {
+        this.io.to(this.roomId).emit('death-knight-frost-pillars-end', {
+          deathKnightId: enemyId,
+          timestamp: Date.now(),
+        });
+      }
+    }
+    this.clearDeathKnightFrostPillarTimers(enemyId);
+    this.deathKnightFrostPillarsCooldown.delete(enemyId);
     const shamanStormShockEndT = this.shamanStormShockEndTimeout.get(enemyId);
     if (shamanStormShockEndT) {
       clearTimeout(shamanStormShockEndT);

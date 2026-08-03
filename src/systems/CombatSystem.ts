@@ -58,6 +58,7 @@ import {
   TEMPEST_SWEEP_IGNITE_DOT_FRACTION,
   TEMPEST_SWEEP_IGNITE_DURATION_MS,
   TEMPEST_SWEEP_IGNITE_TICKS,
+  POISON_DART_CONCENTRATED_VENOM_STACKS,
   WARLORD_BACKSTAB_CONCENTRATED_VENOM_STACKS,
   type WeaponAspect,
 } from '@/utils/weaponAspects';
@@ -121,6 +122,10 @@ interface DamageEvent {
   glacialBiteChill?: boolean;
   /** Entanglement — Barrage hit roots and squeezes the target. */
   entanglementBarrage?: boolean;
+  /** Sniper Hunter's Mark — Barrage hit marks the target. */
+  huntersMark?: boolean;
+  /** Bow Perfect Shot — Sniper may detonate Hunter's Mark. */
+  perfectShot?: boolean;
   /** Co-op: Cobra venom DoT tick — Wyvern Sting talent may raise zombie on kill. */
   wyvernStingVenomZombie?: boolean;
   /** Co-op: Reaping Talons / Wyvern Talons detonation — may raise zombie on kill. */
@@ -231,6 +236,8 @@ export class CombatSystem extends System {
       glacialBiteChill?: boolean;
       glacialTalons?: boolean;
       entanglementBarrage?: boolean;
+      huntersMark?: boolean;
+      perfectShot?: boolean;
       cloudkill?: boolean;
       cloudkillDamage?: boolean;
       tempestBurstArcticChill?: boolean;
@@ -1068,7 +1075,8 @@ export class CombatSystem extends System {
                       (damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0) ||
                       damageEvent.cloudkillProc === true ||
                       damageEvent.tempestBurstArcticChill === true ||
-                      damageEvent.tempestBurstWyvernZombie === true)
+                      damageEvent.tempestBurstWyvernZombie === true ||
+                      damageEvent.perfectShot === true)
                   ? {
                       damageType: 'projectile' as const,
                       ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
@@ -1080,6 +1088,10 @@ export class CombatSystem extends System {
                         : {}),
                       ...(damageEvent.tempestBurstWyvernZombie === true
                         ? { tempestBurstWyvernZombie: true as const }
+                        : {}),
+                      ...((damageEvent.perfectShot === true ||
+                        source?.getComponent(Projectile)?.isPerfectShot === true)
+                        ? { perfectShot: true as const }
                         : {}),
                     }
                   : damageType === 'cloudkill'
@@ -1115,6 +1127,7 @@ export class CombatSystem extends System {
                         ...(damageEvent.entanglementBarrage === true
                           ? { entanglementBarrage: true as const }
                           : {}),
+                        ...(damageEvent.huntersMark === true ? { huntersMark: true as const } : {}),
                         ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
                           ? { staggerToAdd: damageEvent.staggerToAdd }
                           : {}),
@@ -1269,6 +1282,10 @@ export class CombatSystem extends System {
                                           : damageType === 'fire_affinity_skyfall'
                                             ? {
                                                 damageType: 'fire_affinity_skyfall' as const,
+                                              }
+                                          : damageType === 'poison_dart'
+                                            ? {
+                                                damageType: 'poison_dart' as const,
                                               }
                                           : damageType === 'whirlwind' &&
                                               damageEvent.tempestSweepIgnite === true
@@ -1806,6 +1823,22 @@ export class CombatSystem extends System {
         concentratedVenomApplied = true;
       }
 
+      // Warlord Poison Dart — 1 stack of Concentrated Venom on hit (local / offline)
+      if (
+        enemyForVenom &&
+        damageType === 'poison_dart' &&
+        damageDealt &&
+        !health.isDead &&
+        !this.onEnemyDamageCallback
+      ) {
+        enemyForVenom.applyConcentratedVenomStacks(
+          POISON_DART_CONCENTRATED_VENOM_STACKS,
+          currentTime,
+          venomMaxStacks,
+        );
+        concentratedVenomApplied = true;
+      }
+
       if (
         enemyForVenom &&
         (damageType === 'sunder' || damageType === 'fan_of_knives') &&
@@ -2118,6 +2151,17 @@ export class CombatSystem extends System {
         }
       }
 
+      // Sniper Hunter's Mark — solo Barrage apply (coop: server status effect).
+      if (
+        damageType === 'barrage' &&
+        damageEvent.huntersMark === true &&
+        damageDealt &&
+        !this.onEnemyDamageCallback
+      ) {
+        const cs = this.getControlSystem();
+        cs?.applyLocalSniperHuntersMark?.(target);
+      }
+
       const enemyForBlizzard = target.getComponent(Enemy);
       if (
         enemyForBlizzard &&
@@ -2399,6 +2443,8 @@ export class CombatSystem extends System {
     wyvernTalonsZombie?: boolean,
     tempestBurstArcticChill?: boolean,
     tempestBurstWyvernZombie?: boolean,
+    huntersMark?: boolean,
+    perfectShot?: boolean,
   ): void {
     this.damageQueue.push({
       target,
@@ -2439,6 +2485,8 @@ export class CombatSystem extends System {
       wyvernTalonsZombie,
       tempestBurstArcticChill,
       tempestBurstWyvernZombie,
+      huntersMark,
+      perfectShot,
     });
   }
 

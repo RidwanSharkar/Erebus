@@ -318,6 +318,7 @@ import {
   ARCHMAGE_ENTROPIC_IGNITE_INTERVAL,
   FIRE_AFFINITY_SKYFALL_BASE_DAMAGE,
   DEATHDEALER_THIRD_HIT_STAGGER_PROC_CHANCE,
+  getPoisonDartDamage,
   getRunebladeAspectFireRateSec,
   getRunebladeAspectComboResetSec,
   getRunebladeSmiteBaseHeal,
@@ -326,10 +327,14 @@ import {
   getTerminalVelocityBonusDamage,
   isBowRejuvenatingShotAspect,
   isSabresFireAffinityAspect,
+  isSabresWarlordAspect,
   isSniperBowAspect,
+  SNIPER_HUNTERS_MARK_DURATION_MS,
   isRunebladeDeathdealerAspect,
   isRunebladeDeathGraspAspect,
   isRunebladeTempestSweepAspect,
+  POISON_DART_RANGE,
+  POISON_DART_WINDOW_SEC,
   qualifiesForTerminalVelocityRange,
   TEMPEST_SWEEP_IGNITE_CHARGE_SEC,
   TEMPEST_SWEEP_MAX_DAMAGE,
@@ -344,8 +349,13 @@ import { triggerGlobalFrostNova, addGlobalFrozenEnemy } from '@/components/weapo
 import { triggerGlobalFireStorm } from '@/components/weapons/fireStormSpawnBridge';
 import { spawnSabresAvalancheOnEnemyFromReact } from '@/components/weapons/Avalanche/sabresAvalancheSpawnBridge';
 import { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
-import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
+import {
+  addGlobalHuntersMark,
+  clearGlobalHuntersMark,
+  hasGlobalHuntersMark,
+} from '@/components/enemies/HuntersMarkManager';
 import { isImmuneToPlayerStunAndFreeze } from '@/utils/enemyStatusImmunity';
+import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
 import { triggerGlobalCobraShot } from '@/components/projectiles/CobraShotManager';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 import { triggerGlobalRejuvenatingShot } from '@/components/projectiles/RejuvenatingShotManager';
@@ -475,6 +485,9 @@ export class ControlSystem extends System {
 
   // Callback for Cobra Shot activation
   private onCobraShotCallback?: (position: Vector3, direction: Vector3) => void;
+
+  /** Solo local stagger lightning VFX (Deathdealer / Sniper Hunter's Mark detonation). */
+  private onLocalStaggerLightningCallback?: (position: Vector3) => void;
 
   // Callback for Summon Totem activation
   private onSummonTotemCallback?: (position: Vector3) => void;
@@ -993,6 +1006,8 @@ export class ControlSystem extends System {
   private exodiaSetMaxEnergyBonus = 0;
   private scorpionLanceArmedUntilSec = 0;
   private lastScorpionLanceIcdSec = 0;
+  /** Warlord Poison Dart — armed until this time (sec); no ICD. */
+  private poisonDartArmedUntilSec = 0;
   private lastGlacialDashRoomBoomMs = 0;
   private lastMendingDashRoomBoomMs = 0;
   private lastStaggeringDashRoomBoomMs = 0;
@@ -1880,7 +1895,8 @@ export class ControlSystem extends System {
           this.performSunder(playerTransform);
         }
         break;
-      case 'SABRES_R': // Divebomb (Skyfall)
+      case 'SABRES_R': // Divebomb (Skyfall) — Warlord has Poison Dart instead
+        if (isSabresWarlordAspect(this.weaponAspect)) break;
         if (!this.isSkyfalling && !this.isSundering)
           this.performSkyfall(playerTransform);
         break;
@@ -3219,6 +3235,7 @@ export class ControlSystem extends System {
 
   private createProjectile(position: Vector3, direction: Vector3): void {
     this.tryFireScorpionLanceShardIfArmed(position, direction);
+    this.tryFirePoisonDartIfArmed(position, direction);
     if (!this.playerEntity) return;
     
     // Check if there are any valid targets in the world before creating projectiles
@@ -3294,6 +3311,7 @@ export class ControlSystem extends System {
 
   private createBurstProjectile(position: Vector3, direction: Vector3): void {
     this.tryFireScorpionLanceShardIfArmed(position, direction);
+    this.tryFirePoisonDartIfArmed(position, direction);
     if (!this.playerEntity) return;
 
     // Bump before target/broadcast gating so EtherBow muzzle VFX & getTempestBurstShotSeq() still advance
@@ -3387,6 +3405,7 @@ export class ControlSystem extends System {
 
   private createEntropicBoltProjectile(position: Vector3, direction: Vector3): void {
     this.tryFireScorpionLanceShardIfArmed(position, direction);
+    this.tryFirePoisonDartIfArmed(position, direction);
     if (!this.playerEntity) return;
 
     // Check if there are any valid targets in the world before creating projectiles
@@ -4001,6 +4020,7 @@ export class ControlSystem extends System {
 
   private createChargedArrowProjectile(position: Vector3, direction: Vector3): void {
     this.tryFireScorpionLanceShardIfArmed(position, direction);
+    this.tryFirePoisonDartIfArmed(position, direction);
     if (!this.playerEntity) return;
     
     const baseSpawn = position.clone();
@@ -4046,6 +4066,7 @@ export class ControlSystem extends System {
 
   private createPerfectShotProjectile(position: Vector3, direction: Vector3): void {
     this.tryFireScorpionLanceShardIfArmed(position, direction);
+    this.tryFirePoisonDartIfArmed(position, direction);
     if (!this.playerEntity) return;
     
     const baseSpawn = position.clone();
@@ -4662,6 +4683,82 @@ export class ControlSystem extends System {
     }
 
     return { position };
+  }
+
+  /**
+   * Sniper Hunter's Mark: Perfect Shot on a marked enemy detonates stagger lightning.
+   * Solo only — coop detonation is server-authored from `perfectShot` hit meta.
+   */
+  public trySniperHuntersMarkDetonate(target: Entity): { position: Vector3 } | null {
+    if (this.currentWeapon !== WeaponType.BOW || !isSniperBowAspect(this.weaponAspect)) return null;
+
+    const enemy = target.getComponent(Enemy);
+    const targetTransform = target.getComponent(Transform);
+    if (!enemy || !targetTransform || enemy.isDead) return null;
+
+    const markId = target.id.toString();
+    if (!hasGlobalHuntersMark(markId)) return null;
+
+    const sk = target.userData?.coopServerEnemyType as string | undefined;
+    clearGlobalHuntersMark(markId);
+
+    // Immune types still consume the mark but skip lightning (same set as stagger proc).
+    if (isImmuneToPlayerStunAndFreeze(sk)) return null;
+    const noStaggerTypes = new Set(['boss-skeleton', 'player-zombie', 'vengeful-spirit', 'tentacle-spine']);
+    if (sk && noStaggerTypes.has(sk)) return null;
+
+    const position = targetTransform.position.clone();
+    const stats = this.getAllocatedPlayerStats();
+    let procDamage = getStaggerProcBaseDamage(this.talentLoadout, stats.agility);
+    if (shouldApplyUnstableEnergyTalent(this.talentLoadout)) {
+      const runes = getGlobalRuneCounts();
+      const snap = getUnstableEnergyStaggerProcCombatSnapshot({
+        agility: stats.agility,
+        strength: stats.strength,
+        criticalRuneCount: runes.criticalRunes,
+        critDamageRuneCount: runes.critDamageRunes,
+      });
+      if (Math.random() < snap.critChance) {
+        procDamage = Math.floor(procDamage * snap.critDamageMult);
+      }
+    }
+
+    const stunMs = getStaggerProcStunMs(this.talentLoadout);
+    const currentTime = Date.now() / 1000;
+    enemy.stun(stunMs / 1000, currentTime, sk);
+    addGlobalStunnedEnemy(target.id.toString(), position, stunMs);
+
+    const combatSystem = this.world.getSystem(CombatSystem);
+    if (combatSystem && this.playerEntity) {
+      combatSystem.queueDamage(
+        target,
+        procDamage,
+        this.playerEntity,
+        'stagger_break',
+        this.playerEntity.userData?.playerId,
+      );
+    }
+
+    this.onLocalStaggerLightningCallback?.(position);
+    return { position };
+  }
+
+  /** Apply / refresh Sniper Hunter's Mark locally (solo Barrage hits). */
+  public applyLocalSniperHuntersMark(target: Entity): void {
+    if (this.currentWeapon !== WeaponType.BOW || !isSniperBowAspect(this.weaponAspect)) return;
+    if (isCoopPlayerAllyEntity(target)) return;
+    const enemy = target.getComponent(Enemy);
+    const transform = target.getComponent(Transform);
+    if (!enemy || !transform || enemy.isDead) return;
+    addGlobalHuntersMark(
+      target.id.toString(),
+      transform.getWorldPosition().clone(),
+      SNIPER_HUNTERS_MARK_DURATION_MS,
+    );
+  }
+
+  public setOnLocalStaggerLightningCallback(callback: (position: Vector3) => void): void {
+    this.onLocalStaggerLightningCallback = callback;
   }
 
   public isChargeActive(): boolean {
@@ -6536,6 +6633,7 @@ export class ControlSystem extends System {
     if (forward.lengthSq() > 0.0001) {
       forward.normalize();
       this.tryFireScorpionLanceShardIfArmed(playerTransform.position, forward);
+      this.tryFirePoisonDartIfArmed(playerTransform.position, forward);
     }
     const currentTime = Date.now() / 1000;
 
@@ -6700,6 +6798,7 @@ export class ControlSystem extends System {
 
   // Skyfall ability implementation
   private performSkyfall(playerTransform: Transform): void {
+    if (isSabresWarlordAspect(this.weaponAspect)) return;
     const currentTime = Date.now() / 1000;
     const skyfallCd = getSabresSkyfallCooldownSec(this.weaponAspect);
 
@@ -7643,6 +7742,7 @@ export class ControlSystem extends System {
     );
     this.tryArchmageCoilOnDashChargeExpended(consumed);
     this.tryScorpionLanceArmOnDashChargeExpended(consumed);
+    this.tryPoisonDartArmOnDashChargeExpended(consumed);
   }
 
   public setOwnedDreamLayerItems(
@@ -7755,6 +7855,12 @@ export class ControlSystem extends System {
     this.scorpionLanceArmedUntilSec = nowSec + SCORPION_LANCE_WINDOW_SEC;
   }
 
+  private tryPoisonDartArmOnDashChargeExpended(consumed: number): void {
+    if (consumed <= 0 || !isSabresWarlordAspect(this.weaponAspect)) return;
+    const nowSec = Date.now() / 1000;
+    this.poisonDartArmedUntilSec = nowSec + POISON_DART_WINDOW_SEC;
+  }
+
   public tryFireScorpionLanceShardIfArmed(position: Vector3, direction: Vector3): void {
     if (!this.playerEntity || !this.hasOwnedItem(EXODIA_PAULDRONS)) return;
     const nowSec = Date.now() / 1000;
@@ -7793,6 +7899,46 @@ export class ControlSystem extends System {
 
     if (this.onProjectileCreatedCallback) {
       this.onProjectileCreatedCallback('scorpion_shard', spawnPosition, dir, projectileConfig);
+    }
+  }
+
+  /** Warlord Poison Dart — fire if armed after a dash (no ICD). */
+  public tryFirePoisonDartIfArmed(position: Vector3, direction: Vector3): void {
+    if (!this.playerEntity || !isSabresWarlordAspect(this.weaponAspect)) return;
+    const nowSec = Date.now() / 1000;
+    if (nowSec > this.poisonDartArmedUntilSec) return;
+
+    this.poisonDartArmedUntilSec = 0;
+
+    const dartDamage = getPoisonDartDamage(this.dreamLayerEffectiveStats.agility);
+    const dir = direction.clone().normalize();
+    const spawnPosition = position.clone();
+    spawnPosition.add(dir.clone().multiplyScalar(0.8));
+    spawnPosition.y += 1;
+
+    const projectileConfig = {
+      speed: 28,
+      damage: dartDamage,
+      lifetime: 1.5,
+      maxDistance: POISON_DART_RANGE,
+      piercing: true,
+      projectileType: 'poison_dart',
+      subclass: this.currentSubclass,
+      level: this.currentLevel,
+      opacity: 1,
+      sourcePlayerId: this.playerEntity.userData?.playerId || 'unknown',
+    };
+
+    this.projectileSystem.createProjectile(
+      this.world,
+      spawnPosition,
+      dir,
+      this.playerEntity.id,
+      projectileConfig,
+    );
+
+    if (this.onProjectileCreatedCallback) {
+      this.onProjectileCreatedCallback('poison_dart', spawnPosition, dir, projectileConfig);
     }
   }
 
@@ -10029,6 +10175,7 @@ export class ControlSystem extends System {
     const staggeringBiteBarrage = shouldApplyStaggeringBiteTalent(this.talentLoadout, this.abilityLoadout);
     const glacialBiteBarrage = shouldApplyGlacialBiteTalent(this.talentLoadout, this.abilityLoadout);
     const entanglementBarrage = shouldApplyEntanglementTalent(this.talentLoadout, this.abilityLoadout);
+    const huntersMarkBarrage = isSniperBowAspect(this.weaponAspect);
 
     if (this.onBarrageCallback) {
       this.onBarrageCallback(initialPos.clone(), initialDir.clone());
@@ -10065,6 +10212,7 @@ export class ControlSystem extends System {
           staggeringBiteBarrage,
           glacialBiteBarrage,
           entanglementBarrage,
+          huntersMarkBarrage,
           ...(staggeringBiteBarrage ? { staggerToAdd: STAGGERING_BITE_BARRAGE_STAGGER_PER_HIT } : {}),
         };
 
@@ -10094,6 +10242,9 @@ export class ControlSystem extends System {
           }
           if (entanglementBarrage) {
             renderer.mesh.userData.barrageEntanglement = true;
+          }
+          if (huntersMarkBarrage) {
+            renderer.mesh.userData.barrageHuntersMark = true;
           }
         }
 

@@ -74,6 +74,7 @@ export interface MedusaProjectileState {
 export interface WarlockFlameStrikeState {
   id: string;
   position: Vector3;
+  theme?: 'fire' | 'frost';
 }
 
 export interface ViperArrowState {

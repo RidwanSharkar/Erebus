@@ -52,6 +52,7 @@ const ABILITY_DAMAGE_TYPES = new Set([
   'mortal_strike',
   'skyfall',
   'fire_affinity_skyfall',
+  'poison_dart',
   'charge',
   'viper_sting',
   'aftershock',

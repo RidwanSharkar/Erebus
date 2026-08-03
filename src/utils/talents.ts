@@ -9,6 +9,7 @@ import {
   FIRE_AFFINITY_SKYFALL_BASE_DAMAGE,
   FIRE_AFFINITY_SKYFALL_DAMAGE_PER_STAT_POINT,
   getDraconicEntropicBoltFireRateReductionSec,
+  isSabresWarlordAspect,
   type WeaponAspect,
 } from '@/utils/weaponAspects';
 import { getAspectDefaultWraithStrikeTheme } from '@/utils/wraithStrikeColorThemes';
@@ -4669,6 +4670,7 @@ export function pickRandomClassBoonForWeapon(
 export function buildRoomBoonPoolForColor(
   color: string | null | undefined,
   weapon: WeaponType,
+  aspect?: WeaponAspect | null,
 ): TalentId[] {
   const k = String(color ?? '').toLowerCase();
   if (!isCoopRoomColor(k)) return [];
@@ -4762,6 +4764,7 @@ export function buildRoomBoonPoolForColor(
     return excludeUniversalRActiveBoonsForWeapon(
       [...pool, TALENT_MENDING_DASH, TALENT_ORB_SHIELD, ...GREEN_COOP_UNIVERSAL_ZOMBIE_BOONS, TALENT_RAISE_DEAD, TALENT_NECROS_INITIATE],
       weapon,
+      aspect,
     );
   }
 
@@ -4771,6 +4774,7 @@ export function buildRoomBoonPoolForColor(
         excludeUniversalRActiveBoonsForWeapon(
           [...pool, TALENT_INFERNAL_DASH, TALENT_BLOODLEECH, TALENT_REBUKE, TALENT_METEOR_STRIKE, TALENT_INFERNAL_INITIATE, TALENT_FISSION, TALENT_BLOOD_ORBS, TALENT_BLOODMAGE, TALENT_DEATHWISH],
           weapon,
+          aspect,
         ),
         weapon,
       );
@@ -4778,14 +4782,16 @@ export function buildRoomBoonPoolForColor(
       return excludeUniversalRActiveBoonsForWeapon(
         [...pool, TALENT_GLACIAL_DASH, TALENT_COLDSNAP_ROOM, TALENT_AEGIS_ROOM, TALENT_MOMENTUM_RIFT, TALENT_MANA_SHIELD, TALENT_HAILSTORM, TALENT_AWAKENED_EYE, TALENT_ABYSSAL_INITIATE],
         weapon,
+        aspect,
       );
     case 'blue':
       return excludeUniversalRActiveBoonsForWeapon(
         [...pool, TALENT_STAGGERING_DASH, TALENT_GUARDBREAK, TALENT_OVERSHOCK, TALENT_UNSTABLE_ENERGY, TALENT_LIGHTNING_BOLT_ROOM, TALENT_TEMPEST_INITIATE, TALENT_OVERCLOCK, TALENT_OVERRIDE],
         weapon,
+        aspect,
       );
     default:
-      return excludeUniversalRActiveBoonsForWeapon(pool, weapon);
+      return excludeUniversalRActiveBoonsForWeapon(pool, weapon, aspect);
   }
 }
 
@@ -4890,12 +4896,14 @@ export function filterTalentIdsByExclusionSet(
   return pool.filter((id) => !excluded.has(id));
 }
 
-/** Sabres start with native R (Divebomb) — exclude universal R active room boons from their pool only. */
+/** Sabres with Divebomb (non-Warlord) — exclude universal R active room boons. Warlord has no Divebomb. */
 export function excludeUniversalRActiveBoonsForWeapon(
   pool: readonly TalentId[],
   weapon: WeaponType,
+  aspect?: WeaponAspect | null,
 ): TalentId[] {
   if (weapon !== WeaponType.SABRES) return pool.slice();
+  if (isSabresWarlordAspect(aspect)) return pool.slice();
   return filterTalentIdsByExclusionSet(pool, new Set(COOP_UNIVERSAL_R_ACTIVE_ROOM_BOONS));
 }
 
@@ -6141,6 +6149,12 @@ export function buildWeaponTalentIdSet(
   }
   for (const color of COOP_ROOM_COLORS) {
     for (const id of buildRoomBoonPoolForColor(color, weapon)) {
+      set.add(id);
+    }
+  }
+  // Warlord Sabres can own universal R room boons; include them for HUD filtering.
+  if (weapon === WeaponType.SABRES) {
+    for (const id of COOP_UNIVERSAL_R_ACTIVE_ROOM_BOONS) {
       set.add(id);
     }
   }

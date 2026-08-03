@@ -34,6 +34,7 @@ import {
   isMerchantSlotTaken,
   MERCHANT_HEAL_COST,
 } from '@/utils/merchantShopUtils';
+import type { WeaponAspect } from '@/utils/weaponAspects';
 import {
   clearMerchantShopTooltip,
   publishMerchantShopTooltip,
@@ -463,12 +464,14 @@ interface MerchantShopPedestalsProps {
   inventory: MerchantStockItem[];
   purchaseState: MerchantPurchaseState;
   playerPositionRef: React.MutableRefObject<Vector3>;
+  weaponAspect?: WeaponAspect | null;
 }
 
 export default function MerchantShopPedestals({
   inventory,
   purchaseState,
   playerPositionRef,
+  weaponAspect,
 }: MerchantShopPedestalsProps) {
   const { camera, size } = useThree();
   const symbolRefs = useRef<Partial<Record<MerchantShopSlotKind, Group | null>>>({});
@@ -541,7 +544,12 @@ export default function MerchantShopPedestals({
       return;
     }
 
-    const tooltipData = getMerchantShopTooltipData(slotForTooltip, inventory, purchaseState);
+    const tooltipData = getMerchantShopTooltipData(
+      slotForTooltip,
+      inventory,
+      purchaseState,
+      weaponAspect,
+    );
     if (!tooltipData) {
       if (lastPublishedTooltipRef.current !== null) {
         lastPublishedTooltipRef.current = null;

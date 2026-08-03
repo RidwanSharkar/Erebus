@@ -16,8 +16,10 @@ import {
   ASPECT_LEGIONNAIRE,
   isDruidBowAspect,
   isLegionnaireRunebladeAspect,
+  isSabresWarlordAspect,
   resolveBowRAbilityId,
   resolveRunebladeRAbilityId,
+  resolveSabresRAbilityId,
   type WeaponAspect,
 } from '@/utils/weaponAspects';
 
@@ -317,7 +319,12 @@ export function getDefaultLoadoutForWeapon(
         R: resolveBowRAbilityId(aspect),
       };
     case WeaponType.SABRES:
-      return { Q: 'SABRES_Q', E: 'SABRES_E', R: 'SABRES_R' }; // Backstab / Flourish / Divebomb
+      // Divebomb (R) on Fire/Frost Affinity; Warlord leaves R empty for room boons.
+      return {
+        Q: 'SABRES_Q',
+        E: 'SABRES_E',
+        R: resolveSabresRAbilityId(aspect),
+      };
     default:
       return { Q: null, E: null, R: null };
   }
@@ -371,6 +378,26 @@ export function syncRunebladeLoadoutRForAspect(
   }
   if (loadout.R === 'DEATH_GRASP') {
     return { ...loadout, R: null };
+  }
+  return loadout;
+}
+
+/** Patch Sabres loadout R when throne aspect cycles to/from Warlord (no Divebomb). */
+export function syncSabresLoadoutRForAspect(
+  loadout: AbilityLoadout,
+  aspect: WeaponAspect | null | undefined,
+): AbilityLoadout {
+  const nextR = resolveSabresRAbilityId(aspect);
+  if (loadout.R === nextR) return loadout;
+  // Clear Divebomb when entering Warlord; grant when leaving (if R empty or was Divebomb).
+  if (isSabresWarlordAspect(aspect)) {
+    if (loadout.R === 'SABRES_R') {
+      return { ...loadout, R: null };
+    }
+    return loadout;
+  }
+  if (loadout.R == null || loadout.R === 'SABRES_R') {
+    return { ...loadout, R: 'SABRES_R' };
   }
   return loadout;
 }

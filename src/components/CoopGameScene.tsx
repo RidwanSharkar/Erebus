@@ -145,6 +145,7 @@ import {
   getDefaultLoadoutForWeapon,
   syncBowLoadoutRForAspect,
   syncRunebladeLoadoutRForAspect,
+  syncSabresLoadoutRForAspect,
   isDeathGraspPullImmune,
   DEATH_GRASP_TAUNT_MS,
   DEATH_GRASP_PULL_DURATION_MS,
@@ -372,6 +373,10 @@ import AvalancheEffectManager from '@/components/weapons/Avalanche/AvalancheEffe
 import FrostQueenPlayerIceStormManager from '@/components/weapons/Avalanche/FrostQueenPlayerIceStormManager';
 import Blizzard from '@/components/weapons/Blizzard/Blizzard';
 import StunManager, { addGlobalStunnedEnemy } from '@/components/weapons/StunManager';
+import HuntersMarkManager, {
+  addGlobalHuntersMark,
+  clearGlobalHuntersMark,
+} from '@/components/enemies/HuntersMarkManager';
 import EntangleManager, { addGlobalEntangledEnemy, addGlobalEntangledPlayer } from '@/components/weapons/EntangleManager';
 import IgniteEffectManager from '@/components/weapons/IgniteEffectManager';
 import FireStormManager from '@/components/weapons/FireStormManager';
@@ -434,9 +439,11 @@ import {
   type WeaponAspect,
   ASPECT_LEGIONNAIRE,
   cycleWeaponAspect,
-  defaultWeaponAspect,
+  getShowcaseWeaponAspect,
   normalizeWeaponAspect,
+  POISON_DART_RANGE,
   resolveMaxDashCharges,
+  THRONE_ASPECT_SHOWCASE_INTERVAL_MS,
 } from '@/utils/weaponAspects';
 import CombatArenaPedestal from '@/components/environment/CombatArenaPedestal';
 import {
@@ -453,6 +460,7 @@ import {
 } from '@/utils/dreamLayerShopUtils';
 import { VOID_PORTAL_INTERACT_RADIUS } from '@/components/environment/VoidPortal';
 import { HEALING_FOUNTAIN_INTERACT_RADIUS } from '@/components/environment/HealingFountain';
+import { EDEN_FINALE_DAISY_INTERACT_RADIUS } from '@/components/environment/EdenFinaleDaisy';
 import { COOP_MAIN_ENTRY_Z, rotationYTowardArenaCenter } from '@/utils/coopArenaLayout';
 import { KNIGHT_FROST_FREEZE_MS, KNIGHT_SMITE_RADIUS_BASE } from '@/utils/knightCoopAbilitiesConstants';
 import { MUSHROOM_COUNT, buildMushroomInstances, getMushroomColliderCenter } from '@/utils/mushroomLayout';
@@ -1975,6 +1983,7 @@ export function CoopGameScene({
     coopClearedRoomColor,
     coopTerrainTheme,
     coopSkyPresetIndex,
+    coopGrassPresetIndex,
     coopCurrentRoomKind,
     coopClearedRoomKind,
     selectedArchetype,
@@ -2093,7 +2102,8 @@ export function CoopGameScene({
     || coopCurrentRoomKind === 'merchant'
     || coopCurrentRoomKind === 'eden'
     || coopCurrentRoomKind === 'false_eden'
-    || coopCurrentRoomKind === 'dream_layer';
+    || coopCurrentRoomKind === 'dream_layer'
+    || coopCurrentRoomKind === 'eden_finale';
   const isCastleRoom =
     coopCurrentRoomKind === 'intro' || coopCurrentRoomKind === 'deep_sanctum';
   const isSunkenTemple = coopCurrentRoomKind === 'sunken_temple';
@@ -2104,7 +2114,7 @@ export function CoopGameScene({
   const hexArenaVariant =
     coopCurrentRoomKind === 'dream_layer'
       ? 'dream_layer' as const
-      : (coopCurrentRoomKind === 'eden' || coopCurrentRoomKind === 'false_eden')
+      : (coopCurrentRoomKind === 'eden' || coopCurrentRoomKind === 'false_eden' || coopCurrentRoomKind === 'eden_finale')
         ? 'eden' as const
         : coopCurrentRoomKind === 'merchant'
           ? 'merchant' as const
@@ -2616,6 +2626,9 @@ export function CoopGameScene({
   const [throneVoidPortalOpen, setThroneVoidPortalOpen] = useState(false);
   const throneVoidPortalOpenRef = useRef(false);
   throneVoidPortalOpenRef.current = throneVoidPortalOpen;
+  const [showcaseTick, setShowcaseTick] = useState(0);
+  const showcaseTickRef = useRef(0);
+  showcaseTickRef.current = showcaseTick;
 
   const [engineReady, setEngineReady] = useState(false); // Track when engine is ready
   // Shader warmup: mount hidden death/spawn VFX while the scene loads so they compile
@@ -2656,6 +2669,34 @@ export function CoopGameScene({
         mod.preloadVengefulSpiritModels();
       });
     }
+  }, [inThroneRoom]);
+
+  useEffect(() => {
+    if (!isFaeRealm) return;
+    void import('@/components/environment/FaeRealmDecor').then((mod) => {
+      mod.preloadFaeRealmDecor();
+    });
+    void import('@/components/environment/ThronePerimeterPylonDecor').then((mod) => {
+      mod.preloadThronePerimeterPylonDecor();
+    });
+  }, [isFaeRealm]);
+
+  useEffect(() => {
+    if (!inThroneRoom) {
+      setShowcaseTick(0);
+      showcaseTickRef.current = 0;
+      return;
+    }
+    setShowcaseTick(0);
+    showcaseTickRef.current = 0;
+    const id = window.setInterval(() => {
+      setShowcaseTick((t) => {
+        const next = t + 1;
+        showcaseTickRef.current = next;
+        return next;
+      });
+    }, THRONE_ASPECT_SHOWCASE_INTERVAL_MS);
+    return () => window.clearInterval(id);
   }, [inThroneRoom]);
 
   useEffect(() => {
@@ -4743,11 +4784,12 @@ export function CoopGameScene({
     }
 
     if (movement) {
-      movement.setWarpdrivePurchases(warpdrivePurchases);
+      movement.setWarpdrivePurchases(warpdrivePurchases, selectedWeaponAspect);
     }
   }, [
     merchantPurchaseState.oxygenPurchases,
     merchantPurchaseState.warpdrivePurchases,
+    selectedWeaponAspect,
     exodiaSetBonuses.maxEnergy,
     ownedItemTypes,
     engineReady,
@@ -6024,7 +6066,7 @@ export function CoopGameScene({
         }
         
         // Handle regular projectile attacks - create projectiles that can hit the local player
-        const projectileTypes = ['regular_arrow', 'charged_arrow', 'entropic_bolt', 'crossentropy_bolt', 'perfect_shot', 'barrage_projectile', 'fan_of_knives_projectile', 'burst_arrow'];
+        const projectileTypes = ['regular_arrow', 'charged_arrow', 'entropic_bolt', 'crossentropy_bolt', 'perfect_shot', 'barrage_projectile', 'fan_of_knives_projectile', 'burst_arrow', 'scorpion_shard', 'poison_dart'];
         if (projectileTypes.includes(data.attackType)) {
           // Skip creating projectiles for the local player's own attacks to prevent duplicates
           const localSocketId = (window as any).localSocketId;
@@ -6322,6 +6364,28 @@ export function CoopGameScene({
                     burstRenderer.mesh.userData.tempestBurstTheme = tempestBurstTheme;
                   }
                 }
+                break;
+              }
+              case 'scorpion_shard':
+              case 'poison_dart': {
+                const shardCfg = data.animationData?.projectileConfig || {};
+                const defaultRange = data.attackType === 'poison_dart' ? POISON_DART_RANGE : 7;
+                projectileSystem.createProjectile(
+                  engineRef.current.getWorld(),
+                  position,
+                  direction,
+                  attackerEntityId,
+                  {
+                    speed: typeof shardCfg.speed === 'number' ? shardCfg.speed : 28,
+                    damage: typeof shardCfg.damage === 'number' ? shardCfg.damage : 0,
+                    lifetime: typeof shardCfg.lifetime === 'number' ? shardCfg.lifetime : 1.5,
+                    maxDistance: typeof shardCfg.maxDistance === 'number' ? shardCfg.maxDistance : defaultRange,
+                    piercing: true,
+                    opacity: typeof shardCfg.opacity === 'number' ? shardCfg.opacity : 1,
+                    projectileType: data.attackType,
+                    sourcePlayerId: data.playerId,
+                  },
+                );
                 break;
               }
             }
@@ -11224,6 +11288,14 @@ export function CoopGameScene({
                 const theme = (data as any)?.entangleTheme === 'spider' ? 'spider' : 'default';
                 addGlobalEntangledEnemy(entity.id.toString(), transform.position.clone(), duration, theme);
               }
+            } else if (effectType === 'huntersMark') {
+              const transform = entity.getComponent(Transform);
+              if (!transform) break;
+              if (!duration || duration <= 0) {
+                clearGlobalHuntersMark(entity.id.toString());
+              } else {
+                addGlobalHuntersMark(entity.id.toString(), transform.position.clone(), duration);
+              }
             }
           }
           break;
@@ -12146,6 +12218,23 @@ export function CoopGameScene({
 
     socket.on('destiny-wing-pillar', handleDestinyWingPillar);
 
+    const handleDeathKnightFrostPillar = (data: {
+      deathKnightId: string;
+      position: { x: number; y: number; z: number };
+      timestamp?: number;
+    }) => {
+      if (!coopServerEnemyLiving(data.deathKnightId)) return;
+      const strikePos = new Vector3(data.position.x, data.position.y, data.position.z);
+      (window as any).audioSystem?.playFrostNovaSound?.(strikePos);
+      bossTelegraphLayerRef.current?.addWarlockFlameStrike({
+        id: `death-knight-frost-pillar-${data.deathKnightId}-${data.timestamp ?? Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        position: strikePos.clone(),
+        theme: 'frost',
+      });
+    };
+
+    socket.on('death-knight-frost-pillar', handleDeathKnightFrostPillar);
+
     const handleArchmageFlamePillar = (data: {
       enemyId?: string;
       position: { x: number; y: number; z: number };
@@ -12840,6 +12929,7 @@ export function CoopGameScene({
       socket.off('warlock-flame-strike', handleWarlockFlameStrike);
       socket.off('boss2-flame-pillar', handleBoss2FlamePillar);
       socket.off('destiny-wing-pillar', handleDestinyWingPillar);
+      socket.off('death-knight-frost-pillar', handleDeathKnightFrostPillar);
       socket.off('archmage-flame-pillar', handleArchmageFlamePillar);
       socket.off('ghoul-attack', handleGhoulAttack);
       socket.off('titan-attack', handleTitanAttack);
@@ -13968,12 +14058,22 @@ export function CoopGameScene({
               const pick = candidates[0];
               if (pick?.kind === 'weapon') {
                 const w = pick.weapon;
-                const nextAspect = defaultWeaponAspect(w);
+                const nextAspect = getShowcaseWeaponAspect(w, showcaseTickRef.current);
                 setSelectedWeapons({ primary: w, secondary: w });
                 rememberWeaponAspect(w, nextAspect);
-                setAbilityLoadout(getDefaultLoadoutForWeapon(w, nextAspect));
-                updatePlayerWeapon(w, defaultSubclassForThroneWeapon(w));
+                let nextLoadout = getDefaultLoadoutForWeapon(w, nextAspect);
+                if (w === WeaponType.BOW) {
+                  nextLoadout = syncBowLoadoutRForAspect(nextLoadout, nextAspect);
+                } else if (w === WeaponType.RUNEBLADE) {
+                  nextLoadout = syncRunebladeLoadoutRForAspect(nextLoadout, nextAspect);
+                } else if (w === WeaponType.SABRES) {
+                  nextLoadout = syncSabresLoadoutRForAspect(nextLoadout, nextAspect);
+                }
+                setAbilityLoadout(nextLoadout);
+                // Single emit with aspect so ControlSystem rebroadcast cannot wipe to default.
+                updatePlayerWeapon(w, defaultSubclassForThroneWeapon(w), nextAspect);
                 onThroneWeaponEquippedRef.current?.(w);
+                onWeaponAspectCycledRef.current?.(nextAspect);
                 if ((window as any).audioSystem?.playUISelectionSound) {
                   (window as any).audioSystem.playUISelectionSound();
                 }
@@ -13990,6 +14090,9 @@ export function CoopGameScene({
                 } else if (pick.weapon === WeaponType.RUNEBLADE) {
                   const currentLoadout = abilityLoadoutRef.current ?? getDefaultLoadoutForWeapon(WeaponType.RUNEBLADE, nextAspect);
                   setAbilityLoadout(syncRunebladeLoadoutRForAspect(currentLoadout, nextAspect));
+                } else if (pick.weapon === WeaponType.SABRES) {
+                  const currentLoadout = abilityLoadoutRef.current ?? getDefaultLoadoutForWeapon(WeaponType.SABRES, nextAspect);
+                  setAbilityLoadout(syncSabresLoadoutRForAspect(currentLoadout, nextAspect));
                 }
                 onWeaponAspectCycledRef.current?.(nextAspect);
                 if ((window as any).audioSystem?.playUISelectionSound) {
@@ -14332,6 +14435,14 @@ export function CoopGameScene({
             }
           } else if (
             xEdge
+            && coopCurrentRoomKindRef.current === 'eden_finale'
+          ) {
+            const daisyR2 = EDEN_FINALE_DAISY_INTERACT_RADIUS * EDEN_FINALE_DAISY_INTERACT_RADIUS;
+            if (px * px + pz * pz < daisyR2) {
+              window.location.reload();
+            }
+          } else if (
+            xEdge
             && coopCurrentRoomKindRef.current === 'delirium_gate'
             && coopMainArenaPortalPhaseRef.current === 'eden_exit'
             && !portalUseSentRef.current
@@ -14558,6 +14669,16 @@ export function CoopGameScene({
             } else if (
               phase === 'pick_eternity_entry' || phase === 'pick_eternity_late_entry'
             ) {
+              const voidD2 = px * px + pz * pz;
+              const voidR2 = VOID_PORTAL_INTERACT_RADIUS * VOID_PORTAL_INTERACT_RADIUS;
+              if (voidD2 < voidR2) {
+                portalUseSentRef.current = true;
+                enterCombatArena('void');
+                if ((window as any).audioSystem?.playUISelectionSound) {
+                  (window as any).audioSystem.playUISelectionSound();
+                }
+              }
+            } else if (phase === 'pick_trinity_finale') {
               const voidD2 = px * px + pz * pz;
               const voidR2 = VOID_PORTAL_INTERACT_RADIUS * VOID_PORTAL_INTERACT_RADIUS;
               if (voidD2 < voidR2) {
@@ -14814,7 +14935,11 @@ export function CoopGameScene({
         const prevWeapon = prevWeaponRef.current;
         if (newWeaponState.currentWeapon !== prevWeapon.weapon ||
             newWeaponState.currentSubclass !== prevWeapon.subclass) {
-          updatePlayerWeapon(newWeaponState.currentWeapon, newWeaponState.currentSubclass);
+          updatePlayerWeapon(
+            newWeaponState.currentWeapon,
+            newWeaponState.currentSubclass,
+            selectedWeaponAspectRef.current,
+          );
           prevWeaponRef.current = {
             weapon: newWeaponState.currentWeapon,
             subclass: newWeaponState.currentSubclass
@@ -15241,6 +15366,11 @@ export function CoopGameScene({
                     nextHint = COOP_INTERACT_HINT_TEXT;
                   }
                 }
+              } else if (coopCurrentRoomKindRef.current === 'eden_finale') {
+                const daisyR2 = EDEN_FINALE_DAISY_INTERACT_RADIUS * EDEN_FINALE_DAISY_INTERACT_RADIUS;
+                if (px * px + pz * pz < daisyR2) {
+                  nextHint = COOP_INTERACT_HINT_TEXT;
+                }
               } else if (
                 coopCurrentRoomKindRef.current === 'delirium_gate'
                 && coopMainArenaPortalPhaseRef.current === 'eden_exit'
@@ -15390,6 +15520,9 @@ export function CoopGameScene({
                   const voidR2 = VOID_PORTAL_INTERACT_RADIUS * VOID_PORTAL_INTERACT_RADIUS;
                   portalClose = px * px + pz * pz < voidR2;
                 } else if (phase === 'pick_eternity_entry' || phase === 'pick_eternity_late_entry') {
+                  const voidR2 = VOID_PORTAL_INTERACT_RADIUS * VOID_PORTAL_INTERACT_RADIUS;
+                  portalClose = px * px + pz * pz < voidR2;
+                } else if (phase === 'pick_trinity_finale') {
                   const voidR2 = VOID_PORTAL_INTERACT_RADIUS * VOID_PORTAL_INTERACT_RADIUS;
                   portalClose = px * px + pz * pz < voidR2;
                 } else if (
@@ -15581,6 +15714,10 @@ export function CoopGameScene({
     // Set up Barrage callback
     controlSystem.setBarrageCallback((position, direction) => {
       broadcastPlayerAbility('barrage', position, direction);
+    });
+
+    controlSystem.setOnLocalStaggerLightningCallback((position) => {
+      spawnDeathdealerStaggerLightning(position);
     });
 
     // Set up Frost Nova callback
@@ -16259,10 +16396,12 @@ export function CoopGameScene({
                 equippedWeapon={selectedWeapons?.primary ?? WeaponType.NONE}
                 selectedArchetype={selectedArchetype ?? ARCHETYPE_NONE}
                 weaponAspectByWeapon={weaponAspectByWeapon}
+                showcaseTick={showcaseTick}
                 playerPositionRef={realTimePlayerPositionRef}
                 voidPortalOpen={throneVoidPortalOpen}
                 voidPortalOpenProgress={throneVoidPortalOpenProgress}
                 skyPresetIndex={coopSkyPresetIndex}
+                grassPresetIndex={coopGrassPresetIndex}
               />
               {engineRef.current?.getWorld() && (
                 <PillarCollision world={engineRef.current.getWorld()} positions={THRONE_PILLAR_POSITIONS} />
@@ -16286,7 +16425,7 @@ export function CoopGameScene({
                   playerPositionRef={realTimePlayerPositionRef}
                 />
               )}
-              {combatArenaActive && coopMainArenaPortalPhase && (
+              {combatArenaActive && coopMainArenaPortalPhase && coopMainArenaPortalPhase !== 'pick_trinity_finale' && (
                 <CombatArenaPedestal
                   campType={normalizeCoopPortalKind(coopClearedRoomKind ?? coopCurrentRoomKind ?? 'boss')}
                   showAura={pedestalBoonReady}
@@ -16345,9 +16484,13 @@ export function CoopGameScene({
               realTimePlayerPositionRef={realTimePlayerPositionRef}
               merchantInventory={merchantInventory}
               merchantPurchaseState={merchantPurchaseState}
+              weaponAspect={selectedWeaponAspect}
               dreamLayerInventory={dreamLayerInventory}
               dreamLayerPurchaseState={dreamLayerPurchaseState}
               skyPresetIndex={coopSkyPresetIndex}
+              onEdenFinaleDaisyInteract={() => {
+                window.location.reload();
+              }}
             />
           )}
 
@@ -17103,6 +17246,7 @@ export function CoopGameScene({
             getPlayerPositions={getEntangledPlayerPositions}
           />
           <StunManager world={engineRef.current.getWorld()} />
+          <HuntersMarkManager world={engineRef.current.getWorld()} />
           <EntangleManager
             world={engineRef.current.getWorld()}
             getPlayerPositions={getEntangledPlayerPositions}

@@ -2,6 +2,11 @@ import type { MerchantPurchaseState, MerchantStockItem } from '@/contexts/Multip
 import type { MerchantShopSlotKind } from '@/components/environment/ThroneRoom';
 import { StatSystem } from '@/utils/StatSystem';
 import { isItemRarity } from '@/utils/itemRarity';
+import {
+  isSabresWarlordAspect,
+  WARLORD_WARPDRIVE_DASH_DISTANCES,
+  type WeaponAspect,
+} from '@/utils/weaponAspects';
 
 export const MERCHANT_WEAPON_TALENT_MAX = 3;
 export const MERCHANT_UTILITY_MAX = 3;
@@ -19,8 +24,14 @@ export function getOxygenMaxEnergy(purchases: number): number {
   return BASE_MAX_ENERGY + capped * OXYGEN_ENERGY_PER_PURCHASE;
 }
 
-export function getWarpdriveDashDistance(purchases: number): number {
+export function getWarpdriveDashDistance(
+  purchases: number,
+  aspect?: WeaponAspect | null,
+): number {
   const capped = Math.max(0, Math.min(MERCHANT_UTILITY_MAX, purchases));
+  if (isSabresWarlordAspect(aspect)) {
+    return WARLORD_WARPDRIVE_DASH_DISTANCES[capped];
+  }
   return WARPDRIVE_DASH_DISTANCES[capped];
 }
 
@@ -150,6 +161,7 @@ export function getMerchantShopTooltipData(
   slot: MerchantShopSlotKind,
   inventory: MerchantStockItem[],
   purchaseState: MerchantPurchaseState,
+  aspect?: WeaponAspect | null,
 ): MerchantShopTooltipData | null {
   switch (slot) {
     case 'dash_charge': {
@@ -200,7 +212,7 @@ export function getMerchantShopTooltipData(
           ? purchaseState.oxygenPurchases
           : purchaseState.warpdrivePurchases;
       const nextEnergy = getOxygenMaxEnergy(purchases + 1);
-      const nextDash = getWarpdriveDashDistance(purchases + 1);
+      const nextDash = getWarpdriveDashDistance(purchases + 1, aspect);
       const description =
         entry.kind === 'oxygen'
           ? entry.description ?? `Increases max Energy to ${nextEnergy} (+20 per purchase, max 160).`

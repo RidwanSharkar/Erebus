@@ -357,15 +357,15 @@ function handlePlayerEvents(socket, gameRooms) {
 
   // Handle weapon selection changes
   socket.on('weapon-changed', (data) => {
-    const { roomId, weapon, subclass } = data;
+    const { roomId, weapon, subclass, aspect } = data || {};
     
     if (!gameRooms.has(roomId)) return;
     
     const room = gameRooms.get(roomId);
-    room.updatePlayerWeapon(socket.id, weapon, subclass);
+    room.updatePlayerWeapon(socket.id, weapon, subclass, aspect);
     const player = room.getPlayer?.(socket.id) ?? room.players?.get(socket.id);
     
-    // Broadcast weapon change to other players (aspect resets with weapon)
+    // Broadcast weapon change to other players
     socket.to(roomId).emit('player-weapon-changed', {
       playerId: socket.id,
       weapon,

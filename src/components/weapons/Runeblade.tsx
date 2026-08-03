@@ -1125,12 +1125,13 @@ export default function Runeblade({
     const vicegripBonus = getVicegripFlatBonus?.() ?? 0;
     if (!playerPosition) return;
 
-    // Scorpion Lance: fire on primary attempt even if no melee targets (whiff still consumes the arm window).
+    // Scorpion Lance / Warlord Poison Dart: fire on primary attempt even if no melee targets (whiff still consumes the arm window).
     const cs = (window as any).controlSystemRef?.current;
-    if (cs?.tryFireScorpionLanceShardIfArmed) {
+    if (cs) {
       const yaw = playerRotation?.y ?? 0;
       const forward = new Vector3(Math.sin(yaw), 0, Math.cos(yaw));
-      cs.tryFireScorpionLanceShardIfArmed(playerPosition, forward);
+      cs.tryFireScorpionLanceShardIfArmed?.(playerPosition, forward);
+      cs.tryFirePoisonDartIfArmed?.(playerPosition, forward);
     }
 
     if (!enemyData.length && !mushroomTargets?.length) return;

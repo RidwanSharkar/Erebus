@@ -41,7 +41,7 @@ function resolveCoopCombatBgm(
   if (roomKind === 'delirium_gate') {
     return { cacheId: 'coop_bgm_delirium_gate', src: '/audio/sfx/ui/tracks/deliriumGate.mp3' };
   }
-  if (roomKind === 'eden' || roomKind === 'false_eden' || roomKind === 'dream_layer' || roomKind === 'fae_realm') {
+  if (roomKind === 'eden' || roomKind === 'false_eden' || roomKind === 'dream_layer' || roomKind === 'fae_realm' || roomKind === 'eden_finale') {
     return { cacheId: 'coop_bgm_eden', src: '/audio/sfx/ui/tracks/eden.mp3' };
   }
   if (roomKind === 'erebus_gate') {

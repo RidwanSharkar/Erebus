@@ -31,7 +31,10 @@ function handleEnemyEvents(socket, gameRooms) {
       glacialTalons,
       icebeamArcticChill,
       entanglementBarrage,
+      huntersMark,
+      perfectShot,
       rejuvenatingShotEntangle,
+      necromancerTotemEntangle,
       rebukeRoom,
       cloudkill,
       tempestBurstArcticChill,
@@ -101,12 +104,16 @@ function handleEnemyEvents(socket, gameRooms) {
       hitMeta = { damageType: 'barrage', wyvernBiteVenom: !!wyvernBiteVenom };
       if (glacialBiteChill) hitMeta.glacialBiteChill = true;
       if (entanglementBarrage) hitMeta.entanglementBarrage = true;
+      if (huntersMark) hitMeta.huntersMark = true;
       if (typeof staggerToAdd === 'number' && staggerToAdd > 0) {
         hitMeta.staggerToAdd = staggerToAdd;
       }
     } else if (damageType === 'rejuvenating_shot') {
       hitMeta = { damageType: 'rejuvenating_shot' };
       if (rejuvenatingShotEntangle) hitMeta.rejuvenatingShotEntangle = true;
+    } else if (damageType === 'summon_totem' || necromancerTotemEntangle) {
+      hitMeta = { damageType: damageType || 'summon_totem' };
+      if (necromancerTotemEntangle) hitMeta.necromancerTotemEntangle = true;
     } else if (damageType === 'venom') {
       hitMeta = {
         damageType: 'venom',
@@ -147,6 +154,8 @@ function handleEnemyEvents(socket, gameRooms) {
       hitMeta = { damageType: 'fire_affinity_storm' };
     } else if (damageType === 'fire_affinity_skyfall') {
       hitMeta = { damageType: 'fire_affinity_skyfall' };
+    } else if (damageType === 'poison_dart') {
+      hitMeta = { damageType: 'poison_dart' };
     } else if (damageType === 'whirlwind') {
       hitMeta = { damageType: 'whirlwind' };
       if (tempestSweepIgnite) hitMeta.tempestSweepIgnite = true;
@@ -164,6 +173,7 @@ function handleEnemyEvents(socket, gameRooms) {
       if (cloudkill) hitMeta.cloudkill = true;
       if (tempestBurstArcticChill) hitMeta.tempestBurstArcticChill = true;
       if (tempestBurstWyvernZombie) hitMeta.tempestBurstWyvernZombie = true;
+      if (perfectShot) hitMeta.perfectShot = true;
     } else if (damageType === 'cloudkill') {
       hitMeta = { damageType: 'cloudkill', cloudkillDamage: true };
     } else if (damageType === 'stagger_break') {

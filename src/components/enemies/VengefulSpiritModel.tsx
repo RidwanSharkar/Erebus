@@ -49,7 +49,7 @@ function bindClipToRoot(root: Group, clip: AnimationClip): AnimationClip {
   return filtered.tracks.length > 0 ? filtered : clip;
 }
 
-const TARGET_HEIGHT = 1.6;
+const TARGET_HEIGHT = 1.35;
 const SPIRIT_BIND_HEIGHT = 2.0;
 const SCALE = TARGET_HEIGHT / SPIRIT_BIND_HEIGHT;
 const MODEL_Y_OFFSET = 0.02 * SCALE;

@@ -17,7 +17,9 @@ import ChargedArrow from '@/components/projectiles/ChargedArrow';
 import RegularArrow from '@/components/projectiles/RegularArrow';
 import Barrage from '@/components/projectiles/Barrage';
 import FanOfKnivesDagger from '@/components/projectiles/FanOfKnivesDagger';
+import PoisonDart from '@/components/projectiles/PoisonDart';
 import { WindShearProjectile } from '@/components/projectiles/WindShearProjectile';
+import { POISON_DART_RANGE } from '@/utils/weaponAspects';
 import TowerProjectile from '@/components/projectiles/TowerProjectile';
 import ExplosionEffect from '@/components/projectiles/ExplosionEffect';
 import CrossentropyExplosion from '@/components/projectiles/CrossentropyExplosion';
@@ -168,6 +170,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
     sword: SwordProjectileData[];
     barrage: ProjectileData[];
     fanOfKnives: ProjectileData[];
+    poisonDart: ProjectileData[];
     windShear: ProjectileData[];
     tower: ProjectileData[];
   }>({
@@ -179,6 +182,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
     sword: [],
     barrage: [],
     fanOfKnives: [],
+    poisonDart: [],
     windShear: [],
     tower: []
   });
@@ -199,6 +203,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
   const swordIdCounter = useRef(0);
   const barrageIdCounter = useRef(0);
   const fanOfKnivesIdCounter = useRef(0);
+  const poisonDartIdCounter = useRef(0);
   const windShearIdCounter = useRef(0);
   const towerIdCounter = useRef(0);
   const explosionIdCounter = useRef(0);
@@ -274,6 +279,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
     const newSword: SwordProjectileData[] = [];
     const newBarrage: ProjectileData[] = [];
     const newFanOfKnives: ProjectileData[] = [];
+    const newPoisonDart: ProjectileData[] = [];
     const newWindShear: ProjectileData[] = [];
     const newTower: ProjectileData[] = [];
 
@@ -443,6 +449,27 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
             opacity: userData.opacity || 1.0,
             projectileType: 'fan_of_knives',
             fanOfKnivesFlourishTint: fanTint,
+            distanceTraveled: projectile.distanceTraveled,
+            maxDistance: projectile.maxDistance,
+            cachedStartPosition: projectile.startPosition?.clone(),
+          });
+        }
+      } else if (userData.projectileType === 'poison_dart') {
+        const existing = projectileData.poisonDart.find((p) => p.entityId === entity.id);
+        if (existing) {
+          existing.position.copy(transform.position);
+          existing.direction.copy(direction);
+          existing.distanceTraveled = projectile.distanceTraveled;
+          existing.maxDistance = projectile.maxDistance;
+          newPoisonDart.push(existing);
+        } else {
+          newPoisonDart.push({
+            id: poisonDartIdCounter.current++,
+            position: transform.position.clone(),
+            direction: direction.clone(),
+            entityId: entity.id,
+            opacity: userData.opacity || 1.0,
+            projectileType: 'poison_dart',
             distanceTraveled: projectile.distanceTraveled,
             maxDistance: projectile.maxDistance,
             cachedStartPosition: projectile.startPosition?.clone(),
@@ -704,6 +731,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
       newSword.length !== projectileData.sword.length ||
       newBarrage.length !== projectileData.barrage.length ||
       newFanOfKnives.length !== projectileData.fanOfKnives.length ||
+      newPoisonDart.length !== projectileData.poisonDart.length ||
       newWindShear.length !== projectileData.windShear.length ||
       newTower.length !== projectileData.tower.length ||
       newCrossentropy.some(p => !projectileData.crossentropy.find(existing => existing.entityId === p.entityId)) ||
@@ -713,6 +741,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
       newSword.some(p => !projectileData.sword.find(existing => existing.entityId === p.entityId)) ||
       newBarrage.some(p => !projectileData.barrage.find(existing => existing.entityId === p.entityId)) ||
       newFanOfKnives.some(p => !projectileData.fanOfKnives.find(existing => existing.entityId === p.entityId)) ||
+      newPoisonDart.some(p => !projectileData.poisonDart.find(existing => existing.entityId === p.entityId)) ||
       newWindShear.some(p => !projectileData.windShear.find(existing => existing.entityId === p.entityId)) ||
       newTower.some(p => !projectileData.tower.find(existing => existing.entityId === p.entityId))
     );
@@ -727,6 +756,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
         sword: newSword,
         barrage: newBarrage,
         fanOfKnives: newFanOfKnives,
+        poisonDart: newPoisonDart,
         windShear: newWindShear,
         tower: newTower
       });
@@ -931,6 +961,24 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
             maxDistance,
             distanceTraveled: knife.distanceTraveled ?? 0,
             colors: getFanOfKnivesDaggerColorsFromTint(tint),
+          };
+        })}
+      />
+
+      <PoisonDart
+        projectiles={projectileData.poisonDart.map((dart) => {
+          const maxDistance =
+            dart.maxDistance != null && dart.maxDistance !== Infinity
+              ? dart.maxDistance
+              : POISON_DART_RANGE;
+          const startPos = dart.cachedStartPosition ?? dart.position;
+          return {
+            id: dart.id,
+            position: dart.position,
+            direction: dart.direction,
+            startPosition: startPos,
+            maxDistance,
+            distanceTraveled: dart.distanceTraveled ?? 0,
           };
         })}
       />

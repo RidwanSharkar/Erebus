@@ -15,7 +15,7 @@ import {
 export const VOID_PORTAL_RADIUS = 2.5;
 export const VOID_PORTAL_INTERACT_RADIUS = 3.3;
 
-export type VoidPortalScheme = 'void' | 'boss' | 'sunken' | 'eternity';
+export type VoidPortalScheme = 'void' | 'boss' | 'sunken' | 'eternity' | 'finale';
 
 const VOID_PORTAL_SCHEMES: Record<
   VoidPortalScheme,
@@ -55,6 +55,14 @@ const VOID_PORTAL_SCHEMES: Record<
     light: '#ea580c',
     particleDim: [0.2, 0.05, 0.0],
     particleBright: [1.0, 0.55, 0.12],
+  },
+  finale: {
+    energyDim: [0.18, 0.12, 0.0],
+    energyBright: [1.0, 0.85, 0.15],
+    rim: '#eab308',
+    light: '#eab308',
+    particleDim: [0.2, 0.14, 0.0],
+    particleBright: [1.0, 0.9, 0.25],
   },
 };
 

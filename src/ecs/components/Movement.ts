@@ -2,6 +2,7 @@
 import { Vector3 } from '@/utils/three-exports';
 import { Component } from '../Entity';
 import { getWarpdriveDashDistance } from '@/utils/merchantShopUtils';
+import type { WeaponAspect } from '@/utils/weaponAspects';
 
 /** Per-charge dash recharge delay (matches existing setTimeout behavior). */
 const DASH_CHARGE_RECHARGE_MS = 8000;
@@ -87,6 +88,8 @@ export class Movement extends Component {
   public dashDistance: number;
   public dashStartPosition: Vector3;
   public warpdrivePurchases: number;
+  /** Throne weapon aspect — affects Warlord dash distance. */
+  public weaponAspect: WeaponAspect | null;
   
   // Multiple dash charges system
   public dashCharges: Array<DashChargeSlot>;
@@ -187,6 +190,7 @@ export class Movement extends Component {
     this.dashDistance = 4.125; // Increased from 3.125 for more noticeable dash
     this.dashStartPosition = new Vector3(0, 0, 0);
     this.warpdrivePurchases = 0;
+    this.weaponAspect = null;
     
     // Initialize multiple dash charges (3 charges, each with 8s cooldown)
     this.maxDashCharges = 3;
@@ -470,9 +474,17 @@ export class Movement extends Component {
     this.maxDashCharges = target;
   }
 
-  public setWarpdrivePurchases(count: number): void {
+  public setWarpdrivePurchases(count: number, aspect?: WeaponAspect | null): void {
     this.warpdrivePurchases = Math.max(0, Math.min(3, Math.floor(count)));
-    this.dashDistance = getWarpdriveDashDistance(this.warpdrivePurchases);
+    if (aspect !== undefined) {
+      this.weaponAspect = aspect ?? null;
+    }
+    this.dashDistance = getWarpdriveDashDistance(this.warpdrivePurchases, this.weaponAspect);
+  }
+
+  public setWeaponAspect(aspect: WeaponAspect | null | undefined): void {
+    this.weaponAspect = aspect ?? null;
+    this.dashDistance = getWarpdriveDashDistance(this.warpdrivePurchases, this.weaponAspect);
   }
 
   /**
@@ -791,7 +803,7 @@ export class Movement extends Component {
     this.dashDirection.set(0, 0, 0);
     this.dashStartTime = 0;
     this.dashDuration = 0.35;
-    this.dashDistance = getWarpdriveDashDistance(this.warpdrivePurchases);
+    this.dashDistance = getWarpdriveDashDistance(this.warpdrivePurchases, this.weaponAspect);
     this.dashStartPosition.set(0, 0, 0);
     
     // Reset dash charges
@@ -863,6 +875,7 @@ export class Movement extends Component {
     clone.dashDistance = this.dashDistance;
     clone.dashStartPosition.copy(this.dashStartPosition);
     clone.warpdrivePurchases = this.warpdrivePurchases;
+    clone.weaponAspect = this.weaponAspect;
     
     // Clone dash charges
     clone.maxDashCharges = this.maxDashCharges;

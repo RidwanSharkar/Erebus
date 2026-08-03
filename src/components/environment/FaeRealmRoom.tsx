@@ -10,6 +10,7 @@ import StylizedGrass from './StylizedGrass';
 import InstancedMushrooms from './InstancedMushrooms';
 import InstancedEmbers, { buildFaeRealmEmberCampOrigins } from './InstancedEmbers';
 import ThronePerimeterPylonDecor from './ThronePerimeterPylonDecor';
+import FaeRealmDecor from './FaeRealmDecor';
 
 const FAE_REALM_GRASS_COUNT = Math.round(
   80_000 * (FAE_REALM_HEX_RADIUS / MAIN_ARENA_HEX_RADIUS) ** 2,
@@ -59,6 +60,7 @@ export default function FaeRealmRoom({
         layout={FAE_REALM_PERIMETER_PYLON_LAYOUT}
         groundY={0}
       />
+      <FaeRealmDecor />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
         <ringGeometry args={[RING_INNER, RING_OUTER, 6]} />
