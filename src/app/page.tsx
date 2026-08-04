@@ -632,10 +632,28 @@ function HomeContent() {
     mana?: number;
     maxMana?: number;
   }) => {
-    setGameState({
-      ...newGameState,
-      mana: newGameState.mana ?? 150,
-      maxMana: newGameState.maxMana ?? 150,
+    setGameState((prev) => {
+      const nextMana = newGameState.mana ?? 150;
+      const nextMaxMana = newGameState.maxMana ?? 150;
+      if (
+        prev.playerHealth === newGameState.playerHealth &&
+        prev.maxHealth === newGameState.maxHealth &&
+        prev.playerShield === newGameState.playerShield &&
+        prev.maxShield === newGameState.maxShield &&
+        prev.playerEnergy === newGameState.playerEnergy &&
+        prev.maxEnergy === newGameState.maxEnergy &&
+        prev.currentWeapon === newGameState.currentWeapon &&
+        prev.currentSubclass === newGameState.currentSubclass &&
+        prev.mana === nextMana &&
+        prev.maxMana === nextMaxMana
+      ) {
+        return prev;
+      }
+      return {
+        ...newGameState,
+        mana: nextMana,
+        maxMana: nextMaxMana,
+      };
     });
   }, []);
 

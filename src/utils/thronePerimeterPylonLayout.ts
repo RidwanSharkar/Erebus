@@ -13,16 +13,16 @@ export const THRONE_PERIMETER_PYLON_COUNT = 6;
 /**
  * Just past COOP_THRONE_ROOM_RADIUS (15) so pylons sit outside the playable rim.
  */
-export const THRONE_PERIMETER_PYLON_RADIUS = 15 + 1.5;
+export const THRONE_PERIMETER_PYLON_RADIUS = 15 + 2;
 
 /** Grass disc Y — pylon feet sit on this plane (matches statue / shard décor). */
-export const THRONE_PERIMETER_PYLON_GROUND_Y = 0.13;
+export const THRONE_PERIMETER_PYLON_GROUND_Y = -0.67;
 
 /**
  * Soft albedo fill so dark charcoal pylons stay readable without point lights.
  * Higher than UNIT_SELF_ILLUMINATION (0.18); lower than knight armor fill.
  */
-export const THRONE_PERIMETER_PYLON_SELF_ILLUMINATION = 0.45;
+export const THRONE_PERIMETER_PYLON_SELF_ILLUMINATION = 0.4125;
 
 /**
  * Raw GLB: minY ≈ 0.018, height ≈ 5.53m.
@@ -41,9 +41,17 @@ export const FAE_REALM_PERIMETER_PYLON_RADIUS = FAE_REALM_HEX_RADIUS + 1.5;
  */
 const FAE_REALM_PERIMETER_PYLON_ANGLE_OFFSET = Math.PI / 6;
 
+/**
+ * Pitch after yaw so the tip leans toward the room center.
+ * Negative: after cutout faces −Z toward center, −X tips the top inward.
+ */
+export const THRONE_PERIMETER_PYLON_INWARD_TILT = -Math.PI / 9; // ~20°
+
 export type ThronePerimeterPylonDef = {
   position: [number, number, number];
   rotationY: number;
+  /** Local X pitch after yaw (negative = tip toward center). */
+  rotationX?: number;
   /** Multiplies defaultScale (usually 1). */
   scale?: number;
 };
@@ -62,6 +70,7 @@ export function buildPerimeterPylonLayout(
       position: [x, 0, z],
       // Mesh front is −Z; +π so the cutout faces the room center.
       rotationY: rotationYTowardArenaCenter(x, z) + Math.PI,
+      rotationX: THRONE_PERIMETER_PYLON_INWARD_TILT,
     });
   }
   return defs;

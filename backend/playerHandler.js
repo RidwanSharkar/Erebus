@@ -1,3 +1,14 @@
+/** playerId -> { lastBroadcastAt, lastPosition, lastRotation } — module-level so disconnect can clear. */
+const playerMoveRebroadcastState = new Map();
+/** playerId -> last validated deathgrasp hit timestamp */
+const playerDeathGraspHitAt = new Map();
+
+function clearPlayerHandlerState(playerId) {
+  if (!playerId) return;
+  playerMoveRebroadcastState.delete(playerId);
+  playerDeathGraspHitAt.delete(playerId);
+}
+
 function handlePlayerEvents(socket, gameRooms) {
   const ZERO_MOVEMENT_DIRECTION = {
     x: 0,
@@ -18,8 +29,6 @@ function handlePlayerEvents(socket, gameRooms) {
 
   const PLAYER_MOVE_REBROADCAST_MIN_MS = 50; // 20 Hz
   const PLAYER_MOVE_POSITION_EPSILON = 0.02;
-  /** playerId -> { lastBroadcastAt, lastPosition, lastRotation } */
-  const playerMoveRebroadcastState = new Map();
 
   /** Death Grasp combat constants (keep in sync with src/utils/weaponAbilities.ts). */
   const DEATH_GRASP_DAMAGE = 80;
@@ -40,8 +49,6 @@ function handlePlayerEvents(socket, gameRooms) {
     'medusa',
     'training-dummy',
   ]);
-  /** playerId -> last validated deathgrasp hit timestamp */
-  const playerDeathGraspHitAt = new Map();
 
   function isDeathGraspPullImmune(enemy) {
     if (!enemy || !enemy.type) return false;
@@ -1411,6 +1418,11 @@ function handlePlayerEvents(socket, gameRooms) {
       });
     }
   });
+
+  // Clear per-player handler Maps on disconnect (also covered by server cleanupPlayer).
+  socket.on('disconnect', () => {
+    clearPlayerHandlerState(socket.id);
+  });
 }
 
-module.exports = { handlePlayerEvents };
+module.exports = { handlePlayerEvents, clearPlayerHandlerState };

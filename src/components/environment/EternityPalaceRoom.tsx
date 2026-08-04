@@ -42,9 +42,10 @@ export default function EternityPalaceRoom({
         radius={ETERNITY_PALACE_HEX_RADIUS}
         count={ETERNITY_PALACE_GRASS_COUNT}
         bladeHeight={0.42}
-        windStrength={0.18}
+        windStrength={combatActive ? 0 : 0.18}
         grassPalette="orange"
         excludeInnerRadius={ETERNITY_PALACE_CENTER_SEAL_RADIUS}
+        densityScale={combatActive ? 0.5 : 1}
       />
       <ThroneCenterSeal
         texturePath="/eternity.png"

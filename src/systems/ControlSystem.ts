@@ -328,6 +328,7 @@ import {
   isBowRejuvenatingShotAspect,
   isSabresFireAffinityAspect,
   isSabresWarlordAspect,
+  resolveSabresRAbilityId,
   isSniperBowAspect,
   SNIPER_HUNTERS_MARK_DURATION_MS,
   isRunebladeDeathdealerAspect,
@@ -385,6 +386,12 @@ export interface RoomBoomDashPayload {
   destination: Vector3;
   direction: Vector3;
 }
+
+
+/** Module-level scratches for ability AoE paths — avoid per-target allocations. */
+const _abilityDirScratch = new Vector3();
+const _abilityToTargetScratch = new Vector3();
+const _wraithDirScratch = new Vector3();
 
 export class ControlSystem extends System {
   public readonly requiredComponents = [Transform, Movement];
@@ -1895,8 +1902,8 @@ export class ControlSystem extends System {
           this.performSunder(playerTransform);
         }
         break;
-      case 'SABRES_R': // Divebomb (Skyfall) — Warlord has Poison Dart instead
-        if (isSabresWarlordAspect(this.weaponAspect)) break;
+      case 'SABRES_R': // Divebomb (Skyfall) — Warlord / Frost Affinity have no Divebomb
+        if (resolveSabresRAbilityId(this.weaponAspect) == null) break;
         if (!this.isSkyfalling && !this.isSundering)
           this.performSkyfall(playerTransform);
         break;
@@ -5562,7 +5569,7 @@ export class ControlSystem extends System {
       if (distance > wraithStrikeRange) continue;
       
       // Check if target is in front of player (cone attack)
-      const directionToTarget = new Vector3()
+      const directionToTarget = _wraithDirScratch
         .subVectors(targetTransform.position, playerPosition)
         .normalize();
       
@@ -6153,7 +6160,7 @@ export class ControlSystem extends System {
 
     // Log hits for debugging
     if (enemiesHit > 0) {
-      console.log(`Whirlwind hit ${enemiesHit} enemies for ${baseDamage} base damage each`);
+      // console.log(`Whirlwind hit ${enemiesHit} enemies for ${baseDamage} base damage each`);
     }
   }
 
@@ -6423,28 +6430,27 @@ export class ControlSystem extends System {
     const attackAngle = Math.PI / 2;
     const crescentDamage = 150;
 
-    const attackDirection = new Vector3();
+    const attackDirection = _abilityDirScratch;
     this.camera.getWorldDirection(attackDirection);
     attackDirection.normalize();
 
     // Only consider entities within attack range instead of scanning the whole world
     const nearbyEntities = this.queryNearbyEntities(playerTransform.position, attackRange);
-    const potentialTargets = nearbyEntities.filter(entity =>
-      entity.hasComponent(Health) &&
-      entity.hasComponent(Transform) &&
-      entity !== this.playerEntity
-    );
 
     const combatSystem = this.world.getSystem(CombatSystem);
     const pid = this.playerEntity?.userData?.playerId;
 
-    for (const target of potentialTargets) {
+    for (const target of nearbyEntities) {
+      if (target === this.playerEntity) continue;
+      if (!target.hasComponent(Health) || !target.hasComponent(Transform)) continue;
       const targetTransform = target.getComponent(Transform);
       const targetHealth = target.getComponent(Health);
       if (!targetTransform || !targetHealth || targetHealth.isDead) continue;
 
-      const directionToTarget = targetTransform.position.clone().sub(playerTransform.position);
-      if (directionToTarget.length() > attackRange) continue;
+      const directionToTarget = _abilityToTargetScratch
+        .copy(targetTransform.position)
+        .sub(playerTransform.position);
+      if (directionToTarget.lengthSq() > attackRange * attackRange) continue;
 
       directionToTarget.normalize();
       const dotProduct = attackDirection.dot(directionToTarget);
@@ -6475,7 +6481,7 @@ export class ControlSystem extends System {
     const attackRange = MORTAL_STRIKE_RANGE;
     const attackAngle = MORTAL_STRIKE_ARC_ANGLE;
 
-    const attackDirection = new Vector3();
+    const attackDirection = _abilityDirScratch;
     this.camera.getWorldDirection(attackDirection);
     attackDirection.y = 0;
     if (attackDirection.lengthSq() < 1e-8) {
@@ -6486,22 +6492,21 @@ export class ControlSystem extends System {
 
     // Only consider entities within attack range instead of scanning the whole world
     const nearbyEntities = this.queryNearbyEntities(playerTransform.position, attackRange);
-    const potentialTargets = nearbyEntities.filter(entity =>
-      entity.hasComponent(Health) &&
-      entity.hasComponent(Transform) &&
-      entity !== this.playerEntity
-    );
 
     const combatSystem = this.world.getSystem(CombatSystem);
     const pid = this.playerEntity?.userData?.playerId;
 
-    for (const target of potentialTargets) {
+    for (const target of nearbyEntities) {
+      if (target === this.playerEntity) continue;
+      if (!target.hasComponent(Health) || !target.hasComponent(Transform)) continue;
       const targetTransform = target.getComponent(Transform);
       const targetHealth = target.getComponent(Health);
       if (!targetTransform || !targetHealth || targetHealth.isDead) continue;
 
-      const directionToTarget = targetTransform.position.clone().sub(playerTransform.position);
-      if (directionToTarget.length() > attackRange) continue;
+      const directionToTarget = _abilityToTargetScratch
+        .copy(targetTransform.position)
+        .sub(playerTransform.position);
+      if (directionToTarget.lengthSq() > attackRange * attackRange) continue;
 
       directionToTarget.normalize();
       const dotProduct = attackDirection.dot(directionToTarget);
@@ -6798,7 +6803,7 @@ export class ControlSystem extends System {
 
   // Skyfall ability implementation
   private performSkyfall(playerTransform: Transform): void {
-    if (isSabresWarlordAspect(this.weaponAspect)) return;
+    if (resolveSabresRAbilityId(this.weaponAspect) == null) return;
     const currentTime = Date.now() / 1000;
     const skyfallCd = getSabresSkyfallCooldownSec(this.weaponAspect);
 

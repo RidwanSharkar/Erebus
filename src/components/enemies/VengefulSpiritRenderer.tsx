@@ -8,6 +8,7 @@ import VengefulSpiritModel from './VengefulSpiritModel';
 import KnightSoulEffect from './KnightSoulEffect';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation } from '@/utils/enemyLiveTransform';
+import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import {
   VENGEFUL_SPIRIT_SUMMON_LOCK_MS,
   VENGEFUL_SPIRIT_EXPIRE_ANIM_MS,
@@ -178,6 +179,7 @@ function VengefulSpiritRenderer({
       opacity.current = Math.max(0, 1 - fadeTimer.current / fadeDur);
 
       if (!deathCacheBuilt.current) {
+        detachSharedMaterialsForMutation(group);
         const collected: any[] = [];
         group.traverse((child: any) => {
           if (child.isMesh && child.material) {

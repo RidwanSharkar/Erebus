@@ -23,10 +23,13 @@ export default function SpecialMapCenterDecor({
   roomKind,
   roomIndex,
   enterSeq,
+  combatActive = false,
 }: {
   roomKind: string | null | undefined;
   roomIndex: number;
   enterSeq: number;
+  /** When true, strips heavy ambient orbit decor during fights. */
+  combatActive?: boolean;
 }) {
   const config = useMemo(() => {
     if (!isMapCenterDecorRoomKind(roomKind)) return null;
@@ -45,7 +48,9 @@ export default function SpecialMapCenterDecor({
   return (
     <group name="special-map-center-decor">
       {!isSunkenTemple && <MapCenterPrismDecor seed={seed} config={config} />}
-      {isSunkenTemple && <SkyRayOrbitDecor orbitRadius={config.orbitRadius} />}
+      {isSunkenTemple && !combatActive && (
+        <SkyRayOrbitDecor orbitRadius={config.orbitRadius} />
+      )}
     </group>
   );
 }

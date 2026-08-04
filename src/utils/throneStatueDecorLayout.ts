@@ -43,7 +43,7 @@ export const THRONE_STATUE_LAYOUT: readonly ThroneStatueDef[] = [
 
   {
     model: 'giantSpine',
-    position: [4.33, 0, 11.0],
+    position: [4.33, 0, -11.0],
     rotationY: Math.PI,
     scale: 0.9,
   },

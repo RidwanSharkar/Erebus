@@ -20,6 +20,7 @@ const _toTarget = new Vector3();
 const _resolved = new Vector3();
 const _startToPlayer = new Vector3();
 const _startToPos = new Vector3();
+const _lightLift = new Vector3(0, 0.1, 0);
 
 const trailColor = new Color('#a855f7');
 const trailAccent = new Color('#d8b4fe');
@@ -189,7 +190,7 @@ export default function DreamShardEffect({
       visualScaleRef.current.scale.setScalar(pulse);
     }
 
-    _boltLightPos.copy(g.position).add(new Vector3(0, 0.1, 0));
+    _boltLightPos.copy(g.position).add(_lightLift);
     orbLight.current?.setPosition(_boltLightPos.x, _boltLightPos.y, _boltLightPos.z);
 
     const liveHitTarget = getPlayerPosition();

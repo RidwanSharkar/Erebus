@@ -11,6 +11,7 @@ import EnemyAbilityChargeTelegraph from './EnemyAbilityChargeTelegraph';
 import { registerValkyrieAnimationHandlers } from '@/utils/valkyrieAnimationDispatch';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation } from '@/utils/enemyLiveTransform';
+import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   ENEMY_HP_BAR_WIDTH,
@@ -47,7 +48,7 @@ const VALKYRIE_ORBITAL_ACTIVE = '#facc15';
 const VALKYRIE_ORBITAL_INACTIVE = '#3a2a09';
 const VALKYRIE_ORBITAL_Y_OFFSET = 2.1;
 
-export default function ValkyrieRenderer({
+function ValkyrieRenderer({
   id,
   position,
   rotation,
@@ -220,6 +221,7 @@ export default function ValkyrieRenderer({
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
       if (!deathCacheBuilt.current) {
+        detachSharedMaterialsForMutation(group);
         const collected: any[] = [];
         group.traverse((child: any) => {
           if (child.isMesh && child.material) {
@@ -294,3 +296,5 @@ export default function ValkyrieRenderer({
     </>
   );
 }
+
+export default React.memo(ValkyrieRenderer);

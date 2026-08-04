@@ -18,6 +18,7 @@ import {
 const _boltLightPos = new Vector3();
 const _aim = new Vector3();
 const _toTarget = new Vector3();
+const _lightLift = new Vector3(0, 0.1, 0);
 
 const trailColor = new Color('#7c3aed');
 const trailAccent = new Color('#c4b5fd');
@@ -168,7 +169,7 @@ export default function MedusaProjectile({
       visualScaleRef.current.scale.setScalar(pulse);
     }
 
-    _boltLightPos.copy(g.position).add(new Vector3(0, 0.1, 0));
+    _boltLightPos.copy(g.position).add(_lightLift);
     orbLight.current?.setPosition(_boltLightPos.x, _boltLightPos.y, _boltLightPos.z);
 
     const rangeFromSpawn = Math.hypot(

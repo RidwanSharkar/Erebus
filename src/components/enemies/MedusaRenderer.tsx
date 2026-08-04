@@ -9,6 +9,7 @@ import MedusaModel, { type MedusaAbilityClip } from './MedusaModel';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation } from '@/utils/enemyLiveTransform';
+import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   ENEMY_HP_BAR_WIDTH,
@@ -38,7 +39,7 @@ interface MedusaRendererProps {
 const LERP_SPEED = 12;
 const FADE_DURATION = 1.5;
 
-export default function MedusaRenderer({
+function MedusaRenderer({
   id,
   position,
   rotation,
@@ -167,6 +168,7 @@ export default function MedusaRenderer({
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
       if (!deathCacheBuilt.current) {
+        detachSharedMaterialsForMutation(group);
         const collected: any[] = [];
         group.traverse((child: any) => {
           if (child.isMesh && child.material) {
@@ -213,3 +215,5 @@ export default function MedusaRenderer({
     </group>
   );
 }
+
+export default React.memo(MedusaRenderer);

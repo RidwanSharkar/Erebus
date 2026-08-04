@@ -52,10 +52,25 @@ export function registerBeastAudioSounds(
     soundId?: string;
     beastId?: string;
     position?: Vec3Like;
+    isAlliedPet?: boolean;
   }) => {
     if (!data.soundId) return;
     const pos = resolveBeastPosition(data, getEnemyPosition);
-    window.audioSystem?.playBeastAttackSound(data.soundId, pos);
+    // Allied pet melee vocals: −40% vs default beast attack volume (0.85 → 0.51).
+    const volume =
+      data.isAlliedPet &&
+      (data.soundId === 'beast_tiger_attack' ||
+        data.soundId === 'beast_wolf_attack1' ||
+        data.soundId === 'beast_wolf_attack2' ||
+        data.soundId === 'beast_serpent_attack' ||
+        data.soundId === 'beast_bear_attack1')
+        ? 0.85 * 0.6
+        : undefined;
+    window.audioSystem?.playBeastAttackSound(
+      data.soundId,
+      pos,
+      volume != null ? { volume } : undefined,
+    );
   };
 
   const handleWolfPackHowls = (data: { position?: Vec3Like }) => {

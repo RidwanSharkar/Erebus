@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useCallback, useLayoutEffect, useEffect, useState } from 'react';
+import React, { useRef, useMemo, useLayoutEffect, useEffect, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   InstancedMesh,
@@ -257,6 +257,210 @@ const THEME_COUNTS: Record<RoomBorderTheme, number> = {
   purple: 16_000,
 };
 
+/** Spatial chunks so frustum culling can drop off-screen blades (5×5 = 25). */
+const GRASS_CHUNK_GRID = 5;
+const GRASS_CHUNK_COUNT = GRASS_CHUNK_GRID * GRASS_CHUNK_GRID;
+
+type GrassChunkData = {
+  matrices: Float32Array;
+  count: number;
+  boundCenter: [number, number, number];
+  boundRadius: number;
+};
+
+type GrassCacheEntry = {
+  chunks: GrassChunkData[];
+};
+
+/** Module-level cache — survives room remounts keyed by layout params. */
+const GRASS_CACHE_MAX_ENTRIES = 3;
+const grassMatrixCache = new Map<string, GrassCacheEntry>();
+
+function touchGrassCache(key: string, entry: GrassCacheEntry): void {
+  // LRU: delete+set moves key to insertion-order end (most recent).
+  if (grassMatrixCache.has(key)) grassMatrixCache.delete(key);
+  grassMatrixCache.set(key, entry);
+  while (grassMatrixCache.size > GRASS_CACHE_MAX_ENTRIES) {
+    const oldest = grassMatrixCache.keys().next().value;
+    if (oldest === undefined) break;
+    grassMatrixCache.delete(oldest);
+  }
+}
+
+/** Deterministic mulberry32 PRNG — same seed ⇒ identical blade layout across remounts. */
+function mulberry32(seed: number): () => number {
+  let t = seed >>> 0;
+  return () => {
+    t += 0x6d2b79f5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function grassCacheKey(
+  count: number,
+  radius: number,
+  halfX: number,
+  halfZ: number,
+  bladeHeight: number,
+  useHexField: boolean,
+  useSquareEdge: boolean,
+  excludeInnerRadius: number,
+): string {
+  return [
+    count,
+    radius.toFixed(3),
+    halfX.toFixed(3),
+    halfZ.toFixed(3),
+    bladeHeight.toFixed(3),
+    useHexField ? 1 : 0,
+    useSquareEdge ? 1 : 0,
+    excludeInnerRadius.toFixed(3),
+  ].join('|');
+}
+
+function buildGrassChunks(
+  count: number,
+  radius: number,
+  halfX: number,
+  halfZ: number,
+  bladeHeight: number,
+  useHexField: boolean,
+  useSquareEdge: boolean,
+  excludeInnerRadius: number,
+): GrassCacheEntry {
+  const key = grassCacheKey(
+    count,
+    radius,
+    halfX,
+    halfZ,
+    bladeHeight,
+    useHexField,
+    useSquareEdge,
+    excludeInnerRadius,
+  );
+  const cached = grassMatrixCache.get(key);
+  if (cached) {
+    touchGrassCache(key, cached);
+    return cached;
+  }
+
+  // Seed derived from layout so remounts reuse the same blade field.
+  let seed = count * 2654435761;
+  seed ^= Math.floor(radius * 1000) * 97;
+  seed ^= Math.floor(halfX * 1000) * 193;
+  seed ^= Math.floor(excludeInnerRadius * 1000) * 389;
+  seed ^= useHexField ? 0xabc : useSquareEdge ? 0xdef : 0x123;
+  const rand = mulberry32(seed >>> 0);
+
+  const extentX = useSquareEdge ? halfX : radius;
+  const extentZ = useSquareEdge ? halfZ : radius;
+  const cellW = (2 * extentX) / GRASS_CHUNK_GRID;
+  const cellH = (2 * extentZ) / GRASS_CHUNK_GRID;
+
+  // First pass: generate transforms into per-chunk lists.
+  const chunkMats: Matrix4[][] = Array.from({ length: GRASS_CHUNK_COUNT }, () => []);
+  const mat = new Matrix4();
+  const lean = new Matrix4();
+  const scl = new Vector3();
+  const pos = new Vector3();
+
+  for (let i = 0; i < count; i++) {
+    let x: number;
+    let z: number;
+    if (useSquareEdge) {
+      x = (rand() * 2 - 1) * halfX;
+      z = (rand() * 2 - 1) * halfZ;
+    } else if (useHexField) {
+      const innerSq = Math.max(0, excludeInnerRadius) ** 2;
+      do {
+        x = (rand() * 2 - 1) * radius;
+        z = (rand() * 2 - 1) * radius;
+      } while (
+        !isInsideHexArenaXZ(x, z, radius, 0.2) ||
+        (innerSq > 0 && x * x + z * z < innerSq)
+      );
+    } else {
+      const angle = rand() * Math.PI * 2;
+      const inner = Math.max(0, excludeInnerRadius);
+      const span = Math.max(0.001, radius - inner);
+      const r = inner + Math.sqrt(rand()) * span;
+      x = Math.cos(angle) * r;
+      z = Math.sin(angle) * r;
+    }
+
+    const clump = Math.sin(x * 0.3 + 0.7) * Math.cos(z * 0.5 + 1.2) * 0.4 + 0.6;
+
+    mat.makeRotationY(rand() * Math.PI);
+    lean.makeRotationX((rand() - 0.5) * 0.3);
+    mat.multiply(lean);
+
+    scl.set(
+      0.8 + rand() * 0.5,
+      bladeHeight * (0.3 + rand() * 1.4) * clump,
+      0.8 + rand() * 0.5,
+    );
+    mat.scale(scl);
+
+    pos.set(x, 0, z);
+    mat.setPosition(pos);
+
+    let cx = Math.floor((x + extentX) / cellW);
+    let cz = Math.floor((z + extentZ) / cellH);
+    cx = Math.min(GRASS_CHUNK_GRID - 1, Math.max(0, cx));
+    cz = Math.min(GRASS_CHUNK_GRID - 1, Math.max(0, cz));
+    chunkMats[cz * GRASS_CHUNK_GRID + cx].push(mat.clone());
+  }
+
+  const chunks: GrassChunkData[] = chunkMats.map((mats, idx) => {
+    const n = mats.length;
+    const matrices = new Float32Array(Math.max(1, n) * 16);
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (let i = 0; i < n; i++) {
+      matrices.set(mats[i].elements, i * 16);
+      const e = mats[i].elements;
+      // Position is in elements[12], [13], [14]
+      const px = e[12];
+      const pz = e[14];
+      if (px < minX) minX = px;
+      if (px > maxX) maxX = px;
+      if (pz < minZ) minZ = pz;
+      if (pz > maxZ) maxZ = pz;
+    }
+    if (n === 0) {
+      // Empty chunk — place far away with zero radius so it never draws.
+      const cx = (idx % GRASS_CHUNK_GRID) + 0.5;
+      const cz = Math.floor(idx / GRASS_CHUNK_GRID) + 0.5;
+      const emptyX = -extentX + cx * cellW;
+      const emptyZ = -extentZ + cz * cellH;
+      return {
+        matrices,
+        count: 0,
+        boundCenter: [emptyX, 0, emptyZ],
+        boundRadius: 0.01,
+      };
+    }
+    const centerX = (minX + maxX) * 0.5;
+    const centerZ = (minZ + maxZ) * 0.5;
+    const halfDiag =
+      Math.sqrt((maxX - minX) * (maxX - minX) + (maxZ - minZ) * (maxZ - minZ)) * 0.5 + bladeHeight + 1;
+    return {
+      matrices,
+      count: n,
+      boundCenter: [centerX, bladeHeight * 0.5, centerZ],
+      boundRadius: halfDiag,
+    };
+  });
+
+  const entry: GrassCacheEntry = { chunks };
+  touchGrassCache(key, entry);
+  return entry;
+}
+
 const THEME_WIND: Partial<Record<RoomBorderTheme, number>> = {
   red: 0.2,
   blue: 0.22,
@@ -368,8 +572,13 @@ interface StylizedGrassProps {
   groundColor?: string;
   groundLightColor?: string;
   groundLightIntensity?: number;
-  /** When set on disc fields, blades are omitted inside this XZ radius (e.g. throne center seal). */
+  /** Blades are omitted inside this XZ radius (e.g. throne / fae center seal). */
   excludeInnerRadius?: number;
+  /**
+   * Draw-count multiplier (0–1). Thins blades by lowering InstancedMesh.count
+   * without regenerating or re-uploading matrices — safe to toggle mid-combat.
+   */
+  densityScale?: number;
 }
 
 const GRASS_VERTEX = `
@@ -384,24 +593,28 @@ const GRASS_VERTEX = `
   void main() {
     vec4 wp = instanceMatrix * vec4(position, 1.0);
     float hr = aHeightRatio;
-    float bend = hr * hr;
 
-    // Primary rolling wind wave — sweeps across the field
-    float phase = wp.x * 0.35 + wp.z * 0.25;
-    float w1 = sin(phase + uTime * 1.3) * uWindStrength;
+    // Combat LOD: skip wind trig when strength is zeroed by the room.
+    if (uWindStrength > 0.001) {
+      float bend = hr * hr;
 
-    // Secondary gust layer — offset frequency for organic feel
-    float w2 = sin(phase * 2.1 + uTime * 2.1 + 1.7) * uWindStrength * 0.3;
+      // Primary rolling wind wave — sweeps across the field
+      float phase = wp.x * 0.35 + wp.z * 0.25;
+      float w1 = sin(phase + uTime * 1.3) * uWindStrength;
 
-    // Micro flutter — high-frequency per-blade shimmer
-    float w3 = cos(wp.x * 3.5 + wp.z * 2.0 + uTime * 4.5) * uWindStrength * 0.06;
+      // Secondary gust layer — offset frequency for organic feel
+      float w2 = sin(phase * 2.1 + uTime * 2.1 + 1.7) * uWindStrength * 0.3;
 
-    float wind = (w1 + w2 + w3) * bend;
+      // Micro flutter — high-frequency per-blade shimmer
+      float w3 = cos(wp.x * 3.5 + wp.z * 2.0 + uTime * 4.5) * uWindStrength * 0.06;
 
-    wp.x += wind;
-    wp.z += wind * 0.4;
-    // Slight vertical compression when bending for realism
-    wp.y -= abs(wind) * 0.1;
+      float wind = (w1 + w2 + w3) * bend;
+
+      wp.x += wind;
+      wp.z += wind * 0.4;
+      // Slight vertical compression when bending for realism
+      wp.y -= abs(wind) * 0.1;
+    }
 
     vHeightRatio = hr;
     vWorldPos = wp.xyz;
@@ -561,9 +774,13 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
   groundLightColor,
   groundLightIntensity,
   excludeInnerRadius = 0,
+  densityScale = 1,
 }) => {
-  const meshRef = useRef<InstancedMesh>(null);
+  const chunkMeshRefs = useRef<(InstancedMesh | null)[]>(
+    Array.from({ length: GRASS_CHUNK_COUNT }, () => null),
+  );
   const [matricesReady, setMatricesReady] = useState(false);
+  const [chunkData, setChunkData] = useState<GrassChunkData[] | null>(null);
 
   const effectiveTheme = resolveRoomTheme(roomTheme, isSnowTheme);
   const defaultCount = THEME_COUNTS[effectiveTheme];
@@ -680,91 +897,76 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
     groundMat.color.set(resolvedGroundColor);
   }, [groundMat, resolvedGroundColor]);
 
-  // After InstancedMesh commits (or recreates on count change), fill matrices. useLayoutEffect
-  // + rAF fallback avoids an empty instanced draw when the ref is not set in the same tick.
-  const fillInstanceMatrices = useCallback((): boolean => {
-    const mesh = meshRef.current;
-    if (!mesh) return false;
-
-    const mat = new Matrix4();
-    const lean = new Matrix4();
-    const scl = new Vector3();
-    const pos = new Vector3();
-
-    for (let i = 0; i < count; i++) {
-      let x: number;
-      let z: number;
-      if (useSquareEdge) {
-        x = (Math.random() * 2 - 1) * halfX;
-        z = (Math.random() * 2 - 1) * halfZ;
-      } else if (useHexField) {
-        do {
-          x = (Math.random() * 2 - 1) * radius;
-          z = (Math.random() * 2 - 1) * radius;
-        } while (!isInsideHexArenaXZ(x, z, radius, 0.2));
-      } else {
-        const angle = Math.random() * Math.PI * 2;
-        const inner = Math.max(0, excludeInnerRadius);
-        const span = Math.max(0.001, radius - inner);
-        const r = inner + Math.sqrt(Math.random()) * span;
-        x = Math.cos(angle) * r;
-        z = Math.sin(angle) * r;
-      }
-
-      const clump =
-        Math.sin(x * 0.3 + 0.7) * Math.cos(z * 0.5 + 1.2) * 0.4 + 0.6;
-
-      mat.makeRotationY(Math.random() * Math.PI);
-      lean.makeRotationX((Math.random() - 0.5) * 0.3);
-      mat.multiply(lean);
-
-      scl.set(
-        0.8 + Math.random() * 0.5,
-        bladeHeight * (0.3 + Math.random() * 1.4) * clump,
-        0.8 + Math.random() * 0.5,
-      );
-      mat.scale(scl);
-
-      pos.set(x, 0, z);
-      mat.setPosition(pos);
-
-      mesh.setMatrixAt(i, mat);
-    }
-
-    mesh.instanceMatrix.needsUpdate = true;
-    mesh.count = count;
-    mesh.computeBoundingSphere();
-    if (mesh.boundingSphere) {
-      mesh.boundingSphere.center.set(0, 0, 0);
-      mesh.boundingSphere.radius = radius;
-    }
-    setMatricesReady(true);
-    return true;
-  }, [count, radius, halfX, halfZ, bladeHeight, useHexField, useSquareEdge, excludeInnerRadius]);
-
+  // Build (or restore from cache) chunked instance matrices — survives room remounts.
   useLayoutEffect(() => {
     setMatricesReady(false);
-    if (fillInstanceMatrices()) return;
-    let cancelled = false;
-    let raf = 0;
-    let attempts = 0;
-    const maxRafAttempts = 90;
-    const tick = () => {
-      if (cancelled) return;
-      if (fillInstanceMatrices()) return;
-      if (++attempts >= maxRafAttempts) {
-        // eslint-disable-next-line no-console
-        console.warn('[StylizedGrass] instance matrices not ready after max rAF retries');
-        return;
+    const entry = buildGrassChunks(
+      count,
+      radius,
+      halfX,
+      halfZ,
+      bladeHeight,
+      useHexField,
+      useSquareEdge,
+      excludeInnerRadius,
+    );
+    setChunkData(entry.chunks);
+  }, [count, radius, halfX, halfZ, bladeHeight, useHexField, useSquareEdge, excludeInnerRadius]);
+
+  // Upload cached matrices into InstancedMesh refs once they mount.
+  useLayoutEffect(() => {
+    if (!chunkData) return;
+    let allReady = true;
+    for (let c = 0; c < GRASS_CHUNK_COUNT; c++) {
+      const mesh = chunkMeshRefs.current[c];
+      const data = chunkData[c];
+      if (!mesh || !data) {
+        allReady = false;
+        continue;
       }
+      const n = data.count;
+      mesh.count = Math.max(1, n);
+      if (n > 0) {
+        const attr = mesh.instanceMatrix;
+        (attr.array as Float32Array).set(data.matrices.subarray(0, n * 16));
+        attr.needsUpdate = true;
+      }
+      mesh.computeBoundingSphere();
+      if (mesh.boundingSphere) {
+        mesh.boundingSphere.center.set(
+          data.boundCenter[0],
+          data.boundCenter[1],
+          data.boundCenter[2],
+        );
+        mesh.boundingSphere.radius = data.boundRadius;
+      }
+      mesh.visible = n > 0;
+    }
+    if (allReady) {
+      setMatricesReady(true);
+    } else {
+      // Refs not ready this tick — retry next frame.
+      let raf = 0;
+      let attempts = 0;
+      const tick = () => {
+        let ok = true;
+        for (let c = 0; c < GRASS_CHUNK_COUNT; c++) {
+          if (!chunkMeshRefs.current[c]) {
+            ok = false;
+            break;
+          }
+        }
+        if (ok) {
+          // Re-run upload by toggling readiness via state bump
+          setChunkData((prev) => (prev ? [...prev] : prev));
+          return;
+        }
+        if (++attempts < 90) raf = requestAnimationFrame(tick);
+      };
       raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(raf);
-    };
-  }, [fillInstanceMatrices]);
+      return () => cancelAnimationFrame(raf);
+    }
+  }, [chunkData]);
 
   useEffect(
     () => () => {
@@ -786,9 +988,38 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
     [groundGeo, groundMat],
   );
 
+  // Combat density gate: lower InstancedMesh.count without touching matrices.
+  useLayoutEffect(() => {
+    if (!chunkData) return;
+    const scale = Math.min(1, Math.max(0, densityScale));
+    for (let c = 0; c < GRASS_CHUNK_COUNT; c++) {
+      const mesh = chunkMeshRefs.current[c];
+      const data = chunkData[c];
+      if (!mesh || !data) continue;
+      const n = data.count;
+      if (n <= 0) {
+        mesh.count = 1;
+        mesh.visible = false;
+        continue;
+      }
+      mesh.count = Math.max(1, Math.floor(n * scale));
+      mesh.visible = matricesReady;
+    }
+  }, [chunkData, densityScale, matricesReady]);
+
   useFrame((_, delta) => {
-    material.uniforms.uTime.value += delta;
+    if (windStrength > 0.001) {
+      material.uniforms.uTime.value += delta;
+    }
   });
+
+  // Capacity per chunk = max blades that landed in any chunk (or 1 for empty).
+  const chunkCapacities = useMemo(() => {
+    if (!chunkData) {
+      return Array.from({ length: GRASS_CHUNK_COUNT }, () => Math.max(1, Math.ceil(count / GRASS_CHUNK_COUNT)));
+    }
+    return chunkData.map((d) => Math.max(1, d.count));
+  }, [chunkData, count]);
 
   return (
     <group>
@@ -800,12 +1031,17 @@ const StylizedGrass: React.FC<StylizedGrassProps> = ({
         position-y={0.01}
       />
 
-      <instancedMesh
-        ref={meshRef}
-        args={[bladeGeometry, material, count]}
-        frustumCulled
-        visible={matricesReady}
-      />
+      {chunkCapacities.map((cap, i) => (
+        <instancedMesh
+          key={`grass-chunk-${i}`}
+          ref={(el) => {
+            chunkMeshRefs.current[i] = el;
+          }}
+          args={[bladeGeometry, material, cap]}
+          frustumCulled
+          visible={matricesReady && (chunkData?.[i]?.count ?? 0) > 0}
+        />
+      ))}
     </group>
   );
 };

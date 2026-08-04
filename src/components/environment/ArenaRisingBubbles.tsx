@@ -55,7 +55,7 @@ const BUBBLE_FRAG = `
   }
 `;
 
-const DEFAULT_COUNT = 220;
+const DEFAULT_COUNT = 80;
 
 interface ArenaRisingBubblesProps {
   count?: number;

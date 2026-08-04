@@ -4,8 +4,10 @@ import {
   AdditiveBlending,
   DoubleSide,
   Group,
+  InstancedMesh,
   Mesh,
   MeshBasicMaterial,
+  Object3D,
   RingGeometry,
   SphereGeometry,
   Vector3,
@@ -43,6 +45,12 @@ const DEFAULT_CONDUCTOR = {
 const BOLT_DURATION_MS = 450;
 const MAIN_SEGMENTS = 38;
 const BRANCH_COUNT = 7;
+/** Main bolt + all branch points upper bound for pool capacity. */
+const MAX_CORE_INSTANCES = MAIN_SEGMENTS;
+const MAX_BRANCH_POINTS = BRANCH_COUNT * Math.ceil(MAIN_SEGMENTS * 0.3);
+const MAX_SECONDARY_INSTANCES = MAX_BRANCH_POINTS;
+
+const _dummy = new Object3D();
 
 type BoltBranch = {
   points: Vector3[];
@@ -114,6 +122,68 @@ function buildBoltBranches(startPosition: Vector3, targetPosition: Vector3): Bol
   return [mainBolt, ...secondaryBranches];
 }
 
+function writeBranchInstances(
+  coreMesh: InstancedMesh | null,
+  secondaryMesh: InstancedMesh | null,
+  branches: BoltBranch[],
+) {
+  let coreCount = 0;
+  let secondaryCount = 0;
+
+  for (const branch of branches) {
+    for (const point of branch.points) {
+      _dummy.position.copy(point);
+      _dummy.scale.setScalar(branch.thickness);
+      _dummy.rotation.set(0, 0, 0);
+      _dummy.updateMatrix();
+      if (branch.isCoreStrike) {
+        if (coreMesh && coreCount < MAX_CORE_INSTANCES) {
+          coreMesh.setMatrixAt(coreCount++, _dummy.matrix);
+        }
+      } else if (secondaryMesh && secondaryCount < MAX_SECONDARY_INSTANCES) {
+        secondaryMesh.setMatrixAt(secondaryCount++, _dummy.matrix);
+      }
+    }
+  }
+
+  if (coreMesh) {
+    // Hide unused slots
+    _dummy.position.set(0, -9999, 0);
+    _dummy.scale.setScalar(0);
+    _dummy.updateMatrix();
+    for (let i = coreCount; i < MAX_CORE_INSTANCES; i++) {
+      coreMesh.setMatrixAt(i, _dummy.matrix);
+    }
+    coreMesh.count = Math.max(1, coreCount);
+    coreMesh.instanceMatrix.needsUpdate = true;
+    coreMesh.computeBoundingSphere();
+  }
+  if (secondaryMesh) {
+    _dummy.position.set(0, -9999, 0);
+    _dummy.scale.setScalar(0);
+    _dummy.updateMatrix();
+    for (let i = secondaryCount; i < MAX_SECONDARY_INSTANCES; i++) {
+      secondaryMesh.setMatrixAt(i, _dummy.matrix);
+    }
+    secondaryMesh.count = Math.max(1, secondaryCount);
+    secondaryMesh.instanceMatrix.needsUpdate = true;
+    secondaryMesh.computeBoundingSphere();
+  }
+}
+
+function clearHolderChildren(holder: Group) {
+  while (holder.children.length > 0) {
+    const child = holder.children[0];
+    holder.remove(child);
+    child.traverse((obj) => {
+      if (obj instanceof Mesh) {
+        // Geometries/materials are shared module-owned — do not dispose them here.
+        // Only dispose if the mesh owns unique disposable state (none for our impacts).
+      }
+    });
+  }
+}
+
 export default function TotemSuperconductorLightning({
   from,
   to,
@@ -126,6 +196,9 @@ export default function TotemSuperconductorLightning({
   const completedRef = useRef(false);
   const flickerRef = useRef(1);
   const holderRef = useRef<Group>(null);
+  const coreMeshRef = useRef<InstancedMesh>(null);
+  const secondaryMeshRef = useRef<InstancedMesh>(null);
+  const impactHolderRef = useRef<Group>(null);
   const launchGenSeen = useRef(0);
   const impactRotationsRef = useRef<[number, number, number][]>([]);
 
@@ -201,13 +274,6 @@ export default function TotemSuperconductorLightning({
   });
 
   const mountLightning = (start: Vector3, end: Vector3) => {
-    const holder = holderRef.current;
-    if (!holder) return;
-
-    while (holder.children.length > 0) {
-      holder.remove(holder.children[0]);
-    }
-
     const builtBranches = buildBoltBranches(start, end);
     impactRotationsRef.current = [0, 1].map(() => [
       Math.random() * Math.PI,
@@ -215,29 +281,25 @@ export default function TotemSuperconductorLightning({
       Math.random() * Math.PI,
     ] as [number, number, number]);
 
-    for (const branch of builtBranches) {
-      const branchGroup = new Group();
-      for (const point of branch.points) {
-        const mesh = new Mesh(geometries.bolt, branch.isCoreStrike ? materials.coreBolt : materials.secondaryBolt);
-        mesh.position.copy(point);
-        mesh.scale.setScalar(branch.thickness);
-        branchGroup.add(mesh);
-      }
-      holder.add(branchGroup);
-    }
+    writeBranchInstances(coreMeshRef.current, secondaryMeshRef.current, builtBranches);
 
-    [start, end].forEach((pos, i) => {
-      const impactGroup = new Group();
-      impactGroup.position.copy(pos);
-      const impactMesh = new Mesh(geometries.impact, materials.impact);
-      impactMesh.scale.setScalar(i === 0 ? 0.45 : 0.75);
-      impactGroup.add(impactMesh);
-      const ringMesh = new Mesh(geometries.ring, materials.ring);
-      ringMesh.rotation.set(...(impactRotationsRef.current[i] ?? [0, 0, 0]));
-      ringMesh.scale.set(i === 0 ? 0.8 : 1.2, i === 0 ? 0.8 : 1.2, 1);
-      impactGroup.add(ringMesh);
-      holder.add(impactGroup);
-    });
+    // Rebuild impact endpoint meshes (only 4 meshes — negligible).
+    const impactHolder = impactHolderRef.current;
+    if (impactHolder) {
+      clearHolderChildren(impactHolder);
+      [start, end].forEach((pos, i) => {
+        const impactGroup = new Group();
+        impactGroup.position.copy(pos);
+        const impactMesh = new Mesh(geometries.impact, materials.impact);
+        impactMesh.scale.setScalar(i === 0 ? 0.45 : 0.75);
+        impactGroup.add(impactMesh);
+        const ringMesh = new Mesh(geometries.ring, materials.ring);
+        ringMesh.rotation.set(...(impactRotationsRef.current[i] ?? [0, 0, 0]));
+        ringMesh.scale.set(i === 0 ? 0.8 : 1.2, i === 0 ? 0.8 : 1.2, 1);
+        impactGroup.add(ringMesh);
+        impactHolder.add(impactGroup);
+      });
+    }
   };
 
   const branches = useMemo(
@@ -255,6 +317,12 @@ export default function TotemSuperconductorLightning({
           ] as [number, number, number]),
     [poolSlot],
   );
+
+  // Non-pooled mode: write instances when branches are ready.
+  useEffect(() => {
+    if (poolSlot) return;
+    writeBranchInstances(coreMeshRef.current, secondaryMeshRef.current, branches);
+  }, [poolSlot, branches]);
 
   useEffect(() => {
     const g = geometries;
@@ -326,24 +394,35 @@ export default function TotemSuperconductorLightning({
   });
 
   if (poolSlot) {
-    return <group ref={holderRef} visible={false} />;
+    return (
+      <group ref={holderRef} visible={false}>
+        <instancedMesh
+          ref={coreMeshRef}
+          args={[geometries.bolt, materials.coreBolt, MAX_CORE_INSTANCES]}
+          frustumCulled={false}
+        />
+        <instancedMesh
+          ref={secondaryMeshRef}
+          args={[geometries.bolt, materials.secondaryBolt, MAX_SECONDARY_INSTANCES]}
+          frustumCulled={false}
+        />
+        <group ref={impactHolderRef} />
+      </group>
+    );
   }
 
   return (
     <group>
-      {branches.map((branch, branchIdx) => (
-        <group key={branchIdx}>
-          {branch.points.map((point, idx) => (
-            <mesh
-              key={idx}
-              position={point.toArray()}
-              geometry={geometries.bolt}
-              material={branch.isCoreStrike ? materials.coreBolt : materials.secondaryBolt}
-              scale={[branch.thickness, branch.thickness, branch.thickness]}
-            />
-          ))}
-        </group>
-      ))}
+      <instancedMesh
+        ref={coreMeshRef}
+        args={[geometries.bolt, materials.coreBolt, MAX_CORE_INSTANCES]}
+        frustumCulled={false}
+      />
+      <instancedMesh
+        ref={secondaryMeshRef}
+        args={[geometries.bolt, materials.secondaryBolt, MAX_SECONDARY_INSTANCES]}
+        frustumCulled={false}
+      />
 
       {[resolvedFrom, resolvedTo].map((pos, i) => (
         <group key={i} position={pos.toArray()}>

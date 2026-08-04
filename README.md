@@ -2,6 +2,8 @@
 
 A co-op 3D action roguelike with a unique weapon/class system. Descend through the void - clear combat rooms to acquire allies and powerful rewards to customize each build. Fast real-time combat where positioning, resources, and party coordination decide whether the run survives.
 
+**GAMEPLAY: https://www.youtube.com/watch?v=QKot8NbxdD8w**
+
 ## Table of Contents
 
 - [Game Guide](#game-guide)
@@ -474,7 +476,7 @@ Choose an aspect from the weapon pedestal in the throne room (cycle with the sho
 
 - **Aspect of Havoc** — Reduces the cooldown of Divebomb by 2 seconds, increasing its damage and it now applies Ignite (80% of impact damage over 3s).
 
-- **Aspect of Apathy** — Primary attacks apply Avalanche on hit enemies — Arctic Blizzard damage and chill every 0.5s for 6s.
+- **Aspect of Apathy** — Primary attacks apply Avalanche on hit enemies — Arctic Blizzard damage and chill every 0.5s for 6s. Shatter: Flourish (and Fan of Knives, if talented) on a frozen enemy consumes Freeze and deals 100 + 10 per AGILITY + 10% of the target's maximum health as ice-spike damage. No Divebomb — R is free for room boons.
 
 - **Aspect of Cruelty** — Poison Dart: after each dash, the next primary attack fires a dart dealing 20 + 5 per AGILITY and applying 1 stack of Concentrated Venom. Backstab (Q) applies 1 stack ofConcentrated Venom. Dash distance is doubled.
 
@@ -667,10 +669,10 @@ Occasionally portals lead to special destinations:
 
 Spend GOLD on heal, utilities, weapon talents, dash charges, and boss drops.
 
-- Heal: **50 gold**
-- Oxygen (max energy): **300 gold** (up to 3 purchases)
-- Warpdrive (dash distance): **300 gold** (up to 3 purchases)
-- Weapon talent purchases: up to **3** per run
+- HEAL: **50 gold**
+- OXYGEN (max energy): **300 gold** (up to 3 purchases)
+- HYDROGEN (dash distance): **300 gold** (up to 3 purchases)
+- WEAPON TALENT: up to **3** per run
 - Premium backfill (after base slots sell out): **1200 gold**
 
 #### Dream Layer Items

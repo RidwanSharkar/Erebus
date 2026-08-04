@@ -11,15 +11,13 @@ import EnemyMeleeAttackRangeRing, { GHOUL_MELEE_ATTACK_RANGE } from './EnemyMele
 import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type MeleeTelegraphVisual } from '@/utils/meleeTelegraphVisual';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { applyEnemyHealthBarFill, syncEnemyHealthBarFillFromRef, syncEnemyHealthBarNumericTextFromRef } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 import { getUnitNameplateName } from '@/utils/enemyDisplayNames';
 import { campHpTheme } from '@/utils/campHpTheme';
-
-const GHOUL_HP_BAR_WIDTH = 1.8;
-const GHOUL_HP_BAR_HEIGHT = 0.22;
-const GHOUL_HP_BAR_FILL_HEIGHT = 0.20;
+import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface GhoulRendererProps {
   id: string;
@@ -82,7 +80,7 @@ function GhoulRenderer({
   const prevHealthRef   = useRef(health);
 
   useLayoutEffect(() => {
-    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth, GHOUL_HP_BAR_WIDTH);
+    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth);
   }, [health, maxHealth]);
 
   const lastMoveTimeRef = useRef(0);
@@ -240,7 +238,7 @@ function GhoulRenderer({
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
     syncEnemyVisualRotation(id, enemyVisualRotationsRef, group.rotation.y);
 
-    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, GHOUL_HP_BAR_WIDTH);
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth);
     syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
 
     if (isDying) {
@@ -248,6 +246,7 @@ function GhoulRenderer({
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
 
       if (!deathCacheBuilt.current) {
+        detachSharedMaterialsForMutation(group);
         const collected: any[] = [];
         group.traverse((child: any) => {
           if (child.isMesh && child.material) {
@@ -303,19 +302,11 @@ function GhoulRenderer({
       <Billboard position={[0, 2.8 * visualScale, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && !isSummoning && (
           <>
-            <mesh position={[0, 0, 0]}>
-              <planeGeometry args={[GHOUL_HP_BAR_WIDTH, GHOUL_HP_BAR_HEIGHT]} />
-              <meshBasicMaterial color={campType ? hpTheme.background : '#1a0a0a'} opacity={0.9} transparent />
-            </mesh>
-
-            <mesh
-              ref={hpFillRef}
-              position={[-GHOUL_HP_BAR_WIDTH / 2, 0, 0.001]}
-              scale={[1, 1, 1]}
-            >
-              <planeGeometry args={[GHOUL_HP_BAR_WIDTH, GHOUL_HP_BAR_FILL_HEIGHT]} />
-              <meshBasicMaterial color={campType ? hpTheme.fill : '#aa3300'} opacity={0.95} transparent />
-            </mesh>
+            <EnemyHpBarPlanes
+              fillRef={hpFillRef}
+              backgroundColor={campType ? hpTheme.background : '#1a0a0a'}
+              fillColor={campType ? hpTheme.fill : '#aa3300'}
+            />
 
             <EnemyHealthBarTextLabel
               name={getUnitNameplateName('ghoul', campType)}

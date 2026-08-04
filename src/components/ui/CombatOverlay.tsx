@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera } from '@/utils/three-exports';
 import DamageNumbers, { type DamageNumberData } from '@/components/DamageNumbers';
 import StrikeIndicator from '@/components/ui/StrikeIndicator';
@@ -15,6 +15,29 @@ type CombatOverlayProps = {
   callbacksRef: React.MutableRefObject<CombatOverlayCallbacks>;
 };
 
+function damageNumbersEqual(a: DamageNumberData[], b: DamageNumberData[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const prev = a[i];
+    const next = b[i];
+    if (
+      prev.id !== next.id ||
+      prev.damage !== next.damage ||
+      prev.isCritical !== next.isCritical ||
+      prev.damageType !== next.damageType ||
+      prev.isIncomingDamage !== next.isIncomingDamage ||
+      prev.dualCoilSlot !== next.dualCoilSlot ||
+      prev.displayText !== next.displayText ||
+      prev.durationHint !== next.durationHint ||
+      prev.timestamp !== next.timestamp
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export default function CombatOverlay({ callbacksRef }: CombatOverlayProps) {
   const [damageNumbers, setDamageNumbers] = useState<DamageNumberData[]>([]);
   const [cameraInfo, setCameraInfo] = useState<{
@@ -24,12 +47,27 @@ export default function CombatOverlay({ callbacksRef }: CombatOverlayProps) {
     camera: null,
     size: { width: 0, height: 0 },
   });
+  const lastDamageNumbersRef = useRef<DamageNumberData[]>([]);
+  const lastCameraRef = useRef<Camera | null>(null);
+  const lastSizeRef = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
 
   const handleCameraUpdate = useCallback((camera: Camera, size: { width: number; height: number }) => {
+    const prevSize = lastSizeRef.current;
+    if (
+      lastCameraRef.current === camera &&
+      prevSize.width === size.width &&
+      prevSize.height === size.height
+    ) {
+      return;
+    }
+    lastCameraRef.current = camera;
+    lastSizeRef.current = size;
     setCameraInfo({ camera, size });
   }, []);
 
   const handleDamageNumbersUpdate = useCallback((numbers: DamageNumberData[]) => {
+    if (damageNumbersEqual(lastDamageNumbersRef.current, numbers)) return;
+    lastDamageNumbersRef.current = numbers;
     setDamageNumbers(numbers);
   }, []);
 

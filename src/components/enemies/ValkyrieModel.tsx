@@ -5,7 +5,8 @@ import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, AnimationAction, AnimationClip } from 'three';
 import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { cloneEnemySceneWithSharedMaterials } from '@/utils/sharedEnemyMaterials';
 import { filterAnimationTracksForRoot, getCachedEnemyAnimationClips, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
 import { loadAllGltfAnimationClips, preloadSkinnedIdleAndAnimationClips } from '@/utils/gltfAnimationLoader';
 
@@ -62,18 +63,11 @@ export default React.memo(function ValkyrieModel({
   }, []);
 
   const clonedScene = useMemo(() => {
-    const clone = SkeletonUtils.clone(scene) as Group;
-    clone.traverse((child: any) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = false;
-        child.material = Array.isArray(child.material)
-          ? child.material.map((m: any) => m.clone())
-          : child.material.clone();
-      }
+    return cloneEnemySceneWithSharedMaterials(scene, '/models/valkyrie_idle.glb', {
+      selfIlluminationIntensity: UNIT_SELF_ILLUMINATION_INTENSITY,
+      castShadow: true,
+      receiveShadow: false,
     });
-    applySelfIllumination(clone, { intensity: UNIT_SELF_ILLUMINATION_INTENSITY });
-    return clone;
   }, [scene]);
 
   useDisposeClonedMaterials(clonedScene);
@@ -96,6 +90,8 @@ export default React.memo(function ValkyrieModel({
   );
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
+
+  useCleanupAnimationMixer(mixer, sceneGroupRef);
   const getAction = (name: 'Idle' | 'Attack' | 'Attack2' | 'Cast' | 'Death'): AnimationAction | null =>
     actions[name] ?? null;
 

@@ -1,7 +1,7 @@
 // Floating damage numbers component to display damage dealt to enemies
 'use client';
 
-import React, { useEffect, useState, memo } from 'react';
+import React, { useEffect, useRef, memo, useCallback, useMemo } from 'react';
 import { Vector3, Camera } from '@/utils/three-exports';
 
 const MIN_VISIBLE_MS = 2000;
@@ -9,6 +9,10 @@ const OUTGOING_DAMAGE_DURATION_MS = 5000;
 const INCOMING_DAMAGE_DURATION_MS = 3000;
 const PICKUP_FLOAT_DURATION_MS = 2400;
 const MAX_STACK_VISIBLE = 5;
+
+/** Scratch vectors reused by the shared animation loop — never allocate per frame. */
+const _worldPos = new Vector3();
+const _screenPos = new Vector3();
 
 const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1);
 const easeOutCubic = (value: number) => 1 - Math.pow(1 - clamp01(value), 3);
@@ -203,112 +207,102 @@ export interface DamageNumberData {
   durationHint?: 'pickup';
 }
 
+/** Imperative entry registered by each mounted DamageNumber for the shared RAF. */
+interface AnimEntry {
+  id: string;
+  el: HTMLDivElement;
+  damageData: DamageNumberData;
+  stackIndex: number;
+  duration: number;
+  screenJitter: number;
+  initialScale: number;
+  finalScale: number;
+  settleMs: number;
+  completed: boolean;
+}
+
 interface DamageNumberProps {
   damageData: DamageNumberData;
-  onComplete: (id: string) => void;
-  camera: Camera | null;
-  size: { width: number; height: number };
+  register: (entry: AnimEntry) => void;
+  unregister: (id: string) => void;
+  stackIndex: number;
 }
 
-interface DamageNumberPropsExtended extends DamageNumberProps {
-  stackIndex: number; // Index in the stack (0 = newest, 1 = second newest, etc.)
-}
+/**
+ * Renders static content once. Position / opacity / scale are driven
+ * imperatively by the parent's shared RAF via the registered AnimEntry.
+ */
+const DamageNumber = memo(function DamageNumber({
+  damageData,
+  register,
+  unregister,
+  stackIndex,
+}: DamageNumberProps) {
+  const elRef = useRef<HTMLDivElement>(null);
 
-const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera, size, stackIndex }: DamageNumberPropsExtended) {
-  const duration = getDamageNumberDuration(damageData);
-  const [ageMs, setAgeMs] = useState(() => Math.max(0, Date.now() - damageData.timestamp));
-
-  useEffect(() => {
-    let animationFrameId = 0;
-    let completed = false;
-
-    const animate = () => {
-      const nextAgeMs = Math.max(0, Date.now() - damageData.timestamp);
-      setAgeMs(nextAgeMs);
-
-      if (nextAgeMs >= duration) {
-        if (!completed) {
-          completed = true;
-          onComplete(damageData.id);
-        }
-        return;
-      }
-
-      animationFrameId = requestAnimationFrame(animate);
-    };
-
-    animationFrameId = requestAnimationFrame(animate);
-
-    return () => {
-      completed = true;
-      cancelAnimationFrame(animationFrameId);
-    };
-  }, [damageData.id, damageData.timestamp, duration, onComplete]);
-
-  const progress = clamp01(ageMs / duration);
-  const easedProgress = easeOutCubic(progress);
-  const fadeProgress = ageMs <= MIN_VISIBLE_MS
-    ? 0
-    : clamp01((ageMs - MIN_VISIBLE_MS) / Math.max(1, duration - MIN_VISIBLE_MS));
-  const stackScale = Math.max(0.62, 1 - stackIndex * 0.08);
-  const settleProgress = easeOutCubic(ageMs / (damageData.isCritical ? 520 : 360));
-  const initialScale = (damageData.isIncomingDamage ? 1.08 : 1.2) + (damageData.isCritical ? 0.45 : 0);
-  const finalScale = Math.max(0.58, (damageData.isIncomingDamage ? 0.74 : 0.84) * stackScale + (damageData.isCritical ? 0.08 : 0));
-  const scale = initialScale + (finalScale - initialScale) * settleProgress;
-  const stackOpacity = ageMs <= MIN_VISIBLE_MS ? 1 : Math.max(0.35, 1 - stackIndex * 0.12);
-  const opacity = stackOpacity * (1 - fadeProgress);
-  const yOffset = damageData.isIncomingDamage
-    ? easedProgress * -2 + stackIndex * -0.55
-    : easedProgress * 4 + stackIndex * 0.72;
-  const screenJitter = getStableScreenJitter(
-    damageData.id,
-    damageData.isIncomingDamage ? 24 : 36
-  );
   const textShadow = damageData.isCritical
     ? '0 0 6px rgba(253, 224, 71, 0.95), 0 0 16px rgba(245, 158, 11, 0.8), 2px 2px 4px rgba(0, 0, 0, 0.9)'
     : '2px 2px 4px rgba(0, 0, 0, 0.8)';
 
-  // Proper 3D to 2D projection using the camera
-  let x = 0;
-  let y = 0;
-  
-  if (camera && size.width > 0 && size.height > 0 && damageData.position && damageData.position.clone) {
-    // Create a world position with the floating animation offset
-    const worldPosition = damageData.position.clone();
-    worldPosition.y += yOffset; // Apply the floating animation offset
-    
-    // Project the 3D world position to normalized device coordinates
-    const screenPosition = worldPosition.clone().project(camera);
-    
-    // Convert normalized device coordinates (-1 to 1) to screen coordinates
-    x = (screenPosition.x * 0.5 + 0.5) * size.width;
-    y = (screenPosition.y * -0.5 + 0.5) * size.height;
+  const stackScale = Math.max(0.62, 1 - stackIndex * 0.08);
+  const initialScale =
+    (damageData.isIncomingDamage ? 1.08 : 1.2) + (damageData.isCritical ? 0.45 : 0);
+  const finalScale = Math.max(
+    0.58,
+    (damageData.isIncomingDamage ? 0.74 : 0.84) * stackScale + (damageData.isCritical ? 0.08 : 0),
+  );
+  const screenJitter = getStableScreenJitter(
+    damageData.id,
+    damageData.isIncomingDamage ? 24 : 36,
+  );
+  const duration = getDamageNumberDuration(damageData);
+  const settleMs = damageData.isCritical ? 520 : 360;
 
-    if (damageData.dualCoilSlot !== undefined && !damageData.isIncomingDamage) {
-      const pairSpreadPx = 40;
-      x += (damageData.dualCoilSlot * 2 - 1) * pairSpreadPx;
-    }
-    x += screenJitter;
-  } else {
-    // Fallback to simple projection if camera not available
-    const projectionScale = 50;
-    const centerX = window.innerWidth / 2;
-    const centerY = window.innerHeight / 2;
-    x = centerX + (damageData.position.x * projectionScale) + screenJitter;
-    y = centerY - (damageData.position.z * projectionScale) - (yOffset * 20);
-  }
+  useEffect(() => {
+    const el = elRef.current;
+    if (!el) return;
+
+    const entry: AnimEntry = {
+      id: damageData.id,
+      el,
+      damageData,
+      stackIndex,
+      duration,
+      screenJitter,
+      initialScale,
+      finalScale,
+      settleMs,
+      completed: false,
+    };
+    register(entry);
+    return () => {
+      entry.completed = true;
+      unregister(damageData.id);
+    };
+  }, [
+    damageData,
+    stackIndex,
+    duration,
+    screenJitter,
+    initialScale,
+    finalScale,
+    settleMs,
+    register,
+    unregister,
+  ]);
 
   return (
     <div
+      ref={elRef}
       className="absolute pointer-events-none select-none font-bold text-lg"
       style={{
-        left: `${x}px`,
-        top: `${y}px`,
-        opacity,
-        transform: `translate(-50%, -50%) scale(${scale})`,
+        left: 0,
+        top: 0,
+        opacity: 0,
+        transform: 'translate3d(-50%, -50%, 0) scale(1)',
         textShadow,
-        zIndex: 1000 - stackIndex, // Newer numbers appear on top
-        transition: 'opacity 0.25s ease-out',
+        zIndex: 1000 - stackIndex,
+        willChange: 'transform, opacity',
       }}
     >
       <span
@@ -319,10 +313,14 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
             ? 'text-red-400 text-lg font-bold'
             : getOutgoingDamageNumberClass(damageData.damageType, damageData.isCritical)
         }`}
-        style={damageData.isCritical ? {
-          animation: 'damage-number-critical-pop 620ms cubic-bezier(0.16, 1, 0.3, 1)',
-          WebkitTextStroke: '0.5px rgba(120, 53, 15, 0.7)',
-        } : undefined}
+        style={
+          damageData.isCritical
+            ? {
+                animation: 'damage-number-critical-pop 620ms cubic-bezier(0.16, 1, 0.3, 1)',
+                WebkitTextStroke: '0.5px rgba(120, 53, 15, 0.7)',
+              }
+            : undefined
+        }
       >
         {damageData.displayText ? (
           damageData.displayText
@@ -336,14 +334,17 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
             {damageData.isIncomingDamage && '-'}
             {(isHealDamageType(damageData.damageType) ||
               damageData.damageType === 'experience_gain' ||
-              damageData.damageType === 'gold_pickup') && '+'}
+              damageData.damageType === 'gold_pickup') &&
+              '+'}
             {damageData.damageType === 'experience_gain' ? (
               <>{Math.round(damageData.damage)} XP</>
             ) : damageData.damageType === 'gold_pickup' ? (
               <>{Math.round(damageData.damage)}</>
-            ) : isHealDamageType(damageData.damageType)
-              ? Math.round(damageData.damage)
-              : damageData.damage}
+            ) : isHealDamageType(damageData.damageType) ? (
+              Math.round(damageData.damage)
+            ) : (
+              damageData.damage
+            )}
             {damageData.isCritical && '!'}
           </>
         )}
@@ -351,7 +352,6 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
     </div>
   );
 }, (prevProps, nextProps) => {
-  // Custom comparison function for performance optimization
   return (
     prevProps.damageData.id === nextProps.damageData.id &&
     prevProps.damageData.damage === nextProps.damageData.damage &&
@@ -363,10 +363,7 @@ const DamageNumber = memo(function DamageNumber({ damageData, onComplete, camera
     prevProps.damageData.dualCoilSlot === nextProps.damageData.dualCoilSlot &&
     prevProps.damageData.displayText === nextProps.damageData.displayText &&
     prevProps.damageData.durationHint === nextProps.damageData.durationHint &&
-    prevProps.stackIndex === nextProps.stackIndex &&
-    prevProps.camera === nextProps.camera &&
-    prevProps.size.width === nextProps.size.width &&
-    prevProps.size.height === nextProps.size.height
+    prevProps.stackIndex === nextProps.stackIndex
   );
 });
 
@@ -377,37 +374,143 @@ interface DamageNumbersProps {
   size: { width: number; height: number };
 }
 
-const DamageNumbersComponent = memo(function DamageNumbers({ damageNumbers, onDamageNumberComplete, camera, size }: DamageNumbersProps) {
-  // Group damage numbers by position to create stacks
-  const positionGroups = new Map<string, DamageNumberData[]>();
-  
-  damageNumbers.forEach(damageData => {
-    // Create a position key with some tolerance for grouping nearby damage
-    const baseKey = `${Math.round(damageData.position.x * 2)}_${Math.round(damageData.position.z * 2)}`;
-    const posKey =
-      damageData.dualCoilSlot !== undefined
-        ? `${baseKey}_dc${damageData.dualCoilSlot}`
-        : baseKey;
-    if (!positionGroups.has(posKey)) {
-      positionGroups.set(posKey, []);
-    }
-    positionGroups.get(posKey)!.push(damageData);
-  });
+const DamageNumbersComponent = memo(function DamageNumbers({
+  damageNumbers,
+  onDamageNumberComplete,
+  camera,
+  size,
+}: DamageNumbersProps) {
+  const entriesRef = useRef<Map<string, AnimEntry>>(new Map());
+  const cameraRef = useRef(camera);
+  const sizeRef = useRef(size);
+  const onCompleteRef = useRef(onDamageNumberComplete);
+  cameraRef.current = camera;
+  sizeRef.current = size;
+  onCompleteRef.current = onDamageNumberComplete;
 
-  const now = Date.now();
+  const register = useCallback((entry: AnimEntry) => {
+    entriesRef.current.set(entry.id, entry);
+  }, []);
 
-  // Sort each group newest first, but keep fresh hits even when the stack is busy.
-  positionGroups.forEach(group => {
-    group.sort((a, b) => b.timestamp - a.timestamp);
-    const activeNumbers = group.filter(damageData => now - damageData.timestamp < getDamageNumberDuration(damageData));
-    const guaranteedVisible = activeNumbers.filter(damageData => now - damageData.timestamp < MIN_VISIBLE_MS);
-    const olderVisibleSlots = Math.max(0, MAX_STACK_VISIBLE - guaranteedVisible.length);
-    const olderVisible = activeNumbers
-      .filter(damageData => now - damageData.timestamp >= MIN_VISIBLE_MS)
-      .slice(0, olderVisibleSlots);
+  const unregister = useCallback((id: string) => {
+    entriesRef.current.delete(id);
+  }, []);
 
-    group.splice(0, group.length, ...guaranteedVisible, ...olderVisible);
-  });
+  // Single shared RAF — drives all active damage numbers without React re-renders.
+  useEffect(() => {
+    let rafId = 0;
+    let running = true;
+
+    const tick = () => {
+      if (!running) return;
+
+      const now = Date.now();
+      const cam = cameraRef.current;
+      const sz = sizeRef.current;
+      const hasCamera = !!(cam && sz.width > 0 && sz.height > 0);
+
+      entriesRef.current.forEach((entry) => {
+        if (entry.completed) return;
+
+        const { damageData, el, stackIndex, duration, screenJitter, initialScale, finalScale, settleMs } =
+          entry;
+        const ageMs = Math.max(0, now - damageData.timestamp);
+
+        if (ageMs >= duration) {
+          entry.completed = true;
+          onCompleteRef.current(entry.id);
+          return;
+        }
+
+        const progress = clamp01(ageMs / duration);
+        const easedProgress = easeOutCubic(progress);
+        const fadeProgress =
+          ageMs <= MIN_VISIBLE_MS
+            ? 0
+            : clamp01((ageMs - MIN_VISIBLE_MS) / Math.max(1, duration - MIN_VISIBLE_MS));
+        const settleProgress = easeOutCubic(ageMs / settleMs);
+        const scale = initialScale + (finalScale - initialScale) * settleProgress;
+        const stackOpacity = ageMs <= MIN_VISIBLE_MS ? 1 : Math.max(0.35, 1 - stackIndex * 0.12);
+        const opacity = stackOpacity * (1 - fadeProgress);
+        const yOffset = damageData.isIncomingDamage
+          ? easedProgress * -2 + stackIndex * -0.55
+          : easedProgress * 4 + stackIndex * 0.72;
+
+        let x = 0;
+        let y = 0;
+
+        if (hasCamera && damageData.position) {
+          _worldPos.copy(damageData.position);
+          _worldPos.y += yOffset;
+          _screenPos.copy(_worldPos).project(cam!);
+          x = (_screenPos.x * 0.5 + 0.5) * sz.width;
+          y = (_screenPos.y * -0.5 + 0.5) * sz.height;
+
+          if (damageData.dualCoilSlot !== undefined && !damageData.isIncomingDamage) {
+            x += (damageData.dualCoilSlot * 2 - 1) * 40;
+          }
+          x += screenJitter;
+        } else if (damageData.position) {
+          const projectionScale = 50;
+          const centerX = window.innerWidth / 2;
+          const centerY = window.innerHeight / 2;
+          x = centerX + damageData.position.x * projectionScale + screenJitter;
+          y = centerY - damageData.position.z * projectionScale - yOffset * 20;
+        }
+
+        // Compositor-only path: no left/top layout thrash.
+        el.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%) scale(${scale})`;
+        el.style.opacity = String(opacity);
+        el.style.zIndex = String(1000 - stackIndex);
+      });
+
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      running = false;
+      cancelAnimationFrame(rafId);
+    };
+  }, []);
+
+  // Group damage numbers by position to create stacks — only when the list identity/contents change
+  const visibleDamageNumbers = useMemo(() => {
+    const positionGroups = new Map<string, DamageNumberData[]>();
+
+    damageNumbers.forEach((damageData) => {
+      const baseKey = `${Math.round(damageData.position.x * 2)}_${Math.round(damageData.position.z * 2)}`;
+      const posKey =
+        damageData.dualCoilSlot !== undefined ? `${baseKey}_dc${damageData.dualCoilSlot}` : baseKey;
+      if (!positionGroups.has(posKey)) {
+        positionGroups.set(posKey, []);
+      }
+      positionGroups.get(posKey)!.push(damageData);
+    });
+
+    const now = Date.now();
+
+    // Sort each group newest first, but keep fresh hits even when the stack is busy.
+    positionGroups.forEach((group) => {
+      group.sort((a, b) => b.timestamp - a.timestamp);
+      const activeNumbers = group.filter(
+        (damageData) => now - damageData.timestamp < getDamageNumberDuration(damageData),
+      );
+      const guaranteedVisible = activeNumbers.filter(
+        (damageData) => now - damageData.timestamp < MIN_VISIBLE_MS,
+      );
+      const olderVisibleSlots = Math.max(0, MAX_STACK_VISIBLE - guaranteedVisible.length);
+      const olderVisible = activeNumbers
+        .filter((damageData) => now - damageData.timestamp >= MIN_VISIBLE_MS)
+        .slice(0, olderVisibleSlots);
+
+      group.splice(0, group.length, ...guaranteedVisible, ...olderVisible);
+    });
+
+    return Array.from(positionGroups.entries()).flatMap(([posKey, group]) =>
+      group.map((damageData, stackIndex) => ({ damageData, posKey, stackIndex })),
+    );
+  }, [damageNumbers]);
 
   return (
     <div className="fixed inset-0 pointer-events-none">
@@ -427,44 +530,35 @@ const DamageNumbersComponent = memo(function DamageNumbers({ damageNumbers, onDa
           }
         }
       `}</style>
-      {Array.from(positionGroups.values()).flat().map((damageData) => {
-        // Find the stack index for this damage number
-        const baseKey = `${Math.round(damageData.position.x * 2)}_${Math.round(damageData.position.z * 2)}`;
-        const posKey =
-          damageData.dualCoilSlot !== undefined
-            ? `${baseKey}_dc${damageData.dualCoilSlot}`
-            : baseKey;
-        const group = positionGroups.get(posKey)!;
-        const stackIndex = group.findIndex(d => d.id === damageData.id);
-
-        return (
-          <DamageNumber
-            key={damageData.id}
-            damageData={damageData}
-            onComplete={onDamageNumberComplete}
-            camera={camera}
-            size={size}
-            stackIndex={stackIndex}
-          />
-        );
-      })}
+      {visibleDamageNumbers.map(({ damageData, stackIndex }) => {
+          return (
+            <DamageNumber
+              key={damageData.id}
+              damageData={damageData}
+              register={register}
+              unregister={unregister}
+              stackIndex={stackIndex}
+            />
+          );
+        })}
     </div>
   );
 }, (prevProps, nextProps) => {
-  // Custom comparison function for main component
   return (
     prevProps.damageNumbers.length === nextProps.damageNumbers.length &&
     prevProps.damageNumbers.every((prev, index) => {
       const next = nextProps.damageNumbers[index];
-      return prev?.id === next?.id &&
-             prev?.damage === next?.damage &&
-             prev?.isCritical === next?.isCritical &&
-             prev?.damageType === next?.damageType &&
-             prev?.isIncomingDamage === next?.isIncomingDamage &&
-             prev?.dualCoilSlot === next?.dualCoilSlot &&
-             prev?.displayText === next?.displayText &&
-             prev?.durationHint === next?.durationHint &&
-             prev?.timestamp === next?.timestamp;
+      return (
+        prev?.id === next?.id &&
+        prev?.damage === next?.damage &&
+        prev?.isCritical === next?.isCritical &&
+        prev?.damageType === next?.damageType &&
+        prev?.isIncomingDamage === next?.isIncomingDamage &&
+        prev?.dualCoilSlot === next?.dualCoilSlot &&
+        prev?.displayText === next?.displayText &&
+        prev?.durationHint === next?.durationHint &&
+        prev?.timestamp === next?.timestamp
+      );
     }) &&
     prevProps.camera === nextProps.camera &&
     prevProps.size.width === nextProps.size.width &&

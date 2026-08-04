@@ -9,6 +9,7 @@ import WarlockModel from './WarlockModel';
 import CubeSoulEffect from './CubeSoulEffect';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   ENEMY_HP_BAR_WIDTH,
@@ -287,6 +288,7 @@ function WarlockRenderer({
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
 
       if (!deathCacheBuilt.current) {
+        detachSharedMaterialsForMutation(group);
         const collected: any[] = [];
         group.traverse((child: any) => {
           if (child.isMesh && child.material) {

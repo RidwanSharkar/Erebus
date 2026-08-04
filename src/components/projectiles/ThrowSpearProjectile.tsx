@@ -1,7 +1,26 @@
-import React, { useRef, useMemo } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3, Shape, Color, DoubleSide, AdditiveBlending, ConeGeometry, CylinderGeometry, ExtrudeGeometry, SphereGeometry, TorusGeometry } from 'three';
+import {
+  Group,
+  Vector3,
+  Shape,
+  Color,
+  DoubleSide,
+  AdditiveBlending,
+  ConeGeometry,
+  CylinderGeometry,
+  ExtrudeGeometry,
+  SphereGeometry,
+  TorusGeometry,
+  InstancedMesh,
+  MeshStandardMaterial,
+  Object3D,
+} from 'three';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import {
+  attachLinearTrailOpacityFalloff,
+  enableInstancedMaterialFalloff,
+} from '@/utils/instancedMaterialFalloff';
 
 const THROW_SPEAR_SHAFT_GEO = new CylinderGeometry(0.03, 0.04, 2.2, 12);
 const THROW_SPEAR_GRIP_TORUS_GEO = new TorusGeometry(0.045, 0.016, 8, 16);
@@ -12,11 +31,26 @@ const THROW_SPEAR_ORB_GEOS = [
   new SphereGeometry(0.145, 16, 16),
   new SphereGeometry(0.175, 16, 16),
 ] as const;
+const THROW_SPEAR_TRAIL_SPHERE_GEO = new SphereGeometry(0.15, 8, 8);
 const THROW_SPEAR_TRAIL_GLOW_GEO = new SphereGeometry(0.2, 6, 6);
 const THROW_SPEAR_GUARD_SPIKE_GEO = new ConeGeometry(0.070, 0.55, 3);
-for (const geo of [THROW_SPEAR_SHAFT_GEO, THROW_SPEAR_GRIP_TORUS_GEO, THROW_SPEAR_RING_TORUS_GEO, ...THROW_SPEAR_ORB_GEOS, THROW_SPEAR_TRAIL_GLOW_GEO, THROW_SPEAR_GUARD_SPIKE_GEO]) {
+for (const geo of [
+  THROW_SPEAR_SHAFT_GEO,
+  THROW_SPEAR_GRIP_TORUS_GEO,
+  THROW_SPEAR_RING_TORUS_GEO,
+  ...THROW_SPEAR_ORB_GEOS,
+  THROW_SPEAR_TRAIL_SPHERE_GEO,
+  THROW_SPEAR_TRAIL_GLOW_GEO,
+  THROW_SPEAR_GUARD_SPIKE_GEO,
+]) {
   geo.userData.shared = true;
 }
+
+const TRAIL_COUNT = 16;
+const _dummy = new Object3D();
+
+attachLinearTrailOpacityFalloff(THROW_SPEAR_TRAIL_SPHERE_GEO, TRAIL_COUNT);
+attachLinearTrailOpacityFalloff(THROW_SPEAR_TRAIL_GLOW_GEO, TRAIL_COUNT);
 
 // Reused scratch vectors — no per-frame alloc.
 const _spearLightWorld = new Vector3();
@@ -39,7 +73,8 @@ export default function ThrowSpearProjectile({
 }: ThrowSpearProjectileProps) {
   const groupRef = useRef<Group>(null);
   const lightAnchorRef = useRef<Group>(null);
-  const TRAIL_COUNT = 16;
+  const trailMeshRef = useRef<InstancedMesh>(null);
+  const glowMeshRef = useRef<InstancedMesh>(null);
   const lastAppliedOpacity = useRef(-1);
 
   const bindOpacityFactor = (factor: number) => (mat: { userData: { opacityFactor?: number }; transparent?: boolean; opacity?: number } | null) => {
@@ -58,6 +93,64 @@ export default function ThrowSpearProjectile({
   const lightColorObj = useMemo(() => new Color(lightColor), [lightColor]);
   const spearLight = useDynamicLight({ color: lightColorObj, distance: 0.5, decay: 2, priority: 2 });
 
+  const lightningColor = isReturning ? 0x00FFFF : 0xC0C0C0;
+  const cLightning = useMemo(() => new Color(lightningColor), [lightningColor]);
+
+  const trailMat = useMemo(
+    () =>
+      enableInstancedMaterialFalloff(
+        new MeshStandardMaterial({
+          color: '#c0c0c0',
+          emissive: '#c0c0c0',
+          emissiveIntensity: 1,
+          transparent: true,
+          opacity: 0.6,
+          blending: AdditiveBlending,
+          depthWrite: false,
+        }),
+      ),
+    [],
+  );
+  const glowMat = useMemo(
+    () =>
+      enableInstancedMaterialFalloff(
+        new MeshStandardMaterial({
+          color: '#c0c0c0',
+          emissive: '#c0c0c0',
+          emissiveIntensity: 1,
+          transparent: true,
+          opacity: 0.3,
+          blending: AdditiveBlending,
+          depthWrite: false,
+        }),
+      ),
+    [],
+  );
+
+  useEffect(() => {
+    const writeTrail = (mesh: InstancedMesh | null, scaleMul: number) => {
+      if (!mesh) return;
+      for (let index = 0; index < TRAIL_COUNT; index++) {
+        const trailScale = (1.15 - (index / TRAIL_COUNT) * 0.5) * scaleMul;
+        _dummy.position.set(-1, 0, -(index + 1) * 0.8 + 1);
+        _dummy.scale.setScalar(trailScale);
+        _dummy.rotation.set(0, 0, 0);
+        _dummy.updateMatrix();
+        mesh.setMatrixAt(index, _dummy.matrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    };
+    writeTrail(trailMeshRef.current, 1);
+    writeTrail(glowMeshRef.current, 1.5);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      trailMat.dispose();
+      glowMat.dispose();
+    };
+  }, [trailMat, glowMat]);
+
   useFrame(() => {
     if (!groupRef.current) return;
 
@@ -69,10 +162,12 @@ export default function ThrowSpearProjectile({
       groupRef.current.traverse((child) => {
         const mesh = child as {
           isMesh?: boolean;
+          isInstancedMesh?: boolean;
           material?: { userData?: { opacityFactor?: number }; opacity?: number; transparent?: boolean }
             | Array<{ userData?: { opacityFactor?: number }; opacity?: number; transparent?: boolean }>;
         };
-        if (!mesh.isMesh || !mesh.material) return;
+        // Instanced trail mats are driven below (falloff + base opacity).
+        if (!mesh.isMesh || mesh.isInstancedMesh || !mesh.material) return;
         const applyOpacity = (mat: { userData?: { opacityFactor?: number }; opacity?: number; transparent?: boolean }) => {
           const factor = mat.userData?.opacityFactor ?? 1;
           mat.transparent = true;
@@ -99,6 +194,17 @@ export default function ThrowSpearProjectile({
       spearLight.current?.setColor(lightColor);
       spearLight.current?.setIntensity(chargeIntensity * 2 + 2);
     }
+
+    // Base opacity × per-instance (1 - index/N); glow matches prior *(0.6*0.5).
+    trailMat.opacity = opacity * 0.6;
+    glowMat.opacity = opacity * 0.3;
+    trailMat.color.copy(cLightning);
+    trailMat.emissive.copy(cLightning);
+    glowMat.color.copy(cLightning);
+    glowMat.emissive.copy(cLightning);
+    const trailEmissive = chargeIntensity * 2 + 1;
+    trailMat.emissiveIntensity = trailEmissive;
+    glowMat.emissiveIntensity = trailEmissive;
   });
 
   // Create spear blade shape
@@ -161,14 +267,12 @@ export default function ThrowSpearProjectile({
   // Colors get more intense with higher charge
   const baseEmissiveIntensity = 1.5 + (chargeIntensity * 2); // 1.5 to 3.5
   const coreEmissiveIntensity = 2 + (chargeIntensity * 3); // 2 to 5
-  const lightningColor = isReturning ? 0x00FFFF : 0xC0C0C0; // Cyan when returning, greyish silver when going out
   const spearColor = isReturning ? 0x0088FF : 0xC0C0C0; // Blue tint when returning, greyish silver when going out
 
   // Memoize blade shapes (constant regardless of props) and per-color Color objects.
   const bladeShape = useMemo(() => createBladeShape(), []);
   const innerBladeShape = useMemo(() => createInnerBladeShape(), []);
   const cSpear = useMemo(() => new Color(spearColor), [spearColor]);
-  const cLightning = useMemo(() => new Color(lightningColor), [lightningColor]);
 
   return (
     <group ref={groupRef}>
@@ -387,38 +491,17 @@ export default function ThrowSpearProjectile({
         </group>
       </group>
 
-      {/* Lightning trail effects - more intense with higher charge */}
-      {[...Array(TRAIL_COUNT)].map((_, index) => {
-        const trailScale = 1.15 - (index / TRAIL_COUNT) * 0.5;
-        const trailOpacityFactor = (1 - index / TRAIL_COUNT) * 0.6 * 0.5;
-        
-        // Calculate trail offset in world space (behind the spear along its trajectory)
-        // Use the direction vector to position trails behind the spear
-        const trailOffset: [number, number, number] = [-1, 0, -(index + 1) * 0.8 + 1]; // Behind the spear along Z axis
-                
-        return (
-          <group
-            key={`trail-${index}`}
-            position={trailOffset} // Position behind the spear along its movement direction
-          >
-
-            
-            {/* Outer energy glow */}
-            <mesh scale={[trailScale * 1.5, trailScale * 1.5, trailScale * 1.5]} geometry={THROW_SPEAR_TRAIL_GLOW_GEO}>
-              <meshStandardMaterial
-                color={cLightning}
-                emissive={cLightning}
-                emissiveIntensity={chargeIntensity * 2 + 1}
-                transparent
-                opacity={1}
-                blending={AdditiveBlending}
-                depthWrite={false}
-                ref={bindOpacityFactor(trailOpacityFactor)}
-              />
-            </mesh>
-          </group>
-        );
-      })}
+      {/* Lightning trail — 2 instanced draw calls instead of 16 meshes */}
+      <instancedMesh
+        ref={trailMeshRef}
+        args={[THROW_SPEAR_TRAIL_SPHERE_GEO, trailMat, TRAIL_COUNT]}
+        frustumCulled={false}
+      />
+      <instancedMesh
+        ref={glowMeshRef}
+        args={[THROW_SPEAR_TRAIL_GLOW_GEO, glowMat, TRAIL_COUNT]}
+        frustumCulled={false}
+      />
       
     </group>
   );

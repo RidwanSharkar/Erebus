@@ -5,7 +5,8 @@ import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, AnimationAction, AnimationClip } from 'three';
 import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { cloneEnemySceneWithSharedMaterials } from '@/utils/sharedEnemyMaterials';
 import { loadGltfAnimationClips, preloadSkinnedIdleAndAnimationClips } from '@/utils/gltfAnimationLoader';
 import { filterAnimationTracksForRoot, getCachedProcessedClips } from '@/utils/enemyAnimationClipCache';
 import { hideStrayGlowShellMeshes } from '@/utils/hideStrayGlowShellMeshes';
@@ -87,15 +88,10 @@ export default React.memo(function BearModel({
   }, []);
 
   const clonedScene = useMemo(() => {
-    const clone = SkeletonUtils.clone(scene) as Group;
-    clone.traverse((child: any) => {
-      if (child.isMesh) {
-        child.castShadow = false;
-        child.receiveShadow = false;
-        child.material = Array.isArray(child.material)
-          ? child.material.map((m: any) => m.clone())
-          : child.material.clone();
-      }
+    const clone = cloneEnemySceneWithSharedMaterials(scene, BEAR_IDLE_PATH, {
+      selfIlluminationIntensity: null,
+      castShadow: false,
+      receiveShadow: false,
     });
     hideStrayGlowShellMeshes(clone);
     applySelfIllumination(clone, { intensity: UNIT_SELF_ILLUMINATION_INTENSITY });
@@ -150,6 +146,8 @@ export default React.memo(function BearModel({
   ]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
+
+  useCleanupAnimationMixer(mixer, sceneGroupRef);
 
   const getAction = (
     name: 'Idle' | 'Run' | 'Attack' | 'Attack2' | 'Death',

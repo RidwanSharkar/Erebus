@@ -13,6 +13,7 @@ import {
   syncEnemyHealthBarTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
+import { registerSkeletonMoveHandler } from '@/utils/skeletonMoveDispatch';
 
 interface SummonedBossSkeletonProps {
   id: string;
@@ -148,42 +149,20 @@ export default function SummonedBossSkeleton({
     };
   }, [id, socket, ATTACK_DURATION]);
 
-  // Listen for movement updates (batched and legacy single-enemy events)
+  // Listen for movement updates via central dispatcher (one socket listener for all skeletons).
   useEffect(() => {
-    if (!socket) return;
-
-    const applyMove = (position: { x: number; y: number; z: number }, rotation: number) => {
-      const newPosition = new Vector3(position.x, position.y, position.z);
-      currentPosition.current.copy(newPosition);
-      currentRotation.current = rotation;
+    const applyMove = (data: { position: { x: number; y: number; z: number }; rotation: number }) => {
+      const { position: pos, rotation: rot } = data;
+      currentPosition.current.set(pos.x, pos.y, pos.z);
+      currentRotation.current = rot;
       if (groupRef.current) {
-        groupRef.current.position.copy(newPosition);
-        groupRef.current.rotation.y = rotation;
+        groupRef.current.position.copy(currentPosition.current);
+        groupRef.current.rotation.y = rot;
       }
     };
 
-    const handleBatchedMove = (data: any) => {
-      if (!data.moves) return;
-      for (const move of data.moves) {
-        if (move.enemyId === id) {
-          applyMove(move.position, move.rotation);
-          break;
-        }
-      }
-    };
-
-    const handleEnemyMove = (data: any) => {
-      if (data.enemyId === id) applyMove(data.position, data.rotation);
-    };
-
-    socket.on('enemies-moved', handleBatchedMove);
-    socket.on('enemy-moved', handleEnemyMove);
-
-    return () => {
-      socket.off('enemies-moved', handleBatchedMove);
-      socket.off('enemy-moved', handleEnemyMove);
-    };
-  }, [id, socket]);
+    return registerSkeletonMoveHandler(id, applyMove);
+  }, [id]);
 
   useLayoutEffect(() => {
     applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth, ENEMY_HP_BAR_WIDTH);

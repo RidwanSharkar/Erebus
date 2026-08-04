@@ -10,11 +10,15 @@ import StylizedGrass from './StylizedGrass';
 import InstancedMushrooms from './InstancedMushrooms';
 import InstancedEmbers, { buildFaeRealmEmberCampOrigins } from './InstancedEmbers';
 import ThronePerimeterPylonDecor from './ThronePerimeterPylonDecor';
+import ThroneCenterSeal from './ThroneCenterSeal';
 import FaeRealmDecor from './FaeRealmDecor';
 
 const FAE_REALM_GRASS_COUNT = Math.round(
   80_000 * (FAE_REALM_HEX_RADIUS / MAIN_ARENA_HEX_RADIUS) ** 2,
 );
+
+/** Center seal disc — leaves a clear pad under the accent ring. */
+const FAE_REALM_CENTER_SEAL_RADIUS = 5.125;
 
 /** Accent ring scaled from HexCombatArena's 5.8–6.15 at r=18. */
 const RING_INNER = 5.8 * (FAE_REALM_HEX_RADIUS / MAIN_ARENA_HEX_RADIUS);
@@ -49,8 +53,10 @@ export default function FaeRealmRoom({
         radius={FAE_REALM_HEX_RADIUS}
         count={FAE_REALM_GRASS_COUNT}
         bladeHeight={0.42}
-        windStrength={0.2}
+        windStrength={combatActive ? 0 : 0.2}
         grassPalette="dream"
+        excludeInnerRadius={FAE_REALM_CENTER_SEAL_RADIUS}
+        densityScale={combatActive ? 0.5 : 1}
       />
       <InstancedMushrooms
         hiddenIndices={hiddenIndices}
@@ -61,6 +67,13 @@ export default function FaeRealmRoom({
         groundY={0}
       /> */ }
       <FaeRealmDecor />
+
+      <ThroneCenterSeal
+        texturePath="/flat_eternity.png"
+        position={[0, 0.05, 0]}
+        radius={FAE_REALM_CENTER_SEAL_RADIUS}
+        rotateSpeed={0.05}
+      />
 
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
         <ringGeometry args={[RING_INNER, RING_OUTER, 6]} />

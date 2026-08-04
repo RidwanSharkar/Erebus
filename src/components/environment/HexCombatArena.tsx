@@ -6,8 +6,9 @@ import AtmosphericParticles from './AtmosphericParticles';
 import StylizedGrass from './StylizedGrass';
 import InstancedMushrooms from './InstancedMushrooms';
 
+/** Combat-safe budget (~45k base) — prior 80k base hit ~101k blades and dominated trial FPS. */
 const HEX_ARENA_GRASS_COUNT = Math.round(
-  80_000 * (HEX_ARENA_RADIUS / MAIN_ARENA_HEX_RADIUS) ** 2,
+  45_000 * (HEX_ARENA_RADIUS / MAIN_ARENA_HEX_RADIUS) ** 2,
 );
 
 type HexArenaVariant = 'stat' | 'trial' | 'chaos' | 'merchant' | 'eden' | 'dream_layer';
@@ -111,7 +112,7 @@ export default function HexCombatArena({
         radius={HEX_ARENA_RADIUS}
         count={HEX_ARENA_GRASS_COUNT}
         bladeHeight={0.42}
-        windStrength={0.2}
+        windStrength={combatActive ? 0 : 0.2}
         grassPalette={
           variant === 'eden'
             ? 'theme'
@@ -126,6 +127,7 @@ export default function HexCombatArena({
                     : 'purple'
         }
         roomTheme={variant === 'eden' ? 'green' : undefined}
+        densityScale={combatActive ? 0.5 : 1}
       />
       <InstancedMushrooms hiddenIndices={hiddenIndices} />
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>

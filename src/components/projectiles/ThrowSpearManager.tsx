@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import ThrowSpear from './ThrowSpear';
@@ -48,7 +48,7 @@ export function triggerGlobalThrowSpear(position: Vector3, direction: Vector3, c
   // Calculate damage based on charge time (50 to 200)
   const minDamage = 50;
   const maxDamage = 200;
-  const baseDamage = minDamage + (maxDamage - minDamage) * (chargeTime / 2.0);
+  const damage = minDamage + (maxDamage - minDamage) * (chargeTime / 2.0);
 
   const projectile: ThrowSpearProjectile = {
     id: nextThrowSpearId++,
@@ -65,7 +65,7 @@ export function triggerGlobalThrowSpear(position: Vector3, direction: Vector3, c
     isReturning: false,
     returnHitEnemies: new Set(),
     chargeTime: chargeTime,
-    damage: baseDamage
+    damage: damage
   };
 
   globalThrowSpearProjectiles.push(projectile);
@@ -75,12 +75,22 @@ export function getGlobalThrowSpearProjectiles(): ThrowSpearProjectile[] {
   return globalThrowSpearProjectiles;
 }
 
+/** In-place swap-remove — avoids allocating a new array every frame. */
+function swapRemoveProjectile(index: number): void {
+  const last = globalThrowSpearProjectiles.length - 1;
+  if (index !== last) {
+    globalThrowSpearProjectiles[index] = globalThrowSpearProjectiles[last];
+  }
+  globalThrowSpearProjectiles.pop();
+}
+
 export default function ThrowSpearManager({ world }: ThrowSpearManagerProps) {
   const [projectiles, setProjectiles] = useState<ThrowSpearProjectile[]>([]);
   // Track last-seen active count to batch state updates only when projectiles arrive/depart
   const lastActiveCount = useRef(-1);
+  const playerEntityCache = useRef<any>(null);
 
-  const checkCollisions = useCallback((projectile: ThrowSpearProjectile) => {
+  const checkCollisions = useCallback((projectile: ThrowSpearProjectile, playerEntity: any) => {
     if (!world) return;
 
     const entities = world.getAllEntities();
@@ -111,7 +121,6 @@ export default function ThrowSpearManager({ world }: ThrowSpearManagerProps) {
 
         // Apply damage
         if (combatSystem) {
-          const playerEntity = world.getAllEntities().find((e: any) => e.userData?.isPlayer);
           (combatSystem as any).queueDamage(
             entity,
             actualDamage,
@@ -131,18 +140,37 @@ export default function ThrowSpearManager({ world }: ThrowSpearManagerProps) {
         lastActiveCount.current = 0;
         setProjectiles([]);
       }
+      playerEntityCache.current = null;
       return;
     }
 
     const currentTime = performance.now();
     let changed = false;
 
-    globalThrowSpearProjectiles = globalThrowSpearProjectiles.filter((projectile) => {
+    // Resolve player once per frame for all spears
+    let playerEntity = playerEntityCache.current;
+    if (!playerEntity || !playerEntity.userData?.isPlayer) {
+      playerEntity = world.getAllEntities().find((e: any) => e.userData?.isPlayer) ?? null;
+      playerEntityCache.current = playerEntity;
+    }
+    let playerPosition: Vector3 | null = null;
+    if (playerEntity) {
+      const playerTransform = playerEntity.getComponent(Transform);
+      if (playerTransform) playerPosition = playerTransform.position;
+    }
+
+    for (let i = globalThrowSpearProjectiles.length - 1; i >= 0; i--) {
+      const projectile = globalThrowSpearProjectiles[i];
       const minSpeed = 16;
       const maxSpeed = 42;
       const speed = minSpeed + (maxSpeed - minSpeed) * (projectile.chargeTime / 2.0);
       const returnSpeed = speed * 1.1;
-      if (!projectile.active) { changed = true; return false; }
+
+      if (!projectile.active) {
+        swapRemoveProjectile(i);
+        changed = true;
+        continue;
+      }
 
       if (projectile.fadeStartTime) {
         const fadeElapsed = (currentTime - projectile.fadeStartTime) / 1000;
@@ -150,36 +178,34 @@ export default function ThrowSpearManager({ world }: ThrowSpearManagerProps) {
         projectile.opacity = Math.max(0, 1 - (fadeElapsed / fadeDuration));
         if (projectile.opacity <= 0) {
           projectile.active = false;
+          swapRemoveProjectile(i);
           changed = true;
-          return false;
+          continue;
         }
-      }
-
-      const playerEntity = world.getAllEntities().find((e: any) => e.userData?.isPlayer);
-      let playerPosition: Vector3 | null = null;
-      if (playerEntity) {
-        const playerTransform = playerEntity.getComponent(Transform);
-        if (playerTransform) playerPosition = playerTransform.position;
       }
 
       if (!projectile.isReturning) {
         const distanceFromStart = projectile.position.distanceTo(projectile.startPosition);
         if (distanceFromStart < projectile.maxDistance && !projectile.fadeStartTime) {
           projectile.position.add(_scratchMovement.copy(projectile.direction).multiplyScalar(speed * delta));
-          checkCollisions(projectile);
+          checkCollisions(projectile, playerEntity);
         } else if (!projectile.fadeStartTime) {
           projectile.isReturning = true;
           if (playerPosition) {
-            projectile.direction = _scratchReturnDir.subVectors(playerPosition, projectile.position).normalize().clone();
+            projectile.direction.copy(
+              _scratchReturnDir.subVectors(playerPosition, projectile.position).normalize(),
+            );
           }
         }
       } else {
         if (playerPosition) {
           const distanceToPlayer = projectile.position.distanceTo(playerPosition);
           if (distanceToPlayer > 1.5 && !projectile.fadeStartTime) {
-            projectile.direction = _scratchReturnDir.subVectors(playerPosition, projectile.position).normalize().clone();
+            projectile.direction.copy(
+              _scratchReturnDir.subVectors(playerPosition, projectile.position).normalize(),
+            );
             projectile.position.add(_scratchMovement.copy(projectile.direction).multiplyScalar(returnSpeed * delta));
-            checkCollisions(projectile);
+            checkCollisions(projectile, playerEntity);
           } else if (!projectile.fadeStartTime) {
             projectile.fadeStartTime = currentTime;
           }
@@ -187,18 +213,15 @@ export default function ThrowSpearManager({ world }: ThrowSpearManagerProps) {
           projectile.fadeStartTime = currentTime;
         }
       }
-
-      return projectile.active;
-    });
+    }
 
     // Sync React state only when projectiles arrive/depart — movement/fade mutate refs in place.
     const activeCount = globalThrowSpearProjectiles.length;
     if (changed || activeCount !== lastActiveCount.current) {
       lastActiveCount.current = activeCount;
-      setProjectiles([...globalThrowSpearProjectiles]);
+      setProjectiles(globalThrowSpearProjectiles.slice());
     }
   });
 
   return <ThrowSpear activeProjectiles={projectiles} />;
 }
-

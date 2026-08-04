@@ -37,7 +37,7 @@ const HP_BAR_WIDTH = 4.2;
 const LERP_SPEED = 8;
 const WALK_STOP_DELAY = 300;
 
-export default function StoneGiantRenderer({
+function StoneGiantRenderer({
   id,
   position,
   rotation,
@@ -208,3 +208,5 @@ export default function StoneGiantRenderer({
     </group>
   );
 }
+
+export default React.memo(StoneGiantRenderer);

@@ -245,6 +245,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           roomKind={coopCurrentRoomKind}
           roomIndex={specialMapRoomIndex}
           enterSeq={coopCombatArenaEnterSeq}
+          combatActive={combatArenaActive && enemiesCount > 0}
         />
       )}
       {isFaeRealm ? (

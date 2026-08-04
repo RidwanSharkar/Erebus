@@ -1,5 +1,15 @@
 import { useRef, useMemo, useEffect, memo } from 'react';
-import { Group, Vector3, SphereGeometry, MeshStandardMaterial, MeshBasicMaterial, Color, AdditiveBlending, RingGeometry } from '@/utils/three-exports';
+import {
+  Vector3,
+  SphereGeometry,
+  MeshStandardMaterial,
+  MeshBasicMaterial,
+  Color,
+  AdditiveBlending,
+  RingGeometry,
+  InstancedMesh,
+  Object3D,
+} from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import { WeaponType } from '../dragon/weapons';
@@ -42,6 +52,8 @@ interface ColossusStrikeProps {
   combatSystem?: any; // CombatSystem for creating damage numbers
 }
 
+const _dummy = new Object3D();
+
 const ColossusStrikeComponent = memo(function ColossusStrike({
   weaponType,
   position,
@@ -63,6 +75,8 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
   const damageDealtRef = useRef(false);
   const isVisible = useRef(false);
   const isCompleted = useRef(false);
+  const coreMeshRef = useRef<InstancedMesh>(null);
+  const secondaryMeshRef = useRef<InstancedMesh>(null);
 
   // Borrow a pooled light instead of mounting a <pointLight> (avoids lit-shader recompiles).
   const strikeLight = useDynamicLight({ color: '#FFD700', distance: 8, decay: 2, priority: 1 });
@@ -152,6 +166,19 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
 
     return [mainBolt, ...secondaryBranches, ...tertiaryBranches];
   }, [position, skyPosition]);
+
+  // Flatten branches into core vs secondary instance lists (pixel-identical positions/scales).
+  const { coreInstances, secondaryInstances } = useMemo(() => {
+    const core: Array<{ point: Vector3; thickness: number }> = [];
+    const secondary: Array<{ point: Vector3; thickness: number }> = [];
+    for (const branch of branches) {
+      const target = branch.isCoreStrike ? core : secondary;
+      for (const point of branch.points) {
+        target.push({ point, thickness: branch.thickness });
+      }
+    }
+    return { coreInstances: core, secondaryInstances: secondary };
+  }, [branches]);
   
   // Create geometries and materials
   const geometries = useMemo(() => ({
@@ -203,6 +230,31 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
       new MeshBasicMaterial({ color: '#FFD700', transparent: true, blending: AdditiveBlending }),
     ],
   }), []);
+
+  // Write instance matrices once when meshes mount / branch data is ready.
+  useEffect(() => {
+    const writeInstances = (
+      mesh: InstancedMesh | null,
+      instances: Array<{ point: Vector3; thickness: number }>,
+    ) => {
+      if (!mesh) return;
+      const count = instances.length;
+      mesh.count = count;
+      for (let i = 0; i < count; i++) {
+        const { point, thickness } = instances[i];
+        _dummy.position.copy(point);
+        _dummy.scale.setScalar(thickness);
+        _dummy.rotation.set(0, 0, 0);
+        _dummy.updateMatrix();
+        mesh.setMatrixAt(i, _dummy.matrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+    };
+
+    writeInstances(coreMeshRef.current, coreInstances);
+    writeInstances(secondaryMeshRef.current, secondaryInstances);
+  }, [coreInstances, secondaryInstances]);
 
   // Dispose GPU resources on unmount
   useEffect(() => {
@@ -336,22 +388,23 @@ const ColossusStrikeComponent = memo(function ColossusStrike({
     return null;
   }
 
+  // Cap capacity to the computed instance counts (avoid over-allocating).
+  const coreCapacity = Math.max(1, coreInstances.length);
+  const secondaryCapacity = Math.max(1, secondaryInstances.length);
+
   return (
     <group>
-      {/* Lightning branches */}
-      {branches.map((branch, branchIdx) => (
-        <group key={branchIdx}>
-          {branch.points.map((point, idx) => (
-            <mesh
-              key={idx}
-              position={point.toArray()}
-              geometry={geometries.bolt}
-              material={branch.isCoreStrike ? materials.coreBolt : materials.secondaryBolt}
-              scale={[branch.thickness, branch.thickness, branch.thickness]}
-            />
-          ))}
-        </group>
-      ))}
+      {/* Lightning bolt points — 2 draw calls instead of ~1000 */}
+      <instancedMesh
+        ref={coreMeshRef}
+        args={[geometries.bolt, materials.coreBolt, coreCapacity]}
+        frustumCulled={false}
+      />
+      <instancedMesh
+        ref={secondaryMeshRef}
+        args={[geometries.bolt, materials.secondaryBolt, secondaryCapacity]}
+        frustumCulled={false}
+      />
       
       {/* Impact effect */}
       <group position={position.toArray()}>

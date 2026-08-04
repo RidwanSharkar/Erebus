@@ -28,7 +28,7 @@ const bossRelicItems = require('./bossRelicItems');
 
 /** Co-op boss encounters (GLB tier 1, Archon tier 2, Weaver Nexus, Destiny dragon). */
 const COOP_BOSS_TYPES = new Set(['boss', 'boss2', 'boss3', 'destiny']);
-const COOP_BOSS_MAX_HEALTH_PRE_TRINITY = { boss: 5000, boss2: 8500, boss3: 12500, destiny: 35000 };
+const COOP_BOSS_MAX_HEALTH_PRE_TRINITY = { boss: 7500, boss2: 9250, boss3: 11250, destiny: 35000 };
 const COOP_BOSS_MAX_HEALTH_POST_TRINITY = { boss: 12500, boss2: 20000, boss3: 30000, destiny: 55000 };
 /** Knight damage by boss-kill tier: [base, after boss 1, after boss 2, after boss 3+]. */
 const KNIGHT_DAMAGE_BY_TIER = {
@@ -339,9 +339,9 @@ const FAE_BEAST_STATS = Object.freeze({
   wolf: {
     enemyType: 'allied-wolf',
     maxHp: 400,
-    damage: 33,
+    damage: 26,
     walkSpeed: 3.0,
-    attackCooldownMs: 1100,
+    attackCooldownMs: 850,
     visualScale: 1.0,
     hpRegenAmount: 30,
     hpRegenIntervalMs: 5000,
@@ -7684,6 +7684,10 @@ class GameRoom {
     return this.players.get(playerId);
   }
 
+  /**
+   * Snapshot of living players. Allocates a new array — prefer `this.players.values()`
+   * in hot combat/hazard loops; keep this for network payloads and one-shot snapshots.
+   */
   getPlayers() {
     return Array.from(this.players.values());
   }
@@ -8650,8 +8654,13 @@ class GameRoom {
       }
       // Re-seed after clearNonPlayerAggroTargets so the wipe does not erase the duel focus.
       if (this.coopSunkenActive && this.coopSunkenRoomIndex === 3 && this.enemyAI) {
-        const nemesis = [...this.enemies.values()].find((e) => e.type === 'nemesis');
-        const valkyrie = [...this.enemies.values()].find((e) => e.type === 'valkyrie');
+        let nemesis = null;
+        let valkyrie = null;
+        for (const e of this.enemies.values()) {
+          if (!nemesis && e.type === 'nemesis') nemesis = e;
+          else if (!valkyrie && e.type === 'valkyrie') valkyrie = e;
+          if (nemesis && valkyrie) break;
+        }
         if (nemesis && valkyrie) {
           this.enemyAI.seedSunkenTempleDuelAggro(nemesis.id, [valkyrie.id]);
         }
@@ -8796,7 +8805,7 @@ class GameRoom {
     // Every kill adds +250 HP to all combatants (martyr & tentacle-spine excluded)
     // and bumps damage along a per-type tier table. Tier is clamped at 3 (3+ bosses).
     const tier = Math.min(this.coopBossesDefeatedCount || 0, 3);
-    const hpBonus = 225 * tier;
+    const hpBonus = 350 * tier;
 
     const SHADE_DAMAGE_BY_TIER   = [13, 18, 25, 33];
     const TEMPLAR_DAMAGE_BY_TIER = [48, 60, 78, 96];
@@ -8861,10 +8870,10 @@ class GameRoom {
     if (type === 'titan') {
       // Excluded from HP scaling.
       const TITAN_STATS_BY_SOUL = {
-        blue:   { health: 3500, maxHealth: 3500, damage: 134 },
-        red:    { health: 4000, maxHealth: 4000, damage: 126 },
-        green:  { health: 5000, maxHealth: 5000, damage: 112 },
-        purple: { health: 3000, maxHealth: 3000, damage: 148 },
+        blue:   { health: 6160, maxHealth: 6160, damage: 134 },
+        red:    { health: 6750, maxHealth: 6750, damage: 126 },
+        green:  { health: 7200, maxHealth: 7200, damage: 112 },
+        purple: { health: 6350, maxHealth: 6350, damage: 148 },
       };
       const soulType = this._resolveTitanSoulType(campDef);
       const stats = TITAN_STATS_BY_SOUL[soulType];
@@ -9865,6 +9874,10 @@ class GameRoom {
           return rest;
         })()
       : null;
+    const src = hitMeta?.sourceEnemyId
+      ? (this.getEnemy?.(hitMeta.sourceEnemyId) || this.enemies.get(hitMeta.sourceEnemyId))
+      : null;
+    const scaled = this.enemyAI?.scaleDamageVsAlly?.(src, damage) ?? damage;
     let firstResult = null;
     for (const ally of this.enemies.values()) {
       if (!this.isAlliedUnitEnemy(ally) || ally.isDying || ally.health <= 0) continue;
@@ -9874,7 +9887,7 @@ class GameRoom {
       const dx = ax - cx;
       const dz = az - cz;
       if (dx * dx + dz * dz > r2) continue;
-      const result = this.damageEnemy(ally.id, damage, null, null, damageMeta);
+      const result = this.damageEnemy(ally.id, scaled, null, null, damageMeta);
       if (!firstResult) firstResult = result;
     }
     return firstResult;
@@ -12592,6 +12605,10 @@ class GameRoom {
     return result;
   }
 
+  /**
+   * Snapshot of living enemies. Allocates a new array — prefer `this.enemies.values()`
+   * in hot combat/hazard loops; keep this for network payloads and one-shot snapshots.
+   */
   getEnemies() {
     return Array.from(this.enemies.values());
   }
@@ -12699,7 +12716,7 @@ class GameRoom {
             attackVariant: 1,
             breathVariant: 1,
             visualScale: 1.8,
-            damage: 55,
+            damage: 71,
             destinyPhase: 'ground',
             flyPhaseCompleted: false,
             flyAttackVolleysFired: 0,
@@ -12879,6 +12896,8 @@ class GameRoom {
     if (!this.gameStarted || this.players.size === 0) return;
     if (this.gameMode === 'coop' && !this.combatArenaActive) return;
     if (this.gameMode === 'coop') {
+      // Main AI already ticks companions — stop the no-op 33ms companion wake.
+      this.stopCompanionAI();
       this.enemyAI.startAI();
     }
   }
@@ -12886,6 +12905,10 @@ class GameRoom {
   // Stop enemy AI system
   stopEnemyAI() {
     this.enemyAI.stopAI();
+    // Resume companion-only AI when beasts/spirits still need ticks outside combat AI.
+    if (this.gameStarted && this.players.size > 0) {
+      this.startCompanionAI();
+    }
   }
 
   // Status effect management methods
@@ -13806,7 +13829,9 @@ class GameRoom {
     if (kind === 'oxygen') {
       player.merchantOxygenPurchases = (player.merchantOxygenPurchases || 0) + 1;
       player.merchantUtilityPurchasedThisVisit = true;
-      const nextMaxEnergy = 100 + player.merchantOxygenPurchases * 20;
+      const fireAffinityEnergyBonus =
+        String(player.weaponAspect || '').toUpperCase() === 'FIRE_AFFINITY' ? 25 : 0;
+      const nextMaxEnergy = 100 + player.merchantOxygenPurchases * 20 + fireAffinityEnergyBonus;
       player.maxEnergy = nextMaxEnergy;
       player.energy = Math.min(nextMaxEnergy, (player.energy || 0) + 20);
       if (this.io) {
@@ -14495,6 +14520,7 @@ class GameRoom {
     }
     this.stopEnemySpawning();
     this.stopEnemyAI();
+    this.stopCompanionAI();
 
     this.players.clear();
     this.enemies.clear();

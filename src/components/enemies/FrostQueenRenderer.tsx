@@ -9,6 +9,7 @@ import FrostQueenModel, { type FrostQueenAbilityClip } from './FrostQueenModel';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation } from '@/utils/enemyLiveTransform';
+import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   ENEMY_HP_BAR_WIDTH,
@@ -39,7 +40,7 @@ const LERP_SPEED = 12;
 const TELEPORT_LERP_SPEED = 20;
 const FADE_DURATION = 1.5;
 
-export default function FrostQueenRenderer({
+function FrostQueenRenderer({
   id,
   position,
   rotation,
@@ -226,6 +227,7 @@ export default function FrostQueenRenderer({
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
       if (!deathCacheBuilt.current) {
+        detachSharedMaterialsForMutation(group);
         const collected: any[] = [];
         group.traverse((child: any) => {
           if (child.isMesh && child.material) {
@@ -249,7 +251,7 @@ export default function FrostQueenRenderer({
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <FrostQueenModel abilityClip={abilityClip} isDying={isDying} />
 
-      <Billboard position={[0, 2.2, 0]} follow lockX={false} lockY={false} lockZ={false}>
+      <Billboard position={[0, 4.2, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
             <EnemyHpBarPlanes
@@ -272,3 +274,5 @@ export default function FrostQueenRenderer({
     </group>
   );
 }
+
+export default React.memo(FrostQueenRenderer);

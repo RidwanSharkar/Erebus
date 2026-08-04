@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useMemo, useRef } from 'react';
-import type { Mesh, PointLight } from 'three';
-import { MeshStandardMaterial } from '@/utils/three-exports';
+import type { Mesh } from 'three';
+import { MeshBasicMaterial } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { Color } from '@/utils/three-exports';
 import CustomSky from './CustomSky';
@@ -12,10 +12,13 @@ import { PENTAGON_ARENA_RADIUS } from '@/utils/mapConstants';
 
 const EDGE_INSET = PENTAGON_ARENA_RADIUS + 0.25;
 const TORCH_Y = 0.8;
-const TORCH_COLOR = '#88ddff';
 const TORCH_GLOW = '#a8e8ff';
-const TORCH_BASE_INTENSITY = 4.5;
-const TORCH_DISTANCE = 10;
+/** Shared unlit glow color — avoid allocating Color in JSX. */
+const TORCH_ORB_COLOR = new Color(TORCH_GLOW);
+
+/** Combat-safe bubble budget (was 220 @ radius+10). */
+const SUNKEN_BUBBLE_COUNT = 80;
+const SUNKEN_BUBBLE_RADIUS = PENTAGON_ARENA_RADIUS + 2;
 
 const PENTAGON_EDGE_TORCH_POSITIONS: [number, number, number][] = [
   [EDGE_INSET * 0.78, TORCH_Y, 0],
@@ -25,49 +28,38 @@ const PENTAGON_EDGE_TORCH_POSITIONS: [number, number, number][] = [
   [0, TORCH_Y, -EDGE_INSET * 0.85],
 ];
 
-function SunkenEdgeLight({
+/** Emissive-only orb — no realtime pointLight (scene ambient + directional light the room). */
+function SunkenEdgeOrb({
   position,
   phaseOffset,
+  animate,
 }: {
   position: [number, number, number];
   phaseOffset: number;
+  animate: boolean;
 }) {
-  const lightRef = useRef<PointLight>(null);
   const orbRef = useRef<Mesh>(null);
   const orbMat = useMemo(
     () =>
-      new MeshStandardMaterial({
-        color: TORCH_GLOW,
-        emissive: TORCH_COLOR,
-        emissiveIntensity: 2.2,
+      new MeshBasicMaterial({
+        color: TORCH_ORB_COLOR,
         transparent: true,
         opacity: 0.85,
+        depthWrite: false,
       }),
     [],
   );
 
   useFrame(({ clock }) => {
+    if (!animate || !orbRef.current) return;
     const t = clock.elapsedTime + phaseOffset;
     const flicker = 0.85 + Math.sin(t * 1.8) * 0.08 + Math.sin(t * 4.2 + 0.7) * 0.06;
-    if (lightRef.current) {
-      lightRef.current.intensity = TORCH_BASE_INTENSITY * flicker;
-    }
-    if (orbRef.current) {
-      orbMat.emissiveIntensity = 1.6 + flicker * 0.8;
-      orbRef.current.scale.setScalar(1.0 + flicker * 0.12);
-    }
+    orbMat.opacity = 0.7 + flicker * 0.2;
+    orbRef.current.scale.setScalar(1.0 + flicker * 0.12);
   });
 
   return (
     <group position={position}>
-      <pointLight
-        ref={lightRef}
-        color={new Color(TORCH_COLOR)}
-        intensity={TORCH_BASE_INTENSITY}
-        distance={TORCH_DISTANCE}
-        decay={1.8}
-        castShadow={false}
-      />
       <mesh ref={orbRef} position={[0, 0.08, 0]} material={orbMat}>
         <sphereGeometry args={[0.14, 8, 8]} />
       </mesh>
@@ -75,7 +67,9 @@ function SunkenEdgeLight({
   );
 }
 
-const SunkenTempleRoom: React.FC<{ combatActive?: boolean }> = () => {
+const SunkenTempleRoom: React.FC<{ combatActive?: boolean }> = ({
+  combatActive = false,
+}) => {
   const radius = PENTAGON_ARENA_RADIUS;
 
   return (
@@ -89,11 +83,20 @@ const SunkenTempleRoom: React.FC<{ combatActive?: boolean }> = () => {
         rotateSpeed={0.04}
       />
 
-
-      <ArenaRisingBubbles radius={radius +10} />
+      {!combatActive && (
+        <ArenaRisingBubbles
+          count={SUNKEN_BUBBLE_COUNT}
+          radius={SUNKEN_BUBBLE_RADIUS}
+        />
+      )}
 
       {PENTAGON_EDGE_TORCH_POSITIONS.map((pos, i) => (
-        <SunkenEdgeLight key={`sunken-edge-light-${i}`} position={pos} phaseOffset={i * 1.4} />
+        <SunkenEdgeOrb
+          key={`sunken-edge-orb-${i}`}
+          position={pos}
+          phaseOffset={i * 1.4}
+          animate={!combatActive}
+        />
       ))}
     </group>
   );

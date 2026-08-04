@@ -1,7 +1,25 @@
 import React, { useRef, useMemo, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Mesh, Line, Vector3, BufferGeometry, LineBasicMaterial, AdditiveBlending, BufferAttribute, SphereGeometry, MeshStandardMaterial } from '@/utils/three-exports';
+import {
+  Mesh,
+  Line,
+  Vector3,
+  BufferGeometry,
+  LineBasicMaterial,
+  AdditiveBlending,
+  BufferAttribute,
+  SphereGeometry,
+  MeshStandardMaterial,
+  InstancedMesh,
+  Object3D,
+} from '@/utils/three-exports';
 import { applyArrowTrailDrawRange } from '@/utils/arrowTrailDrawRange';
+import {
+  INSTANCE_EMISSIVE_ATTR,
+  INSTANCE_OPACITY_ATTR,
+  enableInstancedMaterialFalloff,
+  ensureInstanceFloatAttribute,
+} from '@/utils/instancedMaterialFalloff';
 
 interface ChargedArrowTrailProps {
   color: string;
@@ -14,6 +32,9 @@ interface ChargedArrowTrailProps {
 const GLOW_COUNT = 5;
 const SPARK_GROUP_COUNT = 3;
 const SPARKS_PER_GROUP = 3;
+const SPARK_COUNT = SPARK_GROUP_COUNT * SPARKS_PER_GROUP;
+
+const _dummy = new Object3D();
 
 function ChargedArrowTrail({
   color,
@@ -29,8 +50,8 @@ function ChargedArrowTrail({
   const ringHead = useRef(0);
   const ringFill = useRef(0);
   const initialized = useRef(false);
-  const glowRefs = useRef<(Mesh | null)[]>([]);
-  const sparkRefs = useRef<(Mesh | null)[]>([]);
+  const glowMeshRef = useRef<InstancedMesh>(null);
+  const sparkMeshRef = useRef<InstancedMesh>(null);
 
   const trailGeometry = useMemo(() => {
     const geometry = new BufferGeometry();
@@ -79,37 +100,46 @@ function ChargedArrowTrail({
     return line;
   }, [trailGeometry, trailMaterial]);
 
-  const glowGeos = useMemo(
-    () => Array.from({ length: GLOW_COUNT }, (_, i) => new SphereGeometry(size * 2 * (0.3 - i * 0.05), 8, 8)),
-    [size],
-  );
-  const glowMats = useMemo(
+  // Unit sphere — per-instance scale reproduces former glowGeos radii: size*2*(0.3 - i*0.05)
+  const glowGeo = useMemo(() => {
+    const geo = new SphereGeometry(1, 8, 8);
+    ensureInstanceFloatAttribute(geo, INSTANCE_OPACITY_ATTR, GLOW_COUNT, 1);
+    ensureInstanceFloatAttribute(geo, INSTANCE_EMISSIVE_ATTR, GLOW_COUNT, 1);
+    return geo;
+  }, []);
+  const glowMat = useMemo(
     () =>
-      Array.from({ length: GLOW_COUNT }, (_, i) =>
+      enableInstancedMaterialFalloff(
         new MeshStandardMaterial({
           color,
           emissive: color,
-          emissiveIntensity: 2 - i * 0.3,
+          // Base intensity 1; absolute (2 - i*0.3) is written per instance.
+          emissiveIntensity: 1,
           transparent: true,
-          opacity: opacity * (1 - i * 0.2),
+          opacity,
           depthWrite: false,
           blending: AdditiveBlending,
           toneMapped: false,
         }),
+        { emissive: true },
       ),
     [color, opacity],
   );
 
-  const sparkGeo = useMemo(() => new SphereGeometry(0.02, 4, 4), []);
-  const sparkMats = useMemo(
+  const sparkGeo = useMemo(() => {
+    const geo = new SphereGeometry(0.02, 4, 4);
+    ensureInstanceFloatAttribute(geo, INSTANCE_OPACITY_ATTR, SPARK_COUNT, 1);
+    return geo;
+  }, []);
+  const sparkMat = useMemo(
     () =>
-      Array.from({ length: SPARK_GROUP_COUNT * SPARKS_PER_GROUP }, (_, i) =>
+      enableInstancedMaterialFalloff(
         new MeshStandardMaterial({
           color: '#ffcc00',
           emissive: '#ff8800',
           emissiveIntensity: 3,
           transparent: true,
-          opacity: opacity * (1 - Math.floor(i / SPARKS_PER_GROUP) * 0.3),
+          opacity,
           depthWrite: false,
           blending: AdditiveBlending,
         }),
@@ -119,12 +149,18 @@ function ChargedArrowTrail({
 
   const sparkOffsets = useMemo(
     () =>
-      Array.from({ length: SPARK_GROUP_COUNT * SPARKS_PER_GROUP }, () => [
+      Array.from({ length: SPARK_COUNT }, () => [
         (Math.random() - 0.5) * 0.3,
         (Math.random() - 0.5) * 0.3,
         (Math.random() - 0.5) * 0.3,
       ] as [number, number, number]),
     [],
+  );
+
+  // Per-glow scale factors matching former SphereGeometry radii only (not opacity).
+  const glowScales = useMemo(
+    () => Array.from({ length: GLOW_COUNT }, (_, i) => size * 2 * (0.3 - i * 0.05)),
+    [size],
   );
 
   useEffect(() => {
@@ -133,12 +169,12 @@ function ChargedArrowTrail({
       trailGeometry.setDrawRange(0, 0);
       trailGeometry.dispose();
       trailMaterial.dispose();
-      glowGeos.forEach((g) => g.dispose());
-      glowMats.forEach((m) => m.dispose());
+      glowGeo.dispose();
+      glowMat.dispose();
       sparkGeo.dispose();
-      sparkMats.forEach((m) => m.dispose());
+      sparkMat.dispose();
     };
-  }, [trailGeometry, trailMaterial, trailLine, glowGeos, glowMats, sparkGeo, sparkMats]);
+  }, [trailGeometry, trailMaterial, trailLine, glowGeo, glowMat, sparkGeo, sparkMat]);
 
   const _scratchPos = useRef(new Vector3());
 
@@ -192,24 +228,83 @@ function ChargedArrowTrail({
     const _ring = posRing.current;
     const _fill = ringFill.current;
 
-    for (let i = 0; i < GLOW_COUNT; i++) {
-      const glow = glowRefs.current[i];
-      if (glow && i < _fill) {
-        glow.position.copy(_ring[(_head + i) % maxTrailLength]);
+    const glowMesh = glowMeshRef.current;
+    if (glowMesh) {
+      const opacityAttr = ensureInstanceFloatAttribute(
+        glowMesh.geometry,
+        INSTANCE_OPACITY_ATTR,
+        GLOW_COUNT,
+        1,
+      );
+      const emissiveAttr = ensureInstanceFloatAttribute(
+        glowMesh.geometry,
+        INSTANCE_EMISSIVE_ATTR,
+        GLOW_COUNT,
+        1,
+      );
+      const opacityArr = opacityAttr.array as Float32Array;
+      const emissiveArr = emissiveAttr.array as Float32Array;
+
+      for (let i = 0; i < GLOW_COUNT; i++) {
+        if (i < _fill) {
+          const p = _ring[(_head + i) % maxTrailLength];
+          // Original per-mesh: opacity * (1 - i*0.2), emissiveIntensity 2 - i*0.3
+          opacityArr[i] = 1 - i * 0.2;
+          emissiveArr[i] = 2 - i * 0.3;
+          _dummy.position.copy(p);
+          _dummy.scale.setScalar(glowScales[i]);
+          _dummy.rotation.set(0, 0, 0);
+          _dummy.updateMatrix();
+          glowMesh.setMatrixAt(i, _dummy.matrix);
+        } else {
+          opacityArr[i] = 0;
+          emissiveArr[i] = 0;
+          _dummy.position.set(0, -9999, 0);
+          _dummy.scale.setScalar(0);
+          _dummy.updateMatrix();
+          glowMesh.setMatrixAt(i, _dummy.matrix);
+        }
       }
+      opacityAttr.needsUpdate = true;
+      emissiveAttr.needsUpdate = true;
+      glowMesh.instanceMatrix.needsUpdate = true;
     }
 
-    for (let g = 0; g < SPARK_GROUP_COUNT; g++) {
-      if (g >= _fill) continue;
-      const groupPos = _ring[(_head + g) % maxTrailLength];
-      if (!groupPos) continue;
-      for (let s = 0; s < SPARKS_PER_GROUP; s++) {
-        const idx = g * SPARKS_PER_GROUP + s;
-        const spark = sparkRefs.current[idx];
-        if (!spark) continue;
-        const offset = sparkOffsets[idx];
-        spark.position.set(groupPos.x + offset[0], groupPos.y + offset[1], groupPos.z + offset[2]);
+    const sparkMesh = sparkMeshRef.current;
+    if (sparkMesh) {
+      const opacityAttr = ensureInstanceFloatAttribute(
+        sparkMesh.geometry,
+        INSTANCE_OPACITY_ATTR,
+        SPARK_COUNT,
+        1,
+      );
+      const opacityArr = opacityAttr.array as Float32Array;
+
+      for (let g = 0; g < SPARK_GROUP_COUNT; g++) {
+        const groupPos = g < _fill ? _ring[(_head + g) % maxTrailLength] : null;
+        // Original per-group material opacity: opacity * (1 - group * 0.3)
+        const groupOpacityFactor = 1 - g * 0.3;
+        for (let s = 0; s < SPARKS_PER_GROUP; s++) {
+          const idx = g * SPARKS_PER_GROUP + s;
+          if (groupPos) {
+            const offset = sparkOffsets[idx];
+            opacityArr[idx] = groupOpacityFactor;
+            _dummy.position.set(groupPos.x + offset[0], groupPos.y + offset[1], groupPos.z + offset[2]);
+            _dummy.scale.setScalar(1);
+            _dummy.rotation.set(0, 0, 0);
+            _dummy.updateMatrix();
+            sparkMesh.setMatrixAt(idx, _dummy.matrix);
+          } else {
+            opacityArr[idx] = 0;
+            _dummy.position.set(0, -9999, 0);
+            _dummy.scale.setScalar(0);
+            _dummy.updateMatrix();
+            sparkMesh.setMatrixAt(idx, _dummy.matrix);
+          }
+        }
       }
+      opacityAttr.needsUpdate = true;
+      sparkMesh.instanceMatrix.needsUpdate = true;
     }
   });
 
@@ -217,27 +312,16 @@ function ChargedArrowTrail({
     <group name="charged-arrow-trail">
       <primitive ref={trailRef} object={trailLine} />
 
-      {glowGeos.map((geo, i) => (
-        <mesh
-          key={`glow-${i}`}
-          ref={(el) => {
-            glowRefs.current[i] = el;
-          }}
-          geometry={geo}
-          material={glowMats[i]}
-        />
-      ))}
-
-      {Array.from({ length: SPARK_GROUP_COUNT * SPARKS_PER_GROUP }, (_, i) => (
-        <mesh
-          key={`spark-${i}`}
-          ref={(el) => {
-            sparkRefs.current[i] = el;
-          }}
-          geometry={sparkGeo}
-          material={sparkMats[i]}
-        />
-      ))}
+      <instancedMesh
+        ref={glowMeshRef}
+        args={[glowGeo, glowMat, GLOW_COUNT]}
+        frustumCulled={false}
+      />
+      <instancedMesh
+        ref={sparkMeshRef}
+        args={[sparkGeo, sparkMat, SPARK_COUNT]}
+        frustumCulled={false}
+      />
     </group>
   );
 }

@@ -148,18 +148,29 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
   return t * t * (3 - 2 * t);
 }
 
-const MistCluster: React.FC<{ params: ClusterParams; materialOffset: number }> = ({ params, materialOffset }) => {
+const MistCluster: React.FC<{
+  params: ClusterParams;
+  materialOffset: number;
+  /** When set, keep only the highest-opacityMul puffs (combat thinning). */
+  maxPuffs?: number;
+}> = ({ params, materialOffset, maxPuffs }) => {
   const { camera } = useThree();
   const meshRefs = useRef<(Mesh | null)[]>([]);
 
   // Looping sweep position (0→1). Initialised to phase so clusters start staggered.
   const uRef = useRef(params.phase);
 
-  // Uniform sets reference module-level materials (stable Programs, no JSX shaderMaterial churn).
-  const puffMaterials = useMemo(
-    () => params.puffs.map((_, i) => MIST_PUFF_MATERIALS[materialOffset + i]),
-    [params.puffs, materialOffset],
-  );
+  // Keep original material indices so thinning does not rematerialize / recompile shaders.
+  const puffEntries = useMemo(() => {
+    const indexed = params.puffs.map((puff, i) => ({
+      puff,
+      matIdx: materialOffset + i,
+    }));
+    if (maxPuffs == null || maxPuffs >= indexed.length) return indexed;
+    return [...indexed]
+      .sort((a, b) => b.puff.opacityMul - a.puff.opacityMul)
+      .slice(0, maxPuffs);
+  }, [params.puffs, materialOffset, maxPuffs]);
 
   useFrame(({ clock }, delta) => {
     // Advance the sweep parameter
@@ -190,12 +201,13 @@ const MistCluster: React.FC<{ params: ClusterParams; materialOffset: number }> =
     const t = clock.getElapsedTime();
 
     // Place each chunk relative to the cluster center
-    for (let i = 0; i < params.puffs.length; i++) {
+    for (let i = 0; i < puffEntries.length; i++) {
       const mesh = meshRefs.current[i];
-      const mat = puffMaterials[i];
+      const entry = puffEntries[i];
+      const mat = MIST_PUFF_MATERIALS[entry.matIdx];
       if (!mesh || !mat) continue;
 
-      const puff = params.puffs[i];
+      const puff = entry.puff;
       _pos.copy(_center)
         .addScaledVector(_right, puff.localX)
         .addScaledVector(_up,    puff.localY);
@@ -210,13 +222,13 @@ const MistCluster: React.FC<{ params: ClusterParams; materialOffset: number }> =
 
   return (
     <group>
-      {params.puffs.map((puff, i) => (
+      {puffEntries.map((entry, i) => (
         <mesh
-          key={i}
+          key={entry.matIdx}
           ref={(el) => { meshRefs.current[i] = el; }}
-          scale={[puff.scale, puff.scale * 0.75, 1]}
+          scale={[entry.puff.scale, entry.puff.scale * 0.75, 1]}
           geometry={MIST_PLANE_GEO}
-          material={puffMaterials[i]}
+          material={MIST_PUFF_MATERIALS[entry.matIdx]}
         />
       ))}
     </group>
@@ -284,9 +296,16 @@ const MIST_PUFF_MATERIALS: ShaderMaterial[] = MIST_CLUSTERS.flatMap((cluster) =>
   ),
 );
 
+/** Clusters 0 + 2 (staggered phases) with thinned puffs → ~5 layers in combat. */
+const COMBAT_CLUSTER_INDICES = [0, 2] as const;
+const COMBAT_MAX_PUFFS_PER_CLUSTER = 3;
+
 let mistMaterialIndex = 0;
 
-const DriftingMist: React.FC<{ enabled?: boolean }> = ({ enabled = true }) => {
+const DriftingMist: React.FC<{ enabled?: boolean; combatActive?: boolean }> = ({
+  enabled = true,
+  combatActive = false,
+}) => {
   if (!enabled) return null;
 
   let materialOffset = 0;
@@ -295,7 +314,17 @@ const DriftingMist: React.FC<{ enabled?: boolean }> = ({ enabled = true }) => {
       {MIST_CLUSTERS.map((params, i) => {
         const offset = materialOffset;
         materialOffset += params.puffs.length;
-        return <MistCluster key={i} params={params} materialOffset={offset} />;
+        if (combatActive && !(COMBAT_CLUSTER_INDICES as readonly number[]).includes(i)) {
+          return null;
+        }
+        return (
+          <MistCluster
+            key={i}
+            params={params}
+            materialOffset={offset}
+            maxPuffs={combatActive ? COMBAT_MAX_PUFFS_PER_CLUSTER : undefined}
+          />
+        );
       })}
     </group>
   );

@@ -7,7 +7,8 @@ import { GLTFLoader } from 'three-stdlib';
 import { peek as suspendPeek } from 'suspend-react';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadGltfAnimationClips, preloadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
-import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { cloneEnemySceneWithSharedMaterials } from '@/utils/sharedEnemyMaterials';
 import { getCachedProcessedClips } from '@/utils/enemyAnimationClipCache';
 import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
 
@@ -113,18 +114,11 @@ export default React.memo(function GreedModel({ isDying, abilityClip, isWalking 
   }, [isDying, abilityClip, deferredAnimationClips]);
 
   const clonedScene = useMemo(() => {
-    const clone = SkeletonUtils.clone(scene) as Group;
-    clone.traverse((child: any) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-        child.material = Array.isArray(child.material)
-          ? child.material.map((m: any) => m.clone())
-          : child.material.clone();
-      }
+    return cloneEnemySceneWithSharedMaterials(scene, '/models/ally_idle.glb', {
+      selfIlluminationIntensity: UNIT_SELF_ILLUMINATION_INTENSITY,
+      castShadow: true,
+      receiveShadow: true,
     });
-    applySelfIllumination(clone, { intensity: UNIT_SELF_ILLUMINATION_INTENSITY });
-    return clone;
   }, [scene]);
 
   useDisposeClonedMaterials(clonedScene);
@@ -137,6 +131,8 @@ export default React.memo(function GreedModel({ isDying, abilityClip, isWalking 
   );
 
   const { actions: idleActions, mixer } = useAnimations(idleClips, sceneGroupRef);
+
+  useCleanupAnimationMixer(mixer, sceneGroupRef);
 
   useEffect(() => {
     if (!mixer || !sceneGroupRef.current) return;

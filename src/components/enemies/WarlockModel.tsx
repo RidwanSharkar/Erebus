@@ -4,7 +4,8 @@ import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react'
 import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, AnimationAction, AnimationClip } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { applySelfIllumination, WARLOCK_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { WARLOCK_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { cloneEnemySceneWithSharedMaterials } from '@/utils/sharedEnemyMaterials';
 import { loadGltfAnimationClips, preloadSkinnedIdleAndAnimationClips } from '@/utils/gltfAnimationLoader';
 import { filterAnimationTracksForRoot, getCachedProcessedClips } from '@/utils/enemyAnimationClipCache';
 import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
@@ -97,18 +98,11 @@ export default React.memo(function WarlockModel({
   }, []);
 
   const clonedScene = useMemo(() => {
-    const clone = SkeletonUtils.clone(scene) as Group;
-    clone.traverse((child: any) => {
-      if (child.isMesh) {
-        child.castShadow    = true;
-        child.receiveShadow = true;
-        child.material = Array.isArray(child.material)
-          ? child.material.map((m: any) => m.clone())
-          : child.material.clone();
-      }
+    return cloneEnemySceneWithSharedMaterials(scene, WARLOCK_IDLE_PATH, {
+      selfIlluminationIntensity: WARLOCK_SELF_ILLUMINATION_INTENSITY,
+      castShadow: true,
+      receiveShadow: true,
     });
-    applySelfIllumination(clone, { intensity: WARLOCK_SELF_ILLUMINATION_INTENSITY });
-    return clone;
   }, [scene]);
 
   useDisposeClonedMaterials(clonedScene);

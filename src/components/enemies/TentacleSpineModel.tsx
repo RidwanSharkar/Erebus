@@ -6,7 +6,8 @@ import { useFrame } from '@react-three/fiber';
 import { Group, LoopOnce, AnimationAction, AnimationClip } from 'three';
 import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { cloneEnemySceneWithSharedMaterials } from '@/utils/sharedEnemyMaterials';
 import {
   filterAnimationTracksForRoot,
   invalidateProcessedClipCache,
@@ -42,13 +43,13 @@ export function preloadTentacleSpineModels(): void {
 }
 
 /** Bind height from JadeTentacle mesh bbox (~18.92). */
-const BIND_HEIGHT = 18.92;
+const BIND_HEIGHT = 22.92;
 const TARGET_HEIGHT = 13;
 const SCALE = TARGET_HEIGHT / BIND_HEIGHT;
 /** Horizontal slim-down; Y (height) stays at SCALE. */
 const WIDTH_SCALE = 0.65;
 /** JadeTentacle bind pose min Y ≈ -2.80. */
-const MODEL_Y_OFFSET = 2.80 * SCALE -1;
+const MODEL_Y_OFFSET = 2.80 * SCALE - 0.75;
 
 const ATTACK_CLIP_S = TENTACLE_SPINE_ATTACK_CLIP_MS / 1000;
 const ATTACK_STRIKE_S = TENTACLE_SPINE_WINDUP_MS / 1000;
@@ -145,18 +146,11 @@ export default React.memo(function TentacleSpineModel({
   }, [slamAt]);
 
   const clonedScene = useMemo(() => {
-    const clone = SkeletonUtils.clone(scene) as Group;
-    clone.traverse((child: any) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-        child.material = Array.isArray(child.material)
-          ? child.material.map((m: any) => m.clone())
-          : child.material.clone();
-      }
+    return cloneEnemySceneWithSharedMaterials(scene, ATTACK_MODEL_PATH, {
+      selfIlluminationIntensity: UNIT_SELF_ILLUMINATION_INTENSITY,
+      castShadow: true,
+      receiveShadow: true,
     });
-    applySelfIllumination(clone, { intensity: UNIT_SELF_ILLUMINATION_INTENSITY });
-    return clone;
   }, [scene]);
 
   useDisposeClonedMaterials(clonedScene);
@@ -239,6 +233,8 @@ export default React.memo(function TentacleSpineModel({
   }, [attackRaw]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
+
+  useCleanupAnimationMixer(mixer, sceneGroupRef);
 
   const getAction = (name: 'Idle' | 'Attack' | 'Death'): AnimationAction | null =>
     actions[name] ?? null;

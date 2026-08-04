@@ -13,7 +13,7 @@ export interface BoneSpiderEnsnaringShotProps {
 }
 
 /** Match BONE_SPIDER_SHOT_SPEED in backend/enemyAI.js */
-const SPEED = 10;
+const SPEED = 15;
 const trailColor = new Color('#2f7a26');
 const trailAccent = new Color('#66ff66');
 

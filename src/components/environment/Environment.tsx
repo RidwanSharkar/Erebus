@@ -142,7 +142,7 @@ const Environment: React.FC<EnvironmentProps> = ({
         radius={MAIN_ARENA_FLOOR_RADIUS}
         texturePath={outerFloorTexture}
         position={[0, 0.12, 0]}
-        rotateSpeed={roomArchetype === 'green' ? 0.04 : undefined}
+        rotateSpeed={roomArchetype === 'green' || 'purple' ? 0.04 : undefined}
       />
 
       <SanctumIncinerationRuneDisc

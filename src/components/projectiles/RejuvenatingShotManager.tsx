@@ -10,6 +10,8 @@ import { getRejuvenatingShotHealAmount } from '@/utils/bowConstants';
 import { ENTANGLEMENT_DURATION_MS } from '@/utils/talents';
 import { addGlobalEntangledEnemy } from '@/components/weapons/EntangleManager';
 
+const _scratchMovement = new Vector3();
+
 export interface RejuvenatingShotProjectile {
   id: number;
   position: Vector3;
@@ -142,6 +144,8 @@ export default function RejuvenatingShotManager({
 }: RejuvenatingShotManagerProps) {
   const projectilePool = useRef<RejuvenatingShotProjectile[]>([]);
   const nextProjectileId = useRef(0);
+  const [activeProjectileIds, setActiveProjectileIds] = useState<number[]>([]);
+  const lastActiveIdsKey = useRef('');
   const [healingEffects, setHealingEffects] = useState<HealingEffectData[]>([]);
   const nextHealingEffectId = useRef(0);
   const playerPositionsRef = useRef(playerPositions);
@@ -164,6 +168,14 @@ export default function RejuvenatingShotManager({
   const PROJECTILE_SPEED = 1.0;
   const MAX_DISTANCE = 20;
   const FADE_DURATION = 1000;
+
+  const syncActiveProjectileIds = useCallback(() => {
+    const active = projectilePool.current.filter((p) => p.active).map((p) => p.id);
+    const key = active.join(',');
+    if (key === lastActiveIdsKey.current) return;
+    lastActiveIdsKey.current = key;
+    setActiveProjectileIds(active);
+  }, []);
 
   useEffect(() => {
     projectilePool.current = Array(POOL_SIZE).fill(null).map((_, index) => ({
@@ -212,7 +224,8 @@ export default function RejuvenatingShotManager({
     projectile.healedTargetId = null;
     projectile.healAmount = options?.healAmount ?? getRejuvenatingShotHealAmount(0);
     projectile.authoritative = options?.authoritative ?? false;
-  }, [getInactiveProjectile]);
+    syncActiveProjectileIds();
+  }, [getInactiveProjectile, syncActiveProjectileIds]);
 
   useEffect(() => {
     globalRejuvenatingShotTrigger = shootRejuvenatingShot;
@@ -225,11 +238,12 @@ export default function RejuvenatingShotManager({
 
   useFrame(() => {
     const currentTime = Date.now();
+    let activeChanged = false;
 
     projectilePool.current.forEach(projectile => {
       if (!projectile.active) return;
 
-      const movement = projectile.direction.clone().multiplyScalar(PROJECTILE_SPEED);
+      const movement = _scratchMovement.copy(projectile.direction).multiplyScalar(PROJECTILE_SPEED);
       projectile.position.add(movement);
 
       projectile.distanceTraveled = projectile.position.distanceTo(projectile.startPosition);
@@ -248,6 +262,7 @@ export default function RejuvenatingShotManager({
           projectile.fadeStartTime = null;
           projectile.hasHealed = false;
           projectile.healedTargetId = null;
+          activeChanged = true;
           return;
         }
       }
@@ -272,6 +287,7 @@ export default function RejuvenatingShotManager({
             projectile.active = false;
             projectile.opacity = 1;
             projectile.fadeStartTime = null;
+            activeChanged = true;
             return;
           }
 
@@ -298,20 +314,27 @@ export default function RejuvenatingShotManager({
           projectile.active = false;
           projectile.opacity = 1;
           projectile.fadeStartTime = null;
+          activeChanged = true;
         }
       }
     });
+
+    if (activeChanged) {
+      syncActiveProjectileIds();
+    }
   });
 
   const removeHealingEffect = useCallback((id: number) => {
     setHealingEffects(prev => prev.filter(effect => effect.id !== id));
   }, []);
 
+  const activeProjectiles = projectilePool.current.filter((p) =>
+    activeProjectileIds.includes(p.id),
+  );
+
   return (
     <group name="rejuvenating-shot-manager">
-      {projectilePool.current
-        .filter(projectile => projectile.active)
-        .map((projectile) => (
+      {activeProjectiles.map((projectile) => (
           <RejuvenatingShot
             key={projectile.id}
             position={projectile.position}

@@ -290,11 +290,32 @@ export default function HotkeyPanel({
         newCooldowns[key] = abilityCooldowns[key].current;
       });
 
-      setCooldowns(newCooldowns);
+      setCooldowns((prev) => {
+        const prevKeys = Object.keys(prev);
+        const nextKeys = Object.keys(newCooldowns);
+        if (prevKeys.length === nextKeys.length) {
+          let same = true;
+          for (let i = 0; i < nextKeys.length; i++) {
+            const key = nextKeys[i];
+            if (prev[key] !== newCooldowns[key]) {
+              same = false;
+              break;
+            }
+          }
+          if (same) return prev;
+        }
+        return newCooldowns;
+      });
 
       // Update weapon switch cooldown if available
       if (controlSystem.getWeaponSwitchCooldown) {
-        setWeaponSwitchCooldown(controlSystem.getWeaponSwitchCooldown());
+        const nextWeaponCd = controlSystem.getWeaponSwitchCooldown();
+        setWeaponSwitchCooldown((prev) => {
+          if (prev.current === nextWeaponCd.current && prev.max === nextWeaponCd.max) {
+            return prev;
+          }
+          return nextWeaponCd;
+        });
       }
     };
 

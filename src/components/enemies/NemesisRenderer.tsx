@@ -37,7 +37,7 @@ const ATTACK_DURATION = 750;
 const LERP_SPEED = 8;
 const WALK_STOP_DELAY = 300;
 
-export default function NemesisRenderer({
+function NemesisRenderer({
   id,
   position,
   rotation,
@@ -205,3 +205,5 @@ export default function NemesisRenderer({
     </group>
   );
 }
+
+export default React.memo(NemesisRenderer);

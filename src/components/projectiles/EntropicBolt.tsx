@@ -47,6 +47,7 @@ const _quat = new Quaternion();
 const _flightDir = new Vector3();
 const _basePos = new Vector3();
 const _chaosOffset = new Vector3();
+const _deltaPos = new Vector3();
 const WOBBLE_ROLL = 0.1;
 
 function alignBoltToDirection(group: Group | null, direction: Vector3) {
@@ -167,7 +168,7 @@ function EntropicBolt({
       if (direction.lengthSq() > 1e-8) {
         lastPosition.current.copy(position);
       } else {
-        const deltaPos = position.clone().sub(lastPosition.current);
+        const deltaPos = _deltaPos.copy(position).sub(lastPosition.current);
         if (deltaPos.lengthSq() > 1e-8) {
           flightDirectionRef.current.copy(deltaPos.normalize());
         }

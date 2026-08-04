@@ -11,6 +11,7 @@ import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type Mele
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   applyEnemyHealthBarFill,
@@ -53,7 +54,7 @@ const VISUAL_SCALE = 1.8;
 const HP_BAR_Y_GROUND = 4.2;
 const HP_BAR_Y_AIR = 2.4;
 
-export default function DestinyRenderer({
+function DestinyRenderer({
   id,
   position,
   rotation,
@@ -451,6 +452,7 @@ export default function DestinyRenderer({
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
       if (!deathCacheBuilt.current) {
+        detachSharedMaterialsForMutation(group);
         const collected: any[] = [];
         group.traverse((child: any) => {
           if (child.isMesh && child.material) {
@@ -516,3 +518,5 @@ export default function DestinyRenderer({
     </group>
   );
 }
+
+export default React.memo(DestinyRenderer);

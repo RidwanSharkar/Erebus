@@ -11,6 +11,7 @@ import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type Mele
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyRotationFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   applyEnemyHealthBarFill,
@@ -38,7 +39,7 @@ const FADE_DURATION = 1.5;
 const LERP_SPEED = 14;
 const WALK_STOP_DELAY = 250;
 
-export default function WyvernRenderer({
+function WyvernRenderer({
   id,
   position,
   rotation,
@@ -247,6 +248,7 @@ export default function WyvernRenderer({
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
       if (!deathCacheBuilt.current) {
+        detachSharedMaterialsForMutation(group);
         const collected: any[] = [];
         group.traverse((child: any) => {
           if (child.isMesh && child.material) {
@@ -307,3 +309,5 @@ export default function WyvernRenderer({
     </group>
   );
 }
+
+export default React.memo(WyvernRenderer);

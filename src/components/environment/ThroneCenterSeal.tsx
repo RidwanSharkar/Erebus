@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useEffect, useMemo } from 'react';
-import { useLoader } from '@react-three/fiber';
+import React, { useEffect, useMemo, useRef } from 'react';
+import { useFrame, useLoader } from '@react-three/fiber';
+import type { Group } from 'three';
 import {
   CircleGeometry,
   ClampToEdgeWrapping,
@@ -34,13 +35,17 @@ interface ThroneCenterSealProps {
   position?: [number, number, number];
   /** Override world-space radius (defaults to throne prep seal size). */
   radius?: number;
+  /** Radians per second around Y. Omit for a static seal. */
+  rotateSpeed?: number;
 }
 
 function ThroneCenterSeal({
   texturePath = DEFAULT_CENTER_TEXTURE_PATH,
   position = DEFAULT_POSITION,
   radius = THRONE_CENTER_SEAL_RADIUS,
+  rotateSpeed,
 }: ThroneCenterSealProps) {
+  const groupRef = useRef<Group>(null);
   const texture = useLoader(TextureLoader, texturePath);
 
   useEffect(() => {
@@ -70,15 +75,21 @@ function ThroneCenterSeal({
     [geometry, material],
   );
 
+  useFrame((_, delta) => {
+    if (rotateSpeed == null || !groupRef.current) return;
+    groupRef.current.rotation.y += rotateSpeed * delta;
+  });
+
   return (
-    <mesh
-      name="throne-center-seal"
-      rotation={[-Math.PI / 2, 0, 0]}
-      position={position}
-      geometry={geometry}
-      material={material}
-      receiveShadow
-    />
+    <group ref={groupRef} position={position}>
+      <mesh
+        name="throne-center-seal"
+        rotation={[-Math.PI / 2, 0, 0]}
+        geometry={geometry}
+        material={material}
+        receiveShadow
+      />
+    </group>
   );
 }
 

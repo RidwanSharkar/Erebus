@@ -7,7 +7,8 @@ import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadGltfAnimationClips, preloadSkinnedIdleAndAnimationClips } from '@/utils/gltfAnimationLoader';
 import { bindWowAttachmentItems } from '@/utils/bindWowAttachmentItems';
-import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { cloneEnemySceneWithSharedMaterials } from '@/utils/sharedEnemyMaterials';
 import { filterAnimationTracksForRoot, getCachedProcessedClips } from '@/utils/enemyAnimationClipCache';
 
 interface ShamanModelProps {
@@ -89,15 +90,10 @@ export default React.memo(function ShamanModel({
   }, []);
 
   const clonedScene = useMemo(() => {
-    const clone = SkeletonUtils.clone(scene) as Group;
-    clone.traverse((child: any) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-        child.material = Array.isArray(child.material)
-          ? child.material.map((m: any) => m.clone())
-          : child.material.clone();
-      }
+    const clone = cloneEnemySceneWithSharedMaterials(scene, SHAMAN_IDLE_PATH, {
+      selfIlluminationIntensity: null,
+      castShadow: true,
+      receiveShadow: true,
     });
     // WoW exports leave weapons/pauldrons/helm on the root; reparent to bones.
     bindWowAttachmentItems(clone);
@@ -149,6 +145,8 @@ export default React.memo(function ShamanModel({
   );
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
+
+  useCleanupAnimationMixer(mixer, sceneGroupRef);
 
   const getAction = (
     name: 'Idle' | 'Walk' | 'Attack' | 'Cast' | 'Death',

@@ -10,9 +10,8 @@ import { GHOUL_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph } from '@/utils/meleeTelegraphVisual';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import {
-  ENEMY_HP_BAR_FILL_HEIGHT,
-  ENEMY_HP_BAR_FILL_Z,
   applyEnemyHealthBarFill,
   syncEnemyHealthBarFillFromRef,
   syncEnemyHealthBarNumericTextFromRef,
@@ -20,6 +19,7 @@ import {
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
+import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface ZombieRendererProps {
   id: string;
@@ -37,10 +37,6 @@ const SUMMON_DURATION = 2800;
 const FADE_DURATION = 1.5;
 const LERP_SPEED = 14;
 const WALK_STOP_DELAY = 250;
-
-const ZOMBIE_HP_BAR_WIDTH = 1.8;
-const ZOMBIE_HP_BAR_HEIGHT = 0.22;
-const ZOMBIE_HP_BAR_FILL_HEIGHT = 0.2;
 
 function ZombieRenderer({
   id,
@@ -144,14 +140,14 @@ function ZombieRenderer({
   }, [id, socket]);
 
   useLayoutEffect(() => {
-    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth, ZOMBIE_HP_BAR_WIDTH);
+    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth);
   }, [health, maxHealth]);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
 
-    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, ZOMBIE_HP_BAR_WIDTH);
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth);
     syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
 
     const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
@@ -178,6 +174,7 @@ function ZombieRenderer({
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
 
       if (!deathCacheBuilt.current) {
+        detachSharedMaterialsForMutation(group);
         const collected: any[] = [];
         group.traverse((child: any) => {
           if (child.isMesh && child.material) {
@@ -211,19 +208,7 @@ function ZombieRenderer({
       <Billboard position={[0, 2.8, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && !isSummoning && (
           <>
-            <mesh position={[0, 0, 0]}>
-              <planeGeometry args={[ZOMBIE_HP_BAR_WIDTH, ZOMBIE_HP_BAR_HEIGHT]} />
-              <meshBasicMaterial color="#0a1a0a" opacity={0.9} transparent />
-            </mesh>
-
-            <mesh
-              ref={hpFillRef}
-              position={[-ZOMBIE_HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
-              scale={[1, 1, 1]}
-            >
-              <planeGeometry args={[ZOMBIE_HP_BAR_WIDTH, ZOMBIE_HP_BAR_FILL_HEIGHT]} />
-              <meshBasicMaterial color="#33aa44" opacity={0.95} transparent />
-            </mesh>
+            <EnemyHpBarPlanes fillRef={hpFillRef} backgroundColor="#0a1a0a" fillColor="#33aa44" />
 
             <EnemyHealthBarTextLabel
               name={getEnemyDisplayName('player-zombie')}

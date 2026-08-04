@@ -11,15 +11,13 @@ import EnemyMeleeAttackRangeRing, { TIGER_MELEE_ATTACK_RANGE } from './EnemyMele
 import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type MeleeTelegraphVisual } from '@/utils/meleeTelegraphVisual';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { applyEnemyHealthBarFill, syncEnemyHealthBarFillFromRef, syncEnemyHealthBarNumericTextFromRef } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 import { getUnitNameplateName } from '@/utils/enemyDisplayNames';
 import { campHpTheme } from '@/utils/campHpTheme';
-
-const TIGER_HP_BAR_WIDTH = 1.8;
-const TIGER_HP_BAR_HEIGHT = 0.22;
-const TIGER_HP_BAR_FILL_HEIGHT = 0.20;
+import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface TigerRendererProps {
   id: string;
@@ -96,7 +94,7 @@ function TigerRenderer({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useLayoutEffect(() => {
-    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth, TIGER_HP_BAR_WIDTH);
+    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth);
   }, [health, maxHealth]);
 
   useEffect(() => {
@@ -231,7 +229,7 @@ function TigerRenderer({
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
     syncEnemyVisualRotation(id, enemyVisualRotationsRef, group.rotation.y);
 
-    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, TIGER_HP_BAR_WIDTH);
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth);
     syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
 
     if (isDying) {
@@ -239,6 +237,7 @@ function TigerRenderer({
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
 
       if (!deathCacheBuilt.current) {
+        detachSharedMaterialsForMutation(group);
         const collected: any[] = [];
         group.traverse((child: any) => {
           if (child.isMesh && child.material) {
@@ -292,19 +291,11 @@ function TigerRenderer({
       <Billboard position={[0, 2.4 * visualScale, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
-            <mesh position={[0, 0, 0]}>
-              <planeGeometry args={[TIGER_HP_BAR_WIDTH, TIGER_HP_BAR_HEIGHT]} />
-              <meshBasicMaterial color={campType ? hpTheme.background : '#1a0a0a'} opacity={0.9} transparent />
-            </mesh>
-
-            <mesh
-              ref={hpFillRef}
-              position={[-TIGER_HP_BAR_WIDTH / 2, 0, 0.001]}
-              scale={[1, 1, 1]}
-            >
-              <planeGeometry args={[TIGER_HP_BAR_WIDTH, TIGER_HP_BAR_FILL_HEIGHT]} />
-              <meshBasicMaterial color={campType ? hpTheme.fill : '#aa7700'} opacity={0.95} transparent />
-            </mesh>
+            <EnemyHpBarPlanes
+              fillRef={hpFillRef}
+              backgroundColor={campType ? hpTheme.background : '#1a0a0a'}
+              fillColor={campType ? hpTheme.fill : '#aa7700'}
+            />
 
             <EnemyHealthBarTextLabel
               name={getUnitNameplateName('tiger', campType)}

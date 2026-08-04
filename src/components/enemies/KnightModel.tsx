@@ -7,7 +7,8 @@ import { GLTFLoader } from 'three-stdlib';
 import { peek as suspendPeek } from 'suspend-react';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadGltfAnimationClips, preloadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
-import { applySelfIllumination, KNIGHT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { KNIGHT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { cloneEnemySceneWithSharedMaterials } from '@/utils/sharedEnemyMaterials';
 import { filterAnimationTracksForRoot, getCachedProcessedClips } from '@/utils/enemyAnimationClipCache';
 import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
 
@@ -221,26 +222,14 @@ export default React.memo(function KnightModel({
 
   // SkeletonUtils.clone() properly re-binds each clone's SkinnedMesh to its own
   // skeleton, so multiple knight instances are fully independent.
-  // Plain scene.clone(true) shares the skeleton across all instances, causing
-  // all models to collapse to the same world position.
+  // Materials are shared per type for GPU batching; KnightRenderer death fade
+  // calls detachSharedMaterialsForMutation before mutating opacity.
   const clonedScene = useMemo(() => {
-    const clone = SkeletonUtils.clone(scene) as Group;
-    clone.traverse((child: any) => {
-      if (child.isMesh) {
-        child.castShadow = castShadow;
-        child.receiveShadow = true;
-        // SkeletonUtils.clone() re-binds skeletons but leaves Material references
-        // shared across all instances (Object3D.clone() is shallow for materials).
-        // The death fade-out in KnightRenderer mutates mat.opacity directly, so
-        // each instance MUST own its own material objects or one dying knight will
-        // make every other knight on the map invisible simultaneously.
-        child.material = Array.isArray(child.material)
-          ? child.material.map((m: any) => m.clone())
-          : child.material.clone();
-      }
+    return cloneEnemySceneWithSharedMaterials(scene, '/models/knight_idle.glb', {
+      selfIlluminationIntensity: KNIGHT_SELF_ILLUMINATION_INTENSITY,
+      castShadow,
+      receiveShadow: true,
     });
-    applySelfIllumination(clone, { intensity: KNIGHT_SELF_ILLUMINATION_INTENSITY });
-    return clone;
   }, [scene, castShadow]);
 
   useDisposeClonedMaterials(clonedScene);
@@ -257,6 +246,8 @@ export default React.memo(function KnightModel({
   }, [idleAnims, clonedScene]);
 
   const { actions: idleActions, mixer } = useAnimations(idleClips, sceneGroupRef);
+
+  useCleanupAnimationMixer(mixer, sceneGroupRef);
 
   // Register deferred clips on the mixer as they finish loading.
   useEffect(() => {

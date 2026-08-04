@@ -80,6 +80,7 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'sabres_flourish_miss', file: 'sabres/flourish_miss.mp3' },
   { id: 'sabres_shadow_step', file: 'sabres/shadow_step.mp3' },
   { id: 'sabres_skyfall', file: 'sabres/skyfall.mp3' },
+  { id: 'sabres_shatter', file: 'sabres/1SHATTER.mp3' },
   { id: 'entropic_bolt', file: 'scythe/entropic_bolts.mp3' },
   { id: 'crossentropy', file: 'scythe/crossentropy.mp3' },
   { id: 'blitz_cannon', file: 'scythe/blitzCannon.mp3' },
@@ -126,6 +127,7 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'wraith_buzzsaw', file: 'versus/buzzsaw.mp3' },
   { id: 'enemy_death', file: 'versus/deathSFX.mp3' },
   { id: 'enemy_death_ghoul', file: 'versus/1beastdeath.mp3' },
+  { id: 'enemy_death_heavy', file: 'versus/1GOODDEATHSOUND.mp3' },
   { id: 'enemy_death_warlock', file: 'versus/warlockdeath.mp3' },
   { id: 'enemy_death_shade', file: 'versus/shadedeath.mp3' },
   { id: 'enemy_death_viper', file: 'versus/viperdeath.mp3' },
@@ -631,6 +633,10 @@ export class AudioSystem extends System {
     return this.playWeaponSound('sabres_skyfall', position, { volume: 1.0 });
   }
 
+  public playSabresShatterSound(position: Vector3) {
+    return this.playWeaponSound('sabres_shatter', position, { volume: 0.95 });
+  }
+
   /** Sabres Q/E impact — layered connect tick (separate from ability wind-up / backstab cue). */
   public playSabresAbilityImpactSound(position: Vector3) {
     return this.playWeaponSound('runeblade_swing_hit', position, {
@@ -1110,7 +1116,7 @@ export class AudioSystem extends System {
   }
 
   // Play enemy death sound — accepts a plain object so callers outside Three.js contexts
-  // don't need to import Vector3. `deathSFX.mp3` is used for knight, weaver, boss3, and titan.
+  // don't need to import Vector3. `deathSFX.mp3` is used for knight, weaver, boss3, wraith, and destiny.
   public playEnemyDeathSound(position: { x: number; y: number; z: number }, enemyType?: string) {
     const soundId = this.resolveEnemyDeathSoundId(enemyType);
     return this.playWeaponSound(soundId, new Vector3(position.x, position.y, position.z), { volume: 0.95 });
@@ -1148,23 +1154,28 @@ export class AudioSystem extends System {
       case 'knight':
       case 'allied-knight':
       case 'weaver':
-      case 'titan':
+      case 'wraith':
       case 'boss3':
       case 'destiny':
         return 'enemy_death';
+      case 'colossus':
+      case 'stone-giant':
+      case 'eternal-oak':
+      case 'titan':
+        return 'enemy_death_heavy';
       case 'ghoul':
       case 'allied-demon':
       case 'boss-skeleton':
       case 'player-zombie':
       case 'boss':
       case 'nemesis':
-      case 'terrorhawk':
-      case 'skyray':
         return 'enemy_death_ghoul';
       case 'tiger':
       case 'boss-tiger':
       case 'allied-tiger':
       case 'wyvern':
+      case 'terrorhawk':
+      case 'skyray':
         return 'beast_death_wyverntiger';
       case 'wolf':
       case 'boss-wolf':
@@ -1257,8 +1268,8 @@ export class AudioSystem extends System {
     return this.playWeaponSound(soundId, position, { volume: 0.8 });
   }
 
-  public playBeastAttackSound(soundId: string, position: Vector3) {
-    return this.playWeaponSound(soundId, position, { volume: 0.85 });
+  public playBeastAttackSound(soundId: string, position: Vector3, config?: SoundConfig) {
+    return this.playWeaponSound(soundId, position, { volume: 0.85, ...config });
   }
 
   public playWolfPackHowlsSound(position: Vector3) {
@@ -1768,7 +1779,7 @@ export class AudioSystem extends System {
   }
 
   private getCoopBgmVolume(): number {
-    return 0.5 * this.sfxVolume * this.masterVolume;
+    return 0.666 * this.sfxVolume * this.masterVolume;
   }
 
   private stopAllCoopRoomTracks(): void {

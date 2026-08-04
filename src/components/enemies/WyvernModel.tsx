@@ -5,7 +5,8 @@ import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, AnimationAction, AnimationClip } from 'three';
 import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { cloneEnemySceneWithSharedMaterials } from '@/utils/sharedEnemyMaterials';
 import { loadGltfAnimationClips, preloadSkinnedIdleAndAnimationClips } from '@/utils/gltfAnimationLoader';
 import { filterAnimationTracksForRoot, getCachedProcessedClips } from '@/utils/enemyAnimationClipCache';
 
@@ -89,18 +90,11 @@ export default React.memo(function WyvernModel({
   }, []);
 
   const clonedScene = useMemo(() => {
-    const clone = SkeletonUtils.clone(scene) as Group;
-    clone.traverse((child: any) => {
-      if (child.isMesh) {
-        child.castShadow = false;
-        child.receiveShadow = false;
-        child.material = Array.isArray(child.material)
-          ? child.material.map((m: any) => m.clone())
-          : child.material.clone();
-      }
+    return cloneEnemySceneWithSharedMaterials(scene, WYVERN_IDLE_PATH, {
+      selfIlluminationIntensity: UNIT_SELF_ILLUMINATION_INTENSITY,
+      castShadow: false,
+      receiveShadow: false,
     });
-    applySelfIllumination(clone, { intensity: UNIT_SELF_ILLUMINATION_INTENSITY });
-    return clone;
   }, [scene]);
 
   useDisposeClonedMaterials(clonedScene);
@@ -157,6 +151,8 @@ export default React.memo(function WyvernModel({
   ]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
+
+  useCleanupAnimationMixer(mixer, sceneGroupRef);
 
   const getAction = (
     name: 'Idle' | 'Run' | 'Attack' | 'Breath1' | 'Breath2' | 'Death',

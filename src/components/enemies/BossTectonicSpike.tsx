@@ -10,6 +10,9 @@ import {
   hashSpikeSeed,
 } from '@/utils/tectonicSpikeGeometry';
 import GroundSpikeModel from './GroundSpikeModel';
+import HellfireCrystalSpikeModel, {
+  FROST_SHATTER_SPIKE_HEIGHT,
+} from './HellfireCrystalSpikeModel';
 
 const RISE_MS = 520;
 const HOLD_MS = 1080;
@@ -17,17 +20,22 @@ const RETRACT_MS = 520;
 const TOTAL_MS = RISE_MS + HOLD_MS + RETRACT_MS;
 const HOLD_END_MS = RISE_MS + HOLD_MS;
 
+export type BossTectonicSpikeVariant = 'ground' | 'hellfireCrystal';
+
 /**
  * Crystal ground spike erupting from the ground with lateral wobble, then retracting.
  */
 export default function BossTectonicSpike({
   worldPosition,
   theme = 'earth',
+  variant = 'ground',
   variantSeed,
   onComplete,
 }: {
   worldPosition: Vector3;
   theme?: TectonicSpikeTheme;
+  /** `ground` = Impale / boss tectonic; `hellfireCrystal` = Frost Affinity Shatter. */
+  variant?: BossTectonicSpikeVariant;
   /** Stable key for per-spike rise motion variation. */
   variantSeed?: string;
   onComplete: () => void;
@@ -41,7 +49,9 @@ export default function BossTectonicSpike({
   const numericSeed = useMemo(() => hashSpikeSeed(seedKey), [seedKey]);
   const riseMotion = useMemo(() => createSpikeRiseMotion(numericSeed), [numericSeed]);
 
-  const riseDepth = SPIKE_HEIGHT * 0.92;
+  const riseDepth =
+    (variant === 'hellfireCrystal' ? FROST_SHATTER_SPIKE_HEIGHT : SPIKE_HEIGHT) *
+    0.92;
 
   useFrame(() => {
     if (done.current) return;
@@ -92,7 +102,11 @@ export default function BossTectonicSpike({
   return (
     <group ref={root} position={[worldPosition.x, 0, worldPosition.z]}>
       <group ref={riseGroup}>
-        <GroundSpikeModel theme={theme} />
+        {variant === 'hellfireCrystal' ? (
+          <HellfireCrystalSpikeModel />
+        ) : (
+          <GroundSpikeModel theme={theme} />
+        )}
       </group>
     </group>
   );

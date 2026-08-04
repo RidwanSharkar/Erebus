@@ -7,10 +7,9 @@ import { useFrame } from '@react-three/fiber';
 import { Group, Mesh, Vector3 } from 'three';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation } from '@/utils/enemyLiveTransform';
+import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
-  ENEMY_HP_BAR_FILL_HEIGHT,
-  ENEMY_HP_BAR_FILL_Z,
   syncEnemyHealthBarFillFromRef,
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
@@ -20,6 +19,7 @@ import AlliedHealerModel from './AlliedHealerModel';
 import AlliedHealerProjectile from './AlliedHealerProjectile';
 import ChargedOrbitals, { DashChargeStatus } from '../dragon/ChargedOrbitals';
 import { WeaponType } from '../dragon/weapons';
+import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface AlliedHealerRendererProps {
   id: string;
@@ -225,7 +225,7 @@ function AlliedHealerRenderer({
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
     syncEnemyVisualRotation(id, enemyVisualRotationsRef, group.rotation.y);
 
-    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, 1.8);
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth);
     syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
 
     if (isDying) {
@@ -233,6 +233,7 @@ function AlliedHealerRenderer({
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
 
       if (!deathCacheBuilt.current) {
+        detachSharedMaterialsForMutation(group);
         const collected: any[] = [];
         group.traverse((child: any) => {
           if (child.isMesh && child.material) {
@@ -284,15 +285,11 @@ function AlliedHealerRenderer({
         <Billboard position={[0, 2.8, 0]} follow lockX={false} lockY={false} lockZ={false}>
           {health > 0 && !isDying && (
             <>
-              <mesh position={[0, 0, 0]}>
-                <planeGeometry args={[1.8, 0.23]} />
-                <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
-              </mesh>
-
-              <mesh position={[-0.9, 0, ENEMY_HP_BAR_FILL_Z]} ref={hpFillRef}>
-                <planeGeometry args={[1.8, ENEMY_HP_BAR_FILL_HEIGHT]} />
-                <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
-              </mesh>
+              <EnemyHpBarPlanes
+                fillRef={hpFillRef}
+                backgroundColor={theme.background}
+                fillColor={theme.fill}
+              />
 
               <EnemyHealthBarTextLabel
                 leading="HP"

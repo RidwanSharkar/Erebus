@@ -46,9 +46,18 @@ export default function FireStormManager({ world: _world }: FireStormManagerProp
     lastUpdateTime.current = currentTime;
 
     const now = Date.now();
-    setActiveStorms((prev) =>
-      prev.filter((storm) => now - storm.startTime < storm.duration),
-    );
+    setActiveStorms((prev) => {
+      if (prev.length === 0) return prev;
+      let expired = false;
+      for (let i = 0; i < prev.length; i++) {
+        if (now - prev[i].startTime >= prev[i].duration) {
+          expired = true;
+          break;
+        }
+      }
+      if (!expired) return prev;
+      return prev.filter((storm) => now - storm.startTime < storm.duration);
+    });
   });
 
   const handleFireStormComplete = (stormId: number) => {

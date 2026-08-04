@@ -4,6 +4,8 @@ import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { AdditiveBlending, DoubleSide, Group, Vector3 } from '@/utils/three-exports';
 
+const _nextPos = new Vector3();
+
 interface GoldCollectMoteEffectProps {
   id: string;
   startPosition: Vector3;
@@ -37,9 +39,9 @@ export default function GoldCollectMoteEffect({
 
     const playerPos = getCurrentPlayerPosition();
     const lift = Math.sin(t * Math.PI) * 0.8;
-    const next = new Vector3().lerpVectors(startPosition, playerPos, t);
-    next.y += 0.45 + lift;
-    groupRef.current.position.copy(next);
+    _nextPos.lerpVectors(startPosition, playerPos, t);
+    _nextPos.y += 0.45 + lift;
+    groupRef.current.position.copy(_nextPos);
     groupRef.current.scale.setScalar(1 - t * 0.55);
     groupRef.current.rotation.y += 0.14;
   });

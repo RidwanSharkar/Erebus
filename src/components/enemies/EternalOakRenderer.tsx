@@ -38,7 +38,7 @@ const HP_BAR_WIDTH = 4.2;
 const LERP_SPEED = 8;
 const WALK_STOP_DELAY = 300;
 
-export default function EternalOakRenderer({
+function EternalOakRenderer({
   id,
   position,
   rotation,
@@ -235,3 +235,5 @@ export default function EternalOakRenderer({
     </group>
   );
 }
+
+export default React.memo(EternalOakRenderer);

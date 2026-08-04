@@ -7,6 +7,9 @@ import {
   MeshStandardMaterial,
   AdditiveBlending,
   DoubleSide,
+  InstancedMesh,
+  Object3D,
+  SphereGeometry,
 } from '@/utils/three-exports';
 import { useFrame } from '@react-three/fiber';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
@@ -15,6 +18,8 @@ const FIRE_STORM_LIGHT_COLOR = new Color('#FF6B35');
 const ORBIT_PARTICLE_COUNT = 14;
 const TOP_SWIRL_COUNT = 8;
 const RING_COUNT = 4;
+
+const _dummy = new Object3D();
 
 interface FireStormProps {
   position: Vector3;
@@ -35,14 +40,17 @@ export default function FireStorm({
   const tornadoRef = useRef<Group>(null);
   const coneRef = useRef<Mesh>(null);
   const ringRefs = useRef<(Mesh | null)[]>([]);
-  const orbitRefs = useRef<(Mesh | null)[]>([]);
-  const topSwirlRefs = useRef<(Mesh | null)[]>([]);
+  const orbitMeshRef = useRef<InstancedMesh>(null);
+  const topSwirlMeshRef = useRef<InstancedMesh>(null);
   const fadeRef = useRef(1);
   const expansionRef = useRef(0.15);
   const rotationSpeed = useRef(0.42);
   const completedRef = useRef(false);
 
   const stormLight = useDynamicLight({ color: FIRE_STORM_LIGHT_COLOR, priority: 1 });
+
+  const orbitGeo = useMemo(() => new SphereGeometry(0.04, 6, 6), []);
+  const topSwirlGeo = useMemo(() => new SphereGeometry(0.045, 6, 6), []);
 
   const coneMat = useMemo(
     () =>
@@ -73,33 +81,30 @@ export default function FireStorm({
     [],
   );
 
-  const orbitMats = useMemo(
+  // Shared materials — all orbit / top-swirl particles were identical.
+  const orbitMat = useMemo(
     () =>
-      Array.from({ length: ORBIT_PARTICLE_COUNT }, () =>
-        new MeshStandardMaterial({
-          color: '#FFE066',
-          emissive: '#FF8C42',
-          emissiveIntensity: 0.85,
-          transparent: true,
-          opacity: 0.9,
-          blending: AdditiveBlending,
-        }),
-      ),
+      new MeshStandardMaterial({
+        color: '#FFE066',
+        emissive: '#FF8C42',
+        emissiveIntensity: 0.85,
+        transparent: true,
+        opacity: 0.9,
+        blending: AdditiveBlending,
+      }),
     [],
   );
 
-  const topSwirlMats = useMemo(
+  const topSwirlMat = useMemo(
     () =>
-      Array.from({ length: TOP_SWIRL_COUNT }, () =>
-        new MeshStandardMaterial({
-          color: '#FFE066',
-          emissive: '#FFD166',
-          emissiveIntensity: 0.7,
-          transparent: true,
-          opacity: 0.75,
-          blending: AdditiveBlending,
-        }),
-      ),
+      new MeshStandardMaterial({
+        color: '#FFE066',
+        emissive: '#FFD166',
+        emissiveIntensity: 0.7,
+        transparent: true,
+        opacity: 0.75,
+        blending: AdditiveBlending,
+      }),
     [],
   );
 
@@ -114,19 +119,22 @@ export default function FireStorm({
   }, [duration, onComplete]);
 
   useEffect(() => {
-    const mats = [...ringMats, coneMat, ...orbitMats, ...topSwirlMats];
     return () => {
       coneMat.dispose();
-      mats.forEach((m) => m.dispose());
+      ringMats.forEach((m) => m.dispose());
+      orbitMat.dispose();
+      topSwirlMat.dispose();
+      orbitGeo.dispose();
+      topSwirlGeo.dispose();
       if (effectRef.current) {
         effectRef.current.traverse((child) => {
-          if (child instanceof Mesh) {
+          if (child instanceof Mesh && !(child instanceof InstancedMesh)) {
             if (child.geometry) child.geometry.dispose();
           }
         });
       }
     };
-  }, [coneMat, ringMats, orbitMats, topSwirlMats]);
+  }, [coneMat, ringMats, orbitMat, topSwirlMat, orbitGeo, topSwirlGeo]);
 
   const applyFade = (fade: number, intensity: number) => {
     if (coneRef.current?.material) {
@@ -140,18 +148,10 @@ export default function FireStorm({
       mat.opacity = (0.65 - i * 0.1) * fade;
       mat.emissiveIntensity = 0.5 * intensity * fade;
     });
-    orbitRefs.current.forEach((mesh, i) => {
-      if (!mesh?.material) return;
-      const mat = mesh.material as MeshStandardMaterial;
-      mat.opacity = 0.9 * fade;
-      mat.emissiveIntensity = 0.85 * intensity * fade;
-    });
-    topSwirlRefs.current.forEach((mesh) => {
-      if (!mesh?.material) return;
-      const mat = mesh.material as MeshStandardMaterial;
-      mat.opacity = 0.75 * fade;
-      mat.emissiveIntensity = 0.7 * intensity * fade;
-    });
+    orbitMat.opacity = 0.9 * fade;
+    orbitMat.emissiveIntensity = 0.85 * intensity * fade;
+    topSwirlMat.opacity = 0.75 * fade;
+    topSwirlMat.emissiveIntensity = 0.7 * intensity * fade;
   };
 
   useFrame((_, delta) => {
@@ -207,20 +207,35 @@ export default function FireStorm({
     });
 
     const timeSec = elapsed * 0.001;
-    orbitRefs.current.forEach((mesh, i) => {
-      if (!mesh) return;
-      const angle = (i / ORBIT_PARTICLE_COUNT) * Math.PI * 2 + timeSec * 2.8;
-      const radius = 0.55 + Math.sin(timeSec * 8 + i) * 0.15;
-      const height = Math.sin(timeSec * 6 + i * 0.5) * 0.45 + 0.85;
-      mesh.position.set(Math.sin(angle) * radius, height, Math.cos(angle) * radius);
-    });
 
-    topSwirlRefs.current.forEach((mesh, i) => {
-      if (!mesh) return;
-      const angle = (i / TOP_SWIRL_COUNT) * Math.PI * 2 + timeSec * 3.2;
-      const radius = 0.18;
-      mesh.position.set(Math.sin(angle) * radius, 0.65, Math.cos(angle) * radius);
-    });
+    const orbitMesh = orbitMeshRef.current;
+    if (orbitMesh) {
+      for (let i = 0; i < ORBIT_PARTICLE_COUNT; i++) {
+        const angle = (i / ORBIT_PARTICLE_COUNT) * Math.PI * 2 + timeSec * 2.8;
+        const radius = 0.55 + Math.sin(timeSec * 8 + i) * 0.15;
+        const height = Math.sin(timeSec * 6 + i * 0.5) * 0.45 + 0.85;
+        _dummy.position.set(Math.sin(angle) * radius, height, Math.cos(angle) * radius);
+        _dummy.scale.setScalar(1);
+        _dummy.rotation.set(0, 0, 0);
+        _dummy.updateMatrix();
+        orbitMesh.setMatrixAt(i, _dummy.matrix);
+      }
+      orbitMesh.instanceMatrix.needsUpdate = true;
+    }
+
+    const topMesh = topSwirlMeshRef.current;
+    if (topMesh) {
+      for (let i = 0; i < TOP_SWIRL_COUNT; i++) {
+        const angle = (i / TOP_SWIRL_COUNT) * Math.PI * 2 + timeSec * 3.2;
+        const radius = 0.18;
+        _dummy.position.set(Math.sin(angle) * radius, 0.65, Math.cos(angle) * radius);
+        _dummy.scale.setScalar(1);
+        _dummy.rotation.set(0, 0, 0);
+        _dummy.updateMatrix();
+        topMesh.setMatrixAt(i, _dummy.matrix);
+      }
+      topMesh.instanceMatrix.needsUpdate = true;
+    }
 
     applyFade(frameFadeProgress, frameIntensity);
   });
@@ -250,29 +265,16 @@ export default function FireStorm({
           );
         })}
 
-        {Array.from({ length: ORBIT_PARTICLE_COUNT }).map((_, i) => (
-          <mesh
-            key={`orbit-${i}`}
-            ref={(el) => {
-              orbitRefs.current[i] = el;
-            }}
-          >
-            <sphereGeometry args={[0.04, 6, 6]} />
-            <primitive object={orbitMats[i]} attach="material" />
-          </mesh>
-        ))}
-
-        {Array.from({ length: TOP_SWIRL_COUNT }).map((_, i) => (
-          <mesh
-            key={`top-${i}`}
-            ref={(el) => {
-              topSwirlRefs.current[i] = el;
-            }}
-          >
-            <sphereGeometry args={[0.045, 6, 6]} />
-            <primitive object={topSwirlMats[i]} attach="material" />
-          </mesh>
-        ))}
+        <instancedMesh
+          ref={orbitMeshRef}
+          args={[orbitGeo, orbitMat, ORBIT_PARTICLE_COUNT]}
+          frustumCulled={false}
+        />
+        <instancedMesh
+          ref={topSwirlMeshRef}
+          args={[topSwirlGeo, topSwirlMat, TOP_SWIRL_COUNT]}
+          frustumCulled={false}
+        />
       </group>
     </group>
   );

@@ -62,7 +62,7 @@ const playerHeartbeats = new Map(); // Track last heartbeat for each player
 
 // Import game modules
 const GameRoom = require('./gameRoom');
-const { handlePlayerEvents } = require('./playerHandler');
+const { handlePlayerEvents, clearPlayerHandlerState } = require('./playerHandler');
 const { handleEnemyEvents } = require('./enemyHandler');
 
 // Health check endpoint
@@ -495,6 +495,7 @@ function cleanupPlayer(playerId) {
   // Remove references
   playerSockets.delete(playerId);
   playerHeartbeats.delete(playerId);
+  clearPlayerHandlerState(playerId);
 }
 
 // Periodic cleanup of stale connections (every 30 seconds)

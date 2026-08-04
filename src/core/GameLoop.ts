@@ -24,8 +24,12 @@ export class GameLoop extends EventEmitter {
   private fpsUpdateTime = 0;
   private currentFPS = 0;
 
+  /** Bound once — avoids allocating a new closure every rAF tick. */
+  private readonly boundGameLoop: (currentTime: number) => void;
+
   constructor() {
     super();
+    this.boundGameLoop = this.gameLoop.bind(this);
   }
 
   public start(): void {
@@ -34,7 +38,7 @@ export class GameLoop extends EventEmitter {
     this.isRunning = true;
     this.lastTime = performance.now();
     this.accumulator = 0;
-    this.frameId = requestAnimationFrame(this.gameLoop.bind(this));
+    this.frameId = requestAnimationFrame(this.boundGameLoop);
   }
 
   public stop(): void {
@@ -87,7 +91,7 @@ export class GameLoop extends EventEmitter {
     this.emit('render', { deltaTime, interpolation });
 
     // Schedule next frame
-    this.frameId = requestAnimationFrame(this.gameLoop.bind(this));
+    this.frameId = requestAnimationFrame(this.boundGameLoop);
   }
 
   private updateFPS(deltaTime: number): void {

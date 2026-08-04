@@ -3,6 +3,7 @@ import type { MerchantShopSlotKind } from '@/components/environment/ThroneRoom';
 import { StatSystem } from '@/utils/StatSystem';
 import { isItemRarity } from '@/utils/itemRarity';
 import {
+  getFireAffinityMaxEnergyBonus,
   isSabresWarlordAspect,
   WARLORD_WARPDRIVE_DASH_DISTANCES,
   type WeaponAspect,
@@ -211,7 +212,8 @@ export function getMerchantShopTooltipData(
         entry.kind === 'oxygen'
           ? purchaseState.oxygenPurchases
           : purchaseState.warpdrivePurchases;
-      const nextEnergy = getOxygenMaxEnergy(purchases + 1);
+      const nextEnergy =
+        getOxygenMaxEnergy(purchases + 1) + getFireAffinityMaxEnergyBonus(aspect);
       const nextDash = getWarpdriveDashDistance(purchases + 1, aspect);
       const description =
         entry.kind === 'oxygen'

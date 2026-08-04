@@ -1,5 +1,6 @@
 'use client';
 
+import React from 'react';
 import type { RefObject } from 'react';
 import { Text } from '@react-three/drei';
 
@@ -29,7 +30,7 @@ export interface EnemyHealthBarTextLabelProps {
  * Split HP label: static name (above bar) or short leading glyph + numeric text synced via ref.
  * Avoids Troika re-syncing the name/emoji on every HP tick (GPU program/texture churn).
  */
-export default function EnemyHealthBarTextLabel({
+function EnemyHealthBarTextLabel({
   name,
   leading,
   numericRef,
@@ -82,3 +83,5 @@ export default function EnemyHealthBarTextLabel({
     </>
   );
 }
+
+export default React.memo(EnemyHealthBarTextLabel);

@@ -11,6 +11,7 @@ import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type Mele
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   applyEnemyHealthBarFill,
@@ -20,6 +21,7 @@ import {
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 import { getUnitNameplateName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
+import { registerWolfAnimationHandlers } from '@/utils/wolfAnimationDispatch';
 
 interface WolfRendererProps {
   id: string;
@@ -42,7 +44,7 @@ const FADE_DURATION = 1.5;
 const LERP_SPEED = 14;
 const WALK_STOP_DELAY = 250;
 
-export default function WolfRenderer({
+function WolfRenderer({
   id,
   position,
   rotation,
@@ -56,9 +58,8 @@ export default function WolfRenderer({
 }: WolfRendererProps) {
   const isEnemy = variant === 'enemy';
   const attackDuration = isEnemy ? ENEMY_ATTACK_DURATION : ALLY_ATTACK_DURATION;
-  const telegraphEvent = isEnemy ? 'wolf-attack-telegraph' : 'allied-wolf-attack-telegraph';
   const theme = campHpTheme(campType);
-  const { socket, enemyTransformsRef, enemyVisualRotationsRef, enemiesRef } = useMultiplayerActions();
+  const { enemyTransformsRef, enemyVisualRotationsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
   const hpTextRef = useRef<any>(null);
@@ -148,11 +149,10 @@ export default function WolfRenderer({
     return () => clearTimeout(t);
   }, [id, isEnemy]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Animation telegraphs — registered centrally via wolfAnimationDispatch (one socket listener per event).
   useEffect(() => {
-    if (!socket) return;
-
     const handleHowlStart = (data: { wolfId?: string; durationMs?: number }) => {
-      if (!isEnemy || data.wolfId !== id) return;
+      if (!isEnemy) return;
       if (howlTimer.current) clearTimeout(howlTimer.current);
       isHowlingRef.current = true;
       setIsHowling(true);
@@ -177,8 +177,6 @@ export default function WolfRenderer({
       weightClass?: string;
       timestamp?: number;
     }) => {
-      const matchId = data.wolfId ?? data.beastId;
-      if (matchId !== id) return;
       if (attackTimer.current) clearTimeout(attackTimer.current);
       setAttackVariant(data.attackVariant === 2 ? 2 : 1);
       const visual = parseMeleeTelegraphPayload(data, WOLF_MELEE_ATTACK_RANGE, attackDuration);
@@ -196,25 +194,16 @@ export default function WolfRenderer({
       }, duration);
     };
 
-    const handleWolfWhiff = (data: { wolfId?: string; beastId?: string }) => {
-      const matchId = data.wolfId ?? data.beastId;
-      if (matchId !== id) return;
+    const handleWolfWhiff = (_data: { wolfId?: string; beastId?: string }) => {
       setMeleeTelegraph((prev) => (prev ? { ...prev, whiffed: true } : prev));
     };
 
-    if (isEnemy) {
-      socket.on('wolf-howl-start', handleHowlStart);
-      socket.on('wolf-attack-whiff', handleWolfWhiff);
-    }
-    socket.on(telegraphEvent, handleWolfTelegraph);
-    return () => {
-      if (isEnemy) {
-        socket.off('wolf-howl-start', handleHowlStart);
-        socket.off('wolf-attack-whiff', handleWolfWhiff);
-      }
-      socket.off(telegraphEvent, handleWolfTelegraph);
-    };
-  }, [id, socket, isEnemy, telegraphEvent, attackDuration]);
+    return registerWolfAnimationHandlers(id, {
+      onHowlStart: isEnemy ? handleHowlStart : undefined,
+      onAttackTelegraph: handleWolfTelegraph,
+      onAttackWhiff: isEnemy ? handleWolfWhiff : undefined,
+    });
+  }, [id, isEnemy, attackDuration]);
 
   useLayoutEffect(() => {
     applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth);
@@ -257,6 +246,7 @@ export default function WolfRenderer({
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
       if (!deathCacheBuilt.current) {
+        detachSharedMaterialsForMutation(group);
         const collected: any[] = [];
         group.traverse((child: any) => {
           if (child.isMesh && child.material) {
@@ -318,3 +308,5 @@ export default function WolfRenderer({
     </group>
   );
 }
+
+export default React.memo(WolfRenderer);

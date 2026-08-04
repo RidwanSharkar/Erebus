@@ -28,7 +28,7 @@ function rotationYTowardArenaCenter(fromX, fromZ) {
 }
 
 /** Fae Realm hex — keep in sync with `FAE_REALM_HEX_RADIUS` in src/utils/mapConstants.ts */
-const FAE_REALM_HEX_RADIUS = 21;
+const FAE_REALM_HEX_RADIUS = 17;
 const FAE_REALM_ENTRY_X = 0;
 const FAE_REALM_ENTRY_Z = -17;
 

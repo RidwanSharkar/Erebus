@@ -1411,6 +1411,8 @@ interface ThroneRoomProps {
   skyPresetIndex?: number;
   /** Server-authoritative random StylizedGrass preset index (prep only). */
   grassPresetIndex?: number;
+  /** When true, strips heavy ambient orbit decor (boss fight LOD). */
+  combatActive?: boolean;
 }
 
 /**
@@ -1428,6 +1430,7 @@ function ThroneRoom({
   voidPortalOpenProgress = 0,
   skyPresetIndex,
   grassPresetIndex,
+  combatActive = false,
 }: ThroneRoomProps) {
   /** All co-op boss tiers + post-boss intermission share the same purple shell (legacy Boss 2 / Archon look). */
   const usePurpleBossArenaShell = layout === 'bossArena';
@@ -1441,7 +1444,7 @@ function ThroneRoom({
       ) : (
         <CustomSky skyPresetIndex={skyPresetIndex} skyPreset="throneBlue" />
       )}
-      <ThroneSkyRayDecor />
+      {!combatActive && <ThroneSkyRayDecor />}
       <ThroneStatueDecor />
       <ThronePerimeterPylonDecor />
 
@@ -1464,7 +1467,8 @@ function ThroneRoom({
           roomTheme={usePurpleBossArenaShell ? undefined : 'green'}
           grassPalette={usePurpleBossArenaShell ? 'purple' : prepGrassPalette}
           bladeHeight={0.42}
-          windStrength={0.22}
+          windStrength={combatActive ? 0 : 0.22}
+          densityScale={combatActive ? 0.5 : 1}
         />
         <ThroneNatureProps />
         {/* <ThroneTurretProps /> */}

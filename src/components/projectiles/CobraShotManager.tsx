@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useCallback, useEffect } from 'react';
+import React, { useRef, useCallback, useEffect, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3 } from '@/utils/three-exports';
 import CobraShot, { CobraShotProjectile } from './CobraShot';
@@ -20,6 +20,8 @@ import {
   getWyvernStingVenomDamagePerSecond,
   shouldApplyWyvernStingTalent,
 } from '@/utils/talents';
+
+const _scratchMovement = new Vector3();
 
 interface VenomEffectInstance {
   id: number;
@@ -116,10 +118,21 @@ function probeHitsEnemy(probe: Vector3, entity: Entity): boolean {
 
 export default function CobraShotManager({ world }: CobraShotManagerProps) {
   const projectilePool = useRef<CobraShotProjectile[]>([]);
-  const venomEffects = useRef<VenomEffectInstance[]>([]);
-  const beamEffects = useRef<CobraShotBeamInstance[]>([]);
+  const [venomEffects, setVenomEffects] = useState<VenomEffectInstance[]>([]);
+  const [beamEffects, setBeamEffects] = useState<CobraShotBeamInstance[]>([]);
+  /** Bumps when pool active flags change so CobraShot remounts visuals. */
+  const [activeProjectileIds, setActiveProjectileIds] = useState<number[]>([]);
+  const lastActiveIdsKey = useRef('');
   const nextVenomEffectId = useRef(0);
   const nextBeamEffectId = useRef(0);
+
+  const syncActiveProjectileIds = useCallback(() => {
+    const active = projectilePool.current.filter((p) => p.active).map((p) => p.id);
+    const key = active.join(',');
+    if (key === lastActiveIdsKey.current) return;
+    lastActiveIdsKey.current = key;
+    setActiveProjectileIds(active);
+  }, []);
 
   const createVenomEffect = useCallback((position: Vector3) => {
     const effect: VenomEffectInstance = {
@@ -127,7 +140,7 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
       position: position.clone(),
       startTime: Date.now(),
     };
-    venomEffects.current.push(effect);
+    setVenomEffects((prev) => [...prev, effect]);
   }, []);
 
   const applyCobraShotHit = useCallback(
@@ -211,15 +224,15 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
       direction: direction.clone(),
       startTime: Date.now(),
     };
-    beamEffects.current.push(beam);
+    setBeamEffects((prev) => [...prev, beam]);
   }, []);
 
   const removeVenomEffect = useCallback((id: number) => {
-    venomEffects.current = venomEffects.current.filter(effect => effect.id !== id);
+    setVenomEffects((prev) => prev.filter(effect => effect.id !== id));
   }, []);
 
   const removeBeamEffect = useCallback((id: number) => {
-    beamEffects.current = beamEffects.current.filter(beam => beam.id !== id);
+    setBeamEffects((prev) => prev.filter(beam => beam.id !== id));
   }, []);
 
   const tryProjectileFrameHit = useCallback(
@@ -270,8 +283,9 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
         projectile.opacity = 1;
         projectile.fadeStartTime = null;
       }
+      syncActiveProjectileIds();
     },
-    [getInactiveProjectile, createBeamEffect, findFirstCobraHitscanTarget, applyCobraShotHit],
+    [getInactiveProjectile, createBeamEffect, findFirstCobraHitscanTarget, applyCobraShotHit, syncActiveProjectileIds],
   );
 
   // Set up global trigger and projectile pool access
@@ -287,11 +301,12 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
   // Update projectiles and handle collisions
   useFrame(() => {
     const currentTime = Date.now();
+    let activeChanged = false;
 
     projectilePool.current.forEach(projectile => {
       if (!projectile.active) return;
 
-      const movement = projectile.direction.clone().multiplyScalar(PROJECTILE_SPEED);
+      const movement = _scratchMovement.copy(projectile.direction).multiplyScalar(PROJECTILE_SPEED);
       projectile.position.add(movement);
 
       const distanceTraveled = projectile.position.distanceTo(projectile.startPosition);
@@ -308,14 +323,20 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
           projectile.active = false;
           projectile.opacity = 1;
           projectile.fadeStartTime = null;
+          activeChanged = true;
           return;
         }
       }
 
       if (tryProjectileFrameHit(projectile)) {
+        activeChanged = true;
         return;
       }
     });
+
+    if (activeChanged) {
+      syncActiveProjectileIds();
+    }
 
     const combatSystem = world.getSystem(CombatSystem);
     const sourcePlayerId = resolveSourcePlayerId();
@@ -353,13 +374,17 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
     });
   });
 
+  const activeProjectiles = projectilePool.current.filter((p) =>
+    activeProjectileIds.includes(p.id),
+  );
+
   return (
     <>
-      <CobraShot projectilePool={projectilePool.current} />
+      <CobraShot projectilePool={activeProjectiles} />
 
       <VenomEffectManager world={world} />
 
-      {venomEffects.current.map(effect => (
+      {venomEffects.map(effect => (
         <VenomEffect
           key={effect.id}
           position={effect.position}
@@ -367,7 +392,7 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
         />
       ))}
 
-      {beamEffects.current.map(beam => (
+      {beamEffects.map(beam => (
         <CobraShotBeam
           key={beam.id}
           position={beam.position}

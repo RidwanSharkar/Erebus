@@ -618,6 +618,7 @@ const SKY_FRAG = `
   uniform float uCloudWarmth;
   uniform float uUnderLit;
   uniform float uTime;
+  uniform float uEnableClouds;
 
   varying vec3 vDir;
 
@@ -639,6 +640,12 @@ const SKY_FRAG = `
     sky += uSunHalo0 * pow(max(0.0, cosA), 120.0) * 0.60;
     sky += uSunHalo1 * pow(max(0.0, cosA),   8.0) * 0.30;
     sky += uSunHalo2 * pow(max(0.0, cosA),   3.0) * 0.12;
+
+    // Combat / static LOD: skip domain-warped FBM clouds (fill-rate killer).
+    if (uEnableClouds < 0.5) {
+      gl_FragColor = vec4(sky, 1.0);
+      return;
+    }
 
     // ── Clouds (upper dome + under-horizon sea; domain-warped FBM) ──────────
     float yDamp = max(abs(h), 0.07);
@@ -860,7 +867,7 @@ const CustomSky: React.FC<{
    * `skyPreset` / `roomTheme` via `resolveSkyPresetByIndex`.
    */
   skyPresetIndex?: number;
-  /** When false, cloud FBM stops updating (combat LOD). Defaults to true. */
+  /** When false, freezes cloud time and skips FBM clouds (combat / static LOD). Defaults to true. */
   animateClouds?: boolean;
 }> = ({ roomTheme = 'red', skyPreset, skyPresetIndex, animateClouds = true }) => {
   const effectivePreset: CustomSkyPreset =
@@ -885,6 +892,7 @@ const CustomSky: React.FC<{
           uCloudWarmth:  { value: 1.0 },
           uUnderLit:     { value: 0 },
           uTime:         { value: 0 },
+          uEnableClouds: { value: 1 },
         },
         vertexShader: SKY_VERT,
         fragmentShader: SKY_FRAG,
@@ -896,6 +904,10 @@ const CustomSky: React.FC<{
   useLayoutEffect(() => {
     applySkyTheme(material, effectivePreset);
   }, [material, effectivePreset]);
+
+  useLayoutEffect(() => {
+    material.uniforms.uEnableClouds.value = animateClouds ? 1 : 0;
+  }, [material, animateClouds]);
 
   const geo = useMemo(() => new SphereGeometry(500, 32, 16), []);
 

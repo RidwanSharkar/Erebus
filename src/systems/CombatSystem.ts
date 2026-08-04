@@ -39,6 +39,7 @@ import {
   INFESTING_SABRES_SWIPES_VENOM_PROC_CHANCE,
   computeIgniteDotTickPlan,
   getConcentratedVenomMaxStacks,
+  shouldApplyFanOfKnivesTalent,
 } from '@/utils/talents';
 import {
   BLADEMASTER_SHADOWFLAME_DOT_FRACTION,
@@ -53,8 +54,10 @@ import {
   getArchmageFlamePillarDamage,
   isRunebladeBlademasterAspect,
   isSabresFireAffinityAspect,
+  isSabresFrostAffinityAspect,
   isSabresWarlordAspect,
   isScytheArchmageAspect,
+  getFrostAffinityShatterDamage,
   TEMPEST_SWEEP_IGNITE_DOT_FRACTION,
   TEMPEST_SWEEP_IGNITE_DURATION_MS,
   TEMPEST_SWEEP_IGNITE_TICKS,
@@ -73,6 +76,7 @@ import { WeaponType } from '@/components/dragon/weapons';
 import { addGlobalEntangledEnemy } from '@/components/weapons/EntangleManager';
 import { addGlobalVenomousEnemy } from '@/components/projectiles/VenomEffectManager';
 import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
+import { spawnFrostShatterSpike } from '@/components/weapons/frostShatterSpikeSpawnBridge';
 import {
   COLD_GRACE_SHATTER_DAMAGE,
   EXODIA_HELM,
@@ -85,6 +89,12 @@ import {
   isEnemyVenomed,
   isPrimaryAttackDamageType,
 } from '@/utils/dreamLayerItems';
+
+/** Scratch vectors for hit-processing — avoid per-hit allocations in the combat hot path. */
+const _combatPosScratch = new Vector3();
+const _combatPosScratch2 = new Vector3();
+const _combatDirScratch = new Vector3();
+const _combatHealScratch = new Vector3();
 
 interface DamageEvent {
   target: Entity;
@@ -310,10 +320,13 @@ export class CombatSystem extends System {
     if (!playerEntity || !playerHealth || !playerHealth.heal(healingAmount)) return;
 
     const playerTransform = playerEntity.getComponent(Transform);
-    const healPosition = playerTransform
-      ? playerTransform.getWorldPosition().clone().add(new Vector3(0, 1.5, 0))
-      : new Vector3(0, 1.5, 0);
-    controlSystem?.broadcastRoomBoonHealing?.(healingAmount, 'room_boon_bloodleech', healPosition);
+    if (playerTransform) {
+      _combatHealScratch.copy(playerTransform.getWorldPosition());
+      _combatHealScratch.y += 1.5;
+    } else {
+      _combatHealScratch.set(0, 1.5, 0);
+    }
+    controlSystem?.broadcastRoomBoonHealing?.(healingAmount, 'room_boon_bloodleech', _combatHealScratch);
   }
 
   /** Wrathful Bite talent — additive crit for `damageType === 'barrage'` from the local ControlSystem. */
@@ -413,6 +426,36 @@ export class CombatSystem extends System {
         const serverEnemyId = target.userData?.serverEnemyId as string | undefined;
         if (serverEnemyId) {
           (window as any).dreamLayerColdGraceShatter?.(serverEnemyId, target);
+        }
+      }
+    }
+
+    // Frost Affinity Shatter — Flourish (sunder) or Fan of Knives on a frozen enemy consumes Freeze.
+    const talentLoadout = cs.getTalentLoadout?.();
+    const isFlourishShatterHit =
+      damageType === 'sunder' ||
+      (damageType === 'fan_of_knives' && shouldApplyFanOfKnivesTalent(talentLoadout));
+    if (
+      isFlourishShatterHit &&
+      isSabresFrostAffinityAspect(cs.getWeaponAspect?.()) &&
+      enemy.isFrozen
+    ) {
+      const now = Date.now() / 1000;
+      enemy.updateFreezeStatus(now);
+      if (enemy.isFrozen) {
+        const agi = cs.getDreamLayerEffectiveStats?.()?.agility ?? 0;
+        damage += getFrostAffinityShatterDamage(agi, health.maxHealth);
+        enemy.unfreeze();
+        const serverEnemyId = target.userData?.serverEnemyId as string | undefined;
+        if (serverEnemyId) {
+          (window as any).dreamLayerColdGraceShatter?.(serverEnemyId, target);
+        }
+        const targetTransform = target.getComponent(Transform);
+        if (targetTransform) {
+          const pos = targetTransform.getWorldPosition();
+          spawnFrostShatterSpike(pos);
+          const audio = cs.getAudioSystem?.();
+          audio?.playSabresShatterSound?.(pos);
         }
       }
     }
@@ -618,15 +661,15 @@ export class CombatSystem extends System {
     const sourceTransform = source.getComponent(Transform);
     if (!hitTransform || !sourceTransform) return;
 
-    const hitPos = hitTransform.getWorldPosition().clone();
+    const hitPos = _combatPosScratch.copy(hitTransform.getWorldPosition());
     hitPos.y += 1.5;
 
-    const srcWorld = sourceTransform.getWorldPosition().clone();
-    let dir = new Vector3(hitPos.x - srcWorld.x, 0, hitPos.z - srcWorld.z);
+    const srcWorld = _combatPosScratch2.copy(sourceTransform.getWorldPosition());
+    let dir = _combatDirScratch.set(hitPos.x - srcWorld.x, 0, hitPos.z - srcWorld.z);
     if (dir.lengthSq() < 1e-8) {
       const cs = (window as any).controlSystemRef?.current;
       if (cs?.camera?.getWorldDirection) {
-        dir = new Vector3();
+        dir = _combatDirScratch;
         cs.camera.getWorldDirection(dir);
         dir.y = 0;
       }

@@ -17,7 +17,7 @@ export interface EnemyHpBarPlanesProps {
 }
 
 /** Shared HP bar bg/fill planes — uses module-level geometry; per-enemy materials. */
-export default function EnemyHpBarPlanes({
+function EnemyHpBarPlanes({
   fillRef,
   backgroundColor,
   fillColor,
@@ -40,3 +40,5 @@ export default function EnemyHpBarPlanes({
     </>
   );
 }
+
+export default React.memo(EnemyHpBarPlanes);

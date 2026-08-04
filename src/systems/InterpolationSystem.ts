@@ -9,6 +9,8 @@ import { Movement } from '@/ecs/components/Movement';
 export class InterpolationSystem extends System {
   public readonly requiredComponents = [Transform, InterpolationBuffer];
   private currentTime = 0;
+  private readonly _interpPosScratch = new Vector3();
+  private readonly _interpRotScratch = new Quaternion();
 
   constructor() {
     super();
@@ -86,13 +88,17 @@ export class InterpolationSystem extends System {
    * Interpolate a single entity's transform
    */
   private interpolateEntity(transform: Transform, interpolationBuffer: InterpolationBuffer): void {
-    const interpolatedTransform = interpolationBuffer.getInterpolatedTransform(this.currentTime);
+    interpolationBuffer.writeInterpolatedTransform(
+      this.currentTime,
+      this._interpPosScratch,
+      this._interpRotScratch,
+    );
 
     // Apply interpolated position
-    transform.position.copy(interpolatedTransform.position);
+    transform.position.copy(this._interpPosScratch);
 
     // Apply interpolated rotation
-    transform.quaternion.copy(interpolatedTransform.rotation);
+    transform.quaternion.copy(this._interpRotScratch);
 
     // Update the transform's Euler rotation to match the quaternion
     transform.rotation.setFromQuaternion(transform.quaternion);

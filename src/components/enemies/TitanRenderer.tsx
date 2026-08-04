@@ -13,14 +13,16 @@ import EnemyMeleeAttackRangeRing, { TITAN_MELEE_ATTACK_RANGE } from './EnemyMele
 import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type MeleeTelegraphVisual } from '@/utils/meleeTelegraphVisual';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
-  ENEMY_HP_BAR_FILL_Z,
+  ENEMY_HP_BAR_WIDTH,
   applyEnemyHealthBarFill,
   syncEnemyHealthBarFillFromRef,
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
+import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 const SOUL_TYPES = ['green', 'red', 'blue', 'purple'] as const;
 type SoulType = typeof SOUL_TYPES[number];
@@ -52,10 +54,6 @@ const CANNON_CAST_DURATION   = 1500; // ms — matches backend TITAN_CANNON_TOTA
 const FADE_DURATION          = 2.5;
 const LERP_SPEED             = 8;
 const WALK_STOP_DELAY        = 300;
-
-const HP_BAR_WIDTH = 4.2;
-const HP_BAR_HEIGHT = 0.28;
-const HP_BAR_FILL_HEIGHT = 0.26;
 
 function TitanRenderer({
   id,
@@ -242,14 +240,14 @@ function TitanRenderer({
   }, [id, socket, trackTimeout]);
 
   useLayoutEffect(() => {
-    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth, HP_BAR_WIDTH);
+    applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth);
   }, [health, maxHealth]);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
     const group = groupRef.current;
 
-    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, HP_BAR_WIDTH);
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth);
     syncEnemyHealthBarNumericTextFromRef(
       hpTextRef,
       enemiesRef,
@@ -284,6 +282,7 @@ function TitanRenderer({
 
       // Build the material cache once on the first dying frame.
       if (!deathCacheBuilt.current) {
+        detachSharedMaterialsForMutation(group);
         const collected: any[] = [];
         group.traverse((child: any) => {
           if (child.isMesh && child.material) {
@@ -338,19 +337,11 @@ function TitanRenderer({
       <Billboard position={[0, 6.25, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
-            <mesh position={[0, 0, 0]}>
-              <planeGeometry args={[HP_BAR_WIDTH, HP_BAR_HEIGHT]} />
-              <meshBasicMaterial color={theme.background} opacity={0.9} transparent />
-            </mesh>
-
-            <mesh
-              ref={hpFillRef}
-              position={[-HP_BAR_WIDTH / 2, 0, ENEMY_HP_BAR_FILL_Z]}
-              scale={[1, 1, 1]}
-            >
-              <planeGeometry args={[HP_BAR_WIDTH, HP_BAR_FILL_HEIGHT]} />
-              <meshBasicMaterial color={theme.fill} opacity={0.95} transparent />
-            </mesh>
+            <EnemyHpBarPlanes
+              fillRef={hpFillRef}
+              backgroundColor={theme.background}
+              fillColor={theme.fill}
+            />
 
             <EnemyHealthBarTextLabel
               name={TITAN_DISPLAY_NAMES[soulType]}
@@ -361,7 +352,7 @@ function TitanRenderer({
               color={theme.text}
               numericFormat={(hp, max) => `${Math.ceil(hp)} / ${max}`}
             />
-            <EnemyStaggerBar enemyId={id} stagger={staggerBuildup} width={HP_BAR_WIDTH} y={-0.28} />
+            <EnemyStaggerBar enemyId={id} stagger={staggerBuildup} width={ENEMY_HP_BAR_WIDTH} y={-0.28} />
           </>
         )}
       </Billboard>

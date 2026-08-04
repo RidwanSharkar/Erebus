@@ -55,10 +55,26 @@ export class InterpolationBuffer extends Component {
   }
 
   /**
-   * Add a new server state to the interpolation buffer
+   * Add a new server state to the interpolation buffer.
+   * Skips duplicate pushes when position/rotation are unchanged (common when
+   * called every render frame while network updates arrive at ~20 Hz).
    */
   public addServerState(position: Vector3, rotation: Quaternion, timestamp?: number): void {
     const serverTimestamp = timestamp || Date.now();
+
+    // Dedupe: identical pose with a near-zero time delta is a per-frame re-push.
+    if (this.buffer.length > 0) {
+      const last = this.buffer[this.buffer.length - 1];
+      const samePos = last.position.distanceToSquared(position) < 1e-10;
+      const sameRot = Math.abs(last.rotation.dot(rotation)) > 0.999999;
+      if (samePos && sameRot) {
+        // Skip without refreshing the timestamp: CoopGameScene calls this every
+        // render frame (~16ms) while network updates arrive ~20 Hz. Refreshing
+        // would make the next real move compute velocity with a frame delta
+        // instead of the server interval.
+        return;
+      }
+    }
 
     const newState: ServerState = {
       timestamp: serverTimestamp,
@@ -135,11 +151,11 @@ export class InterpolationBuffer extends Component {
   }
 
   /**
-   * Get the interpolated position at the current render time
+   * Write interpolated position into `out` (no allocation).
+   * Prefer this over getInterpolatedPosition in hot paths.
    */
-  public getInterpolatedPosition(currentTime: number): Vector3 {
+  public writeInterpolatedPosition(currentTime: number, out: Vector3): Vector3 {
     if (!this.currentState || !this.targetState) {
-      // No interpolation available - use latest state or extrapolation
       if (this.buffer.length > 0) {
         const latestState = this.buffer[this.buffer.length - 1];
 
@@ -148,55 +164,72 @@ export class InterpolationBuffer extends Component {
           const maxTime = this.maxExtrapolationTime / 1000;
 
           if (extrapolationTime < maxTime) {
-            // Extrapolate position
-            return latestState.position.clone().add(
-              latestState.velocity.clone().multiplyScalar(extrapolationTime)
-            );
+            out.copy(latestState.position).addScaledVector(latestState.velocity, extrapolationTime);
+            return out;
           }
         }
 
-        return latestState.position.clone();
+        out.copy(latestState.position);
+        return out;
       }
-      return new Vector3(0, 0, 0);
+      out.set(0, 0, 0);
+      return out;
     }
 
-    // Calculate interpolation factor
     const elapsed = currentTime - this.interpolationStartTime;
     let t = elapsed / this.interpolationDuration;
-
-    // Clamp t between 0 and 1
     t = Math.max(0, Math.min(1, t));
 
-    // Linear interpolation between current and target states
-    const interpolatedPosition = new Vector3();
-    interpolatedPosition.lerpVectors(this.currentState.position, this.targetState.position, t);
+    out.lerpVectors(this.currentState.position, this.targetState.position, t);
+    return out;
+  }
 
-    return interpolatedPosition;
+  /**
+   * Get the interpolated position at the current render time
+   */
+  public getInterpolatedPosition(currentTime: number): Vector3 {
+    return this.writeInterpolatedPosition(currentTime, new Vector3());
+  }
+
+  /**
+   * Write interpolated rotation into `out` (no allocation).
+   */
+  public writeInterpolatedRotation(currentTime: number, out: Quaternion): Quaternion {
+    if (!this.currentState || !this.targetState) {
+      if (this.buffer.length > 0) {
+        out.copy(this.buffer[this.buffer.length - 1].rotation);
+        return out;
+      }
+      out.identity();
+      return out;
+    }
+
+    const elapsed = currentTime - this.interpolationStartTime;
+    let t = elapsed / this.interpolationDuration;
+    t = Math.max(0, Math.min(1, t));
+
+    out.copy(this.currentState.rotation);
+    out.slerp(this.targetState.rotation, t);
+    return out;
   }
 
   /**
    * Get the interpolated rotation at the current render time
    */
   public getInterpolatedRotation(currentTime: number): Quaternion {
-    if (!this.currentState || !this.targetState) {
-      // No interpolation available - use latest state
-      if (this.buffer.length > 0) {
-        return this.buffer[this.buffer.length - 1].rotation.clone();
-      }
-      return new Quaternion();
-    }
+    return this.writeInterpolatedRotation(currentTime, new Quaternion());
+  }
 
-    // Calculate interpolation factor
-    const elapsed = currentTime - this.interpolationStartTime;
-    let t = elapsed / this.interpolationDuration;
-    t = Math.max(0, Math.min(1, t));
-
-    // Spherical linear interpolation for rotations
-    const interpolatedRotation = new Quaternion();
-    interpolatedRotation.copy(this.currentState.rotation);
-    interpolatedRotation.slerp(this.targetState.rotation, t);
-
-    return interpolatedRotation;
+  /**
+   * Write interpolated transform into caller-owned vectors (no allocation).
+   */
+  public writeInterpolatedTransform(
+    currentTime: number,
+    outPosition: Vector3,
+    outRotation: Quaternion,
+  ): void {
+    this.writeInterpolatedPosition(currentTime, outPosition);
+    this.writeInterpolatedRotation(currentTime, outRotation);
   }
 
   /**

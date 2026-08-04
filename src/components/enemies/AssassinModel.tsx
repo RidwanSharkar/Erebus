@@ -18,7 +18,9 @@ import {
   applyWeaponItemGlow,
   UNIT_SELF_ILLUMINATION_INTENSITY,
   useDisposeClonedMaterials,
+  useCleanupAnimationMixer,
 } from '@/utils/disposeObject3D';
+import { cloneEnemySceneWithSharedMaterials } from '@/utils/sharedEnemyMaterials';
 import { loadGltfAnimationClips, preloadSkinnedIdleAndAnimationClips } from '@/utils/gltfAnimationLoader';
 import { filterAnimationTracksForRoot, getCachedProcessedClips } from '@/utils/enemyAnimationClipCache';
 
@@ -195,15 +197,10 @@ export default React.memo(function AssassinModel({
   }, []);
 
   const clonedScene = useMemo(() => {
-    const clone = SkeletonUtils.clone(scene) as Group;
-    clone.traverse((child: any) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-        child.material = Array.isArray(child.material)
-          ? child.material.map((m: any) => m.clone())
-          : child.material.clone();
-      }
+    const clone = cloneEnemySceneWithSharedMaterials(scene, ASSASSIN_BASE_PATH, {
+      selfIlluminationIntensity: null,
+      castShadow: true,
+      receiveShadow: true,
     });
     bindWowAttachmentItems(clone);
     // After bind — re-seat helm (assassin verts sit low) and hide hair under hood.
@@ -282,6 +279,8 @@ export default React.memo(function AssassinModel({
   ]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
+
+  useCleanupAnimationMixer(mixer, sceneGroupRef);
 
   const getAction = (
     name: 'Idle' | 'Walk' | 'Spin' | 'DrawBow' | 'ReleaseBow' | 'Backflip' | 'Death',

@@ -9,7 +9,7 @@ import {
   FIRE_AFFINITY_SKYFALL_BASE_DAMAGE,
   FIRE_AFFINITY_SKYFALL_DAMAGE_PER_STAT_POINT,
   getDraconicEntropicBoltFireRateReductionSec,
-  isSabresWarlordAspect,
+  resolveSabresRAbilityId,
   type WeaponAspect,
 } from '@/utils/weaponAspects';
 import { getAspectDefaultWraithStrikeTheme } from '@/utils/wraithStrikeColorThemes';
@@ -1291,9 +1291,9 @@ export const WRATHFUL_SHOTS_TEMPEST_CRIT_DAMAGE_MULT_ADD = 0.2;
 export const DUAL_COIL_LATERAL_OFFSET = 0.16;
 
 /** Wyvern Sting — internal cooldown after a perfect shot procs a bonus Cobra Shot (separate from BOW_E). */
-export const WYVERN_STING_COOLDOWN_SEC = 5;
+export const WYVERN_STING_COOLDOWN_SEC = 4.25;
 /** Arctic Sting — min seconds between perfect-shot blizzard spawns. */
-export const ARCTIC_STING_BLIZZARD_ICD_SEC = 4;
+export const ARCTIC_STING_BLIZZARD_ICD_SEC = 2.5;
 /** Arctic Sting + Tempest Rounds — per burst-arrow hit proc chance (chill stack). */
 export const TEMPEST_BURST_ARCTIC_STING_PROC_CHANCE = 0.15;
 /** Wyvern Sting + Tempest Rounds — per burst-arrow hit proc chance (zombie on kill). */
@@ -4896,14 +4896,14 @@ export function filterTalentIdsByExclusionSet(
   return pool.filter((id) => !excluded.has(id));
 }
 
-/** Sabres with Divebomb (non-Warlord) — exclude universal R active room boons. Warlord has no Divebomb. */
+/** Sabres with Divebomb (Fire Affinity) — exclude universal R active room boons. Warlord / Frost have no Divebomb. */
 export function excludeUniversalRActiveBoonsForWeapon(
   pool: readonly TalentId[],
   weapon: WeaponType,
   aspect?: WeaponAspect | null,
 ): TalentId[] {
   if (weapon !== WeaponType.SABRES) return pool.slice();
-  if (isSabresWarlordAspect(aspect)) return pool.slice();
+  if (resolveSabresRAbilityId(aspect) == null) return pool.slice();
   return filterTalentIdsByExclusionSet(pool, new Set(COOP_UNIVERSAL_R_ACTIVE_ROOM_BOONS));
 }
 

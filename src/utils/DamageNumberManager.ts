@@ -41,6 +41,7 @@ export class DamageNumberManager {
           existing.timestamp = now;
           existing.isCritical = existing.isCritical || isCritical;
           pending.lastHitMs = now;
+          this.bumpSnapshot();
           return pending.id;
         }
         this.multiHitMergeByTarget.delete(mergeBarrageTargetEntityId);
@@ -64,6 +65,7 @@ export class DamageNumberManager {
         id,
         lastHitMs: now,
       });
+      this.bumpSnapshot();
       return id;
     }
 
@@ -82,6 +84,7 @@ export class DamageNumberManager {
     };
 
     this.damageNumbers.push(damageNumber);
+    this.bumpSnapshot();
     return id;
   }
 
@@ -97,19 +100,36 @@ export class DamageNumberManager {
           }
         });
       }
+      this.bumpSnapshot();
     }
   }
 
+  private snapshotVersion = 0;
+  private cachedSnapshot: DamageNumberData[] = [];
+  private cachedSnapshotVersion = -1;
+
+  /** Marks the public snapshot stale after mutate/remove/cleanup. */
+  private bumpSnapshot(): void {
+    this.snapshotVersion++;
+  }
+
   public getDamageNumbers(): DamageNumberData[] {
-    return [...this.damageNumbers]; // Return a copy to prevent external mutation
+    if (this.cachedSnapshotVersion === this.snapshotVersion) {
+      return this.cachedSnapshot;
+    }
+    this.cachedSnapshot = this.damageNumbers.slice();
+    this.cachedSnapshotVersion = this.snapshotVersion;
+    return this.cachedSnapshot;
   }
 
   public cleanup(): void {
     // Remove damage numbers older than 5 seconds (failsafe)
     const now = Date.now();
+    const beforeLen = this.damageNumbers.length;
     this.damageNumbers = this.damageNumbers.filter(
       dn => now - dn.timestamp < 5000
     );
+    let changed = this.damageNumbers.length !== beforeLen;
 
     this.multiHitMergeByTarget.forEach((pending, targetId) => {
       if (!this.damageNumbers.some(dn => dn.id === pending.id)) {
@@ -122,6 +142,11 @@ export class DamageNumberManager {
       // Keep only the 50 most recent
       this.damageNumbers.sort((a, b) => b.timestamp - a.timestamp);
       this.damageNumbers = this.damageNumbers.slice(0, 50);
+      changed = true;
+    }
+
+    if (changed) {
+      this.bumpSnapshot();
     }
   }
 
@@ -129,6 +154,7 @@ export class DamageNumberManager {
     this.damageNumbers.length = 0;
     this.nextId = 0;
     this.multiHitMergeByTarget.clear();
+    this.bumpSnapshot();
   }
 
   public getCount(): number {

@@ -56,14 +56,18 @@ function disposeMaterial(material: THREE.Material): void {
   material.dispose();
 }
 
-/** Dispose only cloned GLB materials (geometries stay shared with the cache). */
+/** Dispose only cloned GLB materials (geometries stay shared with the cache).
+ *  Skips materials marked `userData.shared` (per-type shared material cache).
+ */
 export function disposeClonedMaterials(object: THREE.Object3D): void {
   object.traverse((child) => {
     if (!(child as THREE.Mesh).isMesh) return;
     const mat = (child as THREE.Mesh).material;
     if (Array.isArray(mat)) {
-      mat.forEach((m) => m?.dispose());
-    } else if (mat) {
+      mat.forEach((m) => {
+        if (m && !isSharedResource(m)) m.dispose();
+      });
+    } else if (mat && !isSharedResource(mat)) {
       mat.dispose();
     }
   });

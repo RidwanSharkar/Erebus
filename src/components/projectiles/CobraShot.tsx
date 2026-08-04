@@ -1,8 +1,15 @@
 'use client';
 
-import React, { useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Group, Vector3, AdditiveBlending } from '@/utils/three-exports';
+import {
+  Group,
+  Vector3,
+  AdditiveBlending,
+  InstancedMesh,
+  MeshStandardMaterial,
+  Object3D,
+} from '@/utils/three-exports';
 import {
   COBRA_CORE_GEO,
   COBRA_RING_GEOS,
@@ -12,6 +19,10 @@ import {
   COBRA_TRAIL_SPHERE_GEO,
 } from './sharedProjectileGeometry';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import {
+  attachLinearTrailOpacityFalloff,
+  enableInstancedMaterialFalloff,
+} from '@/utils/instancedMaterialFalloff';
 
 export interface CobraShotProjectile {
   id: number;
@@ -30,11 +41,75 @@ interface CobraShotProps {
   projectilePool: CobraShotProjectile[];
 }
 
+const TRAIL_COUNT = 8;
+const _dummy = new Object3D();
+const _lookDirScratch = new Vector3();
+
+attachLinearTrailOpacityFalloff(COBRA_TRAIL_SPHERE_GEO, TRAIL_COUNT);
+attachLinearTrailOpacityFalloff(COBRA_TRAIL_GLOW_GEO, TRAIL_COUNT);
+
 const CobraShotProjectileVisual: React.FC<{ projectile: CobraShotProjectile }> = ({ projectile }) => {
   const groupRef = useRef<Group>(null);
+  const trailMeshRef = useRef<InstancedMesh>(null);
+  const glowMeshRef = useRef<InstancedMesh>(null);
 
   // Pooled light follows the projectile (replaces its per-projectile <pointLight>).
   const projectileLight = useDynamicLight({ color: '#00ff40', distance: 4, priority: 2 });
+
+  const trailMat = useMemo(
+    () =>
+      enableInstancedMaterialFalloff(
+        new MeshStandardMaterial({
+          color: '#00aa20',
+          emissive: '#00aa20',
+          emissiveIntensity: 6,
+          transparent: true,
+          opacity: 0.6,
+          blending: AdditiveBlending,
+          depthWrite: false,
+        }),
+      ),
+    [],
+  );
+  const glowMat = useMemo(
+    () =>
+      enableInstancedMaterialFalloff(
+        new MeshStandardMaterial({
+          color: '#00ff60',
+          emissive: '#00ff60',
+          emissiveIntensity: 3,
+          transparent: true,
+          opacity: 0.3,
+          blending: AdditiveBlending,
+          depthWrite: false,
+        }),
+      ),
+    [],
+  );
+
+  useEffect(() => {
+    const writeTrail = (mesh: InstancedMesh | null, scaleMul: number) => {
+      if (!mesh) return;
+      for (let index = 0; index < TRAIL_COUNT; index++) {
+        const trailScale = (1 - (index / TRAIL_COUNT) * 0.5) * scaleMul;
+        _dummy.position.set(0, 0, -(index + 1) * 0.8);
+        _dummy.scale.setScalar(trailScale);
+        _dummy.rotation.set(0, 0, 0);
+        _dummy.updateMatrix();
+        mesh.setMatrixAt(index, _dummy.matrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    };
+    writeTrail(trailMeshRef.current, 1);
+    writeTrail(glowMeshRef.current, 1.5);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      trailMat.dispose();
+      glowMat.dispose();
+    };
+  }, [trailMat, glowMat]);
 
   useFrame(() => {
     if (!groupRef.current) return;
@@ -43,7 +118,7 @@ const CobraShotProjectileVisual: React.FC<{ projectile: CobraShotProjectile }> =
     groupRef.current.position.set(projectile.position.x, 0, projectile.position.z);
 
     // Calculate rotation based on direction (only Y rotation to stay parallel to ground)
-    const lookDirection = projectile.direction.clone().normalize();
+    const lookDirection = _lookDirScratch.copy(projectile.direction).normalize();
     const rotationY = Math.atan2(lookDirection.x, lookDirection.z);
 
     // Apply rotation - keep X and Z rotation at 0 to stay parallel to ground
@@ -52,6 +127,10 @@ const CobraShotProjectileVisual: React.FC<{ projectile: CobraShotProjectile }> =
     // Drive the pooled light at the projectile's world position (group sits at Y=0).
     projectileLight.current?.setPosition(projectile.position.x, 0, projectile.position.z);
     projectileLight.current?.setIntensity(2 * projectile.opacity);
+
+    // Base opacity × per-instance (1 - index/N) restores original trailOpacity formula.
+    trailMat.opacity = projectile.opacity * 0.6;
+    glowMat.opacity = projectile.opacity * 0.3;
   });
 
   if (!projectile.active) return null;
@@ -108,52 +187,22 @@ const CobraShotProjectileVisual: React.FC<{ projectile: CobraShotProjectile }> =
           emissiveIntensity={3}
           transparent
           opacity={projectile.opacity}
-          blending={2} // AdditiveBlending
+          blending={AdditiveBlending}
           depthWrite={false}
         />
       </mesh>
 
-      {/* Cobra trail effects */}
-      {[...Array(8)].map((_, index) => {
-        const trailOpacity = projectile.opacity * (1 - index / 8) * 0.6;
-        const trailScale = 1 - (index / 8) * 0.5;
-
-        // Position trails behind the projectile tip along the Z axis
-        const trailOffset: [number, number, number] = [0, 0, -(index + 1) * 0.8];
-
-        return (
-          <group
-            key={`trail-${index}`}
-            position={trailOffset}
-          >
-            {/* Cobra energy trail */}
-            <mesh scale={[trailScale, trailScale, trailScale]} geometry={COBRA_TRAIL_SPHERE_GEO}>
-              <meshStandardMaterial
-                color="#00aa20" // Medium green
-                emissive="#00aa20"
-                emissiveIntensity={4 + 2}
-                transparent
-                opacity={trailOpacity}
-                blending={AdditiveBlending}
-                depthWrite={false}
-              />
-            </mesh>
-
-            {/* Outer cobra glow */}
-            <mesh scale={[trailScale * 1.5, trailScale * 1.5, trailScale * 1.5]} geometry={COBRA_TRAIL_GLOW_GEO}>
-              <meshStandardMaterial
-                color="#00ff60" // Light green
-                emissive="#00ff60"
-                emissiveIntensity={2 + 1}
-                transparent
-                opacity={trailOpacity * 0.5}
-                blending={AdditiveBlending}
-                depthWrite={false}
-              />
-            </mesh>
-          </group>
-        );
-      })}
+      {/* Cobra trail — 2 instanced draw calls instead of 16 meshes */}
+      <instancedMesh
+        ref={trailMeshRef}
+        args={[COBRA_TRAIL_SPHERE_GEO, trailMat, TRAIL_COUNT]}
+        frustumCulled={false}
+      />
+      <instancedMesh
+        ref={glowMeshRef}
+        args={[COBRA_TRAIL_GLOW_GEO, glowMat, TRAIL_COUNT]}
+        frustumCulled={false}
+      />
     </group>
   );
 };
@@ -161,9 +210,11 @@ const CobraShotProjectileVisual: React.FC<{ projectile: CobraShotProjectile }> =
 export default function CobraShot({ projectilePool }: CobraShotProps) {
   return (
     <>
-      {projectilePool.map(projectile => (
-        <CobraShotProjectileVisual key={projectile.id} projectile={projectile} />
-      ))}
+      {projectilePool
+        .filter((projectile) => projectile.active)
+        .map((projectile) => (
+          <CobraShotProjectileVisual key={projectile.id} projectile={projectile} />
+        ))}
     </>
   );
 }

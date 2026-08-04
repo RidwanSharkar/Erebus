@@ -60,15 +60,21 @@ function ThronePerimeterPylonDecorInner({
         const scaleMul = def.scale ?? 1;
         const s = meta.defaultScale * scaleMul;
         const y = groundY + meta.groundY * s + def.position[1];
+        const tiltX = def.rotationX ?? 0;
+        // Outer yaw faces the center; inner pitch tips the top inward.
         return (
-          <Clone
+          <group
             key={`perimeter-pylon-${i}`}
-            object={prepared}
             position={[def.position[0], y, def.position[2]]}
             rotation={[0, def.rotationY, 0]}
-            scale={s}
-            deep={false}
-          />
+          >
+            <Clone
+              object={prepared}
+              rotation={[tiltX, 0, 0]}
+              scale={s}
+              deep={false}
+            />
+          </group>
         );
       })}
     </group>

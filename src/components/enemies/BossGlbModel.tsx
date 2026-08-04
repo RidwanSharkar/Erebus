@@ -11,8 +11,8 @@ import {
   Vector3,
 } from 'three';
 import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
-import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { cloneEnemySceneWithSharedMaterials } from '@/utils/sharedEnemyMaterials';
 import { filterAnimationClipsForRoot, renameAnimationClips, stripRootMotionXZ } from '@/utils/enemyAnimationClipCache';
 import { loadGltfAnimationClips, preloadSkinnedIdleAndAnimationClips } from '@/utils/gltfAnimationLoader';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
@@ -168,21 +168,11 @@ export default function BossGlbModel({
   }, []);
 
   const clonedScene = useMemo(() => {
-    const clone = SkeletonUtils.clone(scene) as Group;
-    clone.traverse((child: { isMesh?: boolean; castShadow?: boolean; receiveShadow?: boolean; material?: unknown }) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = true;
-        const m = child.material;
-        if (m && !Array.isArray(m) && typeof m === 'object' && m !== null && 'clone' in m) {
-          child.material = (m as { clone: () => unknown }).clone();
-        } else if (Array.isArray(m)) {
-          child.material = m.map((x) => (typeof x === 'object' && x !== null && 'clone' in x ? (x as { clone: () => unknown }).clone() : x));
-        }
-      }
+    return cloneEnemySceneWithSharedMaterials(scene, BOSS_IDLE_PATH, {
+      selfIlluminationIntensity: UNIT_SELF_ILLUMINATION_INTENSITY,
+      castShadow: true,
+      receiveShadow: true,
     });
-    applySelfIllumination(clone, { intensity: UNIT_SELF_ILLUMINATION_INTENSITY });
-    return clone;
   }, [scene]);
 
   useDisposeClonedMaterials(clonedScene);

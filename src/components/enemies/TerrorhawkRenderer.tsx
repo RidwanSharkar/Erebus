@@ -11,6 +11,7 @@ import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type Mele
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation } from '@/utils/enemyLiveTransform';
+import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   applyEnemyHealthBarFill,
@@ -47,7 +48,7 @@ function isAirPhase(phase: TerrorhawkPhase): boolean {
   return phase === 'takeoff' || phase === 'hover' || phase === 'approach' || phase === 'dive';
 }
 
-export default function TerrorhawkRenderer({
+function TerrorhawkRenderer({
   id,
   position,
   rotation,
@@ -235,6 +236,7 @@ export default function TerrorhawkRenderer({
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
       if (!deathCacheBuilt.current) {
+        detachSharedMaterialsForMutation(group);
         const collected: any[] = [];
         group.traverse((child: any) => {
           if (child.isMesh && child.material) {
@@ -295,3 +297,5 @@ export default function TerrorhawkRenderer({
     </group>
   );
 }
+
+export default React.memo(TerrorhawkRenderer);

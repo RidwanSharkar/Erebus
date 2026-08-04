@@ -6,7 +6,8 @@ import { Group, AnimationAction, AnimationClip } from 'three';
 import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadGltfAnimationClips, preloadSkinnedIdleAndAnimationClips } from '@/utils/gltfAnimationLoader';
-import { applySelfIllumination, SHADE_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import { SHADE_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
+import { cloneEnemySceneWithSharedMaterials } from '@/utils/sharedEnemyMaterials';
 import {
   filterAnimationClipsForRoot,
   getCachedEnemyAnimationClips,
@@ -90,18 +91,11 @@ export default React.memo(function ShadeModel({
 
   // Clone + own materials so a dying shade's fade-out doesn't affect other instances.
   const clonedScene = useMemo(() => {
-    const clone = SkeletonUtils.clone(scene) as Group;
-    clone.traverse((child: any) => {
-      if (child.isMesh) {
-        child.castShadow = true;
-        child.receiveShadow = false;
-        child.material = Array.isArray(child.material)
-          ? child.material.map((m: any) => m.clone())
-          : child.material.clone();
-      }
+    return cloneEnemySceneWithSharedMaterials(scene, SHADE_IDLE_PATH, {
+      selfIlluminationIntensity: SHADE_SELF_ILLUMINATION_INTENSITY,
+      castShadow: false,
+      receiveShadow: false,
     });
-    applySelfIllumination(clone, { intensity: SHADE_SELF_ILLUMINATION_INTENSITY });
-    return clone;
   }, [scene]);
 
   useDisposeClonedMaterials(clonedScene);
@@ -132,6 +126,8 @@ export default React.memo(function ShadeModel({
   }, [idleAnims, extraAnims, clonedScene]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
+
+  useCleanupAnimationMixer(mixer, sceneGroupRef);
 
   const getAction = (name: 'Idle' | 'Walk' | 'Throw' | 'Death' | 'Impact'): AnimationAction | null =>
     actions[name] ?? null;

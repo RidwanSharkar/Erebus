@@ -302,8 +302,10 @@ import { getRuneCountForWeapon } from '@/utils/runeCount';
 import { registerEnemyAttackTelegraphSounds } from '@/utils/enemyTelegraphSound';
 import { registerBeastAudioSounds } from '@/utils/beastAudioSounds';
 import { registerKnightAnimationSocketListeners } from '@/utils/knightAnimationDispatch';
+import { registerWolfAnimationSocketListeners } from '@/utils/wolfAnimationDispatch';
 import { registerAssassinAnimationSocketListeners } from '@/utils/assassinAnimationDispatch';
 import { registerValkyrieAnimationSocketListeners } from '@/utils/valkyrieAnimationDispatch';
+import { registerSkeletonMoveSocketListeners } from '@/utils/skeletonMoveDispatch';
 import { VALKYRIE_JUDGMENT_FALL_MS } from '@/utils/valkyrieJudgmentConstants';
 import {
   FROST_QUEEN_TELEPORT_LOCK_MS,
@@ -380,6 +382,7 @@ import HuntersMarkManager, {
 import EntangleManager, { addGlobalEntangledEnemy, addGlobalEntangledPlayer } from '@/components/weapons/EntangleManager';
 import IgniteEffectManager from '@/components/weapons/IgniteEffectManager';
 import FireStormManager from '@/components/weapons/FireStormManager';
+import FrostShatterSpikeManager from '@/components/weapons/FrostShatterSpikeManager';
 
 import CobraShotManager from '@/components/projectiles/CobraShotManager';
 import { addGlobalVenomousEnemy } from '@/components/projectiles/VenomEffectManager';
@@ -439,6 +442,7 @@ import {
   type WeaponAspect,
   ASPECT_LEGIONNAIRE,
   cycleWeaponAspect,
+  getFireAffinityMaxEnergyBonus,
   getShowcaseWeaponAspect,
   normalizeWeaponAspect,
   POISON_DART_RANGE,
@@ -634,10 +638,18 @@ function DevPerformanceCollector() {
         programs: gl.info.programs?.length ?? 0,
         ...complexity,
         drawCalls: gl.info.render.calls,
+        triangles: gl.info.render.triangles,
+        points: gl.info.render.points,
+        lines: gl.info.render.lines,
         calcCache: calculationCache.getStats?.() ?? 'n/a',
       };
       // eslint-disable-next-line no-console
       console.table(stats);
+      // eslint-disable-next-line no-console
+      console.log(
+        `[erebusMemStats] drawCalls=${stats.drawCalls} triangles=${stats.triangles} ` +
+          `instancedMeshes=${complexity.instancedMeshes} meshes=${complexity.meshes}`,
+      );
       return stats;
     };
 
@@ -2479,8 +2491,16 @@ export function CoopGameScene({
     return false;
   }, []);
 
+  /** Horizontal XZ cull radius for coop enemy React trees (~45 units). */
   const isCoopEnemyVisibleForRender = useCallback(
-    (_enemyX: number, _enemyZ: number) => true,
+    (enemyX: number, enemyZ: number) => {
+      if (playerEntityRef.current === null) return true;
+      const playerPos = realTimePlayerPositionRef.current;
+      if (!playerPos) return true;
+      const dx = enemyX - playerPos.x;
+      const dz = enemyZ - playerPos.z;
+      return dx * dx + dz * dz <= 45 * 45;
+    },
     [],
   );
 
@@ -4771,7 +4791,10 @@ export function CoopGameScene({
     const warpdrivePurchases = merchantPurchaseState.warpdrivePurchases;
 
     if (energy) {
-      const newMaxEnergy = getOxygenMaxEnergy(oxygenPurchases) + exodiaSetBonuses.maxEnergy;
+      const newMaxEnergy =
+        getOxygenMaxEnergy(oxygenPurchases) +
+        exodiaSetBonuses.maxEnergy +
+        getFireAffinityMaxEnergyBonus(selectedWeaponAspect);
       const baseRegen = 40;
       energy.regenRate = hasOwnedItem(ownedItemTypes, INFINITE_AMBER)
         ? baseRegen * INFINITE_AMBER_ENERGY_REGEN_MULT
@@ -4841,7 +4864,8 @@ export function CoopGameScene({
 
   // Use a ref to store current weapon state to avoid infinite re-renders
   const weaponStateRef = useRef(weaponState);
-  const lastCommittedWeaponStateRef = useRef(weaponState);
+  // Independent copy — must not alias weaponStateRef, which is mutated in-place every frame
+  const lastCommittedWeaponStateRef = useRef({ ...weaponState });
   const lastWeaponStateUpdate = useRef(0);
 
   // Update weapon state when selectedWeapons changes
@@ -4860,6 +4884,22 @@ export function CoopGameScene({
   const lastImpactEffectsPoll = useRef(0);
   const lastCameraUpdate = useRef(0);
   const lastGameStateUpdate = useRef(0);
+  const lastEmittedDamageNumbersRef = useRef<DamageNumberData[] | null>(null);
+  const lastEmittedCameraRef = useRef<{ camera: Camera | null; width: number; height: number }>({
+    camera: null,
+    width: 0,
+    height: 0,
+  });
+  const lastEmittedGameStateRef = useRef<{
+    playerHealth: number;
+    maxHealth: number;
+    playerShield: number;
+    maxShield: number;
+    playerEnergy: number;
+    maxEnergy: number;
+    currentWeapon: WeaponType;
+    currentSubclass: WeaponSubclass;
+  } | null>(null);
   const lastEmittedNetworkHealthRef = useRef<{ health: number; maxHealth: number } | null>(null);
   const lastEmittedNetworkShieldRef = useRef<{ shield: number; maxShield: number } | null>(null);
   const lastEmittedNetworkEnergyRef = useRef<{ energy: number; maxEnergy: number } | null>(null);
@@ -5892,8 +5932,10 @@ export function CoopGameScene({
       getEnemyPosition: (enemyId) => enemiesRef.current.get(enemyId)?.position,
     });
     const unregisterKnightAnimationListeners = registerKnightAnimationSocketListeners(socket);
+    const unregisterWolfAnimationListeners = registerWolfAnimationSocketListeners(socket);
     const unregisterAssassinAnimationListeners = registerAssassinAnimationSocketListeners(socket);
     const unregisterValkyrieAnimationListeners = registerValkyrieAnimationSocketListeners(socket);
+    const unregisterSkeletonMoveListeners = registerSkeletonMoveSocketListeners(socket);
 
     const handleCoopRoomWhisper = (data: { roomColor?: string }) => {
       const c = data.roomColor?.toLowerCase();
@@ -12724,8 +12766,10 @@ export function CoopGameScene({
       unregisterEnemyTelegraphSounds();
       unregisterBeastAudioSounds();
       unregisterKnightAnimationListeners();
+      unregisterWolfAnimationListeners();
       unregisterAssassinAnimationListeners();
       unregisterValkyrieAnimationListeners();
+      unregisterSkeletonMoveListeners();
       socket.off('coop-room-whisper', handleCoopRoomWhisper);
       tentacleSpinePendingByEnemyRef.current.forEach((p, enemyId) => {
         if (p.tAdd) clearTimeout(p.tAdd);
@@ -14876,73 +14920,64 @@ export function CoopGameScene({
               : (camera.getWorldDirection(_camDirScratch),
                  Math.atan2(_camDirScratch.x, _camDirScratch.z));
 
-          // Update quaternion for Viper Sting direction
-          viperStingParentRef.current.quaternion = {
-            x: 0,
-            y: Math.sin(cameraAngle / 2),
-            z: 0,
-            w: Math.cos(cameraAngle / 2)
-          };
+          // Update quaternion for Viper Sting direction (mutate in place — no per-frame object)
+          const q = viperStingParentRef.current.quaternion;
+          q.x = 0;
+          q.y = Math.sin(cameraAngle / 2);
+          q.z = 0;
+          q.w = Math.cos(cameraAngle / 2);
         }
       }
 
       // Update weapon state from control system
       if (controlSystemRef.current) {
-
-
-        const newWeaponState = {
-          currentWeapon: controlSystemRef.current.getCurrentWeapon(),
-          currentSubclass: controlSystemRef.current.getCurrentSubclass(),
-          isCharging: controlSystemRef.current.isWeaponCharging(),
-          chargeProgress: controlSystemRef.current.getChargeProgress(),
-          chargeDirection: weaponStateRef.current.chargeDirection,
-          isSwinging: controlSystemRef.current.isWeaponSwinging(),
-          isSpinning: (controlSystemRef.current.isWeaponCharging() || controlSystemRef.current.isCrossentropyChargingActive() || controlSystemRef.current.isEntropicBoltActive()) && controlSystemRef.current.getCurrentWeapon() === WeaponType.SCYTHE,
-          swordComboStep: controlSystemRef.current.getSwordComboStep(),
-          isSwordCharging: controlSystemRef.current.isChargeActive(),
-          isDeflecting: controlSystemRef.current.isDeflectActive(),
-          deflectShieldActive:
-            controlSystemRef.current.isDeflectActive() ||
-            controlSystemRef.current.isWraithGuardShieldActive() ||
-            controlSystemRef.current.isColossusGuardShieldActive() ||
-            controlSystemRef.current.isGuardComboShieldActive() ||
-            controlSystemRef.current.isDashGuardShieldActive() ||
-            controlSystemRef.current.isSabresPurpleGuardShieldActive(),
-          deflectShieldDurationSec: controlSystemRef.current.getDeflectShieldDurationSec(),
-          deflectShieldPaletteVariant: controlSystemRef.current.getAegisShieldPaletteVariant(),
-          isBlockingDeflect: controlSystemRef.current.isBlockingDeflectActive(),
-          isViperStingCharging: controlSystemRef.current.isViperStingChargingActive(),
-          viperStingChargeProgress: controlSystemRef.current.getViperStingChargeProgress(),
-          isBarrageCharging: controlSystemRef.current.isBarrageChargingActive(),
-          barrageChargeProgress: controlSystemRef.current.getBarrageChargeProgress(),
-          isCobraShotCharging: controlSystemRef.current.isCobraShotChargingActive(),
-          cobraShotChargeProgress: controlSystemRef.current.getCobraShotChargeProgress(),
-          isRejuvenatingShotCharging: controlSystemRef.current.isRejuvenatingShotChargingActive(),
-          rejuvenatingShotChargeProgress: controlSystemRef.current.getRejuvenatingShotChargeProgress(),
-          isSkyfalling: controlSystemRef.current.isSkyfallActive(),
-          isBackstabbing: controlSystemRef.current.isBackstabActive(),
-          isSundering: controlSystemRef.current.isSunderActive(),
-          isCorruptedAuraActive: controlSystemRef.current.isCorruptedAuraActive(),
-          isFrozen: weaponStateRef.current.isFrozen,
-          isIcebeaming: controlSystemRef.current.isIcebeamActive(),
-          tempestBurstShotSeq: controlSystemRef.current.getTempestBurstShotSeq(),
-        };
-
-        // Update the ref immediately
-        weaponStateRef.current = newWeaponState;
+        const ws = weaponStateRef.current;
+        ws.currentWeapon = controlSystemRef.current.getCurrentWeapon();
+        ws.currentSubclass = controlSystemRef.current.getCurrentSubclass();
+        ws.isCharging = controlSystemRef.current.isWeaponCharging();
+        ws.chargeProgress = controlSystemRef.current.getChargeProgress();
+        ws.isSwinging = controlSystemRef.current.isWeaponSwinging();
+        ws.isSpinning = (controlSystemRef.current.isWeaponCharging() || controlSystemRef.current.isCrossentropyChargingActive() || controlSystemRef.current.isEntropicBoltActive()) && controlSystemRef.current.getCurrentWeapon() === WeaponType.SCYTHE;
+        ws.swordComboStep = controlSystemRef.current.getSwordComboStep();
+        ws.isSwordCharging = controlSystemRef.current.isChargeActive();
+        ws.isDeflecting = controlSystemRef.current.isDeflectActive();
+        ws.deflectShieldActive =
+          controlSystemRef.current.isDeflectActive() ||
+          controlSystemRef.current.isWraithGuardShieldActive() ||
+          controlSystemRef.current.isColossusGuardShieldActive() ||
+          controlSystemRef.current.isGuardComboShieldActive() ||
+          controlSystemRef.current.isDashGuardShieldActive() ||
+          controlSystemRef.current.isSabresPurpleGuardShieldActive();
+        ws.deflectShieldDurationSec = controlSystemRef.current.getDeflectShieldDurationSec();
+        ws.deflectShieldPaletteVariant = controlSystemRef.current.getAegisShieldPaletteVariant();
+        ws.isBlockingDeflect = controlSystemRef.current.isBlockingDeflectActive();
+        ws.isViperStingCharging = controlSystemRef.current.isViperStingChargingActive();
+        ws.viperStingChargeProgress = controlSystemRef.current.getViperStingChargeProgress();
+        ws.isBarrageCharging = controlSystemRef.current.isBarrageChargingActive();
+        ws.barrageChargeProgress = controlSystemRef.current.getBarrageChargeProgress();
+        ws.isCobraShotCharging = controlSystemRef.current.isCobraShotChargingActive();
+        ws.cobraShotChargeProgress = controlSystemRef.current.getCobraShotChargeProgress();
+        ws.isRejuvenatingShotCharging = controlSystemRef.current.isRejuvenatingShotChargingActive();
+        ws.rejuvenatingShotChargeProgress = controlSystemRef.current.getRejuvenatingShotChargeProgress();
+        ws.isSkyfalling = controlSystemRef.current.isSkyfallActive();
+        ws.isBackstabbing = controlSystemRef.current.isBackstabActive();
+        ws.isSundering = controlSystemRef.current.isSunderActive();
+        ws.isCorruptedAuraActive = controlSystemRef.current.isCorruptedAuraActive();
+        ws.isIcebeaming = controlSystemRef.current.isIcebeamActive();
+        ws.tempestBurstShotSeq = controlSystemRef.current.getTempestBurstShotSeq();
 
         // Check for weapon changes and broadcast to other players
         const prevWeapon = prevWeaponRef.current;
-        if (newWeaponState.currentWeapon !== prevWeapon.weapon ||
-            newWeaponState.currentSubclass !== prevWeapon.subclass) {
+        if (ws.currentWeapon !== prevWeapon.weapon ||
+            ws.currentSubclass !== prevWeapon.subclass) {
           updatePlayerWeapon(
-            newWeaponState.currentWeapon,
-            newWeaponState.currentSubclass,
+            ws.currentWeapon,
+            ws.currentSubclass,
             selectedWeaponAspectRef.current,
           );
           prevWeaponRef.current = {
-            weapon: newWeaponState.currentWeapon,
-            subclass: newWeaponState.currentSubclass
+            weapon: ws.currentWeapon,
+            subclass: ws.currentSubclass
           };
         }
 
@@ -14951,10 +14986,11 @@ export function CoopGameScene({
         const now = Date.now();
         if (
           now - lastWeaponStateUpdate.current > 100 &&
-          weaponStateNeedsReactUpdate(lastCommittedWeaponStateRef.current, newWeaponState)
+          weaponStateNeedsReactUpdate(lastCommittedWeaponStateRef.current, ws)
         ) {
-          setWeaponState(newWeaponState);
-          lastCommittedWeaponStateRef.current = newWeaponState;
+          const snapshot = { ...ws, chargeDirection: ws.chargeDirection };
+          setWeaponState(snapshot);
+          lastCommittedWeaponStateRef.current = snapshot;
           lastWeaponStateUpdate.current = now;
         }
 
@@ -14962,29 +14998,29 @@ export function CoopGameScene({
         const animationNow = Date.now();
         if (animationNow - lastAnimationBroadcast.current > 100) { // Throttle to 10 times per second
           // Determine if scythe is spinning (IceBeam, Crossentropy, or Entropic Bolts)
-          const isScytheSpinning = newWeaponState.isSpinning && newWeaponState.currentWeapon === WeaponType.SCYTHE;
+          const isScytheSpinning = ws.isSpinning && ws.currentWeapon === WeaponType.SCYTHE;
           // Determine if sword is spinning during Charge
-          const isSwordSpinning = newWeaponState.isSwordCharging;
+          const isSwordSpinning = ws.isSwordCharging;
           // Combine all spinning states
           const isSpinning = isScytheSpinning || isSwordSpinning;
 
           // Create the animation state object - only include weapon-specific fields for current weapon
           const animationStateToSend: any = {
-            isCharging: newWeaponState.isCharging,
-            chargeProgress: newWeaponState.chargeProgress,
-            isSwinging: newWeaponState.isSwinging,
+            isCharging: ws.isCharging,
+            chargeProgress: ws.chargeProgress,
+            isSwinging: ws.isSwinging,
             isSpinning: isSpinning, // Broadcast spinning for scythe and sword charge
-            isDeflecting: newWeaponState.isDeflecting,
-            isSwordCharging: newWeaponState.isSwordCharging, // Broadcast sword charging state
-            isViperStingCharging: newWeaponState.isViperStingCharging,
-            viperStingChargeProgress: newWeaponState.viperStingChargeProgress,
-            isBarrageCharging: newWeaponState.isBarrageCharging,
-            barrageChargeProgress: newWeaponState.barrageChargeProgress,
-            isCobraShotCharging: newWeaponState.isCobraShotCharging,
-            cobraShotChargeProgress: newWeaponState.cobraShotChargeProgress,
-            isRejuvenatingShotCharging: newWeaponState.isRejuvenatingShotCharging,
-            rejuvenatingShotChargeProgress: newWeaponState.rejuvenatingShotChargeProgress,
-            isBackstabbing: newWeaponState.isBackstabbing, // Broadcast backstab animation state
+            isDeflecting: ws.isDeflecting,
+            isSwordCharging: ws.isSwordCharging, // Broadcast sword charging state
+            isViperStingCharging: ws.isViperStingCharging,
+            viperStingChargeProgress: ws.viperStingChargeProgress,
+            isBarrageCharging: ws.isBarrageCharging,
+            barrageChargeProgress: ws.barrageChargeProgress,
+            isCobraShotCharging: ws.isCobraShotCharging,
+            cobraShotChargeProgress: ws.cobraShotChargeProgress,
+            isRejuvenatingShotCharging: ws.isRejuvenatingShotCharging,
+            rejuvenatingShotChargeProgress: ws.rejuvenatingShotChargeProgress,
+            isBackstabbing: ws.isBackstabbing, // Broadcast backstab animation state
             // Add missing Runeblade animation states
             isSmiting: controlSystemRef.current?.isSmiteActive() || false,
             isColossusStriking: controlSystemRef.current?.isColossusStrikeActive() || false,
@@ -15001,7 +15037,7 @@ export function CoopGameScene({
           // Only include swordComboStep for weapons that actually use it (Sword and Runeblade)
           const currentWeapon = controlSystemRef.current?.getCurrentWeapon();
           if (currentWeapon === WeaponType.SWORD || currentWeapon === WeaponType.RUNEBLADE) {
-            animationStateToSend.swordComboStep = newWeaponState.swordComboStep;
+            animationStateToSend.swordComboStep = ws.swordComboStep;
           }
           broadcastPlayerAnimationState(animationStateToSend);
           lastAnimationBroadcast.current = animationNow;
@@ -15014,7 +15050,11 @@ export function CoopGameScene({
         const combatSystem = engineRef.current.getWorld().getSystem(CombatSystem);
         if (combatSystem) {
           const newDamageNumbers = combatSystem.getDamageNumbers();
-          onDamageNumbersUpdate(newDamageNumbers);
+          // Same array identity from DamageNumberManager snapshot cache means no change
+          if (lastEmittedDamageNumbersRef.current !== newDamageNumbers) {
+            lastEmittedDamageNumbersRef.current = newDamageNumbers;
+            onDamageNumbersUpdate(newDamageNumbers);
+          }
           lastDamageNumbersUpdate.current = damageNumbersNow;
         }
       }
@@ -15046,7 +15086,19 @@ export function CoopGameScene({
       // Throttle camera update to prevent object reference changes (every 33ms for consistency)
       const cameraNow = Date.now();
       if (cameraNow - lastCameraUpdate.current > 33 && onCameraUpdate) {
-        onCameraUpdate(camera, state.size);
+        const prevCam = lastEmittedCameraRef.current;
+        if (
+          prevCam.camera !== camera ||
+          prevCam.width !== state.size.width ||
+          prevCam.height !== state.size.height
+        ) {
+          lastEmittedCameraRef.current = {
+            camera,
+            width: state.size.width,
+            height: state.size.height,
+          };
+          onCameraUpdate(camera, state.size);
+        }
         lastCameraUpdate.current = cameraNow;
       }
 
@@ -15077,7 +15129,21 @@ export function CoopGameScene({
               currentWeapon: controlSystemRef.current.getCurrentWeapon(),
               currentSubclass: controlSystemRef.current.getCurrentSubclass()
             };
-            onGameStateUpdate(gameState);
+            const prevGs = lastEmittedGameStateRef.current;
+            if (
+              !prevGs ||
+              prevGs.playerHealth !== gameState.playerHealth ||
+              prevGs.maxHealth !== gameState.maxHealth ||
+              prevGs.playerShield !== gameState.playerShield ||
+              prevGs.maxShield !== gameState.maxShield ||
+              prevGs.playerEnergy !== gameState.playerEnergy ||
+              prevGs.maxEnergy !== gameState.maxEnergy ||
+              prevGs.currentWeapon !== gameState.currentWeapon ||
+              prevGs.currentSubclass !== gameState.currentSubclass
+            ) {
+              lastEmittedGameStateRef.current = gameState;
+              onGameStateUpdate(gameState);
+            }
 
             const prevHealth = lastEmittedNetworkHealthRef.current;
             if (
@@ -16384,8 +16450,11 @@ export function CoopGameScene({
       {/* Don't render game world if game hasn't started */}
       {!gameStarted ? null : (
         <>
-          {/* Drifting cloud mist — camera-relative overlay, present in every room */}
-          <DriftingMist enabled={!isCastleRoom} />
+          {/* Drifting cloud mist — camera-relative overlay; thinned while enemies are active */}
+          <DriftingMist
+            enabled={!isCastleRoom}
+            combatActive={combatArenaActive && enemies.size > 0}
+          />
           {inThroneRoom ? (
             <>
               <ThroneRoom
@@ -16416,6 +16485,7 @@ export function CoopGameScene({
                 campTypes={campTypes}
                 coopClearedRoomColor={coopClearedRoomColor}
                 skyPresetIndex={coopSkyPresetIndex}
+                combatActive={enemies.size > 0}
               />
               {combatArenaActive && coopMainArenaPortalPhase && (
                 <CoopMainArenaPortals
@@ -17228,6 +17298,7 @@ export function CoopGameScene({
           <BowPowershotManager />
           <FrostNovaManager world={engineRef.current.getWorld()} />
           <FireStormManager world={engineRef.current.getWorld()} />
+          <FrostShatterSpikeManager />
           <ArcticBlizzardManager
             world={engineRef.current.getWorld()}
             getEnemyData={getArcticBlizzardEnemyData}

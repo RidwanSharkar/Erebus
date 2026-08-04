@@ -124,14 +124,14 @@ export const WEAPON_ASPECT_DISPLAY: Record<WeaponAspect, WeaponAspectDisplayMeta
     label: 'Aspect of Havoc',
     shortLabel: 'Fire',
     description:
-      'Reduces the cooldown of Divebomb by 2 seconds, increasing its damage and it now applies Ignite (80% of impact damage over 3s).',
+      'Reduces the cooldown of Divebomb by 2 seconds, increasing its damage and it now applies Ignite (80% of impact damage over 3s). Starts with +25 Energy.',
   },
   FROST_AFFINITY: {
     id: 'FROST_AFFINITY',
     label: 'Aspect of Apathy',
     shortLabel: 'Frost',
     description:
-      'Primary attacks apply Avalanche on hit enemies — Arctic Blizzard damage and chill every 0.5s for 6s.',
+      'Primary attacks apply Avalanche on hit enemies — Arctic Blizzard damage and chill every 0.5s for 6s. Shatter: Flourish (and Fan of Knives, if talented) on a frozen enemy consumes Freeze and deals 100 + 10 per AGILITY + 10% of the target\'s maximum health as ice-spike damage.',
   },
   WARLORD: {
     id: 'WARLORD',
@@ -508,11 +508,20 @@ export const FIRE_AFFINITY_SKYFALL_IGNITE_TICKS = 3;
 export const SABRES_SKYFALL_DEFAULT_COOLDOWN_SEC = 9;
 /** Fire Affinity — Divebomb cooldown reduced by 2s. */
 export const FIRE_AFFINITY_SKYFALL_COOLDOWN_SEC = 6.75;
+/** Fire Affinity — +25 max energy at start (stacks with Oxygen / Exodia). */
+export const FIRE_AFFINITY_MAX_ENERGY_BONUS = 25;
 
 export function isSabresFireAffinityAspect(
   aspect: WeaponAspect | null | undefined,
 ): boolean {
   return aspect === ASPECT_FIRE_AFFINITY;
+}
+
+/** Fire Affinity max-energy bonus (0 for other aspects). */
+export function getFireAffinityMaxEnergyBonus(
+  aspect: WeaponAspect | null | undefined,
+): number {
+  return isSabresFireAffinityAspect(aspect) ? FIRE_AFFINITY_MAX_ENERGY_BONUS : 0;
 }
 
 /** Resolve Sabres Divebomb / Skyfall cooldown for an aspect. */
@@ -539,6 +548,35 @@ export function isSabresWarlordAspect(
   return aspect === ASPECT_WARLORD;
 }
 
+export function isSabresFrostAffinityAspect(
+  aspect: WeaponAspect | null | undefined,
+): boolean {
+  return aspect === ASPECT_FROST_AFFINITY;
+}
+
+// ── Frost Affinity Shatter (Flourish on frozen → consume freeze + ice spike) ─
+
+/** Flat base damage when Shatter consumes Freeze on a Flourish hit. */
+export const FROST_AFFINITY_SHATTER_BASE_DAMAGE = 100;
+/** Bonus Shatter damage per point of effective AGILITY. */
+export const FROST_AFFINITY_SHATTER_DAMAGE_PER_AGILITY = 10;
+/** Fraction of target max health added to Shatter damage. */
+export const FROST_AFFINITY_SHATTER_MAX_HP_FRAC = 0.1;
+
+/** Shatter damage: 100 + 10 × AGI + floor(maxHP × 10%). */
+export function getFrostAffinityShatterDamage(
+  agility: number,
+  maxHealth: number,
+): number {
+  const agiBonus =
+    FROST_AFFINITY_SHATTER_DAMAGE_PER_AGILITY * Math.max(0, agility);
+  const hpBonus =
+    typeof maxHealth === 'number' && maxHealth > 0
+      ? Math.floor(maxHealth * FROST_AFFINITY_SHATTER_MAX_HP_FRAC)
+      : 0;
+  return FROST_AFFINITY_SHATTER_BASE_DAMAGE + agiBonus + hpBonus;
+}
+
 // ── Warlord Poison Dart (keep in sync with backend/gameRoom.js / ControlSystem) ─
 
 /** Flat base damage on the post-dash Poison Dart projectile. */
@@ -558,12 +596,15 @@ export function getPoisonDartDamage(agility: number): number {
 }
 
 /**
- * Physical R hotkey ability for Sabres aspects (`SABRES_R` Divebomb, or none on Warlord).
+ * Physical R hotkey ability for Sabres aspects (`SABRES_R` Divebomb, or none on Warlord / Frost Affinity).
  */
 export function resolveSabresRAbilityId(
   aspect: WeaponAspect | null | undefined,
 ): 'SABRES_R' | null {
-  return isSabresWarlordAspect(aspect) ? null : 'SABRES_R';
+  if (isSabresWarlordAspect(aspect) || isSabresFrostAffinityAspect(aspect)) {
+    return null;
+  }
+  return 'SABRES_R';
 }
 
 // ── Scythe aspect combat (Entropic Bolt fire rate + default colors) ────────

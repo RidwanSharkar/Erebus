@@ -8,15 +8,15 @@ import { Billboard } from '@react-three/drei';
 import MartyrModel from './MartyrModel';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import {
-  ENEMY_HP_BAR_FILL_HEIGHT,
-  ENEMY_HP_BAR_FILL_Z,
   syncEnemyHealthBarFillFromRef,
   syncEnemyHealthBarNumericTextFromRef,
 } from '@/utils/enemyHealthBar';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 import { getEnemyDisplayName } from '@/utils/enemyDisplayNames';
+import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 interface MartyrRendererProps {
   id: string;
@@ -124,7 +124,7 @@ function MartyrRenderer({
     group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
     syncEnemyVisualRotation(id, enemyVisualRotationsRef, group.rotation.y);
 
-    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth, 1.6);
+    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth);
     syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
 
     if (isDying) {
@@ -132,6 +132,7 @@ function MartyrRenderer({
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
 
       if (!deathCacheBuilt.current) {
+        detachSharedMaterialsForMutation(group);
         const collected: any[] = [];
         group.traverse((child: any) => {
           if (child.isMesh && child.material) {
@@ -160,14 +161,7 @@ function MartyrRenderer({
       <Billboard position={[0, 2.6, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
-            <mesh position={[0, 0, 0]}>
-              <planeGeometry args={[1.6, 0.2]} />
-              <meshBasicMaterial color="#1a0a0a" opacity={0.9} transparent />
-            </mesh>
-            <mesh position={[-0.8, 0, ENEMY_HP_BAR_FILL_Z]} ref={hpFillRef}>
-              <planeGeometry args={[1.6, ENEMY_HP_BAR_FILL_HEIGHT]} />
-              <meshBasicMaterial color="#cc2200" opacity={0.95} transparent />
-            </mesh>
+            <EnemyHpBarPlanes fillRef={hpFillRef} backgroundColor="#1a0a0a" fillColor="#cc2200" />
             <EnemyHealthBarTextLabel
               name={getEnemyDisplayName('martyr')}
               numericRef={hpTextRef}

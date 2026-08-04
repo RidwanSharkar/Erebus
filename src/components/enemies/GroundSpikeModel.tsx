@@ -3,11 +3,11 @@
 import React, { useMemo } from 'react';
 import { useGLTF } from '@react-three/drei';
 import { Group, Color, Mesh, MeshStandardMaterial } from 'three';
-import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import {
   applyWeaponItemGlow,
   useDisposeClonedMaterials,
 } from '@/utils/disposeObject3D';
+import { cloneEnemySceneWithSharedMaterials } from '@/utils/sharedEnemyMaterials';
 import { SPIKE_HEIGHT } from '@/utils/tectonicSpikeGeometry';
 import type { TectonicSpikeTheme } from './BossTectonicSpikeTelegraph';
 
@@ -39,16 +39,13 @@ export default React.memo(function GroundSpikeModel({
   const { scene } = useGLTF(GROUND_SPIKE_MODEL_PATH);
 
   const clonedScene = useMemo(() => {
-    const clone = SkeletonUtils.clone(scene) as Group;
-    clone.traverse((child) => {
-      const mesh = child as Mesh;
-      if (!mesh.isMesh) return;
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.frustumCulled = true;
-      mesh.material = Array.isArray(mesh.material)
-        ? mesh.material.map((m) => m.clone())
-        : mesh.material.clone();
+    // Theme-keyed cache so earth/blue/green emissive variants stay isolated while
+    // repeated spikes of the same theme share one material set.
+    const modelKey = `${GROUND_SPIKE_MODEL_PATH}|${theme}`;
+    const clone = cloneEnemySceneWithSharedMaterials(scene, modelKey, {
+      selfIlluminationIntensity: null,
+      castShadow: true,
+      receiveShadow: true,
     });
 
     const tintHex = THEME_EMISSIVE[theme];
@@ -58,6 +55,7 @@ export default React.memo(function GroundSpikeModel({
     });
 
     // Blue/green: pull emissive toward soul-type telegraph colors while keeping albedo map.
+    // Runs once per shared material (idempotent for subsequent instances of same theme).
     if (tintHex) {
       const tint = new Color(tintHex);
       clone.traverse((child) => {
@@ -67,7 +65,9 @@ export default React.memo(function GroundSpikeModel({
         for (const mat of mats) {
           const std = mat as MeshStandardMaterial;
           if (!std?.emissive) continue;
+          if (std.userData?.groundSpikeThemeTint === tintHex) continue;
           std.emissive.copy(tint);
+          std.userData = { ...std.userData, groundSpikeThemeTint: tintHex };
           std.needsUpdate = true;
         }
       });

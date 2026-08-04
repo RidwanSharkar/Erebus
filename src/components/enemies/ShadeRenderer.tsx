@@ -8,7 +8,8 @@ import { Billboard } from '@react-three/drei';
 import ShadeModel from './ShadeModel';
 import CubeSoulEffect from './CubeSoulEffect';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
-import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { syncEnemyTransformFromRef, syncEnemyRotationFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   ENEMY_HP_BAR_WIDTH,
@@ -238,10 +239,16 @@ function ShadeRenderer({
       while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
       group.rotation.y += deltaAngle * Math.min(1, delta * BLINK_LERP_SPEED);
     } else {
-      const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+      // During throw: lock position but keep yaw tracking (Wyvern breath pattern).
+      let dist = 0;
+      if (isAttackLocked) {
+        syncEnemyRotationFromRef(id, enemyTransformsRef, targetRotation);
+      } else {
+        dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
 
-      if (dist > 8.0 && !isAttackLocked) {
-        group.position.copy(targetPosition.current);
+        if (dist > 8.0) {
+          group.position.copy(targetPosition.current);
+        }
       }
 
       updateEnemyWalkStateFromMoveDist(
@@ -256,12 +263,12 @@ function ShadeRenderer({
 
       if (!isAttackLocked) {
         group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
-
-        let deltaAngle = targetRotation.current - group.rotation.y;
-        while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
-        while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
-        group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
       }
+
+      let deltaAngle = targetRotation.current - group.rotation.y;
+      while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
+      while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
+      group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
     }
 
     syncEnemyVisualRotation(id, enemyVisualRotationsRef, group.rotation.y);
@@ -272,6 +279,7 @@ function ShadeRenderer({
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
 
       if (!deathCacheBuilt.current) {
+        detachSharedMaterialsForMutation(group);
         const collected: any[] = [];
         group.traverse((child: any) => {
           if (child.isMesh && child.material) {
