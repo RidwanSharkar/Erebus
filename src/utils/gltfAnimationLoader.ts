@@ -8,9 +8,13 @@ export function loadGltfAnimationClips(path: string): Promise<AnimationClip[]> {
   const cached = clipPromises.get(path);
   if (cached) return cached;
 
-  const promise = loader.loadAsync(path).then((gltf) =>
-    (gltf.animations ?? []).map((clip) => clip.clone())
-  );
+  const promise = loader
+    .loadAsync(path)
+    .then((gltf) => (gltf.animations ?? []).map((clip) => clip.clone()))
+    .catch((error) => {
+      clipPromises.delete(path);
+      throw error;
+    });
   clipPromises.set(path, promise);
   return promise;
 }

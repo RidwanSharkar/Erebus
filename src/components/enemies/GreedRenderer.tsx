@@ -20,6 +20,8 @@ import { getUnitNameplateName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import GreedModel, { GreedAbilityClip } from './GreedModel';
 import KnightSoulEffect from './KnightSoulEffect';
+import SpellChargeFlare from './SpellChargeFlare';
+import { KNIGHT_CAST_PROJECTILE_DELAY_MS } from '@/utils/knightCoopAbilitiesConstants';
 
 export type GreedSoulType = 'green' | 'red' | 'blue' | 'purple' | 'yellow';
 
@@ -50,6 +52,31 @@ const ABILITY_TO_CLIP: Record<AbilityTelegraphEvent['ability'], GreedAbilityClip
   launch: 'Launch',
 };
 
+interface ChargeVfxConfig {
+  playKey: number;
+  color: string;
+  accentColor: string;
+  chargeMs: number;
+}
+
+/** null => ability has no projectile, so no muzzle VFX */
+function resolveChargeVfx(
+  soulType: GreedSoulType,
+  ability: AbilityTelegraphEvent['ability'],
+  durationMs: number,
+): Omit<ChargeVfxConfig, 'playKey'> | null {
+  if (soulType === 'yellow' && ability === 'cast') {
+    return { color: '#22c55e', accentColor: '#86efac', chargeMs: durationMs };
+  }
+  if (soulType === 'purple' && ability === 'healcast') {
+    return { color: '#0ea5e9', accentColor: '#cffafe', chargeMs: KNIGHT_CAST_PROJECTILE_DELAY_MS };
+  }
+  if (soulType === 'red' && ability === 'launch') {
+    return { color: '#ff5500', accentColor: '#ffcc55', chargeMs: 220 };
+  }
+  return null;
+}
+
 function GreedRenderer({
   id,
   position,
@@ -75,6 +102,7 @@ function GreedRenderer({
   const deathCacheBuilt = useRef(false);
 
   const [abilityClip, setAbilityClip] = useState<GreedAbilityClip | null>(null);
+  const [chargeVfx, setChargeVfx] = useState<ChargeVfxConfig | null>(null);
 
   const setGroupRef = useCallback((group: Group | null) => {
     groupRef.current = group;
@@ -108,6 +136,10 @@ function GreedRenderer({
 
       if (abilityTimer.current) clearTimeout(abilityTimer.current);
       setAbilityClip(clip);
+      const vfx = resolveChargeVfx(soulType, data.ability, data.durationMs || 0);
+      if (vfx) {
+        setChargeVfx((prev) => ({ ...vfx, playKey: (prev?.playKey ?? 0) + 1 }));
+      }
       abilityTimer.current = setTimeout(() => {
         setAbilityClip(null);
       }, Math.max(0, data.durationMs || 0));
@@ -117,7 +149,7 @@ function GreedRenderer({
     return () => {
       socket.off('greed-ability-telegraph', handleAbilityTelegraph);
     };
-  }, [id, socket]);
+  }, [id, socket, soulType]);
 
   useFrame((_, delta) => {
     if (!groupRef.current) return;
@@ -166,6 +198,16 @@ function GreedRenderer({
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <GreedModel isDying={!!isDying} abilityClip={abilityClip} />
+      {chargeVfx && (
+        <SpellChargeFlare
+          playKey={chargeVfx.playKey}
+          color={chargeVfx.color}
+          accentColor={chargeVfx.accentColor}
+          chargeMs={chargeVfx.chargeMs}
+          offset={[0, 1.4, 0.5]}
+          scale={0.7}
+        />
+      )}
 
       {!isDying && <KnightSoulEffect soulType={soulType} compact />}
 

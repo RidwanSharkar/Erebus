@@ -1,5 +1,6 @@
 'use client';
 
+import '@/utils/installAssetLoadQueue';
 import React, { Profiler, useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import { useThree, useFrame } from '@react-three/fiber';

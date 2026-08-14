@@ -12,6 +12,7 @@ import EnemyMeleeAttackRangeRing, { KNIGHT_MELEE_ATTACK_RANGE } from './EnemyMel
 import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type MeleeTelegraphVisual } from '@/utils/meleeTelegraphVisual';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import EnemyAbilityChargeTelegraph from './EnemyAbilityChargeTelegraph';
+import SpellChargeFlare from './SpellChargeFlare';
 import { registerKnightAnimationHandlers } from '@/utils/knightAnimationDispatch';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
@@ -26,7 +27,7 @@ import {
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
 import { getUnitNameplateName } from '@/utils/enemyDisplayNames';
 import EnemyHpBarPlanes from './EnemyHpBarPlanes';
-import { KNIGHT_CAST_ABILITY_LOCK_MS, KNIGHT_STORM_LASH_DURATION_MS } from '@/utils/knightCoopAbilitiesConstants';
+import { KNIGHT_CAST_ABILITY_LOCK_MS, KNIGHT_CAST_PROJECTILE_DELAY_MS, KNIGHT_STORM_LASH_DURATION_MS } from '@/utils/knightCoopAbilitiesConstants';
 import GhostTrail from '../dragon/GhostTrail';
 import { WeaponType } from '../dragon/weapons';
 import ChargedOrbitals, { DashChargeStatus } from '../dragon/ChargedOrbitals';
@@ -140,6 +141,7 @@ function KnightRenderer({
   const [isImpacting, setIsImpacting] = useState(false);
   const [impactVariant, setImpactVariant] = useState<1 | 2>(1);
   const [impactPlayKey, setImpactPlayKey] = useState(0);
+  const [frostChargeKey, setFrostChargeKey] = useState(0);
 
   const nextImpactVariantRef = useRef<1 | 2>(1);
   const nextAttackVariantRef = useRef<1 | 2>(1);
@@ -471,6 +473,9 @@ function KnightRenderer({
     const handleFrostTelegraph = () => {
       isAbilityRef.current = true;
       setAbilityClip('Cast');
+      if (soulType === 'purple') {
+        setFrostChargeKey((k) => k + 1);
+      }
       if (abilityTimerRef.current) clearTimeout(abilityTimerRef.current);
       abilityTimerRef.current = setTimeout(() => {
         setAbilityClip(null);
@@ -532,7 +537,7 @@ function KnightRenderer({
       onDeathGraspTelegraph: handleDeathGraspTelegraph,
       onBlockTelegraph: handleBlockTelegraph,
     });
-  }, [id, alternateAttackVariants, attackVariantOneChance]);
+  }, [id, alternateAttackVariants, attackVariantOneChance, soulType]);
 
   useLayoutEffect(() => {
     applyEnemyHealthBarFill(hpFillRef.current, health, maxHealth);
@@ -637,6 +642,14 @@ function KnightRenderer({
       <EnemyAbilityChargeTelegraph
         active={isSpinCharging && !isDying}
         primaryColor={spinChargeColor}
+      />
+      <SpellChargeFlare
+        playKey={frostChargeKey}
+        color="#0ea5e9"
+        accentColor="#cffafe"
+        chargeMs={KNIGHT_CAST_PROJECTILE_DELAY_MS}
+        offset={[0, 1.5 * visualScale, 0.6 * visualScale]}
+        scale={visualScale}
       />
       <KnightModel
         isWalking={isWalking}

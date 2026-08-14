@@ -3748,12 +3748,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
     addEventHandler('chat-message', (data) => {
       setChatMessages(prev => {
+        const payload = data.message;
+        const text = typeof payload === 'string' ? payload : (payload?.message ?? '');
         const newMessage: ChatMessage = {
-          id: `${Date.now()}-${Math.random()}`,
-          playerId: data.message.playerId || 'unknown',
-          playerName: data.message.playerName || 'Unknown',
-          message: data.message,
-          timestamp: Date.now()
+          id: payload?.id ?? `${Date.now()}-${Math.random()}`,
+          playerId: payload?.playerId || 'unknown',
+          playerName: payload?.playerName || 'Unknown',
+          message: typeof text === 'string' ? text : '',
+          timestamp: typeof payload?.timestamp === 'number' ? payload.timestamp : Date.now(),
         };
         return [...prev.slice(-49), newMessage];
       });

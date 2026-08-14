@@ -6,6 +6,7 @@ import { Group, Mesh, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard } from '@react-three/drei';
 import DestinyModel from './DestinyModel';
+import SpellChargeFlare from './SpellChargeFlare';
 import EnemyMeleeAttackRangeRing, { DESTINY_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type MeleeTelegraphVisual } from '@/utils/meleeTelegraphVisual';
 import EnemyStaggerBar from './EnemyStaggerBar';
@@ -24,6 +25,7 @@ import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
 import {
   DESTINY_BREATH_ROAR_CAST_LOCK_MS,
+  DESTINY_BREATH_LAUNCH_EARLY_MS,
   DESTINY_FLY_ATTACK_CAST_MS,
   DESTINY_WING_CAST_LOCK_MS,
   isDestinyAirPhase,
@@ -76,6 +78,7 @@ function DestinyRenderer({
   const [isAttacking, setIsAttacking] = useState(false);
   const [meleeTelegraph, setMeleeTelegraph] = useState<MeleeTelegraphVisual | null>(null);
   const [isBreathing, setIsBreathing] = useState(false);
+  const [roarFlare, setRoarFlare] = useState<{ playKey: number; chargeMs: number } | null>(null);
   const [isWingAttacking, setIsWingAttacking] = useState(false);
   const [isFlyAttacking, setIsFlyAttacking] = useState(false);
   const [swipeVariant, setSwipeVariant] = useState<1 | 2>(1);
@@ -255,6 +258,8 @@ function DestinyRenderer({
       isBreathingRef.current = true;
       isWalkingRef.current = false;
       setIsWalking(false);
+      const chargeMs = Math.max(0, (data.durationMs ?? BREATH_DURATION_MS) - DESTINY_BREATH_LAUNCH_EARLY_MS);
+      setRoarFlare((prev) => ({ playKey: (prev?.playKey ?? 0) + 1, chargeMs }));
       clearBreathFailsafe();
       const duration = data.durationMs ?? BREATH_DURATION_MS;
       breathFailsafeTimer.current = setTimeout(() => {
@@ -486,6 +491,17 @@ function DestinyRenderer({
         phase={phase}
         isDying={isDying}
       />
+      {roarFlare && (
+        <SpellChargeFlare
+          playKey={roarFlare.playKey}
+          color="#ff5500"
+          accentColor="#ffcc55"
+          chargeMs={roarFlare.chargeMs}
+          flareMs={340}
+          offset={[0, 1.25, 1.15]}
+          scale={1.35}
+        />
+      )}
       {isAttacking && !isDying && phase === 'ground' && !isWingAttacking && (
         <EnemyMeleeAttackRangeRing
           radius={meleeTelegraph?.attackRange ?? DESTINY_MELEE_ATTACK_RANGE / VISUAL_SCALE}

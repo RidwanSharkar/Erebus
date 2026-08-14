@@ -505,7 +505,7 @@ export const FIRE_AFFINITY_SKYFALL_IGNITE_DURATION_MS = 3000;
 export const FIRE_AFFINITY_SKYFALL_IGNITE_TICKS = 3;
 
 /** Default Sabres Divebomb / Skyfall cooldown when aspect does not override. */
-export const SABRES_SKYFALL_DEFAULT_COOLDOWN_SEC = 9;
+export const SABRES_SKYFALL_DEFAULT_COOLDOWN_SEC = 9.25;
 /** Fire Affinity — Divebomb cooldown reduced by 2s. */
 export const FIRE_AFFINITY_SKYFALL_COOLDOWN_SEC = 6.75;
 /** Fire Affinity — +25 max energy at start (stacks with Oxygen / Exodia). */

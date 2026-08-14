@@ -21,6 +21,8 @@ export const DESTINY_FLY_ATTACK_RANGE = 18;
 
 /** Ground roar breath cast lock — keep in sync with `DESTINY_BREATH_ROAR_CAST_LOCK_MS`. */
 export const DESTINY_BREATH_ROAR_CAST_LOCK_MS = 3200;
+/** Roar firebolts release this far before the cast lock ends - keep in sync with `DESTINY_BREATH_LAUNCH_EARLY_MS`. */
+export const DESTINY_BREATH_LAUNCH_EARLY_MS = 400;
 /** Ground roar breath cooldown — keep in sync with `DESTINY_BREATH_COOLDOWN_MS`. */
 export const DESTINY_BREATH_COOLDOWN_MS = 9000;
 

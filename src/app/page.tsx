@@ -1,5 +1,6 @@
 'use client';
 
+import '@/utils/installAssetLoadQueue';
 import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { WeaponType, WeaponSubclass } from '../components/dragon/weapons';

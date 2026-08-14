@@ -6,6 +6,7 @@ import { Group, Mesh, Vector3 } from 'three';
 import { useFrame } from '@react-three/fiber';
 import { Billboard } from '@react-three/drei';
 import WyvernModel from './WyvernModel';
+import SpellChargeFlare from './SpellChargeFlare';
 import EnemyMeleeAttackRangeRing, { WYVERN_MELEE_ATTACK_RANGE } from './EnemyMeleeAttackRangeRing';
 import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type MeleeTelegraphVisual } from '@/utils/meleeTelegraphVisual';
 import EnemyStaggerBar from './EnemyStaggerBar';
@@ -35,6 +36,7 @@ interface WyvernRendererProps {
 
 const ATTACK_DURATION = 1500; // ms — matches backend WYVERN_SWING_LOCK_MS
 const BREATH_DURATION_MS = 1500; // matches backend WYVERN_BREATH_CAST_LOCK_MS (variant 1); roar uses 2000 via durationMs
+const BREATH_LAUNCH_EARLY_MS = 400; // matches backend WYVERN_BREATH_LAUNCH_EARLY_MS
 const FADE_DURATION = 1.5;
 const LERP_SPEED = 14;
 const WALK_STOP_DELAY = 250;
@@ -60,6 +62,7 @@ function WyvernRenderer({
   const [meleeTelegraph, setMeleeTelegraph] = useState<MeleeTelegraphVisual | null>(null);
   const [isBreathing, setIsBreathing] = useState(false);
   const [breathVariant, setBreathVariant] = useState<1 | 2>(1);
+  const [roarFlare, setRoarFlare] = useState<{ playKey: number; chargeMs: number } | null>(null);
 
   const isWalkingRef = useRef(false);
   const isAttackingRef = useRef(false);
@@ -172,6 +175,10 @@ function WyvernRenderer({
       setMeleeTelegraph(null);
       isAttackingRef.current = false;
       setBreathVariant(data.breathVariant === 2 ? 2 : 1);
+      if (data.breathVariant === 2) {
+        const chargeMs = Math.max(0, (data.durationMs ?? BREATH_DURATION_MS) - BREATH_LAUNCH_EARLY_MS);
+        setRoarFlare((prev) => ({ playKey: (prev?.playKey ?? 0) + 1, chargeMs }));
+      }
       setIsBreathing(true);
       isBreathingRef.current = true;
       isWalkingRef.current = false;
@@ -277,6 +284,17 @@ function WyvernRenderer({
         breathVariant={breathVariant}
         isDying={isDying}
       />
+      {roarFlare && (
+        <SpellChargeFlare
+          playKey={roarFlare.playKey}
+          color="#ff5500"
+          accentColor="#ffcc55"
+          chargeMs={roarFlare.chargeMs}
+          flareMs={340}
+          offset={[0, 1.9, 1.6]}
+          scale={1.6}
+        />
+      )}
       {isAttacking && !isDying && (
         <EnemyMeleeAttackRangeRing
           radius={meleeTelegraph?.attackRange ?? WYVERN_MELEE_ATTACK_RANGE}
