@@ -16454,8 +16454,15 @@ class EnemyAI {
     return Math.hypot(dx, dz);
   }
 
+  _terrorhawkCannotFlyUp(hawk) {
+    if (!hawk?.id || !this.room?.isEnemyAffectedBy) return false;
+    return this.room.isEnemyAffectedBy(hawk.id, 'freeze')
+      || this.room.isEnemyAffectedBy(hawk.id, 'entangle');
+  }
+
   _terrorhawkBeginTakeoff(hawk) {
     if (!hawk || hawk.isDying) return;
+    if (this._terrorhawkCannotFlyUp(hawk)) return;
     const now = Date.now();
     const onGround = hawk.terrorhawkPhase === 'land'
       || hawk.terrorhawkPhase === 'ground_melee'
@@ -16612,6 +16619,13 @@ class EnemyAI {
     // --- Takeoff: rise 0 → hover Y over takeoff duration ---
     if (phase === 'takeoff') {
       hawk.moveSpeed = 0;
+      if (this._terrorhawkCannotFlyUp(hawk)) {
+        const tickMs = this.updateInterval || 0;
+        if (hawk.takeoffStartedAt != null) hawk.takeoffStartedAt += tickMs;
+        if (hawk.takeoffEndsAt != null) hawk.takeoffEndsAt += tickMs;
+        this._queueMove(hawk.id, hawk.position, hawk.rotation);
+        return;
+      }
       const started = hawk.takeoffStartedAt || now;
       const ends = hawk.takeoffEndsAt || (started + TERRORHAWK_TAKEOFF_MS);
       const t = Math.min(1, (now - started) / Math.max(1, ends - started));

@@ -14264,6 +14264,7 @@ export function CoopGameScene({
             }
           } else if (xEdge && inIntroRoom && !portalUseSentRef.current) {
             if (coopIntroFountainPhaseRef.current) {
+              let recruitedAllyNow = false;
               if (!coopIntroAllyChoiceMadeRef.current) {
                 const recruitKind = findNearestSelectableAllyCandidate(
                   px,
@@ -14271,12 +14272,14 @@ export function CoopGameScene({
                   introAllyChoiceEncounterRef.current,
                 );
                 if (recruitKind) {
+                  recruitedAllyNow = true;
                   chooseCoopAllyRef.current(recruitKind);
                   if ((window as any).audioSystem?.playUISelectionSound) {
                     (window as any).audioSystem.playUISelectionSound();
                   }
                 }
-              } else {
+              }
+              if (!recruitedAllyNow) {
                 const fountainR2 = HEALING_FOUNTAIN_INTERACT_RADIUS * HEALING_FOUNTAIN_INTERACT_RADIUS;
                 const fountainD2 = px * px + pz * pz;
                 if (!coopIntroFountainUsedRef.current && fountainD2 < fountainR2) {
@@ -14342,7 +14345,7 @@ export function CoopGameScene({
                     (window as any).audioSystem.playUISelectionSound();
                   }
                 }
-              } else if (coopSunkenLootPhaseCompleteRef.current) {
+              } else {
                 const fountainR2 = HEALING_FOUNTAIN_INTERACT_RADIUS * HEALING_FOUNTAIN_INTERACT_RADIUS;
                 const fountainD2 = px * px + pz * pz;
                 if (!coopSunkenFountainUsedRef.current && fountainD2 < fountainR2) {
@@ -14408,7 +14411,7 @@ export function CoopGameScene({
                     (window as any).audioSystem.playUISelectionSound();
                   }
                 }
-              } else if (coopEternityLootPhaseCompleteRef.current) {
+              } else {
                 const fountainR2 = HEALING_FOUNTAIN_INTERACT_RADIUS * HEALING_FOUNTAIN_INTERACT_RADIUS;
                 const fountainD2 = px * px + pz * pz;
                 if (!coopEternityFountainUsedRef.current && fountainD2 < fountainR2) {
@@ -15321,6 +15324,7 @@ export function CoopGameScene({
                   nextHint = COOP_INTERACT_HINT_TEXT;
                 }
               } else if (inIntroRoomHint && coopIntroFountainPhaseRef.current) {
+                let recruitedHint = false;
                 if (!coopIntroAllyChoiceMadeRef.current) {
                   const recruitKind = findNearestSelectableAllyCandidate(
                     px,
@@ -15328,9 +15332,11 @@ export function CoopGameScene({
                     introAllyChoiceEncounterRef.current,
                   );
                   if (recruitKind) {
+                    recruitedHint = true;
                     nextHint = getAllyRecruitHintLabel(recruitKind);
                   }
-                } else {
+                }
+                if (!recruitedHint) {
                   const fountainR2 = HEALING_FOUNTAIN_INTERACT_RADIUS * HEALING_FOUNTAIN_INTERACT_RADIUS;
                   if (!coopIntroFountainUsedRef.current && px * px + pz * pz < fountainR2) {
                     nextHint = COOP_INTERACT_HINT_TEXT;
@@ -15366,7 +15372,7 @@ export function CoopGameScene({
                   ) {
                     nextHint = COOP_INTERACT_HINT_TEXT;
                   }
-                } else if (coopSunkenLootPhaseCompleteRef.current) {
+                } else {
                   const fountainR2 = HEALING_FOUNTAIN_INTERACT_RADIUS * HEALING_FOUNTAIN_INTERACT_RADIUS;
                   if (!coopSunkenFountainUsedRef.current && px * px + pz * pz < fountainR2) {
                     nextHint = COOP_INTERACT_HINT_TEXT;
@@ -15402,7 +15408,7 @@ export function CoopGameScene({
                   ) {
                     nextHint = COOP_INTERACT_HINT_TEXT;
                   }
-                } else if (coopEternityLootPhaseCompleteRef.current) {
+                } else {
                   const fountainR2 = HEALING_FOUNTAIN_INTERACT_RADIUS * HEALING_FOUNTAIN_INTERACT_RADIUS;
                   if (!coopEternityFountainUsedRef.current && px * px + pz * pz < fountainR2) {
                     nextHint = COOP_INTERACT_HINT_TEXT;

@@ -481,7 +481,15 @@ const COOP_SURPRISE_CHANCE = 0.29;
 const COOP_SURPRISE_KINDS = Object.freeze(['eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer']);
 const EREBUS_GATE_RADIUS = CASTLE_ROOM_HALF_SIZE;
 const EREBUS_GATE_INNER_RADIUS = EREBUS_GATE_RADIUS - 0.5;
-const EREBUS_GATE_OPPONENT_KINDS = Object.freeze(['titan', 'valkyrie', 'nemesis', 'boss', 'knights']);
+const EREBUS_GATE_OPPONENT_KINDS = Object.freeze([
+  'titan', 'valkyrie', 'nemesis', 'boss', 'knights',
+  'titan_pair', 'nemesis_pair', 'elite_pair',
+]);
+/** Erebus Gate `elite_pair` — two independent picks, so duplicates (2 assassins) are possible. */
+const EREBUS_GATE_ELITE_PAIR_POOL = Object.freeze([
+  'death-knight', 'spectre', 'shaman', 'assassin', 'frost-queen', 'medusa',
+]);
+const EREBUS_GATE_PAIR_POSITIONS = Object.freeze([{ x: -3, y: 0, z: 1 }, { x: 3, y: 0, z: 1 }]);
 const COOP_FALSE_EDEN_SPINE_MIN = 12;
 const COOP_FALSE_EDEN_SPINE_MAX = 16;
 const DELIRIUM_STRUCTURE_HP = 750;
@@ -502,6 +510,8 @@ const COOP_DEEP_SANCTUM_START_LEVEL = 5;
 const COOP_DEEP_SANCTUM_GOLD_MIN = 150;
 const COOP_DEEP_SANCTUM_GOLD_MAX = 300;
 const COOP_DEEP_SANCTUM_STAT_POINTS = 8;
+/** Grace period before an unchosen co-op reward is randomly auto-assigned. */
+const COOP_REWARD_CHOICE_GRACE_MS = 30000;
 const COOP_INTRO_FOUNTAIN_HEAL = 100;
 const COOP_ROOMS_BEFORE_BOSS = 2;
 const COOP_ROOMS_BEFORE_BOSS_LATE = 3; // after 2nd boss defeated
@@ -510,6 +520,18 @@ const COOP_COUNTABLE_COMBAT_ROOM_TYPES = Object.freeze([
 ]);
 const COOP_TERRAIN_THEMES = Object.freeze(['purple', 'blue', 'green']);
 const COOP_WAVE_MARTYR_ROOM_CHANCE = 0.33; // 30% of colored rooms have martyr spawns
+/** After 2nd boss: 25% of each colored room spawns 1 of these elites (additive, quota-exempt). */
+const COOP_ELITE_BONUS_CHANCE = 0.25;
+const COOP_ELITE_BONUS_POOL_MID = Object.freeze([
+  'death-knight', 'spectre', 'shaman', 'assassin', 'frost-queen',
+]);
+/** After 3rd boss: 100% of each colored room; pool also includes medusa. */
+const COOP_ELITE_BONUS_POOL_LATE = Object.freeze([
+  'death-knight', 'spectre', 'shaman', 'assassin', 'frost-queen', 'medusa',
+]);
+const COOP_ELITE_BONUS_LATE_DOUBLE_CHANCE = 0.5;
+/** Crypt of Currency / Crypt of Skill beast-bonus rolls after 1st and 2nd boss. */
+const COOP_CRYPT_BEAST_CHANCE = 0.75;
 const COOP_WAVE_TITAN_ROOM_CHANCE = 0.25; // 25% of colored rooms spawn 1 elite at boss-count tier 1 (used by Nemesis; Titans require boss 2+)
 const COOP_WAVE_TITAN_ROOM_CHANCE_AFTER_BOSS2 = 0.40; // 40% of colored rooms spawn 1 elite after boss 2 (capped at 1)
 const COOP_WAVE_BOSS1_ROOM_CHANCE = 0.20; // 33% of colored rooms have a mini-boss1 spawn after boss2 is defeated
@@ -982,6 +1004,8 @@ class GameRoom {
     this.coopRoomWhisperPlayed = false;
     /** Co-op: pending post-teleport initial wave spawn (`_schedulePostTeleportEnemyWave`). */
     this._coopDelayedEnemyWaveTimeoutId = null;
+    /** Co-op: grace timer to auto-assign unclaimed sunken/eternity rewards. */
+    this._coopRewardChoiceGraceTimeoutId = null;
     /** Lightweight AI tick for Beastmaster tigers when main combat AI is stopped (throne / intermission). */
     this.companionAiTimer = null;
     /** Throne prep: last time each player damaged the training dummy (for Beastmaster tiger engage). */
@@ -1137,6 +1161,7 @@ class GameRoom {
     this._scheduledTimers.forEach(id => clearTimeout(id));
     this._scheduledTimers.clear();
     this._coopDelayedEnemyWaveTimeoutId = null;
+    this._coopRewardChoiceGraceTimeoutId = null;
   }
 
   _clearCoopDelayedEnemyWaveTimer() {
@@ -1144,6 +1169,30 @@ class GameRoom {
     clearTimeout(this._coopDelayedEnemyWaveTimeoutId);
     this._scheduledTimers.delete(this._coopDelayedEnemyWaveTimeoutId);
     this._coopDelayedEnemyWaveTimeoutId = null;
+  }
+
+  _clearCoopRewardChoiceGraceTimer() {
+    if (this._coopRewardChoiceGraceTimeoutId == null) return;
+    clearTimeout(this._coopRewardChoiceGraceTimeoutId);
+    this._scheduledTimers.delete(this._coopRewardChoiceGraceTimeoutId);
+    this._coopRewardChoiceGraceTimeoutId = null;
+  }
+
+  /**
+   * Start a one-shot grace timer after the first player claims a shared reward.
+   * No-ops if a timer is already running.
+   * @param {'sunken'|'eternity'} kind
+   */
+  _scheduleCoopRewardChoiceGraceTimer(kind) {
+    if (this._coopRewardChoiceGraceTimeoutId != null) return;
+    this._coopRewardChoiceGraceTimeoutId = this._scheduleTimeout(() => {
+      this._coopRewardChoiceGraceTimeoutId = null;
+      if (kind === 'sunken') {
+        this._autoAssignPendingSunkenLoot('grace-timer');
+      } else if (kind === 'eternity') {
+        this._autoAssignPendingEternityPetUpgrade('grace-timer');
+      }
+    }, COOP_REWARD_CHOICE_GRACE_MS);
   }
 
   /** Wait after portal teleport so players can reach the entry spawn before initial enemies appear. */
@@ -1485,6 +1534,7 @@ class GameRoom {
     this.coopBossRoomVisitCount = 0;
     this.coopRoomWhisperPlayed = false;
     this._clearCoopCombatTransitionTimer();
+    this._clearCoopRewardChoiceGraceTimer();
     this.coopCombatTransition = null;
     this.coopCombatTransitionId = 0;
     this.coopPostTeleportPositionGuardUntil = 0;
@@ -2999,15 +3049,26 @@ class GameRoom {
       this._spawnErebusGateEliteKnights();
     } else if (pick === 'boss') {
       this._spawnErebusGateBoss();
+    } else if (pick === 'titan_pair') {
+      this._spawnErebusGateElitePair(['titan', 'titan']);
+    } else if (pick === 'nemesis_pair') {
+      this._spawnErebusGateElitePair(['nemesis', 'nemesis']);
+    } else if (pick === 'elite_pair') {
+      const types = [
+        EREBUS_GATE_ELITE_PAIR_POOL[Math.floor(Math.random() * EREBUS_GATE_ELITE_PAIR_POOL.length)],
+        EREBUS_GATE_ELITE_PAIR_POOL[Math.floor(Math.random() * EREBUS_GATE_ELITE_PAIR_POOL.length)],
+      ];
+      this._spawnErebusGateElitePair(types);
     } else {
       this._spawnErebusGateElite(pick);
     }
   }
 
-  _spawnErebusGateElite(type) {
-    const campDef = GameRoom.CAMP_TYPES.green || { color: 'green', enemyPool: ['knight'] };
-    const pos = { x: 0, y: 0, z: 0 };
-    const enemy = this._buildEnemy(type, 0, 920, pos, campDef);
+  _spawnErebusGateElite(type, pos = { x: 0, y: 0, z: 0 }, slotIndex = 920, campDef = null) {
+    const resolvedCamp = campDef
+      || GameRoom.CAMP_TYPES.green
+      || { color: 'green', enemyPool: ['knight'] };
+    const enemy = this._buildEnemy(type, 0, slotIndex, pos, resolvedCamp);
     enemy.erebusGateOpponent = true;
     if (type === 'titan') {
       enemy.erebusForceCannon = true;
@@ -3018,6 +3079,19 @@ class GameRoom {
       this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
     }
     console.log(`⚔️ Erebus Gate — spawned ${type}`);
+  }
+
+  _spawnErebusGateElitePair(types) {
+    const defaultCamp = GameRoom.CAMP_TYPES.green || { color: 'green', enemyPool: ['knight'] };
+    for (let i = 0; i < types.length; i++) {
+      const pos = EREBUS_GATE_PAIR_POSITIONS[i] || { x: 0, y: 0, z: 0 };
+      const type = types[i];
+      const isNamedElite = EREBUS_GATE_ELITE_PAIR_POOL.includes(type);
+      const campDef = isNamedElite
+        ? (GameRoom.CAMP_TYPES[this._pickRandomCampColor()] || defaultCamp)
+        : defaultCamp;
+      this._spawnErebusGateElite(type, pos, 920 + i, campDef);
+    }
   }
 
   _spawnErebusGateBoss() {
@@ -3061,8 +3135,8 @@ class GameRoom {
     const soulTypes = shuffled.slice(0, 2);
 
     const spawnConfigs = [
-      { soulType: soulTypes[0], pos: { x: -3, y: 0, z: 1 } },
-      { soulType: soulTypes[1], pos: { x: 3, y: 0, z: 1 } },
+      { soulType: soulTypes[0], pos: { ...EREBUS_GATE_PAIR_POSITIONS[0] } },
+      { soulType: soulTypes[1], pos: { ...EREBUS_GATE_PAIR_POSITIONS[1] } },
     ];
 
     for (const cfg of spawnConfigs) {
@@ -4847,6 +4921,24 @@ class GameRoom {
     return true;
   }
 
+  /**
+   * If nobody has recruited yet, pick a random offered ally so the fountain can proceed.
+   * @param {string} reason
+   * @returns {boolean}
+   */
+  _autoChooseCoopAllyIfPending(reason) {
+    if (!this.coopIntroFountainPhase || this.coopIntroAllyChoiceMade) return false;
+    const offer = Array.isArray(this.coopAllyOffer) ? this.coopAllyOffer : [];
+    if (offer.length === 0) return false;
+    const kind = normalizeCoopAllyKind(offer[Math.floor(Math.random() * offer.length)]);
+    if (!this.coopAllyOffer.includes(kind)) return false;
+    this.coopAllyKind = kind;
+    this.coopIntroAllyChoiceMade = true;
+    this._emitIntroIntermission({ allyChoiceMade: true, coopAllyKind: kind });
+    console.log(`🤝 Co-op ally auto-chosen (${reason}): ${kind}`);
+    return true;
+  }
+
   /** Heal all players +100 HP and unlock the dual colored portals after intro room 4 ally choice. */
   useCoopFountain(playerId) {
     if (this.currentCoopRoomKind === 'eden') {
@@ -4877,11 +4969,17 @@ class GameRoom {
 
     if (!this.coopIntroFountainPhase && !this.coopSunkenFountainPhase && !this.coopEternityFountainPhase) return false;
     if (this.coopIntroFountainPhase) {
-      if (this.coopIntroFountainUsed || !this.coopIntroAllyChoiceMade) return false;
+      if (this.coopIntroFountainUsed) return false;
+      this._autoChooseCoopAllyIfPending('fountain-interact');
+      if (!this.coopIntroAllyChoiceMade) return false;
     } else if (this.coopSunkenFountainPhase) {
-      if (this.coopSunkenFountainUsed || !this.coopSunkenLootPhaseComplete) return false;
+      if (this.coopSunkenFountainUsed) return false;
+      this._autoAssignPendingSunkenLoot('fountain-interact');
+      if (!this.coopSunkenLootPhaseComplete) return false;
     } else if (this.coopEternityFountainPhase) {
-      if (this.coopEternityFountainUsed || !this.coopEternityLootPhaseComplete) return false;
+      if (this.coopEternityFountainUsed) return false;
+      this._autoAssignPendingEternityPetUpgrade('fountain-interact');
+      if (!this.coopEternityLootPhaseComplete) return false;
     }
     const trigger = this.players.get(playerId);
     if (!trigger) return false;
@@ -5179,41 +5277,23 @@ class GameRoom {
     const entry = this.coopSunkenLootOffer.find((item) => item.id === stockId);
     if (!entry || entry.sold) return false;
 
-    const itemType = entry.item?.type;
-    if (itemType && dreamLayerItems.isUniqueOwnedItem(itemType) && dreamLayerItems.playerOwnsItem(player, itemType)) {
-      this._emitSunkenLootFailure(playerId, 'item_already_owned');
-      return false;
-    }
-    if (itemType === 'PERSEPHONE' && (player.hasPersephone || player.persephoneConsumed || dreamLayerItems.playerOwnsItem(player, 'PERSEPHONE'))) {
+    if (!this._isSunkenLootEntryEligible(player, entry)) {
       this._emitSunkenLootFailure(playerId, 'item_already_owned');
       return false;
     }
 
-    const item = {
-      ...entry.item,
-      id: `${entry.item?.type || entry.kind}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
-    };
-
-    if (entry.kind === 'warding_pendant' && item.bannedEnemyType) {
-      this.bannedEnemyTypes.add(item.bannedEnemyType);
-    }
-
-    if (item.type) {
-      this._registerPlayerDreamLayerItem(playerId, player, item.type);
-    }
+    const item = this._grantSunkenLootToPlayer(playerId, player, entry);
+    if (!item) return false;
 
     this.coopSunkenLootClaimedPlayerIds.add(playerId);
     if (this.coopSunkenLootClaimedPlayerIds.size >= this.players.size) {
       this.coopSunkenLootPhaseComplete = true;
+      this._clearCoopRewardChoiceGraceTimer();
+    } else {
+      this._scheduleCoopRewardChoiceGraceTimer('sunken');
     }
 
     if (this.io) {
-      this.io.to(this.roomId).emit('item-picked-up', {
-        itemId: item.id,
-        playerId,
-        item,
-        timestamp: Date.now(),
-      });
       this.io.to(playerId).emit('coop-sunken-loot-chosen', {
         stockId,
         item,
@@ -5231,6 +5311,93 @@ class GameRoom {
     return true;
   }
 
+  _isSunkenLootEntryEligible(player, entry) {
+    if (!player || !entry || entry.sold) return false;
+    const itemType = entry.item?.type;
+    if (itemType && dreamLayerItems.isUniqueOwnedItem(itemType) && dreamLayerItems.playerOwnsItem(player, itemType)) {
+      return false;
+    }
+    if (itemType === 'PERSEPHONE' && (player.hasPersephone || player.persephoneConsumed || dreamLayerItems.playerOwnsItem(player, 'PERSEPHONE'))) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Grant a sunken loot offer entry to a player. Caller is responsible for claim tracking.
+   * @returns {object|null} granted item, or null if ineligible
+   */
+  _grantSunkenLootToPlayer(playerId, player, entry) {
+    if (!this._isSunkenLootEntryEligible(player, entry)) return null;
+
+    const item = {
+      ...entry.item,
+      id: `${entry.item?.type || entry.kind}-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
+    };
+
+    if (entry.kind === 'warding_pendant' && item.bannedEnemyType) {
+      this.bannedEnemyTypes.add(item.bannedEnemyType);
+    }
+
+    if (item.type) {
+      this._registerPlayerDreamLayerItem(playerId, player, item.type);
+    }
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('item-picked-up', {
+        itemId: item.id,
+        playerId,
+        item,
+        timestamp: Date.now(),
+      });
+    }
+    return item;
+  }
+
+  /**
+   * Auto-assign a random eligible sunken loot pick to every player who hasn't claimed.
+   * Completes the loot phase so the fountain can proceed.
+   * @param {string} reason
+   * @returns {boolean}
+   */
+  _autoAssignPendingSunkenLoot(reason) {
+    if (!this.coopSunkenFountainPhase || this.coopSunkenLootPhaseComplete) return false;
+
+    for (const [playerId, player] of this.players) {
+      if (this.coopSunkenLootClaimedPlayerIds.has(playerId)) continue;
+
+      const eligible = (this.coopSunkenLootOffer || []).filter((entry) => this._isSunkenLootEntryEligible(player, entry));
+      let granted = null;
+      let stockId = null;
+      if (eligible.length > 0) {
+        const entry = eligible[Math.floor(Math.random() * eligible.length)];
+        granted = this._grantSunkenLootToPlayer(playerId, player, entry);
+        stockId = entry.id;
+      }
+
+      this.coopSunkenLootClaimedPlayerIds.add(playerId);
+      if (granted && this.io) {
+        this.io.to(playerId).emit('coop-sunken-loot-chosen', {
+          stockId,
+          item: granted,
+          autoAssigned: true,
+          coopSunkenLootClaimedPlayerIds: [...this.coopSunkenLootClaimedPlayerIds],
+          coopSunkenLootPhaseComplete: true,
+          timestamp: Date.now(),
+        });
+      }
+    }
+
+    this.coopSunkenLootPhaseComplete = true;
+    this._clearCoopRewardChoiceGraceTimer();
+    this._emitSunkenIntermission({
+      coopSunkenLootClaimedPlayerIds: [...this.coopSunkenLootClaimedPlayerIds],
+      coopSunkenLootPhaseComplete: true,
+    });
+    console.log(`🎁 Sunken loot auto-assigned (${reason}) — phase complete.`);
+    return true;
+  }
+
   _emitSunkenLootFailure(playerId, reason) {
     if (!this.io) return;
     this.io.to(playerId).emit('coop-sunken-loot-failed', {
@@ -5245,6 +5412,7 @@ class GameRoom {
    * @returns {boolean}
    */
   enterMainLoopAfterSunken(chosenCampType) {
+    this._autoAssignPendingSunkenLoot('portal-enter');
     if (!this.coopSunkenFountainPhase || !this.coopSunkenFountainUsed || !this.coopSunkenLootPhaseComplete) return false;
     const offer = this.thronePortalOffer;
     if (!offer || offer.length !== 2) return false;
@@ -5253,6 +5421,7 @@ class GameRoom {
     if (!pick || !offer.includes(pick)) pick = offer[0];
     if (!GameRoom.CAMP_TYPES[pick]) return false;
 
+    this._clearCoopRewardChoiceGraceTimer();
     this.coopSunkenActive = false;
     this.coopSunkenFountainPhase = false;
     this.coopSunkenPortalOpen = false;
@@ -5718,35 +5887,84 @@ class GameRoom {
       return false;
     }
 
-    player.coopPetCompanionUpgrade = upgradeId;
-    this._applyPetCompanionUpgradeToPlayerBeast(playerId, upgradeId);
-
     this.coopEternityLootClaimedPlayerIds.add(playerId);
     if (this.coopEternityLootClaimedPlayerIds.size >= this.players.size) {
       this.coopEternityLootPhaseComplete = true;
+      this._clearCoopRewardChoiceGraceTimer();
+    } else {
+      this._scheduleCoopRewardChoiceGraceTimer('eternity');
     }
 
-    if (this.io) {
-      this.io.to(playerId).emit('coop-eternity-pet-upgrade-chosen', {
-        upgradeId,
-        coopFaeBeastCompanionKind: kind,
-        coopEternityLootClaimedPlayerIds: [...this.coopEternityLootClaimedPlayerIds],
-        coopEternityLootPhaseComplete: this.coopEternityLootPhaseComplete,
-        timestamp: Date.now(),
-      });
-      this.io.to(this.roomId).emit('coop-pet-companion-upgrade-synced', {
-        playerId,
-        upgradeId,
-        packExpansion: upgradeId === 'wolf_pack_expansion',
-        timestamp: Date.now(),
-      });
-    }
+    this._applyEternityPetUpgradeForPlayer(playerId, player, upgradeId, kind);
 
     this._emitEternityIntermission({
       coopEternityLootClaimedPlayerIds: [...this.coopEternityLootClaimedPlayerIds],
       coopEternityLootPhaseComplete: this.coopEternityLootPhaseComplete,
     });
     console.log(`🐾 Eternity pet upgrade chosen by ${playerId}: ${upgradeId}`);
+    return true;
+  }
+
+  /**
+   * Apply a pet companion upgrade and emit the per-player + room sync events.
+   * Caller is responsible for claim tracking.
+   */
+  _applyEternityPetUpgradeForPlayer(playerId, player, upgradeId, kind, extra = {}) {
+    player.coopPetCompanionUpgrade = upgradeId;
+    this._applyPetCompanionUpgradeToPlayerBeast(playerId, upgradeId);
+
+    if (!this.io) return;
+    this.io.to(playerId).emit('coop-eternity-pet-upgrade-chosen', {
+      upgradeId,
+      coopFaeBeastCompanionKind: kind,
+      coopEternityLootClaimedPlayerIds: [...this.coopEternityLootClaimedPlayerIds],
+      coopEternityLootPhaseComplete: this.coopEternityLootPhaseComplete,
+      ...extra,
+      timestamp: Date.now(),
+    });
+    this.io.to(this.roomId).emit('coop-pet-companion-upgrade-synced', {
+      playerId,
+      upgradeId,
+      packExpansion: upgradeId === 'wolf_pack_expansion',
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Auto-assign a random pet upgrade to every player who hasn't claimed.
+   * Completes the loot phase so the fountain can proceed.
+   * @param {string} reason
+   * @returns {boolean}
+   */
+  _autoAssignPendingEternityPetUpgrade(reason) {
+    if (!this.coopEternityFountainPhase || this.coopEternityLootPhaseComplete) return false;
+
+    const kind = normalizeFaeBeastCompanionKind(this.coopFaeBeastCompanionKind);
+    const options = kind ? (PET_COMPANION_UPGRADE_OPTIONS[kind] || []) : [];
+    const canGrant = this.coopFaeBeastCompanionGranted && kind && options.length > 0;
+
+    for (const [playerId, player] of this.players) {
+      if (this.coopEternityLootClaimedPlayerIds.has(playerId)) continue;
+
+      if (canGrant) {
+        const upgradeId = options[Math.floor(Math.random() * options.length)];
+        this.coopEternityLootClaimedPlayerIds.add(playerId);
+        this._applyEternityPetUpgradeForPlayer(playerId, player, upgradeId, kind, {
+          autoAssigned: true,
+          coopEternityLootPhaseComplete: true,
+        });
+      } else {
+        this.coopEternityLootClaimedPlayerIds.add(playerId);
+      }
+    }
+
+    this.coopEternityLootPhaseComplete = true;
+    this._clearCoopRewardChoiceGraceTimer();
+    this._emitEternityIntermission({
+      coopEternityLootClaimedPlayerIds: [...this.coopEternityLootClaimedPlayerIds],
+      coopEternityLootPhaseComplete: true,
+    });
+    console.log(`🐾 Eternity pet upgrade auto-assigned (${reason}) — phase complete.`);
     return true;
   }
 
@@ -5818,6 +6036,7 @@ class GameRoom {
    * @returns {boolean}
    */
   enterMainLoopAfterEternity(chosenCampType) {
+    this._autoAssignPendingEternityPetUpgrade('portal-enter');
     if (!this.coopEternityFountainPhase || !this.coopEternityFountainUsed || !this.coopEternityLootPhaseComplete) return false;
     const offer = this.thronePortalOffer;
     if (!offer || offer.length !== 2) return false;
@@ -5828,6 +6047,7 @@ class GameRoom {
 
     const wasLateSequence = this.coopEternityLateSequence;
 
+    this._clearCoopRewardChoiceGraceTimer();
     this.coopEternityActive = false;
     this.coopEternityFountainPhase = false;
     this.coopEternityPortalOpen = false;
@@ -6747,6 +6967,7 @@ class GameRoom {
 
   /** Clear sequence flags so a throne-prep hop into a mid-run room stays consistent. */
   _resetCoopFlowForDevShortcut() {
+    this._clearCoopRewardChoiceGraceTimer();
     this.coopIntroPending = false;
     this.coopIntroActive = false;
     this.coopIntroRoomIndex = 0;
@@ -7631,6 +7852,36 @@ class GameRoom {
         activePlayerIds.every((id) => transition.readyPlayerIds.has(id))
       ) {
         this._releaseCoopCombatTransition(transition.id, 'player-disconnected');
+      }
+    }
+
+    this._recomputeCoopRewardPhaseAfterDisconnect();
+  }
+
+  /**
+   * After a disconnect, complete a pending loot phase if every remaining player has already claimed.
+   */
+  _recomputeCoopRewardPhaseAfterDisconnect() {
+    if (this.coopSunkenFountainPhase && !this.coopSunkenLootPhaseComplete) {
+      const remaining = Array.from(this.players.keys());
+      if (remaining.length > 0 && remaining.every((id) => this.coopSunkenLootClaimedPlayerIds.has(id))) {
+        this.coopSunkenLootPhaseComplete = true;
+        this._clearCoopRewardChoiceGraceTimer();
+        this._emitSunkenIntermission({
+          coopSunkenLootClaimedPlayerIds: [...this.coopSunkenLootClaimedPlayerIds],
+          coopSunkenLootPhaseComplete: true,
+        });
+      }
+    }
+    if (this.coopEternityFountainPhase && !this.coopEternityLootPhaseComplete) {
+      const remaining = Array.from(this.players.keys());
+      if (remaining.length > 0 && remaining.every((id) => this.coopEternityLootClaimedPlayerIds.has(id))) {
+        this.coopEternityLootPhaseComplete = true;
+        this._clearCoopRewardChoiceGraceTimer();
+        this._emitEternityIntermission({
+          coopEternityLootClaimedPlayerIds: [...this.coopEternityLootClaimedPlayerIds],
+          coopEternityLootPhaseComplete: true,
+        });
       }
     }
   }
@@ -9040,24 +9291,24 @@ class GameRoom {
     if (type === 'stone-giant') {
       // Excluded from HP scaling — Eternity Palace elite.
       return { id: `stone-giant-${campIndex}-${slotIndex}-${ts}`, type: 'stone-giant', ...base,
-        health: 7200, maxHealth: 7200, damage: 66, attackCooldown: 2900,
+        health: 10520, maxHealth: 10520, damage: 66, attackCooldown: 2900,
         moveSpeed: 2.25, patrolSpeed: 1.35, attackVariant: 1, spawnedAt: ts };
     }
     if (type === 'eternal-oak') {
       // Excluded from HP scaling — Eternity Palace elite.
       return { id: `eternal-oak-${campIndex}-${slotIndex}-${ts}`, type: 'eternal-oak', ...base,
-        health: 8600, maxHealth: 8600, damage: 91, attackCooldown: 3300,
+        health: 18600, maxHealth: 18600, damage: 91, attackCooldown: 3300,
         moveSpeed: 2.0, patrolSpeed: 1.2, attackVariant: 1, spawnedAt: ts };
     }
     if (type === 'colossus') {
       // Excluded from HP scaling — Eternity Palace elite.
       return { id: `colossus-${campIndex}-${slotIndex}-${ts}`, type: 'colossus', ...base,
-        health: 10520, maxHealth: 10520, damage: 111, attackCooldown: 2100,
+        health: 20520, maxHealth: 20520, damage: 111, attackCooldown: 2100,
         moveSpeed: 2.65, patrolSpeed: 1.59, attackVariant: 1, spawnedAt: ts };
     }
     if (type === 'valkyrie') {
       return { id: `valkyrie-${campIndex}-${slotIndex}-${ts}`, type: 'valkyrie', ...base,
-        health: 2650 + hpBonus, maxHealth: 2650 + hpBonus,
+        health: 2950 + hpBonus, maxHealth: 2950 + hpBonus,
         damage: 56, moveSpeed: 0.6, soulType: campDef.knightSoulType };
     }
     // viper
@@ -9624,6 +9875,8 @@ class GameRoom {
     this._pumpCoopSpawns();
 
     this._maybeSpawnMartyrBonusEnemies(isMixedRoom);
+    this._maybeSpawnEliteBonusEnemies(isMixedRoom);
+    this._maybeSpawnCryptBeastBonusEnemies(this.currentCoopRoomKind);
     this._maybeSpawnGreedBonusEnemy(isMixedRoom);
     this._maybeSpawnWraithBonusEnemy(isMixedRoom);
 
@@ -9691,6 +9944,118 @@ class GameRoom {
     if (spawned > 0) {
       console.log(`💣 Martyr bonus: spawned ${spawned} in room ${this.currentCoopRoomKind}`);
       this.startEnemyAI();
+    }
+  }
+
+  /**
+   * Additive elite bonus in colored rooms after the 2nd boss (quota-exempt).
+   * 25% chance for 1 of {death-knight, spectre, shaman, assassin, frost-queen} after 2 bosses;
+   * 100% chance after 3 bosses (pool also includes medusa), with a 50% chance to spawn 2.
+   */
+  _maybeSpawnEliteBonusEnemies(isMixedRoom) {
+    if (isMixedRoom) return;
+    if (!COOP_COLORED_ROOM_TYPES.includes(this._normalizeCoopRoomKind(this.currentCoopRoomKind))) return;
+    const bosses = this.coopBossesDefeatedCount || 0;
+    if (bosses < 2) return;
+    const late = bosses >= 3;
+    if (Math.random() >= (late ? 1 : COOP_ELITE_BONUS_CHANCE)) return;
+
+    const campDef = this.coopWaveSpawnPlan?.campDef;
+    if (!campDef) return;
+
+    const pool = (late ? COOP_ELITE_BONUS_POOL_LATE : COOP_ELITE_BONUS_POOL_MID)
+      .filter((t) => !this.bannedEnemyTypes.has(t));
+    if (!pool.length) return;
+
+    const count = late && Math.random() < COOP_ELITE_BONUS_LATE_DOUBLE_CHANCE ? 2 : 1;
+    const positions = this._generateScatteredPositions(count, false);
+    let spawned = 0;
+    const spawnedTypes = [];
+    for (let i = 0; i < count; i++) {
+      const pos = positions[i];
+      if (!pos) continue;
+      const type = pool[Math.floor(Math.random() * pool.length)];
+      const enemy = this._buildEnemy(type, 0, 840 + i, pos, campDef);
+      enemy.coopQuotaExempt = true;
+      this.enemies.set(enemy.id, enemy);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+        this._emitEnemySummonVfx(enemy);
+      }
+      spawned++;
+      spawnedTypes.push(type);
+    }
+    if (spawned > 0) {
+      console.log(`⚔️ Elite bonus: spawned ${spawnedTypes.join(' + ')} in room ${this.currentCoopRoomKind}`);
+      this.startEnemyAI();
+    }
+  }
+
+  /**
+   * Additive beast bonuses in Crypt of Currency (trial) and Crypt of Skill (stat).
+   * Each boss-tier roll is independent and stacks. Kills are quota-exempt.
+   */
+  _maybeSpawnCryptBeastBonusEnemies(roomKind) {
+    if (roomKind !== 'trial' && roomKind !== 'stat') return;
+    const bosses = this.coopBossesDefeatedCount || 0;
+    if (bosses < 1) return;
+
+    let campDef = this.coopWaveSpawnPlan?.campDef;
+    if (!campDef) {
+      campDef = GameRoom.CAMP_TYPES[this._pickRandomCampColor()]
+        || { color: 'green', enemyPool: ['knight'] };
+    }
+
+    const spawnGroup = (types, slotBase) => {
+      if (!types.length) return;
+      const positions = this._generateScatteredPositions(types.length, true);
+      let spawned = 0;
+      for (let i = 0; i < types.length; i++) {
+        const pos = positions[i];
+        if (!pos) continue;
+        const type = types[i];
+        if (this.bannedEnemyTypes.has(type)) continue;
+        const enemy = this._buildEnemy(type, 0, slotBase + i, pos, campDef);
+        enemy.coopQuotaExempt = true;
+        this.enemies.set(enemy.id, enemy);
+        if (this.io) {
+          this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+          this._emitEnemySummonVfx(enemy);
+        }
+        spawned++;
+      }
+      if (spawned > 0) {
+        console.log(`🐾 Crypt beast bonus: spawned ${spawned} (${types.join(', ')}) in ${roomKind}`);
+        this.startEnemyAI();
+      }
+    };
+
+    if (roomKind === 'trial') {
+      if (Math.random() < COOP_CRYPT_BEAST_CHANCE) {
+        const unit = Math.random() < 0.5 ? 'tiger' : 'bear';
+        const count = 2 + Math.floor(Math.random() * 3);
+        spawnGroup(Array.from({ length: count }, () => unit), 850);
+      }
+      if (bosses >= 2 && Math.random() < COOP_CRYPT_BEAST_CHANCE) {
+        const count = 1 + Math.floor(Math.random() * 2);
+        spawnGroup(Array.from({ length: count }, () => 'terrorhawk'), 860);
+      }
+      if (bosses >= 3) {
+        const count = 1 + Math.floor(Math.random() * 2);
+        spawnGroup(Array.from({ length: count }, () => 'stone-giant'), 870);
+      }
+    } else {
+      if (Math.random() < COOP_CRYPT_BEAST_CHANCE) {
+        const count = 4 + Math.floor(Math.random() * 4);
+        spawnGroup(Array.from({ length: count }, () => 'wolf'), 850);
+      }
+      if (bosses >= 2 && Math.random() < COOP_CRYPT_BEAST_CHANCE) {
+        spawnGroup(['wyvern'], 860);
+      }
+      if (bosses >= 3) {
+        const unit = Math.random() < 0.5 ? 'colossus' : 'eternal-oak';
+        spawnGroup([unit], 870);
+      }
     }
   }
 
@@ -11006,6 +11371,9 @@ class GameRoom {
         enemy.skipCoopWaveKill = true;
         this._skipNextCoopWaveKill = true;
       }
+      if (enemy.coopQuotaExempt) {
+        this._skipNextCoopWaveKill = true;
+      }
 
       // Shaman Spirit Wolves use summonerId — clear them when the shaman dies.
       if (enemy.type === 'shaman') {
@@ -11444,6 +11812,12 @@ class GameRoom {
           nemesis: 90,
           valkyrie: 85,
           knight: 65,
+          'death-knight': 90,
+          assassin: 90,
+          spectre: 85,
+          shaman: 85,
+          'frost-queen': 110,
+          medusa: 120,
         };
         const expGain = expByType[enemy.type] ?? 100;
         if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
