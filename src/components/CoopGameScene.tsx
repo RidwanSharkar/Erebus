@@ -486,7 +486,7 @@ const PORTAL_FALL_RISE_DURATION_MS = 2550;
 const PORTAL_FALL_GROUND_Y = 0.52;
 /** Fraction of Jump clip duration treated as peak of arc (tune by eye). */
 const PORTAL_FALL_PEAK_FRACTION = 0.45;
-import { useBowPowershot } from '@/components/projectiles/useBowPowershot';
+import { createGlobalPowershotEffect as createPowershotEffect } from '@/components/projectiles/useBowPowershot';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 import PVPSummonTotemManager from '@/components/projectiles/PVPSummonTotemManager';
 import { ExperienceSystem } from '@/utils/ExperienceSystem';
@@ -5759,9 +5759,6 @@ export function CoopGameScene({
     () => new Map(),
   );
   
-  // Perfect shot system
-  const { createPowershotEffect } = useBowPowershot();
-  
   // Optimized PVP effects with object pooling
   const { createOptimizedVenomEffect, createOptimizedDebuffEffect, getPoolStats } = useOptimizedPVPEffects();
 
@@ -6118,7 +6115,7 @@ export function CoopGameScene({
         const projectileTypes = ['regular_arrow', 'charged_arrow', 'entropic_bolt', 'crossentropy_bolt', 'perfect_shot', 'barrage_projectile', 'fan_of_knives_projectile', 'burst_arrow', 'scorpion_shard', 'poison_dart'];
         if (projectileTypes.includes(data.attackType)) {
           // Skip creating projectiles for the local player's own attacks to prevent duplicates
-          const localSocketId = (window as any).localSocketId;
+          const localSocketId = socket?.id;
           if (data.playerId === localSocketId) {
             return; // Local player already created this projectile
           }

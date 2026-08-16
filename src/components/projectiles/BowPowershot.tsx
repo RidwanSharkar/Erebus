@@ -15,6 +15,8 @@ interface BowPowershotProps {
   isPerfectShot?: boolean;
   arcticStingTheme?: boolean;
   highCaliberPerfectBeam?: boolean;
+  /** Creation time (ms). Lifetime is measured from this, not from mount. */
+  startTime?: number;
 }
 
 const PERFECT_CALIBER_RADIUS_MULT = 1.4;
@@ -28,9 +30,11 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
   isPerfectShot = false,
   arcticStingTheme = false,
   highCaliberPerfectBeam = false,
+  startTime,
 }) => {
   const groupRef = useRef<Group>(null);
-  const startTimeRef = useRef(Date.now());
+  const originTimeRef = useRef(startTime ?? Date.now());
+  const originTime = originTimeRef.current;
   const duration = isPerfectShot ? 200 : 166; // Perfect shots last slightly longer
   const fadeStartTime = useRef<number | null>(null);
   const thickCaliberPerfect = !!(isPerfectShot && highCaliberPerfectBeam);
@@ -110,10 +114,10 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
   const beamLight = useDynamicLight({ color: colors.core, distance: lightDistance, priority: 2 });
 
   useFrame(() => {
-    const elapsed = Date.now() - startTimeRef.current;
+    const elapsed = Date.now() - originTime;
 
     if (elapsed >= duration && !fadeStartTime.current) {
-      fadeStartTime.current = Date.now();
+      fadeStartTime.current = originTime + duration;
     }
 
     // Handle fade out
@@ -201,7 +205,7 @@ const BowPowershot: React.FC<BowPowershotProps> = ({
 
         {/* Ring/swirl effects that last longer - more rings for perfect shots */}
         {[...Array(isPerfectShot ? 8 : 6)].map((_, i) => {
-          const ringProgress = Math.min(1, (Date.now() - startTimeRef.current) / 800); // Slower fade for rings
+          const ringProgress = Math.min(1, (Date.now() - originTime) / 800); // Slower fade for rings
           const ringFade = fadeStartTime.current 
             ? Math.max(0, 1 - (Date.now() - fadeStartTime.current) / 600) // Longer fade for rings
             : 1;

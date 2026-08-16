@@ -81,7 +81,7 @@ export default function HudActionButtons({
   onOpenSettings,
 }: HudActionButtonsProps) {
   return (
-    <div className="mt-2 flex items-center gap-2" data-block-game-input>
+    <div className="mt-2 flex flex-col items-center gap-2" data-block-game-input>
       <HudCircleButton
         onClick={onOpenRulebook}
         title="Rulebook"

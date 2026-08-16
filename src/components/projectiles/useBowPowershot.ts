@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Vector3 } from 'three';
 import { WeaponSubclass } from '@/components/dragon/weapons';
 
@@ -16,12 +16,18 @@ export interface BowPowershotEffect {
   startTime: number;
 }
 
-// Global state for bow powershot effects
+type PowershotSubscriber = (effects: BowPowershotEffect[]) => void;
+
 let globalActiveEffects: BowPowershotEffect[] = [];
 let globalNextEffectId = 1;
-let globalSetActiveEffects: ((effects: BowPowershotEffect[]) => void) | null = null;
+const subscribers = new Set<PowershotSubscriber>();
 
-// Global functions to manage effects
+const notifySubscribers = (): void => {
+  for (const subscriber of subscribers) {
+    subscriber(globalActiveEffects);
+  }
+};
+
 export const createGlobalPowershotEffect = (
   position: Vector3,
   direction: Vector3,
@@ -46,27 +52,32 @@ export const createGlobalPowershotEffect = (
   };
 
   globalActiveEffects = [...globalActiveEffects, newEffect];
-  
-  if (globalSetActiveEffects) {
-    globalSetActiveEffects(globalActiveEffects);
-  }
+  notifySubscribers();
   
   return effectId;
 };
 
 export const removeGlobalPowershotEffect = (effectId: number): void => {
   globalActiveEffects = globalActiveEffects.filter(effect => effect.id !== effectId);
-  
-  if (globalSetActiveEffects) {
-    globalSetActiveEffects(globalActiveEffects);
-  }
+  notifySubscribers();
+};
+
+export const clearGlobalPowershotEffects = (): void => {
+  if (globalActiveEffects.length === 0) return;
+  globalActiveEffects = [];
+  notifySubscribers();
 };
 
 export const useBowPowershot = () => {
   const [activeEffects, setActiveEffects] = useState<BowPowershotEffect[]>(globalActiveEffects);
-  
-  // Register this component's setter as the global one
-  globalSetActiveEffects = setActiveEffects;
+
+  useEffect(() => {
+    subscribers.add(setActiveEffects);
+    setActiveEffects(globalActiveEffects);
+    return () => {
+      subscribers.delete(setActiveEffects);
+    };
+  }, []);
 
   const createPowershotEffect = useCallback((
     position: Vector3,
@@ -93,8 +104,7 @@ export const useBowPowershot = () => {
   }, []);
 
   const clearAllEffects = useCallback(() => {
-    globalActiveEffects = [];
-    setActiveEffects([]);
+    clearGlobalPowershotEffects();
   }, []);
 
   return {
