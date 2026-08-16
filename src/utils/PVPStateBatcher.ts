@@ -1,6 +1,7 @@
 // PVP State Batching Utility for Performance Optimization
 import { unstable_batchedUpdates } from 'react-dom';
 import { Vector3 } from '@/utils/three-exports';
+import { isTabHidden, onTabBecameVisible } from '@/utils/tabVisibility';
 
 /**
  * Batches multiple React state updates to prevent unnecessary re-renders
@@ -19,7 +20,11 @@ export class PVPStateBatcher {
   private totalUpdatesInBatch = 0;
   private lastBatchTime = 0;
   
-  private constructor() {}
+  private constructor() {
+    onTabBecameVisible(() => {
+      this.clear();
+    });
+  }
   
   public static getInstance(): PVPStateBatcher {
     if (!PVPStateBatcher.instance) {
@@ -32,6 +37,15 @@ export class PVPStateBatcher {
    * Add a state update to the batch queue
    */
   public batchUpdate(updateFn: () => void): void {
+    if (isTabHidden()) {
+      try {
+        updateFn();
+      } catch (error) {
+        console.error('Error in batched state update:', error);
+      }
+      return;
+    }
+
     this.pendingUpdates.push(updateFn);
     
     if (!this.batchScheduled) {

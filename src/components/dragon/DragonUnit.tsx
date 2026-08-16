@@ -901,7 +901,7 @@ export default function DragonUnit({
         </group>
       )}
 
-      {/* SPELL CASTING AURA — local player only; shown after LMB hold on any weapon */}
+      {/* SPELL CASTING AURA — local-only; driven by local input hold state */}
       {isLocalPlayer && (
         <>
           <SpellCastingAura
@@ -913,20 +913,20 @@ export default function DragonUnit({
           <group position={[0, hideBody ? 1.05 : 0.55, 0]}>
             <SpellCastingHalos isActive={shiftEnergyHaloVisible} />
           </group>
-
-          <PrimeMateriaAura
-            parentRef={groupRef}
-            isActive={isPrimeMateriaActive}
-          />
-
-          <IncinerationChargeAura
-            parentRef={groupRef}
-            isActive={isIncinerationCharging}
-          />
-
-          <IncinerationVerticalChargeRing isActive={isCrossentropyCharging} />
         </>
       )}
+
+      <PrimeMateriaAura
+        parentRef={groupRef}
+        isActive={isPrimeMateriaActive}
+      />
+
+      <IncinerationChargeAura
+        parentRef={groupRef}
+        isActive={isIncinerationCharging}
+      />
+
+      <IncinerationVerticalChargeRing isActive={isCrossentropyCharging} />
 
       {/* CHARGED ORBITALS — visible with or without dragon body, raised to hip level on character model */}
       <ChargedOrbitals

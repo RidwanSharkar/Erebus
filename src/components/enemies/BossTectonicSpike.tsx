@@ -14,13 +14,20 @@ import HellfireCrystalSpikeModel, {
   FROST_SHATTER_SPIKE_HEIGHT,
 } from './HellfireCrystalSpikeModel';
 
-const RISE_MS = 520;
-const HOLD_MS = 1080;
-const RETRACT_MS = 520;
-const TOTAL_MS = RISE_MS + HOLD_MS + RETRACT_MS;
-const HOLD_END_MS = RISE_MS + HOLD_MS;
-
 export type BossTectonicSpikeVariant = 'ground' | 'hellfireCrystal';
+
+interface SpikeVariantTiming {
+  riseMs: number;
+  holdMs: number;
+  retractMs: number;
+  /** Back-ease overshoot amount; 0 keeps the original ease-out-quad rise. */
+  overshoot: number;
+}
+
+const SPIKE_VARIANT_TIMING: Record<BossTectonicSpikeVariant, SpikeVariantTiming> = {
+  ground: { riseMs: 520, holdMs: 1080, retractMs: 520, overshoot: 0 },
+  hellfireCrystal: { riseMs: 190, holdMs: 1410, retractMs: 520, overshoot: 1.7 },
+};
 
 /**
  * Crystal ground spike erupting from the ground with lateral wobble, then retracting.
@@ -53,6 +60,11 @@ export default function BossTectonicSpike({
     (variant === 'hellfireCrystal' ? FROST_SHATTER_SPIKE_HEIGHT : SPIKE_HEIGHT) *
     0.92;
 
+  const { riseMs, holdMs, retractMs, overshoot } = SPIKE_VARIANT_TIMING[variant];
+  const holdEndMs = riseMs + holdMs;
+  const totalMs = holdEndMs + retractMs;
+  const wobbleScale = overshoot > 0 ? 1.5 : 1;
+
   useFrame(() => {
     if (done.current) return;
     const e = performance.now() - t0.current;
@@ -62,27 +74,30 @@ export default function BossTectonicSpike({
         riseMotion;
       const baseX = Math.cos(leanDir) * leanAmt;
       const baseZ = Math.sin(leanDir) * leanAmt;
+      const scaledWobbleAmp = wobbleAmp * wobbleScale;
 
-      if (e < RISE_MS) {
-        const t = e / RISE_MS;
-        const ease = 1 - (1 - t) * (1 - t);
+      if (e < riseMs) {
+        const t = e / riseMs;
+        const ease = overshoot > 0
+          ? 1 + (overshoot + 1) * Math.pow(t - 1, 3) + overshoot * Math.pow(t - 1, 2)
+          : 1 - (1 - t) * (1 - t);
         const yOff = -riseDepth * (1 - ease);
         const wobbleDecay = 1 - t;
         const xOff =
-          baseX * ease + Math.sin(t * wobbleFreqX) * wobbleAmp * wobbleDecay;
+          baseX * ease + Math.sin(t * wobbleFreqX) * scaledWobbleAmp * wobbleDecay;
         const zOff =
-          baseZ * ease + Math.cos(t * wobbleFreqZ) * wobbleAmp * wobbleDecay;
+          baseZ * ease + Math.cos(t * wobbleFreqZ) * scaledWobbleAmp * wobbleDecay;
         riseGroup.current.position.set(xOff, yOff, zOff);
         riseGroup.current.rotation.set(
           tiltX * wobbleDecay,
           emergenceYaw,
           tiltZ * wobbleDecay,
         );
-      } else if (e < HOLD_END_MS) {
+      } else if (e < holdEndMs) {
         riseGroup.current.position.set(baseX, 0, baseZ);
         riseGroup.current.rotation.set(0, emergenceYaw, 0);
-      } else if (e < TOTAL_MS) {
-        const t = (e - HOLD_END_MS) / RETRACT_MS;
+      } else if (e < totalMs) {
+        const t = (e - holdEndMs) / retractMs;
         const ease = t * t; // ease-in into the ground
         const yOff = -riseDepth * ease;
         riseGroup.current.position.set(baseX * (1 - ease), yOff, baseZ * (1 - ease));
@@ -93,7 +108,7 @@ export default function BossTectonicSpike({
       }
     }
 
-    if (e >= TOTAL_MS) {
+    if (e >= totalMs) {
       done.current = true;
       onComplete();
     }

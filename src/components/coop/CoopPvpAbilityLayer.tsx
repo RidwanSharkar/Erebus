@@ -845,27 +845,33 @@ const CoopPvpAbilityLayer = memo(forwardRef<CoopPvpAbilityLayerHandle, CoopPvpAb
           />
         ))}
 
-        {localPlayerFrozenEffects.map((effect) => (
-          <FrozenEffect
-            key={effect.id}
-            position={realTimePlayerPositionRef.current}
-            positionRef={realTimePlayerPositionRef}
-            duration={effect.duration}
-            startTime={effect.startTime}
-            onComplete={() => removeLocalPlayerFrozen(effect.id)}
-          />
-        ))}
+        {localPlayerFrozenEffects.map((effect) => {
+          const posRef = effect.positionRef ?? realTimePlayerPositionRef;
+          return (
+            <FrozenEffect
+              key={effect.id}
+              position={posRef.current}
+              positionRef={posRef}
+              duration={effect.duration}
+              startTime={effect.startTime}
+              onComplete={() => removeLocalPlayerFrozen(effect.id)}
+            />
+          );
+        })}
 
-        {localPlayerStunnedEffects.map((effect) => (
-          <StunnedEffect
-            key={effect.id}
-            position={realTimePlayerPositionRef.current}
-            positionRef={realTimePlayerPositionRef}
-            duration={effect.duration}
-            startTime={effect.startTime}
-            onComplete={() => removeLocalPlayerStunned(effect.id)}
-          />
-        ))}
+        {localPlayerStunnedEffects.map((effect) => {
+          const posRef = effect.positionRef ?? realTimePlayerPositionRef;
+          return (
+            <StunnedEffect
+              key={effect.id}
+              position={posRef.current}
+              positionRef={posRef}
+              duration={effect.duration}
+              startTime={effect.startTime}
+              onComplete={() => removeLocalPlayerStunned(effect.id)}
+            />
+          );
+        })}
       </>
     );
   },

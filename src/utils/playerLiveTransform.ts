@@ -5,6 +5,8 @@ export interface PlayerLiveTransform {
   position: { x: number; y: number; z: number };
   rotation: { x: number; y: number; z: number };
   movementDirection?: PlayerMovementDirection;
+  /** `performance.now()` of the last `player-moved` / authoritative snap. */
+  lastUpdatedAt?: number;
 }
 
 export type PlayerTransformsRef = MutableRefObject<Map<string, PlayerLiveTransform>>;
@@ -20,10 +22,12 @@ export function applyPlayerMove(
     movementDirection?: PlayerMovementDirection;
   },
 ): void {
+  const now = performance.now();
   const existing = transformsRef.current.get(data.playerId);
   if (existing) {
     existing.position = data.position;
     existing.rotation = data.rotation;
+    existing.lastUpdatedAt = now;
     if (data.movementDirection !== undefined) {
       existing.movementDirection = data.movementDirection;
     }
@@ -32,6 +36,7 @@ export function applyPlayerMove(
       position: data.position,
       rotation: data.rotation,
       movementDirection: data.movementDirection,
+      lastUpdatedAt: now,
     });
   }
 

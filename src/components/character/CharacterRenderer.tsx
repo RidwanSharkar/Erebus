@@ -20,6 +20,8 @@ interface CharacterRendererProps {
   world: World;
   isLocalPlayer?: boolean;
   rotation?: { x: number; y: number; z: number };
+  /** When set, live yaw is read from this ref each frame instead of React prop updates. */
+  rotationRef?: React.RefObject<{ x: number; y: number; z: number }>;
   currentWeapon?: WeaponType;
   weaponSubclass?: WeaponSubclass;
   /** Primary (LMB) bow charge — see also ability charges below. */
@@ -152,6 +154,7 @@ export default function CharacterRenderer({
   world,
   isLocalPlayer = true,
   rotation,
+  rotationRef,
   currentWeapon,
   weaponSubclass,
   isCharging = false,
@@ -207,22 +210,24 @@ export default function CharacterRenderer({
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Keep target position up to date and schedule Idle fallback.
+  // Keep target position up to date when not driven by a per-frame ref.
   useEffect(() => {
+    if (positionRef) return;
     const dist = targetPosition.current.distanceTo(position);
     targetPosition.current.copy(position);
 
     if (dist > 15.0 && groupRef.current) {
       groupRef.current.position.copy(position);
     }
-  }, [position.x, position.y, position.z]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [position.x, position.y, position.z, positionRef]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Track remote-player rotation.
+  // Track remote-player rotation when not driven by a per-frame ref.
   useEffect(() => {
+    if (rotationRef) return;
     if (!isLocalPlayer && rotation) {
       targetRotationY.current = rotation.y;
     }
-  }, [rotation, isLocalPlayer]);
+  }, [rotation, isLocalPlayer, rotationRef]);
 
   useEffect(() => {
     return () => {
@@ -334,10 +339,15 @@ export default function CharacterRenderer({
       targetPosition.current.copy(positionRef.current);
     }
 
-    // Smooth position.
-    group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
+    // Remotes that share a pre-smoothed ref snap so body + cosmetics stay locked.
+    // Local player still lerps — ECS transform is already 60 Hz.
+    if (positionRef && !isLocalPlayer) {
+      group.position.copy(positionRef.current);
+    } else {
+      group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
+    }
 
-    // Rotation: local player always faces the camera; remote players lerp to server rotation.
+    // Rotation: local player always faces the camera; remote players follow the live yaw.
     const facingDir = _facingScratch.set(0, 0, -1);
     if (isLocalPlayer && camera) {
       const cameraSystem = (window as any).cameraSystem as
@@ -353,10 +363,15 @@ export default function CharacterRenderer({
       group.rotation.y = angle;
       facingDir.set(Math.sin(angle), 0, Math.cos(angle));
     } else {
-      let deltaAngle = targetRotationY.current - group.rotation.y;
-      while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
-      while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
-      group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
+      if (rotationRef?.current) {
+        targetRotationY.current = rotationRef.current.y;
+        group.rotation.y = rotationRef.current.y;
+      } else {
+        let deltaAngle = targetRotationY.current - group.rotation.y;
+        while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
+        while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
+        group.rotation.y += deltaAngle * Math.min(1, delta * LERP_SPEED);
+      }
       facingDir.set(
         Math.sin(group.rotation.y),
         0,

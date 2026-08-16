@@ -247,6 +247,9 @@ import {
   FAN_OF_KNIVES_MAX_DISTANCE_UNITS,
   FAN_OF_KNIVES_PROJECTILE_SPEED,
   FAN_OF_KNIVES_PROJECTILE_LIFETIME_SEC,
+  WIND_SHEAR_MAX_DISTANCE_UNITS,
+  WIND_SHEAR_PROJECTILE_SPEED,
+  WIND_SHEAR_PROJECTILE_LIFETIME_SEC,
   type FanOfKnivesFlourishTint,
   CROSSENTROPY_PLAGUE_VENOM_MS,
   resolveWraithStrikeThemeFromMeta,
@@ -384,6 +387,10 @@ import EntangleManager, { addGlobalEntangledEnemy, addGlobalEntangledPlayer } fr
 import IgniteEffectManager from '@/components/weapons/IgniteEffectManager';
 import FireStormManager from '@/components/weapons/FireStormManager';
 import FrostShatterSpikeManager from '@/components/weapons/FrostShatterSpikeManager';
+import {
+  setFrostShatterSpikeBroadcaster,
+  spawnFrostShatterSpike,
+} from '@/components/weapons/frostShatterSpikeSpawnBridge';
 
 import CobraShotManager from '@/components/projectiles/CobraShotManager';
 import { addGlobalVenomousEnemy } from '@/components/projectiles/VenomEffectManager';
@@ -395,6 +402,7 @@ import {
 } from '@/components/pvp/OptimizedPVPManagers';
 import { pvpObjectPool } from '@/utils/PVPObjectPool';
 import { pvpStateBatcher, PVPStateUpdateHelpers } from '@/utils/PVPStateBatcher';
+import { onTabBecameVisible, shouldDropRemoteVfx } from '@/utils/tabVisibility';
 import DeflectShieldManager, { triggerGlobalDeflectShield } from '@/components/weapons/DeflectShieldManager';
 import DeathGraspProjectile from '@/components/weapons/DeathGraspProjectile';
 import DeathEffect from '@/components/weapons/DeathEffect';
@@ -482,10 +490,16 @@ const THRONE_VOID_PORTAL_DELAY_MS = 4000;
 const THRONE_VOID_PORTAL_OPEN_DURATION_MS = 900;
 /** Natural-speed takeoff-to-peak duration for portal-fall jump (ms). */
 const PORTAL_FALL_RISE_DURATION_MS = 2550;
+/** Abort rise if combat-arena-entered never arms the fall. */
+const PORTAL_FALL_RISE_TIMEOUT_MS = PORTAL_FALL_RISE_DURATION_MS + 6000;
+/** Abort fall if physics never reports a landing (background tab / stuck Y). */
+const PORTAL_FALL_LANDING_TIMEOUT_MS = 4000;
 /** Ground Y used for portal-fall animation progress (matches PhysicsSystem ground clamp). */
 const PORTAL_FALL_GROUND_Y = 0.52;
 /** Fraction of Jump clip duration treated as peak of arc (tune by eye). */
 const PORTAL_FALL_PEAK_FRACTION = 0.45;
+/** Remote locomotion falls back to Idle if no player-moved packet arrives. */
+const REMOTE_PLAYER_MOVE_STALE_MS = 500;
 import { createGlobalPowershotEffect as createPowershotEffect } from '@/components/projectiles/useBowPowershot';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 import PVPSummonTotemManager from '@/components/projectiles/PVPSummonTotemManager';
@@ -935,6 +949,13 @@ type RemotePlayerAnimState = {
   lastAnimationUpdate?: number;
   runebladeStoredCharge?: boolean;
   tempestBurstShotSeq?: number;
+  crusaderBladeThemeActive?: boolean;
+  titansGripBladeThemeActive?: boolean;
+  psionicBladesBladeThemeActive?: boolean;
+  deflectShieldActive?: boolean;
+  deflectShieldPaletteVariant?: import('@/utils/aegisShieldPalette').AegisPaletteVariant;
+  deflectShieldDurationSec?: number;
+  isRunebladeBlizzardActive?: boolean;
 };
 
 const DEFAULT_REMOTE_PLAYER_ANIM_STATE: Readonly<RemotePlayerAnimState> = Object.freeze({
@@ -966,7 +987,40 @@ const DEFAULT_REMOTE_PLAYER_ANIM_STATE: Readonly<RemotePlayerAnimState> = Object
   isFrozen: false,
   runebladeStoredCharge: false,
   tempestBurstShotSeq: 0,
+  crusaderBladeThemeActive: false,
+  titansGripBladeThemeActive: false,
+  psionicBladesBladeThemeActive: false,
+  deflectShieldActive: false,
+  deflectShieldPaletteVariant: 'default',
+  deflectShieldDurationSec: 3,
+  isRunebladeBlizzardActive: false,
 });
+
+const REMOTE_PEER_VISUAL_SMOOTH_RATE = 18;
+const REMOTE_PEER_VISUAL_TELEPORT_SNAP_SQ = 15 * 15;
+const RELAYED_PLAYER_IMPACT_TYPES = new Set([
+  'crescent-slash-effect',
+  'mortal-strike-effect',
+  'psionic-blade-slice',
+]);
+
+function lerpShortestAngle(from: number, to: number, t: number): number {
+  let delta = to - from;
+  while (delta > Math.PI) delta -= Math.PI * 2;
+  while (delta < -Math.PI) delta += Math.PI * 2;
+  return from + delta * t;
+}
+
+function mapLocalEntityIdToServerEnemyId(
+  localEntityId: string,
+  serverEnemyEntities: Map<string, number>,
+): string | undefined {
+  const numeric = Number(localEntityId);
+  for (const [serverId, entityId] of serverEnemyEntities) {
+    if (entityId === numeric) return serverId;
+  }
+  return undefined;
+}
 
 function readEnemyIsStunned(world: World | undefined | null, entityId: number): boolean {
   if (!world) return false;
@@ -1719,13 +1773,20 @@ const _remoteInterpPosScratch = new Vector3();
 const _remoteInterpRotScratch = new Quaternion();
 const _remoteInterpEulerScratch = new Euler();
 
-function buildPlayerMovementDirectionPayload(movement: Movement): PlayerMovementDirection {
-  const isDashing = movement.isDashing && movement.dashDirection.lengthSq() > 0.0001;
+function buildPlayerMovementDirectionPayload(
+  movement: Movement,
+  extras?: { isStunned?: boolean },
+): PlayerMovementDirection {
+  const isStunned = Boolean(extras?.isStunned);
+  const immobilized = isStunned || movement.isFrozen || movement.isEntangled;
+  const isDashing = !immobilized && movement.isDashing && movement.dashDirection.lengthSq() > 0.0001;
   const locomotionDirection = isDashing ? movement.dashDirection : movement.moveDirection;
-  const hasLocomotionDirection = locomotionDirection.lengthSq() > 0.0001;
-  const inputStrength = isDashing
-    ? Math.max(1, movement.inputStrength)
-    : movement.inputStrength;
+  const hasLocomotionDirection = !immobilized && locomotionDirection.lengthSq() > 0.0001;
+  const inputStrength = immobilized
+    ? 0
+    : isDashing
+      ? Math.max(1, movement.inputStrength)
+      : movement.inputStrength;
 
   return {
     x: hasLocomotionDirection ? locomotionDirection.x : 0,
@@ -1733,11 +1794,11 @@ function buildPlayerMovementDirectionPayload(movement: Movement): PlayerMovement
     z: hasLocomotionDirection ? locomotionDirection.z : 0,
     inputStrength,
     isGrounded: movement.isGrounded,
-    isDashing: movement.isDashing,
+    isDashing: immobilized ? false : movement.isDashing,
     dashDirection: {
-      x: movement.dashDirection.x,
-      y: movement.dashDirection.y,
-      z: movement.dashDirection.z,
+      x: immobilized ? 0 : movement.dashDirection.x,
+      y: immobilized ? 0 : movement.dashDirection.y,
+      z: immobilized ? 0 : movement.dashDirection.z,
     },
     isAttackSlowed: movement.isAttackSlowed,
     isIcebeaming: movement.isIcebeaming,
@@ -1745,7 +1806,12 @@ function buildPlayerMovementDirectionPayload(movement: Movement): PlayerMovement
     isIncinerationCharging: movement.isIncinerationCharging,
     isIncinerationArmed: movement.isIncinerationArmed,
     isLocustChanneling: movement.isLocustChanneling,
-    isSprinting: movement.isSprinting,
+    isSprinting: immobilized ? false : movement.isSprinting,
+    isStunned,
+    isFrozen: movement.isFrozen,
+    isEntangled: movement.isEntangled,
+    isSlowed: movement.isSlowed,
+    isCorrupted: movement.isCorrupted,
   };
 }
 
@@ -1767,17 +1833,23 @@ const ZERO_PLAYER_MOVEMENT_DIRECTION: PlayerMovementDirection = {
   isIncinerationArmed: false,
   isLocustChanneling: false,
   isSprinting: false,
+  isStunned: false,
+  isFrozen: false,
+  isEntangled: false,
+  isSlowed: false,
+  isCorrupted: false,
 };
 
 /** Remote players use `movement.canMove = false`; PhysicsMovement never fills `Movement`. CharacterRenderer animates off `Movement`. */
 function syncRemoteMovementForHumanoidAnimations(
   movement: Movement,
   serverPlayer: { position: { x: number; y: number; z: number }; movementDirection?: PlayerMovementDirection },
+  options?: { stale?: boolean },
 ): void {
   movement.velocity.set(0, 0, 0);
   movement.acceleration.set(0, 0, 0);
   const md = serverPlayer.movementDirection;
-  if (!md) {
+  if (!md || options?.stale) {
     movement.isGrounded = serverPlayer.position.y <= REMOTE_PLAYER_CHARACTER_GROUND_Y + 0.002;
     movement.moveDirection.set(0, 0, 0);
     movement.inputStrength = 0;
@@ -1792,18 +1864,19 @@ function syncRemoteMovementForHumanoidAnimations(
     movement.isSprinting = false;
     return;
   }
+  const immobilized = Boolean(md.isStunned || md.isFrozen || md.isEntangled);
   movement.isGrounded = md.isGrounded ?? (serverPlayer.position.y <= REMOTE_PLAYER_CHARACTER_GROUND_Y + 0.002);
-  movement.isDashing = Boolean(md.isDashing);
+  movement.isDashing = immobilized ? false : Boolean(md.isDashing);
   movement.isAttackSlowed = Boolean(md.isAttackSlowed);
   movement.isIcebeaming = Boolean(md.isIcebeaming);
   movement.isPrimeMateriaActive = Boolean(md.isPrimeMateriaActive);
   movement.isIncinerationCharging = Boolean(md.isIncinerationCharging);
   movement.isIncinerationArmed = Boolean(md.isIncinerationArmed);
   movement.isLocustChanneling = Boolean(md.isLocustChanneling);
-  movement.isSprinting = Boolean(md.isSprinting);
+  movement.isSprinting = immobilized ? false : Boolean(md.isSprinting);
 
   const dd = md.dashDirection;
-  if (dd) {
+  if (!immobilized && dd) {
     scratchRemoteDashDirectionXZ.set(dd.x, 0, dd.z);
     if (scratchRemoteDashDirectionXZ.lengthSq() > 0.0001) {
       movement.dashDirection.copy(scratchRemoteDashDirectionXZ.normalize());
@@ -1812,6 +1885,12 @@ function syncRemoteMovementForHumanoidAnimations(
     }
   } else {
     movement.dashDirection.set(0, 0, 0);
+  }
+
+  if (immobilized) {
+    movement.moveDirection.set(0, 0, 0);
+    movement.inputStrength = 0;
+    return;
   }
 
   scratchRemoteMovementXZ.set(md.x, 0, md.z);
@@ -2346,6 +2425,10 @@ export function CoopGameScene({
   const voidPortalFallActiveRef = useRef(false);
   /** Timestamp (ms) when portal-fall rise phase began. */
   const portalFallRiseStartMsRef = useRef(0);
+  /** Timestamp (ms) when the current portal overlay session started. */
+  const portalOverlayStartedAtRef = useRef(0);
+  /** Timestamp (ms) when portal-fall switched from rise to fall. */
+  const portalFallFallStartMsRef = useRef(0);
   /** Y position captured when portal-fall transitions from rise to fall. */
   const portalFallStartYRef = useRef(VOID_PORTAL_FALL_SPAWN_Y);
 
@@ -2384,6 +2467,8 @@ export function CoopGameScene({
   }, [registerMerchantNpcGreetHandler, registerMerchantPurchaseSuccessHandler]);
   // Real-time position refs for enemy players to enable ghost trail updates
   const enemyPlayerPositionRefs = useRef<Map<string, { current: Vector3 }>>(new Map());
+  const enemyPlayerSmoothedPositionRefs = useRef<Map<string, { current: Vector3 }>>(new Map());
+  const enemyPlayerSmoothedRotationRefs = useRef<Map<string, { current: { x: number; y: number; z: number } }>>(new Map());
   const remotePlayerPosScratchRef = useRef<Map<string, Vector3>>(new Map());
   const [playerEntity, setPlayerEntity] = useState<any>(null);
 
@@ -2457,6 +2542,27 @@ export function CoopGameScene({
   const environmentVfxLayerRef = useRef<CoopEnvironmentVfxLayerHandle>(null);
   const tentacleSpineLayerRef = useRef<CoopTentacleSpineLayerHandle>(null);
   const tentacleSpineFxRef = useRef<Map<string, { windSeq: number; slamSeq: number; dir: { x: number; z: number }; windupAt?: number; slamAt?: number }>>(new Map());
+
+  const flushCombatVfx = useCallback(() => {
+    if (engineRef.current) {
+      const projectileSystem = engineRef.current.getWorld().getSystem(ProjectileSystem);
+      projectileSystem?.clearAllProjectiles();
+    }
+    projectileLayerRef.current?.clearAll();
+    groundTelegraphLayerRef.current?.clearAll();
+    bossTelegraphLayerRef.current?.clearAll();
+    bossMechanicLayerRef.current?.clearAll();
+    explosionBurstLayerRef.current?.clearAll();
+    lightningBurstLayerRef.current?.clearAll();
+    groundHazardLayerRef.current?.clearAll();
+    summonRitualLayerRef.current?.clearAll();
+    allyCombatLayerRef.current?.clearAll();
+    combatFeedbackLayerRef.current?.clearAll();
+    tentacleSpineLayerRef.current?.clearAll();
+    tentacleSpineFxRef.current.clear();
+    pvpAbilityLayerRef.current?.clearAll();
+    environmentVfxLayerRef.current?.clearAll();
+  }, []);
 
   const clearTentacleSpineGroundTelegraph = useCallback((enemyId: string) => {
     const p = tentacleSpinePendingByEnemyRef.current.get(enemyId);
@@ -2697,6 +2803,9 @@ export function CoopGameScene({
     void import('@/components/environment/FaeRealmDecor').then((mod) => {
       mod.preloadFaeRealmDecor();
     });
+    void import('@/components/environment/FaeRealmSkyDome').then((mod) => {
+      mod.preloadFaeRealmSkyDome();
+    });
     void import('@/components/environment/ThronePerimeterPylonDecor').then((mod) => {
       mod.preloadThronePerimeterPylonDecor();
     });
@@ -2851,21 +2960,15 @@ export function CoopGameScene({
   useEffect(() => {
     if (!engineRef.current || !gameStarted || !engineReady) return;
     if (coopCombatArenaEnterSeq === 0) return;
-    const projectileSystem = engineRef.current.getWorld().getSystem(ProjectileSystem);
-    projectileSystem?.clearAllProjectiles();
-    projectileLayerRef.current?.clearAll();
-    groundTelegraphLayerRef.current?.clearAll();
-    bossTelegraphLayerRef.current?.clearAll();
-    bossMechanicLayerRef.current?.clearAll();
-    explosionBurstLayerRef.current?.clearAll();
-    lightningBurstLayerRef.current?.clearAll();
-    groundHazardLayerRef.current?.clearAll();
-    summonRitualLayerRef.current?.clearAll();
-    allyCombatLayerRef.current?.clearAll();
-    combatFeedbackLayerRef.current?.clearAll();
-    tentacleSpineLayerRef.current?.clearAll();
-    tentacleSpineFxRef.current.clear();
-  }, [coopCombatArenaEnterSeq, gameStarted, engineReady]);
+    flushCombatVfx();
+  }, [coopCombatArenaEnterSeq, gameStarted, engineReady, flushCombatVfx]);
+
+  useEffect(() => {
+    return onTabBecameVisible(() => {
+      if (!gameStarted || !engineReady) return;
+      flushCombatVfx();
+    });
+  }, [gameStarted, engineReady, flushCombatVfx]);
 
   /** `combat-arena-entered` (server teleports) or `coop-main-arena-intermission` (server state sync, no entry snap); align local ECS. */
   useLayoutEffect(() => {
@@ -2885,24 +2988,30 @@ export function CoopGameScene({
       pendingPortalSnapRef.current = true;
 
       const refPlayer = contextPlayersRef.current.get(socket.id);
-      const livePos = getPlayerLivePosition(
-        socket.id,
-        playersTransformsRef,
-        refPlayer?.position,
-      );
+      const hasLiveTransform = playersTransformsRef.current.has(socket.id);
+      const ent = engineRef.current.getWorld().getEntity(playerEntityRef.current);
+      const tr = ent?.getComponent(Transform);
+      const livePos = (refPlayer || hasLiveTransform)
+        ? getPlayerLivePosition(
+            socket.id,
+            playersTransformsRef,
+            refPlayer?.position,
+          )
+        : tr
+          ? { x: tr.position.x, y: tr.position.y, z: tr.position.z }
+          : { x: 0, y: PORTAL_FALL_GROUND_Y, z: 0 };
       const liveRot = getPlayerLiveRotation(
         socket.id,
         playersTransformsRef,
         refPlayer?.rotation,
       );
-      if (!refPlayer && !playersTransformsRef.current.has(socket.id)) return;
 
-      const ent = engineRef.current.getWorld().getEntity(playerEntityRef.current);
-      const tr = ent?.getComponent(Transform);
+      const tabHidden = typeof document !== 'undefined' && document.hidden;
       const c = clampToMainArenaXZ(livePos.x, livePos.z, coopArenaClampBounds);
+      const spawnY = tabHidden ? PORTAL_FALL_GROUND_Y : VOID_PORTAL_FALL_SPAWN_Y;
       const snappedPos = {
         x: c.x,
-        y: VOID_PORTAL_FALL_SPAWN_Y,
+        y: spawnY,
         z: c.z,
       };
       const snappedRot = liveRot ?? { x: 0, y: 0, z: 0 };
@@ -2912,8 +3021,16 @@ export function CoopGameScene({
       const movement = ent?.getComponent(Movement);
       if (movement) {
         movement.haltLocomotion();
-        movement.isGrounded = false;
-        voidPortalFallActiveRef.current = true;
+        if (tabHidden) {
+          movement.isGrounded = true;
+          movement.isPortalFalling = false;
+          movement.portalFallPhase = 'rise';
+          movement.portalFallProgress = 0;
+          voidPortalFallActiveRef.current = false;
+        } else {
+          movement.isGrounded = false;
+          voidPortalFallActiveRef.current = true;
+        }
       }
       realTimePlayerPositionRef.current.set(snappedPos.x, snappedPos.y, snappedPos.z);
       applyPlayerMove(playersTransformsRef, contextPlayersRef, {
@@ -2979,8 +3096,13 @@ export function CoopGameScene({
       controlSystemRef.current.setAllowAllInput(isChatOpen);
     }
     engineRef.current?.getInputManager().setGameInputBlocked(uiBlocksGame);
-    if (!coopTransitionOverlay) {
+    if (coopTransitionOverlay) {
+      if (!portalOverlayStartedAtRef.current) {
+        portalOverlayStartedAtRef.current = Date.now();
+      }
+    } else {
       portalOverlayLocomotionHaltedRef.current = false;
+      portalOverlayStartedAtRef.current = 0;
     }
   }, [isChatOpen, uiBlocksGameInput, coopTransitionOverlay]);
 
@@ -3438,31 +3560,69 @@ export function CoopGameScene({
   const nextLocalPlayerFrozenEffectId = useRef(0);
   const nextLocalPlayerStunnedEffectId = useRef(0);
 
-  const applyLocalPlayerStun = useCallback((durationMs: number, source: string) => {
+  const applyLocalPlayerStun = useCallback((
+    durationMs: number,
+    source: string,
+    options?: { broadcast?: boolean },
+  ) => {
     controlSystemRef.current?.stunPlayer(durationMs);
+    const engine = engineRef.current;
+    const playerEntityLocal = playerEntityRef.current !== null && engine
+      ? engine.getWorld().getEntity(playerEntityRef.current)
+      : null;
+    playerEntityLocal?.getComponent(Movement)?.haltLocomotion();
+
     pvpAbilityLayerRef.current?.addLocalPlayerStunned({
       id: nextLocalPlayerStunnedEffectId.current++,
       startTime: Date.now(),
       duration: durationMs,
     });
 
-    if (!socket?.id || !cameraSystemRef.current) return;
-
-    const cameraLockId = `${source}:${socket.id}`;
-    if (localStunCameraUnlockTimeoutRef.current) {
-      clearTimeout(localStunCameraUnlockTimeoutRef.current);
-    }
-    cameraSystemRef.current.setCameraRotationDisabled(true, cameraLockId);
-    localStunCameraUnlockTimeoutRef.current = setTimeout(() => {
-      if (
-        cameraSystemRef.current?.getCameraRotationDisabledBy() === cameraLockId &&
-        !controlSystemRef.current?.isPlayerDeadState()
-      ) {
-        cameraSystemRef.current.setCameraRotationDisabled(false, cameraLockId);
+    if (socket?.id && cameraSystemRef.current) {
+      const cameraLockId = `${source}:${socket.id}`;
+      if (localStunCameraUnlockTimeoutRef.current) {
+        clearTimeout(localStunCameraUnlockTimeoutRef.current);
       }
-      localStunCameraUnlockTimeoutRef.current = null;
-    }, durationMs);
-  }, [socket?.id]);
+      cameraSystemRef.current.setCameraRotationDisabled(true, cameraLockId);
+      localStunCameraUnlockTimeoutRef.current = setTimeout(() => {
+        if (
+          cameraSystemRef.current?.getCameraRotationDisabledBy() === cameraLockId &&
+          !controlSystemRef.current?.isPlayerDeadState()
+        ) {
+          cameraSystemRef.current.setCameraRotationDisabled(false, cameraLockId);
+        }
+        localStunCameraUnlockTimeoutRef.current = null;
+      }, durationMs);
+    }
+
+    if (options?.broadcast === false || !socket?.id || !broadcastPlayerDebuff) return;
+
+    const transform = playerEntityLocal?.getComponent(Transform);
+    const pos = transform?.position ?? realTimePlayerPositionRef.current;
+    broadcastPlayerDebuff(socket.id, 'stunned', durationMs, {
+      position: { x: pos.x, y: pos.y, z: pos.z },
+      source,
+    });
+
+    if (transform) {
+      const cameraSystem = (window as Window & {
+        cameraSystem?: { getOrbitHorizontalFacingAngle?: () => number };
+      }).cameraSystem;
+      const cameraAngle =
+        typeof cameraSystem?.getOrbitHorizontalFacingAngle === 'function'
+          ? cameraSystem.getOrbitHorizontalFacingAngle()
+          : 0;
+      const movement = playerEntityLocal?.getComponent(Movement);
+      updatePlayerPosition(
+        transform.position,
+        { x: 0, y: cameraAngle, z: 0 },
+        movement
+          ? buildPlayerMovementDirectionPayload(movement, { isStunned: true })
+          : ZERO_PLAYER_MOVEMENT_DIRECTION,
+        { force: true },
+      );
+    }
+  }, [socket?.id, broadcastPlayerDebuff, updatePlayerPosition]);
 
   // Track active debuff indicators to prevent visual overcrowding
   // Key format: "playerId:debuffType" -> debuff effect id
@@ -3609,7 +3769,7 @@ export function CoopGameScene({
       // Apply the debuff to the local player if this is targeting us
       if (isLocalPlayer) {
         if (debuffType === 'stunned') {
-          applyLocalPlayerStun(extendedDuration, 'server-stun');
+          applyLocalPlayerStun(extendedDuration, 'server-stun', { broadcast: false });
         } else if (playerEntity) {
           const playerMovement = playerEntity.getComponent(Movement);
           if (playerMovement) {
@@ -3617,7 +3777,6 @@ export function CoopGameScene({
               playerMovement.freeze(extendedDuration);
             } else if (debuffType === 'entangled') {
               playerMovement.entangle(extendedDuration);
-              addGlobalEntangledPlayer(playerId, position.clone(), extendedDuration);
             } else if (debuffType === 'slowed') {
               playerMovement.slow(extendedDuration, 0.5); // 50% speed reduction
             } else if (debuffType === 'corrupted') {
@@ -3628,6 +3787,34 @@ export function CoopGameScene({
         if (isJudgmentCorruption) {
           window.audioSystem?.setJudgmentCorruptionPlaying?.(true);
           scheduleJudgmentCorruptionStop(extendedDuration);
+        }
+      }
+
+      if (debuffType === 'entangled') {
+        addGlobalEntangledPlayer(playerId, position.clone(), extendedDuration);
+      }
+      if (debuffType === 'frozen' || (debuffType === 'stunned' && !isLocalPlayer)) {
+        let posRef = isLocalPlayer
+          ? realTimePlayerPositionRef
+          : enemyPlayerPositionRefs.current.get(playerId);
+        if (!isLocalPlayer && !posRef) {
+          posRef = { current: position.clone() };
+          enemyPlayerPositionRefs.current.set(playerId, posRef);
+        }
+        if (debuffType === 'frozen') {
+          pvpAbilityLayerRef.current?.addLocalPlayerFrozen({
+            id: nextLocalPlayerFrozenEffectId.current++,
+            startTime: Date.now(),
+            duration: extendedDuration,
+            positionRef: isLocalPlayer ? undefined : posRef,
+          });
+        } else {
+          pvpAbilityLayerRef.current?.addLocalPlayerStunned({
+            id: nextLocalPlayerStunnedEffectId.current++,
+            startTime: Date.now(),
+            duration: extendedDuration,
+            positionRef: posRef,
+          });
         }
       }
       
@@ -3658,7 +3845,7 @@ export function CoopGameScene({
     // Apply the debuff to the local player if this is targeting us
     if (isLocalPlayer) {
       if (debuffType === 'stunned') {
-        applyLocalPlayerStun(duration, 'server-stun');
+        applyLocalPlayerStun(duration, 'server-stun', { broadcast: false });
       } else if (playerEntity) {
         const playerMovement = playerEntity.getComponent(Movement);
         if (playerMovement) {
@@ -3666,13 +3853,40 @@ export function CoopGameScene({
             playerMovement.freeze(duration);
           } else if (debuffType === 'entangled') {
             playerMovement.entangle(duration);
-            addGlobalEntangledPlayer(playerId, position.clone(), duration);
           } else if (debuffType === 'slowed') {
             playerMovement.slow(duration, 0.5); // 50% speed reduction
           } else if (debuffType === 'corrupted') {
             playerMovement.applyCorrupted(duration); // Apply corrupted debuff with gradual recovery
           }
         }
+      }
+    }
+
+    if (debuffType === 'entangled') {
+      addGlobalEntangledPlayer(playerId, position.clone(), duration);
+    }
+    if (debuffType === 'frozen' || (debuffType === 'stunned' && !isLocalPlayer)) {
+      let posRef = isLocalPlayer
+        ? realTimePlayerPositionRef
+        : enemyPlayerPositionRefs.current.get(playerId);
+      if (!isLocalPlayer && !posRef) {
+        posRef = { current: position.clone() };
+        enemyPlayerPositionRefs.current.set(playerId, posRef);
+      }
+      if (debuffType === 'frozen') {
+        pvpAbilityLayerRef.current?.addLocalPlayerFrozen({
+          id: nextLocalPlayerFrozenEffectId.current++,
+          startTime: Date.now(),
+          duration,
+          positionRef: isLocalPlayer ? undefined : posRef,
+        });
+      } else {
+        pvpAbilityLayerRef.current?.addLocalPlayerStunned({
+          id: nextLocalPlayerStunnedEffectId.current++,
+          startTime: Date.now(),
+          duration,
+          positionRef: posRef,
+        });
       }
     }
     
@@ -5923,6 +6137,16 @@ export function CoopGameScene({
   useEffect(() => {
     if (!socket) return;
 
+    const cosmeticOffs: Array<() => void> = [];
+    const onCosmetic = (event: string, handler: (...args: any[]) => void) => {
+      const gated = (...args: any[]) => {
+        if (shouldDropRemoteVfx()) return;
+        handler(...args);
+      };
+      socket.on(event, gated);
+      cosmeticOffs.push(() => socket.off(event, gated));
+    };
+
     const getLocalPlayerEntity = () => {
       const id = playerEntityRef.current;
       if (id == null || !engineRef.current) return null;
@@ -6112,7 +6336,7 @@ export function CoopGameScene({
         }
         
         // Handle regular projectile attacks - create projectiles that can hit the local player
-        const projectileTypes = ['regular_arrow', 'charged_arrow', 'entropic_bolt', 'crossentropy_bolt', 'perfect_shot', 'barrage_projectile', 'fan_of_knives_projectile', 'burst_arrow', 'scorpion_shard', 'poison_dart'];
+        const projectileTypes = ['regular_arrow', 'charged_arrow', 'entropic_bolt', 'crossentropy_bolt', 'perfect_shot', 'barrage_projectile', 'fan_of_knives_projectile', 'wind_shear_projectile', 'burst_arrow', 'scorpion_shard', 'poison_dart'];
         if (projectileTypes.includes(data.attackType)) {
           // Skip creating projectiles for the local player's own attacks to prevent duplicates
           const localSocketId = socket?.id;
@@ -6372,6 +6596,33 @@ export function CoopGameScene({
                   if (fcfg.infestedFlourishFanKnives === true) {
                     fanRen.mesh.userData.infestedFlourishFanKnives = true;
                   }
+                }
+                break;
+              }
+              case 'wind_shear_projectile': {
+                const wcfg = data.animationData?.projectileConfig || {};
+                const windEntity = projectileSystem.createProjectile(
+                  engineRef.current.getWorld(),
+                  position,
+                  direction,
+                  attackerEntityId,
+                  {
+                    speed: typeof wcfg.speed === 'number' ? wcfg.speed : WIND_SHEAR_PROJECTILE_SPEED,
+                    damage: typeof wcfg.damage === 'number' ? wcfg.damage : 0,
+                    lifetime: typeof wcfg.lifetime === 'number' ? wcfg.lifetime : WIND_SHEAR_PROJECTILE_LIFETIME_SEC,
+                    maxDistance:
+                      typeof wcfg.maxDistance === 'number' ? wcfg.maxDistance : WIND_SHEAR_MAX_DISTANCE_UNITS,
+                    piercing: false,
+                    opacity: typeof wcfg.opacity === 'number' ? wcfg.opacity : 1,
+                    sourcePlayerId: data.playerId,
+                    projectileType: 'wind_shear',
+                  },
+                );
+                const windRen = windEntity.getComponent(Renderer);
+                if (windRen?.mesh) {
+                  windRen.mesh.userData.isWindShearProjectile = true;
+                  windRen.mesh.userData.windShearRoll =
+                    typeof wcfg.windShearRoll === 'number' ? wcfg.windShearRoll : 0;
                 }
                 break;
               }
@@ -8622,6 +8873,10 @@ export function CoopGameScene({
               startTime: Date.now(),
               duration: freezeDuration,
             });
+            const freezePos = playerEntity.getComponent(Transform)?.position ?? realTimePlayerPositionRef.current;
+            broadcastPlayerDebuff(socket.id, 'frozen', freezeDuration, {
+              position: { x: freezePos.x, y: freezePos.y, z: freezePos.z },
+            });
           }
         }
       }
@@ -8714,6 +8969,10 @@ export function CoopGameScene({
               id: nextLocalPlayerFrozenEffectId.current++,
               startTime: Date.now(),
               duration: freezeDuration,
+            });
+            const freezePos = playerEntity.getComponent(Transform)?.position ?? realTimePlayerPositionRef.current;
+            broadcastPlayerDebuff(socket.id, 'frozen', freezeDuration, {
+              position: { x: freezePos.x, y: freezePos.y, z: freezePos.z },
             });
           }
         }
@@ -9818,17 +10077,6 @@ export function CoopGameScene({
     };
 
     const handlePlayerEffect = (data: any) => {
-
-      if (data.effect?.type === 'venom') {
-        const { targetPlayerId, position, duration } = data.effect;
-
-        // Create venom effect on the target player (could be local player or other player)
-        if (targetPlayerId && position) {
-          const venomPosition = new Vector3(position.x, position.y, position.z);
-          createPvpVenomEffect(targetPlayerId, venomPosition);
-        }
-      }
-
       if (data.effect?.type === 'mist') {
         const { effectType, position, duration } = data.effect;
 
@@ -9850,6 +10098,66 @@ export function CoopGameScene({
             groundHazardLayerRef.current?.removeMistEffect(effectId);
           }, duration || 1000);
         }
+      }
+
+      if (data.effect?.type === 'frost_shatter') {
+        const { position } = data.effect;
+        if (position) {
+          const shatterPosition = new Vector3(position.x, position.y, position.z);
+          spawnFrostShatterSpike(shatterPosition);
+          (window as any).audioSystem?.playSabresShatterSound?.(shatterPosition, 0.6);
+        }
+      }
+
+      if (data.effect?.type === 'impact_fx' && Array.isArray(data.effect.impacts)) {
+        const events: ImpactEffectEvent[] = [];
+        for (const raw of data.effect.impacts) {
+          if (!raw || !RELAYED_PLAYER_IMPACT_TYPES.has(raw.type)) continue;
+          let enemyEntityId: string | undefined;
+          if (raw.type === 'psionic-blade-slice') {
+            const serverEnemyId = typeof raw.enemyServerId === 'string' ? raw.enemyServerId : undefined;
+            if (!serverEnemyId) continue;
+            const localId = serverEnemyEntities.current.get(serverEnemyId);
+            if (localId == null) continue;
+            enemyEntityId = String(localId);
+          }
+          events.push({
+            id: `${data.playerId}_${raw.id ?? `${raw.type}_${Date.now()}`}`,
+            type: raw.type,
+            position: new Vector3(raw.position?.x ?? 0, raw.position?.y ?? 0, raw.position?.z ?? 0),
+            direction: new Vector3(raw.direction?.x ?? 0, raw.direction?.y ?? 0, raw.direction?.z ?? 0),
+            timestamp: typeof raw.timestamp === 'number' ? raw.timestamp : Date.now(),
+            ...(raw.colorVariant ? { colorVariant: raw.colorVariant } : {}),
+            ...(raw.weaponAspect ? { weaponAspect: raw.weaponAspect } : {}),
+            ...(raw.bladeSide === 'left' || raw.bladeSide === 'right' ? { bladeSide: raw.bladeSide } : {}),
+            ...(enemyEntityId ? { enemyEntityId } : {}),
+          });
+        }
+        if (events.length > 0) {
+          combatFeedbackLayerRef.current?.addImpacts(events);
+          combatFeedbackLayerRef.current?.mountImpactsNow();
+        }
+      }
+
+      if (data.effect?.type === 'arctic_sting_blizzard' && data.effect.position) {
+        spawnArcticGroundBlizzardAtFromReact(new Vector3(
+          data.effect.position.x,
+          data.effect.position.y,
+          data.effect.position.z,
+        ));
+      }
+
+      if (data.effect?.type === 'flurry_healing' && data.effect.position) {
+        triggerFlurryHealingEffect(new Vector3(
+          data.effect.position.x,
+          data.effect.position.y,
+          data.effect.position.z,
+        ));
+      }
+
+      if (data.effect?.type === 'whirlwind_radial_wave') {
+        const duration = typeof data.effect.duration === 'number' ? data.effect.duration : 800;
+        createPvpWhirlwindRadialWaveEffect(data.playerId, duration);
       }
 
     };
@@ -11570,8 +11878,8 @@ export function CoopGameScene({
       }, arrivalDelay);
     };
 
-    socket.on('player-attacked', handlePlayerAttack);
-    socket.on('player-used-ability', handlePlayerAbility);
+    onCosmetic('player-attacked', handlePlayerAttack);
+    onCosmetic('player-used-ability', handlePlayerAbility);
     socket.on('player-damaged', handlePlayerDamaged);
     socket.on('player-healing', handlePlayerHealing);
     socket.on('enemy-healed', handleEnemyHealed);
@@ -11587,31 +11895,31 @@ export function CoopGameScene({
     socket.on('item-picked-up', handleItemPickedUpForVfx);
     socket.on('item-expired', handleItemExpired);
     socket.on('player-animation-state', handlePlayerAnimationState);
-    socket.on('player-effect', handlePlayerEffect);
+    onCosmetic('player-effect', handlePlayerEffect);
     socket.on('player-debuff', handlePlayerDebuff);
     socket.on('player-stealth', handlePlayerStealth);
-    socket.on('player-tornado-effect', handlePlayerTornadoEffect);
-    socket.on('player-death-effect', handlePlayerDeathEffect);
+    onCosmetic('player-tornado-effect', handlePlayerTornadoEffect);
+    onCosmetic('player-death-effect', handlePlayerDeathEffect);
     socket.on('player-respawned', handlePlayerRespawned);
     socket.on('player-shield-changed', handlePlayerShieldChanged);
     socket.on('player-knockback', handlePlayerKnockback);
-    socket.on('boss-attack', handleBossAttack);
+    onCosmetic('boss-attack', handleBossAttack);
     socket.on('boss-defeated', handleBossDefeated);
-    socket.on('boss-meteor-cast', handleBossMeteorCast);
-    socket.on('crossentropy-meteor-cast', handleCrossentropyMeteorCast);
-    socket.on('duality-blizzard-cast', handleDualityBlizzardCast);
+    onCosmetic('boss-meteor-cast', handleBossMeteorCast);
+    onCosmetic('crossentropy-meteor-cast', handleCrossentropyMeteorCast);
+    onCosmetic('duality-blizzard-cast', handleDualityBlizzardCast);
     socket.on('spell-thief-dash-restore', handleSpellThiefDashRestore);
-    socket.on('cloudkill-cast', handleCloudkillCast);
-    socket.on('boss-leap-start', handleBossLeapStart);
-    socket.on('boss-leap-land', handleBossLeapLand);
-    socket.on('ghoul-leap-start', handleGhoulLeapStart);
-    socket.on('ghoul-leap-land', handleGhoulLeapLand);
-    socket.on('templar-leap-start', handleTemplarLeapStart);
-    socket.on('templar-leap-land', handleTemplarLeapLand);
-    socket.on('tiger-pounce-start', handleTigerPounceStart);
-    socket.on('tiger-pounce-land', handleTigerPounceLand);
-    socket.on('titan-stomp-shockwave', handleTitanStompShockwave);
-    socket.on('titan-cannon-windup', handleTitanCannonWindup);
+    onCosmetic('cloudkill-cast', handleCloudkillCast);
+    onCosmetic('boss-leap-start', handleBossLeapStart);
+    onCosmetic('boss-leap-land', handleBossLeapLand);
+    onCosmetic('ghoul-leap-start', handleGhoulLeapStart);
+    onCosmetic('ghoul-leap-land', handleGhoulLeapLand);
+    onCosmetic('templar-leap-start', handleTemplarLeapStart);
+    onCosmetic('templar-leap-land', handleTemplarLeapLand);
+    onCosmetic('tiger-pounce-start', handleTigerPounceStart);
+    onCosmetic('tiger-pounce-land', handleTigerPounceLand);
+    onCosmetic('titan-stomp-shockwave', handleTitanStompShockwave);
+    onCosmetic('titan-cannon-windup', handleTitanCannonWindup);
 
     const handleIncinerationBeam = (data: {
       playerId: string;
@@ -11631,7 +11939,7 @@ export function CoopGameScene({
       });
     };
 
-    socket.on('incineration-beam', handleIncinerationBeam);
+    onCosmetic('incineration-beam', handleIncinerationBeam);
     socket.on('boss-throw-spear', handleBossThrowSpear);
     socket.on('boss-tectonic-spike-telegraph', handleBossTectonicSpikeTelegraph);
     socket.on('boss-tectonic-spike-appear', handleBossTectonicSpikeAppear);
@@ -12785,8 +13093,7 @@ export function CoopGameScene({
       tentacleSpineLastSlamAtRef.current.clear();
       greaterHealImpactTimers.current.forEach(clearTimeout);
       greaterHealImpactTimers.current = [];
-      socket.off('player-attacked', handlePlayerAttack);
-      socket.off('player-used-ability', handlePlayerAbility);
+      for (const off of cosmeticOffs) off();
       socket.off('player-damaged', handlePlayerDamaged);
       socket.off('player-healing', handlePlayerHealing);
       socket.off('enemy-healed', handleEnemyHealed);
@@ -12802,33 +13109,14 @@ export function CoopGameScene({
       socket.off('item-picked-up', handleItemPickedUpForVfx);
       socket.off('item-expired', handleItemExpired);
       socket.off('player-animation-state', handlePlayerAnimationState);
-      socket.off('player-effect', handlePlayerEffect);
       socket.off('player-debuff', handlePlayerDebuff);
       socket.off('player-stealth', handlePlayerStealth);
-      socket.off('player-tornado-effect', handlePlayerTornadoEffect);
-      socket.off('player-death-effect', handlePlayerDeathEffect);
       socket.off('player-respawned', handlePlayerRespawned);
       socket.off('player-shield-changed', handlePlayerShieldChanged);
       socket.off('player-knockback', handlePlayerKnockback);
-      socket.off('boss-attack', handleBossAttack);
       socket.off('boss-attack-telegraph', handleBossAttackTelegraph);
       socket.off('boss-defeated', handleBossDefeated);
-      socket.off('boss-meteor-cast', handleBossMeteorCast);
-      socket.off('crossentropy-meteor-cast', handleCrossentropyMeteorCast);
-      socket.off('duality-blizzard-cast', handleDualityBlizzardCast);
       socket.off('spell-thief-dash-restore', handleSpellThiefDashRestore);
-      socket.off('cloudkill-cast', handleCloudkillCast);
-      socket.off('boss-leap-start', handleBossLeapStart);
-      socket.off('boss-leap-land', handleBossLeapLand);
-      socket.off('ghoul-leap-start', handleGhoulLeapStart);
-      socket.off('ghoul-leap-land', handleGhoulLeapLand);
-      socket.off('templar-leap-start', handleTemplarLeapStart);
-      socket.off('templar-leap-land', handleTemplarLeapLand);
-      socket.off('tiger-pounce-start', handleTigerPounceStart);
-      socket.off('tiger-pounce-land', handleTigerPounceLand);
-      socket.off('titan-stomp-shockwave', handleTitanStompShockwave);
-      socket.off('titan-cannon-windup', handleTitanCannonWindup);
-      socket.off('incineration-beam', handleIncinerationBeam);
       socket.off('boss-throw-spear', handleBossThrowSpear);
       socket.off('boss-tectonic-spike-telegraph', handleBossTectonicSpikeTelegraph);
       socket.off('boss-tectonic-spike-appear', handleBossTectonicSpikeAppear);
@@ -13011,6 +13299,7 @@ export function CoopGameScene({
     createRoomBoomDashVfx,
     triggerAppliedLocalPlayerDamageFeedback,
     applyLocalPlayerStun,
+    broadcastPlayerDebuff,
     onLocalPlayerRevived,
     coopServerEnemyLiving,
     onGoldUpdate,
@@ -13377,6 +13666,8 @@ export function CoopGameScene({
     entitiesToRemove.forEach(playerId => {
       serverPlayerEntities.current.delete(playerId);
       enemyPlayerPositionRefs.current.delete(playerId);
+      enemyPlayerSmoothedPositionRefs.current.delete(playerId);
+      enemyPlayerSmoothedRotationRefs.current.delete(playerId);
       remotePlayerPosScratchRef.current.delete(playerId);
     });
 
@@ -13533,7 +13824,11 @@ export function CoopGameScene({
     updatePlayerPosition(
       transform.position,
       rotation,
-      movement ? buildPlayerMovementDirectionPayload(movement) : undefined,
+      movement
+        ? buildPlayerMovementDirectionPayload(movement, {
+            isStunned: controlSystemRef.current?.isLocalPlayerStunned() ?? false,
+          })
+        : undefined,
     );
   }, [
     gameStarted,
@@ -13542,6 +13837,43 @@ export function CoopGameScene({
     coopTransitionOverlayRef,
     pendingPortalSnapRef,
   ]);
+
+  const restorePortalFallInput = useCallback(() => {
+    const inputBlocked =
+      isChatOpenRef.current ||
+      uiBlocksGameInputRef.current ||
+      coopTransitionOverlayRef.current;
+    controlSystemRef.current?.setInputDisabled(inputBlocked);
+    engineRef.current?.getInputManager().setGameInputBlocked(inputBlocked);
+  }, [coopTransitionOverlayRef]);
+
+  const exitPortalFall = useCallback((opts?: { snapToGround?: boolean }) => {
+    voidPortalFallActiveRef.current = false;
+    pendingPortalSnapRef.current = false;
+    const engine = engineRef.current;
+    if (playerEntityRef.current === null || !engine) {
+      restorePortalFallInput();
+      return;
+    }
+    const entity = engine.getWorld().getEntity(playerEntityRef.current);
+    const movement = entity?.getComponent(Movement);
+    const transform = entity?.getComponent(Transform);
+    if (movement) {
+      movement.isPortalFalling = false;
+      movement.portalFallPhase = 'rise';
+      movement.portalFallProgress = 0;
+      movement.isGrounded = true;
+    }
+    if (opts?.snapToGround !== false && transform && transform.position.y > PORTAL_FALL_GROUND_Y) {
+      transform.setPosition(transform.position.x, PORTAL_FALL_GROUND_Y, transform.position.z);
+      realTimePlayerPositionRef.current.set(
+        transform.position.x,
+        PORTAL_FALL_GROUND_Y,
+        transform.position.z,
+      );
+    }
+    restorePortalFallInput();
+  }, [pendingPortalSnapRef, restorePortalFallInput]);
 
   const syncPortalFallAnimationProgress = useCallback(() => {
     const engine = engineRef.current;
@@ -13567,7 +13899,13 @@ export function CoopGameScene({
       if (voidPortalFallActiveRef.current) {
         movement.portalFallPhase = 'fall';
         portalFallStartYRef.current = transform.position.y;
+        portalFallFallStartMsRef.current = Date.now();
         movement.portalFallProgress = 0;
+        return;
+      }
+
+      if (elapsedMs >= PORTAL_FALL_RISE_TIMEOUT_MS) {
+        exitPortalFall({ snapToGround: true });
       }
       return;
     }
@@ -13584,18 +13922,15 @@ export function CoopGameScene({
     }
 
     if (!voidPortalFallActiveRef.current) {
-      movement.isPortalFalling = false;
-      movement.portalFallPhase = 'rise';
-      movement.portalFallProgress = 0;
-
-      const inputBlocked =
-        isChatOpenRef.current ||
-        uiBlocksGameInputRef.current ||
-        coopTransitionOverlayRef.current;
-      controlSystemRef.current?.setInputDisabled(inputBlocked);
-      engine.getInputManager().setGameInputBlocked(inputBlocked);
+      exitPortalFall({ snapToGround: false });
+      return;
     }
-  }, [gameStarted, coopTransitionOverlayRef]);
+
+    const fallElapsedMs = Date.now() - portalFallFallStartMsRef.current;
+    if (fallElapsedMs >= PORTAL_FALL_LANDING_TIMEOUT_MS) {
+      exitPortalFall({ snapToGround: true });
+    }
+  }, [gameStarted, exitPortalFall]);
 
   useEffect(() => {
     syncCoopEnemyEcsTransformsRef.current = syncCoopEnemyEcsTransforms;
@@ -13613,15 +13948,92 @@ export function CoopGameScene({
   useEffect(() => {
     const PORTAL_OVERLAY_MAX_MS = 25_000;
     const interval = window.setInterval(() => {
-      if (!coopTransitionOverlayRef.current) return;
-      const enteredAt = coopCombatArenaEnterAtRef.current;
-      if (!enteredAt || Date.now() - enteredAt < PORTAL_OVERLAY_MAX_MS) return;
+      const overlayActive = coopTransitionOverlayRef.current;
+      const startedAt = portalOverlayStartedAtRef.current || portalFallRiseStartMsRef.current;
+      if (!overlayActive) {
+        const engine = engineRef.current;
+        const entity = playerEntityRef.current !== null && engine
+          ? engine.getWorld().getEntity(playerEntityRef.current)
+          : null;
+        const stuckJump = entity?.getComponent(Movement)?.isPortalFalling;
+        if (stuckJump && startedAt && Date.now() - startedAt >= PORTAL_OVERLAY_MAX_MS) {
+          exitPortalFall({ snapToGround: true });
+        }
+        return;
+      }
+      if (!startedAt || Date.now() - startedAt < PORTAL_OVERLAY_MAX_MS) return;
       // eslint-disable-next-line no-console
       console.warn('[Coop] Portal transition overlay stuck — forcing clear');
+      exitPortalFall({ snapToGround: true });
       endCoopPortalTransition();
     }, 5000);
     return () => window.clearInterval(interval);
-  }, [coopTransitionOverlayRef, coopCombatArenaEnterAtRef, endCoopPortalTransition]);
+  }, [coopTransitionOverlayRef, coopCombatArenaEnterAtRef, endCoopPortalTransition, exitPortalFall]);
+
+  useEffect(() => {
+    const getLocalFacingRotation = () => {
+      const cameraSystem = (window as Window & {
+        cameraSystem?: { getOrbitHorizontalFacingAngle?: () => number };
+      }).cameraSystem;
+      const cameraAngle =
+        typeof cameraSystem?.getOrbitHorizontalFacingAngle === 'function'
+          ? cameraSystem.getOrbitHorizontalFacingAngle()
+          : 0;
+      return { x: 0, y: cameraAngle, z: 0 };
+    };
+
+    const haltAndBroadcastIdle = () => {
+      const engine = engineRef.current;
+      if (playerEntityRef.current === null || !engine) return;
+      const entity = engine.getWorld().getEntity(playerEntityRef.current);
+      const movement = entity?.getComponent(Movement);
+      movement?.haltLocomotion();
+
+      if (coopTransitionOverlayRef.current || pendingPortalSnapRef.current) return;
+      const socketId = socket?.id;
+      if (!socketId) return;
+      const localDeathState = playerDeathStatesRef.current.get(socketId);
+      if (localDeathState?.isDead) return;
+      const transform = entity?.getComponent(Transform);
+      if (!transform) return;
+      updatePlayerPosition(
+        transform.position,
+        getLocalFacingRotation(),
+        ZERO_PLAYER_MOVEMENT_DIRECTION,
+        { force: true },
+      );
+    };
+
+    const completePortalFallIfInFlight = () => {
+      const engine = engineRef.current;
+      const entity = playerEntityRef.current !== null && engine
+        ? engine.getWorld().getEntity(playerEntityRef.current)
+        : null;
+      const falling = voidPortalFallActiveRef.current || Boolean(entity?.getComponent(Movement)?.isPortalFalling);
+      if (falling) {
+        exitPortalFall({ snapToGround: true });
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (!document.hidden) return;
+      completePortalFallIfInFlight();
+      haltAndBroadcastIdle();
+    };
+    const onWindowBlur = () => {
+      if (document.hidden) {
+        completePortalFallIfInFlight();
+      }
+      haltAndBroadcastIdle();
+    };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('blur', onWindowBlur);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('blur', onWindowBlur);
+    };
+  }, [socket?.id, updatePlayerPosition, exitPortalFall, coopTransitionOverlayRef, pendingPortalSnapRef]);
 
   // Initialize the PVP game engine
 
@@ -13782,6 +14194,8 @@ export function CoopGameScene({
     enemyPlayerPositionRefs.current.forEach((_, key) => {
       if (!playerIds.includes(key)) {
         enemyPlayerPositionRefs.current.delete(key);
+        enemyPlayerSmoothedPositionRefs.current.delete(key);
+        enemyPlayerSmoothedRotationRefs.current.delete(key);
         remotePlayerPosScratchRef.current.delete(key);
       }
     });
@@ -13859,6 +14273,7 @@ export function CoopGameScene({
         haltMovement.portalFallPhase = 'rise';
         haltMovement.portalFallProgress = 0;
         portalFallRiseStartMsRef.current = Date.now();
+        portalOverlayStartedAtRef.current = portalFallRiseStartMsRef.current;
       }
       controlSystemRef.current?.setInputDisabled(true);
       engineRef.current.getInputManager().setGameInputBlocked(true);
@@ -13879,6 +14294,35 @@ export function CoopGameScene({
           enemyPlayerPositionRefs.current.set(playerId, positionRef);
         } else {
           positionRef.current.set(live.position.x, live.position.y, live.position.z);
+        }
+
+        let smoothedPos = enemyPlayerSmoothedPositionRefs.current.get(playerId);
+        if (!smoothedPos) {
+          smoothedPos = { current: new Vector3(live.position.x, live.position.y, live.position.z) };
+          enemyPlayerSmoothedPositionRefs.current.set(playerId, smoothedPos);
+        }
+        let smoothedRot = enemyPlayerSmoothedRotationRefs.current.get(playerId);
+        if (!smoothedRot) {
+          smoothedRot = { current: { x: live.rotation.x, y: live.rotation.y, z: live.rotation.z } };
+          enemyPlayerSmoothedRotationRefs.current.set(playerId, smoothedRot);
+        }
+
+        const snapDx = live.position.x - smoothedPos.current.x;
+        const snapDy = live.position.y - smoothedPos.current.y;
+        const snapDz = live.position.z - smoothedPos.current.z;
+        const shouldSnapVisual =
+          snapDx * snapDx + snapDy * snapDy + snapDz * snapDz > REMOTE_PEER_VISUAL_TELEPORT_SNAP_SQ;
+        if (shouldSnapVisual) {
+          smoothedPos.current.set(live.position.x, live.position.y, live.position.z);
+          smoothedRot.current.x = live.rotation.x;
+          smoothedRot.current.y = live.rotation.y;
+          smoothedRot.current.z = live.rotation.z;
+        } else {
+          const alpha = 1 - Math.exp(-REMOTE_PEER_VISUAL_SMOOTH_RATE * deltaTime);
+          smoothedPos.current.lerp(positionRef.current, alpha);
+          smoothedRot.current.x = live.rotation.x;
+          smoothedRot.current.y = lerpShortestAngle(smoothedRot.current.y, live.rotation.y, alpha);
+          smoothedRot.current.z = live.rotation.z;
         }
 
         const entityId = serverPlayerEntities.current.get(playerId);
@@ -13925,11 +14369,18 @@ export function CoopGameScene({
 
         const movement = entity.getComponent(Movement);
         if (movement && serverPlayer) {
-          syncRemoteMovementForHumanoidAnimations(movement, {
-            ...serverPlayer,
-            position: live.position,
-            movementDirection: live.movementDirection ?? serverPlayer.movementDirection,
-          });
+          const lastUpdatedAt = live.lastUpdatedAt;
+          const stale = lastUpdatedAt != null
+            && (performance.now() - lastUpdatedAt) > REMOTE_PLAYER_MOVE_STALE_MS;
+          syncRemoteMovementForHumanoidAnimations(
+            movement,
+            {
+              ...serverPlayer,
+              position: live.position,
+              movementDirection: live.movementDirection ?? serverPlayer.movementDirection,
+            },
+            { stale },
+          );
         }
       });
     }
@@ -15039,6 +15490,13 @@ export function CoopGameScene({
             isCorruptedAuraActive: controlSystemRef.current?.isCorruptedAuraActive() || false,
             isCrossentropyCharging: controlSystemRef.current?.isCrossentropyChargingActive() || false,
             isSummonTotemCharging: controlSystemRef.current?.isSummonTotemChargingActive() || false,
+            crusaderBladeThemeActive: controlSystemRef.current?.isRunebladeCrusaderBuffActive() || false,
+            titansGripBladeThemeActive: shouldApplyTitansGripTalent(talentLoadoutRef.current),
+            psionicBladesBladeThemeActive: shouldApplyPsionicBladesTalent(talentLoadoutRef.current),
+            deflectShieldActive: ws.deflectShieldActive,
+            deflectShieldPaletteVariant: ws.deflectShieldPaletteVariant,
+            deflectShieldDurationSec: ws.deflectShieldDurationSec,
+            isRunebladeBlizzardActive: controlSystemRef.current?.isRunebladeBlizzardTalentActive() || false,
           };
 
           // Only include swordComboStep for weapons that actually use it (Sword and Runeblade)
@@ -15077,6 +15535,33 @@ export function CoopGameScene({
             if (newImpacts.length > 0) {
               combatFeedbackLayerRef.current?.addImpacts(newImpacts);
               addedImpacts = true;
+              const relayed = newImpacts
+                .filter((impact) => RELAYED_PLAYER_IMPACT_TYPES.has(impact.type))
+                .map((impact) => {
+                  const payload: Record<string, unknown> = {
+                    id: impact.id,
+                    type: impact.type,
+                    position: { x: impact.position.x, y: impact.position.y, z: impact.position.z },
+                    direction: { x: impact.direction.x, y: impact.direction.y, z: impact.direction.z },
+                    timestamp: impact.timestamp,
+                    ...(impact.colorVariant ? { colorVariant: impact.colorVariant } : {}),
+                    ...(impact.weaponAspect ? { weaponAspect: impact.weaponAspect } : {}),
+                    ...(impact.bladeSide ? { bladeSide: impact.bladeSide } : {}),
+                  };
+                  if (impact.type === 'psionic-blade-slice' && impact.enemyEntityId) {
+                    const serverEnemyId = mapLocalEntityIdToServerEnemyId(
+                      impact.enemyEntityId,
+                      serverEnemyEntities.current,
+                    );
+                    if (!serverEnemyId) return null;
+                    payload.enemyServerId = serverEnemyId;
+                  }
+                  return payload;
+                })
+                .filter((entry): entry is Record<string, unknown> => entry != null);
+              if (relayed.length > 0) {
+                broadcastPlayerEffect?.({ type: 'impact_fx', impacts: relayed });
+              }
               combatSystem.clearConsumedImpacts();
             }
           }
@@ -15968,6 +16453,13 @@ export function CoopGameScene({
       }
     });
 
+    controlSystem.setArcticGroundBlizzardCallback((position: Vector3) => {
+      broadcastPlayerEffect?.({
+        type: 'arctic_sting_blizzard',
+        position: { x: position.x, y: position.y, z: position.z },
+      });
+    });
+
     // Set up callback for creating local debuff effects
     controlSystem.setCreateLocalDebuffCallback((playerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', position: Vector3, duration: number) => {
       createPvpDebuffEffect(playerId, debuffType, position, duration);
@@ -16142,6 +16634,10 @@ export function CoopGameScene({
     // Set up Flurry healing effect callback
     controlSystem.setFlurryHealingEffectCallback((position: Vector3) => {
       triggerFlurryHealingEffect(position);
+      broadcastPlayerEffect?.({
+        type: 'flurry_healing',
+        position: { x: position.x, y: position.y, z: position.z },
+      });
     });
 
     // Set up damage numbers callback for healing effects
@@ -16242,6 +16738,10 @@ export function CoopGameScene({
     controlSystem.setWhirlwindRadialWaveCallback((playerId: string, duration: number) => {
       // Create local radial wave effect
       createPvpWhirlwindRadialWaveEffect(playerId, duration);
+      broadcastPlayerEffect?.({
+        type: 'whirlwind_radial_wave',
+        duration,
+      });
     });
 
     // Set up DeathGrasp callback
@@ -16391,6 +16891,16 @@ export function CoopGameScene({
       controlSystemRef.current.setSkillPointData(skillPointData);
     }
   }, [skillPointData]);
+
+  useEffect(() => {
+    setFrostShatterSpikeBroadcaster((position) => {
+      broadcastPlayerEffect?.({
+        type: 'frost_shatter',
+        position: { x: position.x, y: position.y, z: position.z },
+      });
+    });
+    return () => setFrostShatterSpikeBroadcaster(null);
+  }, [broadcastPlayerEffect]);
 
   // Sync ability loadout with control system when it changes or when the engine becomes ready
   useEffect(() => {
@@ -16914,8 +17424,10 @@ export function CoopGameScene({
 
         // Get the real-time position ref for this enemy player
         const enemyPositionRef = enemyPlayerPositionRefs.current.get(player.id);
+        const enemySmoothedPositionRef = enemyPlayerSmoothedPositionRefs.current.get(player.id);
+        const enemySmoothedRotationRef = enemyPlayerSmoothedRotationRefs.current.get(player.id);
 
-        let playerPos = enemyPositionRef?.current;
+        let playerPos = enemySmoothedPositionRef?.current ?? enemyPositionRef?.current;
         if (!playerPos) {
           // Fallback until the useFrame sync creates a live ref for this peer.
           let scratch = remotePlayerPosScratchRef.current.get(player.id);
@@ -16946,9 +17458,11 @@ export function CoopGameScene({
             <CharacterRenderer
               entityId={remotePeerEntityId}
               position={playerPos}
+              positionRef={enemySmoothedPositionRef}
               world={engineRef.current?.getWorld() || new World()}
               isLocalPlayer={false}
               rotation={player.rotation}
+              rotationRef={enemySmoothedRotationRef}
               currentWeapon={livePlayer.weapon}
               weaponSubclass={
                 livePlayer.weapon === WeaponType.NONE ? undefined : livePlayer.subclass
@@ -16967,7 +17481,7 @@ export function CoopGameScene({
               <DragonRenderer
                 entityId={remotePeerEntityId}
                 position={playerPos}
-                realTimePositionRef={enemyPositionRef}
+                realTimePositionRef={enemySmoothedPositionRef}
                 world={engineRef.current?.getWorld() || new World()}
                 currentWeapon={livePlayer.weapon}
                 currentSubclass={
@@ -17012,8 +17526,20 @@ export function CoopGameScene({
                 isDeathGrasping={playerState.isDeathGrasping || false}
                 isWraithStriking={playerState.isWraithStriking || false}
                 isCorruptedAuraActive={playerState.isCorruptedAuraActive || false}
+                crusaderBladeThemeActive={playerState.crusaderBladeThemeActive || false}
+                titansGripBladeThemeActive={playerState.titansGripBladeThemeActive || false}
+                psionicBladesBladeThemeActive={playerState.psionicBladesBladeThemeActive || false}
+                deflectShieldActive={playerState.deflectShieldActive ?? playerState.isDeflecting}
+                deflectShieldPaletteVariant={playerState.deflectShieldPaletteVariant ?? 'default'}
+                deflectShieldDurationSec={playerState.deflectShieldDurationSec ?? 3}
+                getRunebladeBlizzardTalentActive={
+                  playerState.isRunebladeBlizzardActive
+                    ? () => true
+                    : undefined
+                }
                 isDead={isPlayerDead}
                 rotation={player.rotation}
+                rotationRef={enemySmoothedRotationRef}
                 isLocalPlayer={false}
                 runebladeStoredCharge={playerState.runebladeStoredCharge ?? false}
                 onBowRelease={() => {}}

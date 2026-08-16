@@ -1,3 +1,4 @@
+import type { MutableRefObject } from 'react';
 import { Vector3 } from '@/utils/three-exports';
 import type { LeapShockwaveVariant } from '@/components/enemies/BossLeapShockwave';
 import type { Boss3NovaBurst } from '@/components/enemies/Boss3NovaDiscs';
@@ -477,6 +478,8 @@ export interface LocalPlayerStatusEffectState {
   id: number;
   startTime: number;
   duration: number;
+  /** When set, follow this ref instead of the local player position (remote coop VFX). */
+  positionRef?: MutableRefObject<Vector3>;
 }
 
 export interface RoomBoomMendingEffectState {

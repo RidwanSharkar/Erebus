@@ -121,14 +121,12 @@ const ChargedOrbitals = React.memo(({ parentRef, dashCharges, weaponType, weapon
       orbital.rotation.x = time * 2 + index;
       orbital.rotation.y = time * 1.5 + index * 0.7;
     });
-    
-    // Position the entire orbital group relative to parent
-    orbitalsRef.current.position.copy(parentRef.current.position);
-    orbitalsRef.current.position.y += yOffset;
   });
 
+  // DragonUnit group local pos is a constant (0, 0.2, 0). Copying that into this
+  // child's local position every frame mixed spaces and depended on useFrame order.
   return (
-    <group ref={orbitalsRef}>
+    <group ref={orbitalsRef} position={[0, 0.2 + yOffset, 0]}>
       {dashCharges.map((charge, index) => {
         const isAvailable = charge.isAvailable;
         const rechargeProgress = isAvailable || rechargeDurationSec <= 0

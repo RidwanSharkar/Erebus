@@ -605,6 +605,9 @@ export class ControlSystem extends System {
   // Callback for broadcasting Sabre Reaper Mist effects in PVP
   private onBroadcastSabreMistCallback?: (position: Vector3, effectType: 'stealth' | 'skyfall') => void;
 
+  // Callback for broadcasting concentrated ground-blizzard VFX (Arctic Sting / Shards / Glacial Storm).
+  private onArcticGroundBlizzardCallback?: (position: Vector3) => void;
+
   // Callback for creating local debuff effects in PVP
   private onCreateLocalDebuffCallback?: (playerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', position: Vector3, duration: number) => void;
 
@@ -846,7 +849,7 @@ export class ControlSystem extends System {
   private backstabDamageApplied = false;
   
   // Sunder ability state (Sabres)
-  private static readonly SUNDER_DAMAGE_TIMING_PERCENT = 0.3;
+  private static readonly SUNDER_DAMAGE_TIMING_PERCENT = 0.2;
   private static readonly SABRES_FLOURISH_SOUND_LEAD_SEC = 0.35;
   private lastSunderTime = 0;
   private sunderCooldownBase = 1.75; // Flourish / Sunder base cooldown
@@ -3821,6 +3824,7 @@ export class ControlSystem extends System {
 
   private spawnArcticGroundBlizzardAt(worldPosition: Vector3): void {
     spawnArcticGroundBlizzardAtFromReact(worldPosition);
+    this.onArcticGroundBlizzardCallback?.(worldPosition);
   }
 
   /** Arctic Shards room boon — 15% proc (roll in ControlSystem; CombatSystem gates talent + owner). */
@@ -4321,6 +4325,10 @@ export class ControlSystem extends System {
 
   public setBroadcastSabreMistCallback(callback: (position: Vector3, effectType: 'stealth' | 'skyfall') => void): void {
     this.onBroadcastSabreMistCallback = callback;
+  }
+
+  public setArcticGroundBlizzardCallback(callback: (position: Vector3) => void): void {
+    this.onArcticGroundBlizzardCallback = callback;
   }
 
   public setCreateLocalDebuffCallback(callback: (playerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', position: Vector3, duration: number) => void): void {
@@ -6605,6 +6613,7 @@ export class ControlSystem extends System {
       level: 1,
       opacity: 1,
       sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown',
+      windShearRoll: roll,
     };
 
     const projectileEntity = this.projectileSystem.createProjectile(
@@ -7080,7 +7089,7 @@ export class ControlSystem extends System {
     const currentTime = Date.now() / 1000;
     const elapsedTime = currentTime - this.sunderStartTime;
     
-    // Apply damage at the right moment in the animation (30% through, like backstab)
+    // Apply damage at the right moment in the animation (20% through, first whirlwind sweep)
     const damageWindow = this.sunderDuration * ControlSystem.SUNDER_DAMAGE_TIMING_PERCENT;
     const soundWindow = Math.max(0, damageWindow - ControlSystem.SABRES_FLOURISH_SOUND_LEAD_SEC);
     const damageWindowEnd = damageWindow + 0.1; // Small window to ensure damage is applied

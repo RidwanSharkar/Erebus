@@ -1,4 +1,4 @@
-import React, { useRef, useMemo, useEffect } from 'react';
+import React, { useRef, useMemo, useEffect, Suspense } from 'react';
 import { AdditiveBlending, ConeGeometry, CylinderGeometry } from '@/utils/three-exports';
 import { Mesh, Vector3, Color, Group, MeshStandardMaterial } from 'three';
 import { useFrame } from '@react-three/fiber';
@@ -16,6 +16,7 @@ import {
 } from '@/utils/weaponAspects';
 import ScytheHandleTrail from '@/components/weapons/ScytheHandleTrail';
 import BlitzFireTrail from './BlitzFireTrail';
+import BlitzArcaneTrail, { ARCANE_TRAIL_MODEL_PATH } from './BlitzArcaneTrail';
 
 const ROCKET_SCALE = 2.1;
 const ROCKET_BODY_GEO = new CylinderGeometry(0.08, 0.14, 0.55, 8);
@@ -29,6 +30,7 @@ const BLITZ_BOLT_SPIN_RAD_PER_SEC = 12;
 const BLITZ_BOLT_TRAIL_ANCHOR_OFFSET = 0.22;
 
 useGLTF.preload(BLITZ_BOLT_MODEL_PATH);
+useGLTF.preload(ARCANE_TRAIL_MODEL_PATH);
 
 interface CrossentropyBlitzRocketProps {
   id: number;
@@ -209,6 +211,15 @@ export default function CrossentropyBlitzRocket({
         aspectKey={aspectKey}
         reaperPurple={reaperEcsDriven}
       />
+      <Suspense fallback={null}>
+        <BlitzArcaneTrail
+          worldPositionRef={currentPosition}
+          directionRef={directionRef}
+          visualTheme={visualTheme}
+          aspectKey={aspectKey}
+          reaperPurple={reaperEcsDriven}
+        />
+      </Suspense>
       <group ref={outerGroupRef}>
         <group ref={rocketGroupRef} scale={[ROCKET_SCALE, ROCKET_SCALE, ROCKET_SCALE]}>
         <mesh geometry={ROCKET_BODY_GEO} position={[0, -0.08, 0]}>

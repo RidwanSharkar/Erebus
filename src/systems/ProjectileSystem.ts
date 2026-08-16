@@ -167,6 +167,8 @@ export class ProjectileSystem extends System {
     this.projectilesToDestroy.length = 0;
   }
 
+  private static readonly STALE_PENDING_IMPACT_MS = 1000;
+
   private getCollisionSystem(): CollisionSystem | null {
     return (this.world.getSystem(CollisionSystem as any) as CollisionSystem | null) ?? null;
   }
@@ -305,7 +307,13 @@ export class ProjectileSystem extends System {
     const due: typeof pending = [];
     const remaining: typeof pending = [];
     for (const meteor of pending) {
-      (meteor.impactAtMs <= nowMs ? due : remaining).push(meteor);
+      if (meteor.impactAtMs > nowMs) {
+        remaining.push(meteor);
+        continue;
+      }
+      if (nowMs - meteor.impactAtMs <= ProjectileSystem.STALE_PENDING_IMPACT_MS) {
+        due.push(meteor);
+      }
     }
     this.pendingCrossentropyMeteorImpacts = remaining;
 
@@ -437,7 +445,13 @@ export class ProjectileSystem extends System {
     const due: typeof pending = [];
     const remaining: typeof pending = [];
     for (const impact of pending) {
-      (impact.impactAtMs <= nowMs ? due : remaining).push(impact);
+      if (impact.impactAtMs > nowMs) {
+        remaining.push(impact);
+        continue;
+      }
+      if (nowMs - impact.impactAtMs <= ProjectileSystem.STALE_PENDING_IMPACT_MS) {
+        due.push(impact);
+      }
     }
     this.pendingCloudkillImpacts = remaining;
 

@@ -76,7 +76,10 @@ import { WeaponType } from '@/components/dragon/weapons';
 import { addGlobalEntangledEnemy } from '@/components/weapons/EntangleManager';
 import { addGlobalVenomousEnemy } from '@/components/projectiles/VenomEffectManager';
 import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
-import { spawnFrostShatterSpike } from '@/components/weapons/frostShatterSpikeSpawnBridge';
+import {
+  spawnFrostShatterSpike,
+  broadcastFrostShatterSpike,
+} from '@/components/weapons/frostShatterSpikeSpawnBridge';
 import {
   COLD_GRACE_SHATTER_DAMAGE,
   EXODIA_HELM,
@@ -454,6 +457,7 @@ export class CombatSystem extends System {
         if (targetTransform) {
           const pos = targetTransform.getWorldPosition();
           spawnFrostShatterSpike(pos);
+          broadcastFrostShatterSpike(pos);
           const audio = cs.getAudioSystem?.();
           audio?.playSabresShatterSound?.(pos);
         }

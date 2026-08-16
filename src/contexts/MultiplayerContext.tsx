@@ -86,6 +86,11 @@ export interface PlayerMovementDirection {
   isIncinerationArmed?: boolean;
   isLocustChanneling?: boolean;
   isSprinting?: boolean;
+  isStunned?: boolean;
+  isFrozen?: boolean;
+  isEntangled?: boolean;
+  isSlowed?: boolean;
+  isCorrupted?: boolean;
 }
 
 export interface Player {
@@ -464,6 +469,13 @@ type PlayerAnimationState = {
   isSundering?: boolean;
   isStealthing?: boolean;
   isInvisible?: boolean;
+  crusaderBladeThemeActive?: boolean;
+  titansGripBladeThemeActive?: boolean;
+  psionicBladesBladeThemeActive?: boolean;
+  deflectShieldActive?: boolean;
+  deflectShieldPaletteVariant?: import('@/utils/aegisShieldPalette').AegisPaletteVariant;
+  deflectShieldDurationSec?: number;
+  isRunebladeBlizzardActive?: boolean;
 };
 
 interface MultiplayerContextType {
@@ -720,7 +732,12 @@ interface MultiplayerContextType {
   finishPreBossMerchant: () => void;
   
   // Player actions
-  updatePlayerPosition: (position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number }, movementDirection?: PlayerMovementDirection) => void;
+  updatePlayerPosition: (
+    position: { x: number; y: number; z: number },
+    rotation: { x: number; y: number; z: number },
+    movementDirection?: PlayerMovementDirection,
+    options?: { force?: boolean },
+  ) => void;
   updatePlayerWeapon: (weapon: WeaponType, subclass?: WeaponSubclass, aspect?: WeaponAspect) => void;
   updatePlayerArchetype: (archetype: Archetype) => void;
   updatePlayerWeaponAspect: (aspect: WeaponAspect) => void;
@@ -2027,7 +2044,19 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
   // Throttling refs to prevent infinite re-render loops
   const lastPlayerMoveUpdate = useRef<{ [playerId: string]: number }>({});
-  const lastLocalPositionEmitRef = useRef({ time: 0, x: 0, y: 0, z: 0, ry: 0 });
+  const lastLocalPositionEmitRef = useRef({
+    time: 0,
+    x: 0,
+    y: 0,
+    z: 0,
+    ry: 0,
+    inputStrength: 0,
+    immobilized: false,
+    isPrimeMateriaActive: false,
+    isIncinerationCharging: false,
+    isIncinerationArmed: false,
+    isLocustChanneling: false,
+  });
   const lastPlayerHealthUpdate = useRef<{ [playerId: string]: number }>({});
   const lastEnemyMoveUpdate = useRef<{ [enemyId: string]: number }>({});
   const enemyDamageListenersRef = useRef<Set<ConfirmedEnemyDamageListener>>(new Set());
@@ -4301,10 +4330,21 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       y: position.y,
       z: position.z,
       ry: rotation.y,
+      inputStrength: 0,
+      immobilized: false,
+      isPrimeMateriaActive: false,
+      isIncinerationCharging: false,
+      isIncinerationArmed: false,
+      isLocustChanneling: false,
     };
   }, []);
 
-  const updatePlayerPosition = useCallback((position: { x: number; y: number; z: number }, rotation: { x: number; y: number; z: number }, movementDirection?: PlayerMovementDirection) => {
+  const updatePlayerPosition = useCallback((
+    position: { x: number; y: number; z: number },
+    rotation: { x: number; y: number; z: number },
+    movementDirection?: PlayerMovementDirection,
+    options?: { force?: boolean },
+  ) => {
     if (!socket || !currentRoomId) return;
 
     const now = performance.now();
@@ -4315,8 +4355,23 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     const distSq = dx * dx + dy * dy + dz * dz;
     const rotDelta = Math.abs(rotation.y - last.ry);
     const movedEnough = distSq > 0.0025 || rotDelta > 0.05;
+    const nextInputStrength = movementDirection?.inputStrength ?? 0;
+    const nextImmobilized = Boolean(
+      movementDirection?.isStunned || movementDirection?.isFrozen || movementDirection?.isEntangled,
+    );
+    const nextPrimeMateria = Boolean(movementDirection?.isPrimeMateriaActive);
+    const nextIncinerationCharging = Boolean(movementDirection?.isIncinerationCharging);
+    const nextIncinerationArmed = Boolean(movementDirection?.isIncinerationArmed);
+    const nextLocustChanneling = Boolean(movementDirection?.isLocustChanneling);
+    const locomotionChanged =
+      Math.abs(nextInputStrength - last.inputStrength) > 0.05 ||
+      nextImmobilized !== last.immobilized ||
+      nextPrimeMateria !== last.isPrimeMateriaActive ||
+      nextIncinerationCharging !== last.isIncinerationCharging ||
+      nextIncinerationArmed !== last.isIncinerationArmed ||
+      nextLocustChanneling !== last.isLocustChanneling;
     const elapsed = now - last.time;
-    if (elapsed < 33 && !movedEnough) return;
+    if (!options?.force && elapsed < 33 && !movedEnough && !locomotionChanged) return;
 
     lastLocalPositionEmitRef.current = {
       time: now,
@@ -4324,6 +4379,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       y: position.y,
       z: position.z,
       ry: rotation.y,
+      inputStrength: nextInputStrength,
+      immobilized: nextImmobilized,
+      isPrimeMateriaActive: nextPrimeMateria,
+      isIncinerationCharging: nextIncinerationCharging,
+      isIncinerationArmed: nextIncinerationArmed,
+      isLocustChanneling: nextLocustChanneling,
     };
 
     socket.emit('player-update', {

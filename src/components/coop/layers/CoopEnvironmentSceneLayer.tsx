@@ -253,7 +253,6 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           key={`coop-fae-env-${coopCombatArenaEnterSeq}`}
           combatActive={combatArenaActive && enemiesCount > 0}
           hiddenIndices={mushroomHiddenIndices}
-          skyPresetIndex={skyPresetIndex}
         />
       ) : isCastleRoom ? (
         <CastleRoom

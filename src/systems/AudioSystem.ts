@@ -4,6 +4,7 @@ import { System } from '@/ecs/System';
 import { Vector3 } from 'three';
 import { WeaponType } from '@/components/dragon/weapons';
 import { EREBUS_STRIKE_INDICATOR_EVENT } from '@/utils/strikeIndicatorEvent';
+import { isTabHidden } from '@/utils/tabVisibility';
 
 export interface SoundConfig {
   volume?: number;
@@ -518,6 +519,8 @@ export class AudioSystem extends System {
 
   // Play weapon sound effect (local only)
   public playWeaponSound(soundId: string, position: Vector3, config?: SoundConfig) {
+    if (isTabHidden()) return null;
+
     const sound = this.soundCache.get(soundId);
     if (!sound) {
       const asset = this.sfxById.get(soundId);
@@ -633,8 +636,8 @@ export class AudioSystem extends System {
     return this.playWeaponSound('sabres_skyfall', position, { volume: 1.0 });
   }
 
-  public playSabresShatterSound(position: Vector3) {
-    return this.playWeaponSound('sabres_shatter', position, { volume: 0.95 });
+  public playSabresShatterSound(position: Vector3, volumeScale = 1) {
+    return this.playWeaponSound('sabres_shatter', position, { volume: 1.05 * volumeScale });
   }
 
   /** Sabres Q/E impact — layered connect tick (separate from ability wind-up / backstab cue). */

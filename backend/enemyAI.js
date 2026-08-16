@@ -2737,6 +2737,11 @@ class EnemyAI {
       return this.isEnemyFacingTarget(liveEnemy, targetPos, halfArc);
     };
 
+    if (profile.aoeSwing) {
+      this._resolveMeleeAoeSwingHit(liveEnemy, profile, ctx, { inArcAndRange, whiff });
+      return;
+    }
+
     if (ctx.targetKind === 'player') {
       const currentPlayers = this.room?.getPlayers();
       if (!currentPlayers) return;
@@ -2792,6 +2797,61 @@ class EnemyAI {
     }
   }
 
+  /**
+   * Giant / Destiny melee: damage every opposing combatant inside the
+   * attack-range indicator arc (coop players, summoned zombies, vengeful
+   * spirits, allied knight, spirit-animal companions). Hostile camp mobs
+   * and tentacle-spine traps are only cleaved when that was the swing's
+   * telegraph target kind (Nemesis duels / trap swings).
+   */
+  _resolveMeleeAoeSwingHit(liveEnemy, profile, ctx, { inArcAndRange, whiff }) {
+    const damage = liveEnemy.damage || profile.baseDamage;
+    const telegraphId = ctx.targetId;
+    let telegraphHit = false;
+
+    const players = this.room?.getPlayers?.() || [];
+    for (const player of players) {
+      if (!player || player.health <= 0) continue;
+      if (this._isTargetAirborne(player)) continue;
+      if (!inArcAndRange(player.position)) continue;
+      this._applyMeleePlayerHit(liveEnemy, player, profile, {
+        ...ctx,
+        skipAlliedSplash: true,
+      });
+      if (player.id === telegraphId) telegraphHit = true;
+    }
+
+    const enemies = this.room?.getEnemies?.() || [];
+    for (const other of enemies) {
+      if (!other || other.id === liveEnemy.id) continue;
+      if (other.isDying || (other.health != null && other.health <= 0)) continue;
+      if (!inArcAndRange(other.position)) continue;
+
+      if (this.isFriendlyCombatUnit(other)) {
+        this.damagePlayerZombieFromMob(liveEnemy, other, damage, profile.damageType);
+        if (other.id === telegraphId) telegraphHit = true;
+        continue;
+      }
+
+      if (ctx.targetKind === 'hostile' && this.isValidHostileEnemyAggroTarget(liveEnemy, other)) {
+        this.damageHostileMobFromMob(liveEnemy, other, damage, profile.damageType);
+        if (other.id === telegraphId) telegraphHit = true;
+        continue;
+      }
+
+      if (ctx.targetKind === 'trap' && other.type === 'tentacle-spine') {
+        this.room.damageEnemy(other.id, damage, null, null, {
+          sourceEnemyId: liveEnemy.id,
+          damageType: profile.damageType,
+        });
+        if (other.id === telegraphId) telegraphHit = true;
+      }
+    }
+
+    if (profile.emitBeastHitSfx) this.maybeEmitBeastMeleeHitSfx(liveEnemy);
+    if (!telegraphHit) whiff();
+  }
+
   _applyMeleePlayerHit(enemy, player, profile, ctx = {}) {
     if (this.coopTransitionBlocksOutgoingPlayerHits()) return;
     const damage = enemy.damage || profile.baseDamage;
@@ -2802,12 +2862,14 @@ class EnemyAI {
       meleeIndex: ctx.meleeIndex,
     });
     if (profile.emitBeastHitSfx) this.maybeEmitBeastMeleeHitSfx(enemy);
-    this.room?.tryDamageAlliedKnightInXZDisk(
-      { x: enemy.position.x, z: enemy.position.z },
-      profile.alliedDiskRadius ?? profile.range,
-      damage,
-      { sourceEnemyId: enemy.id, damageType: profile.damageType },
-    );
+    if (!ctx.skipAlliedSplash) {
+      this.room?.tryDamageAlliedKnightInXZDisk(
+        { x: enemy.position.x, z: enemy.position.z },
+        profile.alliedDiskRadius ?? profile.range,
+        damage,
+        { sourceEnemyId: enemy.id, damageType: profile.damageType },
+      );
+    }
   }
 
   /**

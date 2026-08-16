@@ -79,6 +79,7 @@ export default function PortalBlinkTransition({
   }, []);
 
   const startBlinkOut = useCallback(() => {
+    if (phaseRef.current === 'blinkOut' || phaseRef.current === 'idle') return;
     phaseRef.current = 'blinkOut';
     setPhase('blinkOut');
     blinkOutTimerRef.current = setTimeout(() => {
@@ -110,12 +111,22 @@ export default function PortalBlinkTransition({
     const remainingHold = Math.max(0, MIN_HOLD_AFTER_ENTER_MS - elapsed);
 
     const tryBlinkOut = () => {
+      if (phaseRef.current !== 'hold') return;
+      if (typeof document !== 'undefined' && document.hidden) {
+        startBlinkOut();
+        return;
+      }
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (phaseRef.current !== 'hold') return;
           startBlinkOut();
         });
       });
+      // Background tabs freeze rAF; still complete the blink so the AFK client can ack the server gate.
+      holdCheckTimerRef.current = setTimeout(() => {
+        if (phaseRef.current !== 'hold') return;
+        startBlinkOut();
+      }, 80);
     };
 
     if (remainingHold > 0) {
@@ -152,13 +163,20 @@ export default function PortalBlinkTransition({
   useEffect(() => {
     if (phase !== 'hold') return;
     scheduleHoldCheck();
+    const onVisibilityChange = () => {
+      if (document.hidden && phaseRef.current === 'hold') {
+        startBlinkOut();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       if (holdCheckTimerRef.current) {
         clearTimeout(holdCheckTimerRef.current);
         holdCheckTimerRef.current = null;
       }
     };
-  }, [phase, sceneReadySeq, scheduleHoldCheck]);
+  }, [phase, sceneReadySeq, scheduleHoldCheck, startBlinkOut]);
 
   useEffect(() => {
     if (!active && mounted) {

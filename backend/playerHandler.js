@@ -31,6 +31,11 @@ function handlePlayerEvents(socket, gameRooms) {
     isIncinerationArmed: false,
     isLocustChanneling: false,
     isSprinting: false,
+    isStunned: false,
+    isFrozen: false,
+    isEntangled: false,
+    isSlowed: false,
+    isCorrupted: false,
   };
 
   const PLAYER_MOVE_REBROADCAST_MIN_MS = 50; // 20 Hz
@@ -114,6 +119,64 @@ function handlePlayerEvents(socket, gameRooms) {
     return dx > PLAYER_MOVE_POSITION_EPSILON || dy > PLAYER_MOVE_POSITION_EPSILON || dz > PLAYER_MOVE_POSITION_EPSILON;
   }
 
+  const MOVEMENT_DIRECTION_FLAGS = [
+    'isDashing',
+    'isSprinting',
+    'isAttackSlowed',
+    'isIcebeaming',
+    'isPrimeMateriaActive',
+    'isIncinerationCharging',
+    'isIncinerationArmed',
+    'isLocustChanneling',
+    'isGrounded',
+    'isStunned',
+    'isFrozen',
+    'isEntangled',
+    'isSlowed',
+    'isCorrupted',
+  ];
+
+  function cloneMovementDirection(md) {
+    if (!md) return null;
+    return {
+      x: md.x ?? 0,
+      y: md.y ?? 0,
+      z: md.z ?? 0,
+      inputStrength: md.inputStrength ?? 0,
+      isGrounded: !!md.isGrounded,
+      isDashing: !!md.isDashing,
+      dashDirection: md.dashDirection
+        ? { x: md.dashDirection.x ?? 0, y: md.dashDirection.y ?? 0, z: md.dashDirection.z ?? 0 }
+        : { x: 0, y: 0, z: 0 },
+      isAttackSlowed: !!md.isAttackSlowed,
+      isIcebeaming: !!md.isIcebeaming,
+      isPrimeMateriaActive: !!md.isPrimeMateriaActive,
+      isIncinerationCharging: !!md.isIncinerationCharging,
+      isIncinerationArmed: !!md.isIncinerationArmed,
+      isLocustChanneling: !!md.isLocustChanneling,
+      isSprinting: !!md.isSprinting,
+      isStunned: !!md.isStunned,
+      isFrozen: !!md.isFrozen,
+      isEntangled: !!md.isEntangled,
+      isSlowed: !!md.isSlowed,
+      isCorrupted: !!md.isCorrupted,
+    };
+  }
+
+  function movementDirectionChanged(a, b) {
+    if (!a && !b) return false;
+    if (!a || !b) return true;
+    if (Math.abs((a.inputStrength ?? 0) - (b.inputStrength ?? 0)) > 0.01) return true;
+    if (Math.abs((a.x ?? 0) - (b.x ?? 0)) > 0.01) return true;
+    if (Math.abs((a.y ?? 0) - (b.y ?? 0)) > 0.01) return true;
+    if (Math.abs((a.z ?? 0) - (b.z ?? 0)) > 0.01) return true;
+    for (let i = 0; i < MOVEMENT_DIRECTION_FLAGS.length; i++) {
+      const flag = MOVEMENT_DIRECTION_FLAGS[i];
+      if (Boolean(a[flag]) !== Boolean(b[flag])) return true;
+    }
+    return false;
+  }
+
   // Handle player position and rotation updates
   socket.on('player-update', (data) => {
     const { roomId, position, rotation, weapon, health, movementDirection, coopRoomEntryToken } = data;
@@ -167,16 +230,17 @@ function handlePlayerEvents(socket, gameRooms) {
     const now = Date.now();
     let state = playerMoveRebroadcastState.get(playerId);
     if (!state) {
-      state = { lastBroadcastAt: 0, lastPosition: null, lastRotation: null };
+      state = { lastBroadcastAt: 0, lastPosition: null, lastRotation: null, lastMovementDirection: null };
       playerMoveRebroadcastState.set(playerId, state);
     }
 
     const moveChanged =
       positionDeltaExceedsEpsilon(broadcastPosition, state.lastPosition) ||
       rotationDeltaExceedsEpsilon(rotation, state.lastRotation);
+    const locomotionChanged = movementDirectionChanged(movementDirection, state.lastMovementDirection);
     const intervalElapsed = now - state.lastBroadcastAt >= PLAYER_MOVE_REBROADCAST_MIN_MS;
 
-    if (hasNonMoveUpdate || (moveChanged && intervalElapsed && !coopPositionWriteBlocked)) {
+    if (hasNonMoveUpdate || ((moveChanged || locomotionChanged) && intervalElapsed && !coopPositionWriteBlocked)) {
       socket.to(roomId).emit('player-moved', {
         playerId,
         position: broadcastPosition,
@@ -201,6 +265,9 @@ function handlePlayerEvents(socket, gameRooms) {
           z: rotation.z,
         };
       }
+      state.lastMovementDirection = isDead
+        ? cloneMovementDirection(ZERO_MOVEMENT_DIRECTION)
+        : cloneMovementDirection(movementDirection);
     }
   });
 

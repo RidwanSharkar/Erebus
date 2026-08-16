@@ -51,10 +51,17 @@ export const BASE_SCENE_REL_PATHS = new Set([
   'treant/AncientofWar_idle.glb',
   'wolf/wolf_idle.glb',
   'wyvern/drake_idle.glb',
+  // Static environment skydomes (must keep meshes + textures)
+  'environ/SKY.glb',
+  'environ/sky2.glb',
+  'environ/sky3.glb',
+  'environ/sky4.glb',
+  // Baked static VFX (no skin / animation; used as instanced trail puffs)
+  'environ/arcaneEffectTrail.glb',
 ]);
 
 /** Directories under public/models that are static props — skip mesh-strip pipeline. */
-export const SKIP_OPTIMIZE_DIRS = new Set(['items', 'trinket']);
+export const SKIP_OPTIMIZE_DIRS = new Set(['items', 'trinket', 'environ']);
 
 /**
  * WoW-export folders (and top-level WoW prefixes) that use bone_* skeletons,

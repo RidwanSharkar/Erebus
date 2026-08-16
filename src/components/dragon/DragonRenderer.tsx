@@ -161,6 +161,8 @@ interface DragonRendererProps {
   onDeflectComplete?: () => void;
   onHeal?: (amount: number) => void; // Callback for healing effects like Viper Sting soul steal
   rotation?: { x: number; y: number; z: number }; // Add rotation prop for multiplayer
+  /** When set, live rotation is read from this ref each frame instead of the React prop. */
+  rotationRef?: React.RefObject<{ x: number; y: number; z: number }>;
   isLocalPlayer?: boolean; // Flag to distinguish local player from other players
   isStealthing?: boolean; // Whether the local player is currently in stealth mode
   isInvisible?: boolean; // Whether the local player is currently invisible (stealth active)
@@ -351,6 +353,7 @@ function DragonRenderer({
   onChargeSpinEnd,
   onDeflectComplete = () => {},
   rotation,
+  rotationRef,
   isLocalPlayer = false,
   isStealthing = false,
   isInvisible = false,
@@ -738,10 +741,12 @@ function DragonRenderer({
       // Sword/Runeblade cones use playerRotation — must match dragon mesh (camera horizontal yaw),
       // not stale move-only yaw (fixes LMB deadzone when orbiting camera without moving).
       currentRotationRef.current.set(0, angle, 0);
-    } else if (!isLocalPlayer && rotation) {
-      // Other players: use their actual rotation from server
-      groupRef.current.rotation.set(rotation.x, rotation.y, rotation.z);
-      currentRotationRef.current.set(rotation.x, rotation.y, rotation.z);
+    } else if (!isLocalPlayer) {
+      const liveRot = rotationRef?.current ?? rotation;
+      if (liveRot) {
+        groupRef.current.rotation.set(liveRot.x, liveRot.y, liveRot.z);
+        currentRotationRef.current.set(liveRot.x, liveRot.y, liveRot.z);
+      }
     }
 
     // Throttled enemy ECS query — every frame while swinging, otherwise every 100ms

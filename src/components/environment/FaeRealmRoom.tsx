@@ -1,53 +1,45 @@
 'use client';
 
-import React, { useMemo } from 'react';
-import { AdditiveBlending, Color } from '@/utils/three-exports';
+import React, { Suspense, useMemo } from 'react';
+import { Color } from '@/utils/three-exports';
 import { FAE_REALM_HEX_RADIUS, MAIN_ARENA_HEX_RADIUS } from '@/utils/mapConstants';
-import { FAE_REALM_PERIMETER_PYLON_LAYOUT } from '@/utils/thronePerimeterPylonLayout';
-import CustomSky from './CustomSky';
 import AtmosphericParticles from './AtmosphericParticles';
 import StylizedGrass from './StylizedGrass';
 import InstancedMushrooms from './InstancedMushrooms';
-import InstancedEmbers, { buildFaeRealmEmberCampOrigins } from './InstancedEmbers';
-import ThronePerimeterPylonDecor from './ThronePerimeterPylonDecor';
 import ThroneCenterSeal from './ThroneCenterSeal';
 import FaeRealmDecor from './FaeRealmDecor';
+import FaeRealmSkyDome from './FaeRealmSkyDome';
+import ArenaFallingSnow from './ArenaFallingSnow';
 
 const FAE_REALM_GRASS_COUNT = Math.round(
   80_000 * (FAE_REALM_HEX_RADIUS / MAIN_ARENA_HEX_RADIUS) ** 2,
 );
 
 /** Center seal disc — leaves a clear pad under the accent ring. */
-const FAE_REALM_CENTER_SEAL_RADIUS = 5.125;
-
-/** Accent ring scaled from HexCombatArena's 5.8–6.15 at r=18. */
-const RING_INNER = 5.8 * (FAE_REALM_HEX_RADIUS / MAIN_ARENA_HEX_RADIUS);
-const RING_OUTER = 6.15 * (FAE_REALM_HEX_RADIUS / MAIN_ARENA_HEX_RADIUS);
-
-const FAE_EMBER_CAMP_TYPES: string[] = ['pink', 'pink', 'pink'];
+const FAE_REALM_CENTER_SEAL_RADIUS = 6.75;
 
 interface FaeRealmRoomProps {
   combatActive?: boolean;
   hiddenIndices?: ReadonlySet<number>;
-  /** Server-authoritative random CustomSky preset index. */
-  skyPresetIndex?: number;
 }
 
 export default function FaeRealmRoom({
   combatActive = false,
   hiddenIndices,
-  skyPresetIndex,
 }: FaeRealmRoomProps) {
   const particleColor = useMemo(() => new Color('#9ad8ff'), []);
-  const faeEmberCampOrigins = useMemo(
-    () => buildFaeRealmEmberCampOrigins(FAE_REALM_HEX_RADIUS),
-    [],
-  );
 
   return (
     <group name="fae-realm-room">
-      <CustomSky skyPresetIndex={skyPresetIndex} skyPreset="faeRealm" animateClouds={!combatActive} />
+      <Suspense fallback={null}>
+        <FaeRealmSkyDome combatActive={combatActive} />
+      </Suspense>
       <hemisphereLight color="#ec4899" groundColor="#1a0a14" intensity={0.42} />
+      <ArenaFallingSnow
+        count={240}
+        halfX={FAE_REALM_HEX_RADIUS}
+        halfZ={FAE_REALM_HEX_RADIUS}
+      />
       <StylizedGrass
         fieldShape="hex"
         radius={FAE_REALM_HEX_RADIUS}
@@ -62,10 +54,6 @@ export default function FaeRealmRoom({
         hiddenIndices={hiddenIndices}
         hexRadius={FAE_REALM_HEX_RADIUS}
       />
-      { /* <ThronePerimeterPylonDecor
-        layout={FAE_REALM_PERIMETER_PYLON_LAYOUT}
-        groundY={0}
-      /> */ }
       <FaeRealmDecor />
 
       <ThroneCenterSeal
@@ -75,16 +63,6 @@ export default function FaeRealmRoom({
         rotateSpeed={0.05}
       />
 
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.03, 0]}>
-        <ringGeometry args={[RING_INNER, RING_OUTER, 6]} />
-        <meshBasicMaterial
-          color="#9ad8ff"
-          transparent
-          opacity={0.28}
-          depthWrite={false}
-          blending={AdditiveBlending}
-        />
-      </mesh>
       {!combatActive && (
         <AtmosphericParticles
           position={[0, 0, 0]}
