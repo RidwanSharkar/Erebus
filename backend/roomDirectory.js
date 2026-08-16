@@ -6,7 +6,7 @@ const INTERNAL_PORT = Number(process.env.PORT) || 8080;
 
 const MACHINE_IDS_TTL_MS = 10000;
 const GLOBAL_ROOMS_TTL_MS = 1500;
-const PEER_FETCH_MS = 800;
+const PEER_FETCH_MS = 2500;
 
 let machineIdsCache = { at: 0, ids: [] };
 let globalRoomsCache = { at: 0, key: '', rooms: null };

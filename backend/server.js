@@ -118,14 +118,16 @@ app.get('/health', (req, res) => {
 function summarizeLocalRooms() {
   const rooms = [];
   for (const [id, room] of gameRooms) {
-    if (room.getPlayerCount() === 0 && roomReclaimTimers.has(id)) continue;
+    const playerCount = room.getPlayerCount();
+    const reserved = playerCount === 0;
     rooms.push({
       roomId: id,
-      playerCount: room.getPlayerCount(),
+      playerCount,
       maxPlayers: MAX_PLAYERS_PER_ROOM,
       gameStarted: room.getGameStarted(),
       gameMode: room.gameMode || 'coop',
       inThronePrep: typeof room.isInCoopThronePrep === 'function' ? room.isInCoopThronePrep() : false,
+      reserved,
     });
   }
   return rooms;
@@ -171,6 +173,7 @@ io.on('connection', (socket) => {
   socket.on('join-room', (data) => {
     const { playerName = `Player${Math.floor(Math.random() * 1000)}`, weapon = 'scythe', subclass, gameMode = 'multiplayer', expectExisting = false } = data || {};
     const roomId = normalizeRoomId(data?.roomId);
+    const sessionId = sanitizeSessionId(data?.sessionId);
 
     const targetRoom = gameRooms.get(roomId);
     if (expectExisting && !targetRoom) {
@@ -179,19 +182,23 @@ io.on('connection', (socket) => {
     }
 
     const alreadyInTarget = !!(targetRoom && targetRoom.getPlayer(socket.id));
-    if (targetRoom && !alreadyInTarget && targetRoom.getPlayerCount() >= MAX_PLAYERS_PER_ROOM) {
+    const reclaiming = !!(targetRoom && sessionId && typeof targetRoom.peekReclaimable === 'function' && targetRoom.peekReclaimable(sessionId));
+    const occupancy = targetRoom && typeof targetRoom.getOccupancy === 'function'
+      ? targetRoom.getOccupancy()
+      : (targetRoom ? targetRoom.getPlayerCount() : 0);
+    if (targetRoom && !alreadyInTarget && !reclaiming && occupancy >= MAX_PLAYERS_PER_ROOM) {
       socket.emit('room-full');
       return;
     }
 
     if (alreadyInTarget) {
       socket.join(roomId);
-      emitRoomJoined(socket, targetRoom, roomId, gameMode, { created: false });
+      emitRoomJoined(socket, targetRoom, roomId, gameMode, { created: false, echo: true });
       return;
     }
 
     // Remove from any previous GameRoom (Socket.io leave alone leaves a ghost player).
-    detachPlayerFromRoom(socket.id, roomId);
+    detachPlayerFromRoom(socket.id, roomId, { stash: false });
     clearPlayerHandlerState(socket.id);
 
     // Leave any existing Socket.io rooms first
@@ -203,17 +210,25 @@ io.on('connection', (socket) => {
 
     const { room, created } = getOrCreateRoom(roomId, gameMode);
 
-    if (room.getPlayerCount() >= MAX_PLAYERS_PER_ROOM) {
+    const occupancyAfter = typeof room.getOccupancy === 'function' ? room.getOccupancy() : room.getPlayerCount();
+    const reclaimNow = !!(sessionId && typeof room.peekReclaimable === 'function' && room.peekReclaimable(sessionId));
+    if (!reclaimNow && occupancyAfter >= MAX_PLAYERS_PER_ROOM) {
       socket.emit('room-full');
       return;
     }
 
     socket.join(roomId);
-    room.addPlayer(socket.id, playerName, weapon, subclass, gameMode);
+    let reclaimed = false;
+    if (reclaimNow && typeof room.tryReclaimPlayer === 'function') {
+      reclaimed = !!room.tryReclaimPlayer(sessionId, socket.id);
+    }
+    if (!reclaimed) {
+      room.addPlayer(socket.id, playerName, weapon, subclass, gameMode, sessionId);
+    }
 
-    console.log(`Player ${socket.id} joined room ${roomId} as ${playerName} with weapon ${weapon}${created ? ' (created)' : ''}`);
+    console.log(`Player ${socket.id} joined room ${roomId} as ${playerName} with weapon ${weapon}${created ? ' (created)' : ''}${reclaimed ? ' (reclaimed)' : ''}`);
 
-    emitRoomJoined(socket, room, roomId, gameMode, { created });
+    emitRoomJoined(socket, room, roomId, gameMode, { created, reclaimed });
 
     socket.to(roomId).emit('player-joined', {
       playerId: socket.id,
@@ -225,10 +240,10 @@ io.on('connection', (socket) => {
   socket.on('list-rooms', async () => {
     try {
       const rooms = await roomDirectory.globalRooms(summarizeLocalRooms());
-      socket.emit('rooms-list', { rooms });
+      socket.emit('rooms-list', { rooms: rooms.filter((r) => !r.reserved) });
     } catch (err) {
       console.warn('list-rooms failed', err.message);
-      socket.emit('rooms-list', { rooms: summarizeLocalRooms().map((r) => ({ ...r, instance: FLY_MACHINE_ID })) });
+      socket.emit('rooms-list', { rooms: summarizeLocalRooms().filter((r) => !r.reserved).map((r) => ({ ...r, instance: FLY_MACHINE_ID })) });
     }
   });
 
@@ -300,6 +315,11 @@ io.on('connection', (socket) => {
     }
     
     // Start the game
+    if (room.gamePaused || (room.gameStartTime > 0 && !room.getGameStarted())) {
+      socket.emit('start-game-failed', { error: 'Game already started' });
+      return;
+    }
+
     const started = room.startGame(socket.id);
     
     if (started) {
@@ -507,7 +527,7 @@ io.on('connection', (socket) => {
   // Handle manual disconnect (when user intentionally leaves)
   socket.on('leave-room', () => {
     console.log(`Player manually left: ${socket.id}`);
-    cleanupPlayer(socket.id);
+    cleanupPlayer(socket.id, { stash: false });
   });
 
   // Handle disconnection
@@ -552,7 +572,15 @@ function getOrCreateRoom(roomId, gameMode) {
   return { room: gameRooms.get(roomId), created };
 }
 
+function sanitizeSessionId(raw) {
+  const normalized = String(raw ?? '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64);
+  return normalized.length >= 8 ? normalized : null;
+}
+
 function emitRoomJoined(socket, room, roomId, gameMode, extra = {}) {
+  const reclaimedPlayer = extra.reclaimed && typeof room.getPlayer === 'function'
+    ? room.getPlayer(socket.id)
+    : null;
   socket.emit('room-joined', {
     roomId,
     playerId: socket.id,
@@ -563,6 +591,11 @@ function emitRoomJoined(socket, room, roomId, gameMode, extra = {}) {
     gameMode: room.gameMode || gameMode,
     instance: FLY_MACHINE_ID,
     created: !!extra.created,
+    reclaimed: !!extra.reclaimed,
+    echo: !!extra.echo,
+    coopRoomEntryToken: typeof room.getCoopRoomEntryToken === 'function'
+      ? room.getCoopRoomEntryToken()
+      : 0,
     campTypes: room.getCampTypes(),
     combatArenaActive: room.gameMode !== 'coop' ? true : !!room.combatArenaActive,
     thronePortalOffer: room.getThronePortalOffer(),
@@ -579,16 +612,21 @@ function emitRoomJoined(socket, room, roomId, gameMode, extra = {}) {
     merchantInventory: typeof room.getMerchantInventory === 'function' ? room.getMerchantInventory() : [],
     mushroomState: typeof room.getMushroomState === 'function' ? room.getMushroomState() : null,
     goldDrops: typeof room.getGoldDrops === 'function' ? room.getGoldDrops() : [],
-    lateJoinCombatLoadout: (() => {
+    lateJoinCombatLoadout: extra.reclaimed ? null : (() => {
       const p = room.getPlayer(socket.id);
       if (!p?.lateJoinCombatLoadout) return null;
       p.lateJoinCombatLoadout = false;
       return { weapon: p.weapon, subclass: p.subclass };
     })(),
-    ...(typeof room._getDeepSanctumPayloadFields === 'function' ? room._getDeepSanctumPayloadFields() : {}),
-    ...(typeof room._getEdenPayloadFields === 'function' ? room._getEdenPayloadFields() : {}),
-    ...(typeof room._getCoopSkyPayloadFields === 'function' ? room._getCoopSkyPayloadFields() : {}),
-    ...(typeof room._getCoopGrassPayloadFields === 'function' ? room._getCoopGrassPayloadFields() : {}),
+    reclaimedPlayerState: extra.reclaimed && typeof room.serializeReclaimedPlayerState === 'function'
+      ? room.serializeReclaimedPlayerState(reclaimedPlayer)
+      : null,
+    ...(typeof room.getCoopSessionSnapshotFields === 'function' ? room.getCoopSessionSnapshotFields() : {
+      ...(typeof room._getDeepSanctumPayloadFields === 'function' ? room._getDeepSanctumPayloadFields() : {}),
+      ...(typeof room._getEdenPayloadFields === 'function' ? room._getEdenPayloadFields() : {}),
+      ...(typeof room._getCoopSkyPayloadFields === 'function' ? room._getCoopSkyPayloadFields() : {}),
+      ...(typeof room._getCoopGrassPayloadFields === 'function' ? room._getCoopGrassPayloadFields() : {}),
+    }),
   });
 
   if (typeof room.isInCoopThronePrep === 'function' && room.isInCoopThronePrep()) {
@@ -597,10 +635,13 @@ function emitRoomJoined(socket, room, roomId, gameMode, extra = {}) {
 }
 
 /** Remove a player from their GameRoom without dropping the socket. */
-function detachPlayerFromRoom(playerId, keepRoomId) {
+function detachPlayerFromRoom(playerId, keepRoomId, options = {}) {
+  const shouldStash = options.stash !== false && !keepRoomId;
   for (const [roomId, room] of gameRooms) {
     if (room.getPlayer(playerId)) {
-      room.removePlayer(playerId);
+      const player = room.getPlayer(playerId);
+      const stashSessionId = shouldStash ? (player?.sessionId || null) : null;
+      room.removePlayer(playerId, { stashSessionId });
 
       const socket = playerSockets.get(playerId);
       if (socket) {
@@ -621,9 +662,9 @@ function detachPlayerFromRoom(playerId, keepRoomId) {
 }
 
 // Player cleanup function
-function cleanupPlayer(playerId) {
+function cleanupPlayer(playerId, options = {}) {
   console.log(`Cleaning up player: ${playerId}`);
-  detachPlayerFromRoom(playerId);
+  detachPlayerFromRoom(playerId, undefined, { stash: options.stash !== false });
   playerSockets.delete(playerId);
   playerHeartbeats.delete(playerId);
   clearPlayerHandlerState(playerId);
@@ -632,16 +673,16 @@ function cleanupPlayer(playerId) {
 // Periodic cleanup of stale connections (every 30 seconds)
 setInterval(() => {
   const now = Date.now();
-  const STALE_THRESHOLD = 60000; // 60 seconds without heartbeat = stale
-
-  // console.log(`Running cleanup check. Active connections: ${playerSockets.size}`);
+  // Well above Engine.IO pingTimeout (20s). Hidden tabs throttle setInterval heartbeats;
+  // Engine.IO pings own liveness — only reap sockets that are already disconnected.
+  const STALE_THRESHOLD = 120000;
 
   for (const [playerId, lastHeartbeat] of playerHeartbeats) {
     if (now - lastHeartbeat > STALE_THRESHOLD) {
-      console.log(`Cleaning up stale connection: ${playerId}, last heartbeat: ${Math.floor((now - lastHeartbeat) / 1000)}s ago`);
       const staleSocket = playerSockets.get(playerId);
+      if (staleSocket && staleSocket.connected) continue;
+      console.log(`Cleaning up stale connection: ${playerId}, last heartbeat: ${Math.floor((now - lastHeartbeat) / 1000)}s ago`);
       cleanupPlayer(playerId);
-      // Forcibly disconnect the underlying socket so Engine.IO doesn't keep it alive
       if (staleSocket) staleSocket.disconnect(true);
     }
   }

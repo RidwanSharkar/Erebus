@@ -22,6 +22,8 @@ import HudActionButtons from '../components/ui/HudActionButtons';
 import RulebookPanel from '../components/ui/RulebookPanel';
 import SettingsPanel from '../components/ui/SettingsPanel';
 import { DEFAULT_ROOM_ID, sanitizeRoomCode } from '@/utils/roomCode';
+import { resolveRoomHost } from '@/utils/roomHost';
+import { saveClientProgressCheckpoint, loadClientProgressCheckpoint } from '@/utils/clientProgressCheckpoint';
 import { MultiplayerProvider, useMultiplayerActions, useMultiplayerRoom } from '../contexts/MultiplayerContext';
 import type { CoopRoomKind } from '../contexts/MultiplayerContext';
 import MerchantUI from '../components/ui/MerchantUI';
@@ -275,6 +277,7 @@ function HomeContent() {
     confirmCoopPortalTransitionComplete,
     setSelectedWeapons,
     clearLateJoinCombatLoadout,
+    clearReclaimedPlayerState,
     claimPreBossReward,
     claimDeepSanctumReward,
     registerDeepSanctumRewardClaimedHandler,
@@ -347,6 +350,7 @@ function HomeContent() {
     coopBossRoomVisitIndex,
     coopBossThroneArena,
     lateJoinCombatLoadout,
+    reclaimedPlayerState,
     selectedArchetype,
     selectedWeaponAspect,
   } = useMultiplayerRoom();
@@ -701,7 +705,7 @@ function HomeContent() {
       result.created ? REWARD_ANNOUNCEMENT_COLORS.gold : REWARD_ANNOUNCEMENT_COLORS.unlocked,
       `room-switch-${result.roomId}-${Date.now()}`,
     );
-    if (!result.gameStarted && socket) {
+    if (result.created && !result.gameStarted && socket) {
       socket.emit('start-game', { roomId: result.roomId });
     }
     setGameMode('coop');
@@ -721,14 +725,17 @@ function HomeContent() {
       try {
         const name = `Player${Math.floor(Math.random() * 10000)}`;
         const sw = bootstrapWeaponsRef.current;
+        const roomId = readRoomIdFromUrl();
+        const host = await resolveRoomHost(roomId);
         const joined = await joinRoom(
-          readRoomIdFromUrl(),
+          roomId,
           name,
           sw.primary,
           getDefaultSubclassForWeapon(sw.primary),
           'coop',
+          { expectExisting: !!host?.exists },
         );
-        if (!joined.gameStarted) {
+        if (joined.created && !joined.gameStarted) {
           socket.emit('start-game', { roomId: joined.roomId });
         }
         setGameMode('coop');
@@ -1203,6 +1210,29 @@ function HomeContent() {
     clearLateJoinCombatLoadout,
     enqueueAnnouncement,
   ]);
+
+  /** Same-tab refresh: restore client-only progression the server does not store. */
+  useEffect(() => {
+    if (!reclaimedPlayerState) return;
+    const checkpoint = loadClientProgressCheckpoint();
+    if (Array.isArray(checkpoint?.localPurchasedItems)) {
+      setLocalPurchasedItems(checkpoint.localPurchasedItems);
+    }
+    if (Array.isArray(checkpoint?.classTalentPickedWeapons) && checkpoint.classTalentPickedWeapons.length > 0) {
+      const next = new Set(checkpoint.classTalentPickedWeapons as WeaponType[]);
+      classBoonPickedWeaponsRef.current = next;
+      setClassTalentPickedWeapons(next);
+    }
+    clearReclaimedPlayerState();
+  }, [reclaimedPlayerState, clearReclaimedPlayerState]);
+
+  useEffect(() => {
+    if (reclaimedPlayerState) return;
+    saveClientProgressCheckpoint({
+      localPurchasedItems,
+      classTalentPickedWeapons: [...classTalentPickedWeapons] as string[],
+    });
+  }, [localPurchasedItems, classTalentPickedWeapons, reclaimedPlayerState]);
 
   const handleSunkenSentinelInteract = useCallback(() => {
     if (gameMode !== 'coop' || !coopSunkenFountainPhase || coopSunkenLootPhaseComplete) return;

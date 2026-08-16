@@ -4,11 +4,15 @@ const { MAX_PLAYERS_PER_ROOM, normalizeRoomId } = require('./roomConfig');
 const playerMoveRebroadcastState = new Map();
 /** playerId -> last validated deathgrasp hit timestamp */
 const playerDeathGraspHitAt = new Map();
+/** playerId -> last coop-room-token-resync emit timestamp */
+const playerTokenResyncAt = new Map();
+const TOKEN_RESYNC_MIN_MS = 1000;
 
 function clearPlayerHandlerState(playerId) {
   if (!playerId) return;
   playerMoveRebroadcastState.delete(playerId);
   playerDeathGraspHitAt.delete(playerId);
+  playerTokenResyncAt.delete(playerId);
 }
 
 function handlePlayerEvents(socket, gameRooms) {
@@ -134,6 +138,16 @@ function handlePlayerEvents(socket, gameRooms) {
       room.gameMode === 'coop' &&
       roomToken > 0 &&
       (!Number.isFinite(clientToken) || clientToken < roomToken);
+    if (coopStaleRoomToken) {
+      const lastResync = playerTokenResyncAt.get(playerId) || 0;
+      const resyncNow = Date.now();
+      if (resyncNow - lastResync >= TOKEN_RESYNC_MIN_MS) {
+        playerTokenResyncAt.set(playerId, resyncNow);
+        socket.emit('coop-room-token-resync', {
+          coopRoomEntryToken: roomToken,
+        });
+      }
+    }
     const coopPositionWriteBlocked =
       coopTransitionActive || coopPostTeleportGuardActive || coopStaleRoomToken;
     if (position && rotation && !isDead && !coopPositionWriteBlocked) {

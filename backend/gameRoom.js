@@ -1,5 +1,6 @@
 const { broadcastEnemySpawn } = require('./enemyHandler');
 const EnemyAI = require('./enemyAI');
+const { EMPTY_ROOM_GRACE_MS } = require('./roomConfig');
 const {
   COOP_MAIN_ENTRY_X,
   COOP_MAIN_ENTRY_Z,
@@ -825,6 +826,8 @@ class GameRoom {
   constructor(roomId, io) {
     this.roomId = roomId;
     this.players = new Map();
+    /** sessionId -> { player, at } — disconnected players who can reclaim within the empty-room grace window. */
+    this.reclaimablePlayers = new Map();
     this.enemies = new Map();
     this.lastUpdate = Date.now();
     this.io = io; // Store io reference for broadcasting
@@ -834,6 +837,8 @@ class GameRoom {
 
     // Game state management
     this.gameStarted = false;
+    /** True while every living player has disconnected; AI is stopped but progression is kept. */
+    this.gamePaused = false;
     this.killCount = 0; // Shared kill count for all players
     this.gameMode = 'coop'; // Default to co-op mode
 
@@ -1516,6 +1521,7 @@ class GameRoom {
     }
 
     this.gameStarted = true;
+    this.gamePaused = false;
     this.gameStartTime = Date.now();
     this.bossSpawned = false;
     this.skeletonKillCount = 0;
@@ -1658,36 +1664,56 @@ class GameRoom {
         players: this.getPlayers(),
         /** Full snapshot so clients never miss `enemy-spawned` (e.g. throne training dummy). */
         enemies: this.getEnemies(),
-        thronePortalOffer: this.gameMode === 'coop' ? [...this.thronePortalOffer] : [],
-        thronePortalLayout: this.getThronePortalLayout(),
-        coopMainArenaPortalPhase: this.gameMode === 'coop' ? this.getCoopMainArenaPortalPhase() : null,
-        coopBossThroneArena: this.gameMode === 'coop' ? this.getCoopBossThroneArena() : false,
-        coopThroneBossKind: this.gameMode === 'coop' ? this.getCoopThroneBossKind() : null,
-        coopTerrainTheme: this.gameMode === 'coop' ? this.getCoopTerrainTheme() : null,
-        coopCurrentRoomKind: this.gameMode === 'coop' ? this.getCoopCurrentRoomKind() : null,
-        coopClearedRoomKind: this.gameMode === 'coop' ? this.getCoopClearedRoomKind() : null,
-        merchantInventory: this.gameMode === 'coop' ? this.getMerchantInventory() : [],
-        mushroomState: this.getMushroomState(),
-        coopIntroPending: this.gameMode === 'coop' ? this.coopIntroPending : false,
-        coopIntroActive: this.gameMode === 'coop' ? this.coopIntroActive : false,
-        coopIntroRoomIndex: this.gameMode === 'coop' ? this.coopIntroRoomIndex : 0,
-        coopIntroPortalOpen: this.gameMode === 'coop' ? this.coopIntroPortalOpen : false,
-        coopIntroFountainPhase: this.gameMode === 'coop' ? this.coopIntroFountainPhase : false,
-        coopIntroFountainUsed: this.gameMode === 'coop' ? this.coopIntroFountainUsed : false,
-        coopIntroAllyChoiceMade: this.gameMode === 'coop' ? this.coopIntroAllyChoiceMade : false,
-        coopAllyKind: this.gameMode === 'coop' ? this.coopAllyKind : 'knight',
-        coopAllyOffer: this.gameMode === 'coop' ? [...this.coopAllyOffer] : [],
-        ...this.gameMode === 'coop' ? this._getFaeRealmPayloadFields() : {},
-        ...this.gameMode === 'coop' ? this._getSunkenPayloadFields() : {},
-        ...this.gameMode === 'coop' ? this._getEternityPayloadFields() : {},
-        ...this.gameMode === 'coop' ? this._getDeepSanctumPayloadFields() : {},
-        ...this.gameMode === 'coop' ? this._getEdenPayloadFields() : {},
-        ...this.gameMode === 'coop' ? this._getCoopSkyPayloadFields() : {},
-        ...this.gameMode === 'coop' ? this._getCoopGrassPayloadFields() : {},
+        ...this.getCoopSessionSnapshotFields(),
       });
     }
     
     return true;
+  }
+
+  /**
+   * Shared co-op session fields for `game-started`, `coop-throne-sync`, and `room-joined`.
+   * Keep this as the single source of truth so late joiners cannot drift from the live room.
+   */
+  getCoopSessionSnapshotFields() {
+    if (this.gameMode !== 'coop') {
+      return {
+        thronePortalOffer: [],
+        thronePortalLayout: this.getThronePortalLayout(),
+        coopMainArenaPortalPhase: null,
+        coopBossThroneArena: false,
+        coopThroneBossKind: null,
+        coopTerrainTheme: null,
+        coopCurrentRoomKind: null,
+        coopClearedRoomKind: null,
+        coopColoredRoomVisitIndex: null,
+        coopBossRoomVisitIndex: null,
+        merchantInventory: [],
+        mushroomState: this.getMushroomState(),
+      };
+    }
+    return {
+      thronePortalOffer: [...this.thronePortalOffer],
+      thronePortalLayout: this.getThronePortalLayout(),
+      coopMainArenaPortalPhase: this.getCoopMainArenaPortalPhase(),
+      coopBossThroneArena: this.getCoopBossThroneArena(),
+      coopThroneBossKind: this.getCoopThroneBossKind(),
+      coopTerrainTheme: this.getCoopTerrainTheme(),
+      coopCurrentRoomKind: this.getCoopCurrentRoomKind(),
+      coopClearedRoomKind: this.getCoopClearedRoomKind(),
+      coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
+      coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
+      merchantInventory: this.getMerchantInventory(),
+      mushroomState: this.getMushroomState(),
+      ...this._getIntroPayloadFields(),
+      ...this._getFaeRealmPayloadFields(),
+      ...this._getSunkenPayloadFields(),
+      ...this._getEternityPayloadFields(),
+      ...this._getDeepSanctumPayloadFields(),
+      ...this._getEdenPayloadFields(),
+      ...this._getCoopSkyPayloadFields(),
+      ...this._getCoopGrassPayloadFields(),
+    };
   }
 
   /** Co-op throne prep: snapshot for mid-session joiners (mirrors `game-started` payload). */
@@ -1699,32 +1725,7 @@ class GameRoom {
       combatArenaActive: this.combatArenaActive,
       players: this.getPlayers(),
       enemies: this.getEnemies(),
-      thronePortalOffer: [...this.thronePortalOffer],
-      thronePortalLayout: this.getThronePortalLayout(),
-      coopMainArenaPortalPhase: this.getCoopMainArenaPortalPhase(),
-      coopBossThroneArena: this.getCoopBossThroneArena(),
-      coopThroneBossKind: this.getCoopThroneBossKind(),
-      coopTerrainTheme: this.getCoopTerrainTheme(),
-      coopCurrentRoomKind: this.getCoopCurrentRoomKind(),
-      coopClearedRoomKind: this.getCoopClearedRoomKind(),
-      merchantInventory: this.getMerchantInventory(),
-      mushroomState: this.getMushroomState(),
-      coopIntroPending: this.coopIntroPending,
-      coopIntroActive: this.coopIntroActive,
-      coopIntroRoomIndex: this.coopIntroRoomIndex,
-      coopIntroPortalOpen: this.coopIntroPortalOpen,
-      coopIntroFountainPhase: this.coopIntroFountainPhase,
-      coopIntroFountainUsed: this.coopIntroFountainUsed,
-      coopIntroAllyChoiceMade: this.coopIntroAllyChoiceMade,
-      coopAllyKind: this.coopAllyKind,
-      coopAllyOffer: [...this.coopAllyOffer],
-      ...this._getFaeRealmPayloadFields(),
-      ...this._getSunkenPayloadFields(),
-      ...this._getEternityPayloadFields(),
-      ...this._getDeepSanctumPayloadFields(),
-      ...this._getEdenPayloadFields(),
-      ...this._getCoopSkyPayloadFields(),
-      ...this._getCoopGrassPayloadFields(),
+      ...this.getCoopSessionSnapshotFields(),
     };
   }
 
@@ -2436,6 +2437,7 @@ class GameRoom {
   }
 
   startCompanionAI() {
+    if (this.gamePaused) return;
     if (this.gameMode !== 'coop' || !this.gameStarted) return;
     if (this.companionAiTimer) return;
     if (!this._needsCompanionAiTick()) return;
@@ -7675,8 +7677,165 @@ class GameRoom {
     player.lateJoinCombatLoadout = true;
   }
 
+  /** Place a player at the current room spawn (throne ring vs combat entry). */
+  _placePlayerAtCurrentSpawn(player) {
+    if (!player || this.gameMode !== 'coop') return;
+    const playerIndex = Math.max(0, this.players.size - 1);
+
+    if (this.gameStarted && !this.combatArenaActive) {
+      const n = Math.max(this.players.size, 1);
+      const THRONE_SPAWN_R = 3;
+      const angle = (playerIndex / n) * Math.PI * 2;
+      player.position = {
+        x: Math.sin(angle) * THRONE_SPAWN_R,
+        y: 1,
+        z: Math.cos(angle) * THRONE_SPAWN_R,
+      };
+      player.rotation = { x: 0, y: 0, z: 0 };
+      return;
+    }
+
+    const totalPlayers = 3;
+    const spawnBaseX = COOP_MAIN_ENTRY_X;
+    const spawnBaseZ = COOP_MAIN_ENTRY_Z;
+    const angleStep = (Math.PI * 2) / totalPlayers;
+    const angle = playerIndex * angleStep;
+    const spawnRadius = 1.25;
+    const rawX = spawnBaseX + Math.sin(angle) * spawnRadius;
+    const rawZ = spawnBaseZ + Math.cos(angle) * spawnRadius;
+    const c = clampPositionToMainArenaXZ(rawX, rawZ);
+    player.position = { x: c.x, y: 1, z: c.z };
+    player.rotation = { x: 0, y: rotationYTowardArenaCenter(c.x, c.z), z: 0 };
+  }
+
+  _sweepReclaimablePlayers() {
+    const now = Date.now();
+    for (const [sessionId, entry] of this.reclaimablePlayers) {
+      if (!entry || now - (entry.at || 0) > EMPTY_ROOM_GRACE_MS) {
+        this.reclaimablePlayers.delete(sessionId);
+      }
+    }
+  }
+
+  peekReclaimable(sessionId) {
+    if (!sessionId) return null;
+    this._sweepReclaimablePlayers();
+    return this.reclaimablePlayers.get(sessionId) || null;
+  }
+
+  getOccupancy() {
+    this._sweepReclaimablePlayers();
+    return this.players.size + this.reclaimablePlayers.size;
+  }
+
+  /**
+   * Pause combat loops without wiping progression. Used when the last living player disconnects.
+   */
+  pauseGame() {
+    if (!this.gameStarted) return;
+    this.gamePaused = true;
+    this.stopEnemySpawning();
+    if (this.enemyAI) this.enemyAI.stopAI();
+    this.stopCompanionAI();
+    console.log(`⏸️ Game paused in room ${this.roomId} (empty, progression preserved)`);
+  }
+
+  /**
+   * Resume combat loops after a player returns to a paused room.
+   */
+  resumeGame() {
+    if (!this.gamePaused) return;
+    this.gamePaused = false;
+    if (!this.gameStarted || this.players.size === 0) return;
+    this.startEnemyAI();
+    this.startCompanionAI();
+    console.log(`▶️ Game resumed in room ${this.roomId}`);
+  }
+
+  _remapPlayerIdRefs(oldId, newId) {
+    if (!oldId || !newId || oldId === newId) return;
+    if (this.coopSunkenLootClaimedPlayerIds?.has(oldId)) {
+      this.coopSunkenLootClaimedPlayerIds.delete(oldId);
+      this.coopSunkenLootClaimedPlayerIds.add(newId);
+    }
+    if (this.coopEternityLootClaimedPlayerIds?.has(oldId)) {
+      this.coopEternityLootClaimedPlayerIds.delete(oldId);
+      this.coopEternityLootClaimedPlayerIds.add(newId);
+    }
+    const transition = this.coopCombatTransition;
+    if (transition?.readyPlayerIds?.has(oldId)) {
+      transition.readyPlayerIds.delete(oldId);
+      transition.readyPlayerIds.add(newId);
+    }
+    if (this.playerStatusEffects.has(oldId)) {
+      this.playerStatusEffects.set(newId, this.playerStatusEffects.get(oldId));
+      this.playerStatusEffects.delete(oldId);
+    }
+    if (this.explosiveTalonsCastByPlayer.has(oldId)) {
+      this.explosiveTalonsCastByPlayer.set(newId, this.explosiveTalonsCastByPlayer.get(oldId));
+      this.explosiveTalonsCastByPlayer.delete(oldId);
+    }
+  }
+
+  serializeReclaimedPlayerState(player) {
+    if (!player) return null;
+    const uniqueTypes = player.ownedUniqueItemTypes instanceof Set
+      ? [...player.ownedUniqueItemTypes]
+      : Array.isArray(player.ownedUniqueItemTypes) ? [...player.ownedUniqueItemTypes] : [];
+    return {
+      weapon: player.weapon,
+      subclass: player.subclass,
+      weaponAspect: player.weaponAspect,
+      archetype: player.archetype,
+      level: player.level,
+      essence: player.essence,
+      gold: player.gold,
+      flow: player.flow,
+      fate: player.fate,
+      health: player.health,
+      maxHealth: player.maxHealth,
+      shield: player.shield,
+      maxShield: player.maxShield,
+      coopZombieBoons: player.coopZombieBoons || null,
+      coopStaggerRoomBoons: player.coopStaggerRoomBoons || null,
+      coopAlliedKnightBoons: player.coopAlliedKnightBoons || null,
+      coopRedRoomBoons: player.coopRedRoomBoons || null,
+      coopPetCompanionUpgrade: player.coopPetCompanionUpgrade ?? null,
+      ownedUniqueItemTypes: uniqueTypes,
+      bossRelicRarities: player.bossRelicRarities || {},
+      merchantDashChargePurchased: !!player.merchantDashChargePurchased,
+      merchantWeaponTalentPurchases: player.merchantWeaponTalentPurchases || 0,
+      merchantOxygenPurchases: player.merchantOxygenPurchases || 0,
+      merchantWarpdrivePurchases: player.merchantWarpdrivePurchases || 0,
+    };
+  }
+
+  /**
+   * Restore a disconnected player under a new socket id. Returns the player or null.
+   */
+  tryReclaimPlayer(sessionId, newPlayerId) {
+    if (!sessionId || !newPlayerId) return null;
+    this._sweepReclaimablePlayers();
+    const entry = this.reclaimablePlayers.get(sessionId);
+    if (!entry?.player) return null;
+
+    this.reclaimablePlayers.delete(sessionId);
+    const player = entry.player;
+    const oldId = player.id;
+    player.id = newPlayerId;
+    player.sessionId = sessionId;
+    player.lateJoinCombatLoadout = false;
+    player.joinedAt = Date.now();
+    this._remapPlayerIdRefs(oldId, newPlayerId);
+    this.players.set(newPlayerId, player);
+    this._placePlayerAtCurrentSpawn(player);
+    this.resumeGame();
+    console.log(`♻️ Reclaimed session ${sessionId} as ${newPlayerId} in room ${this.roomId}`);
+    return player;
+  }
+
   // Player management
-  addPlayer(playerId, playerName, weapon = 'scythe', subclass, gameMode = 'coop') {
+  addPlayer(playerId, playerName, weapon = 'scythe', subclass, gameMode = 'coop', sessionId = null) {
     // In co-op mode, health scales with kill count (matches client ExperienceSystem.BASE_HEALTH)
     const baseHealth = 200;
     const maxHealth = baseHealth + this.killCount;
@@ -7684,6 +7843,7 @@ class GameRoom {
     // Create player object with default position
     this.players.set(playerId, {
       id: playerId,
+      sessionId: sessionId || null,
       name: playerName,
       position: { x: 0, y: 1, z: 0 }, // Default spawn position
       rotation: { x: 0, y: 0, z: 0 },
@@ -7781,51 +7941,19 @@ class GameRoom {
 
     // Position players for co-op mode
     if (this.gameMode === 'coop') {
-      const playerIndex = this.players.size - 1;
       const player = this.players.get(playerId);
 
       if (this.gameStarted && this.combatArenaActive && player) {
         this._grantLateJoinCombatLoadout(player);
       }
 
-      if (this.gameStarted && !this.combatArenaActive) {
-        // Mid-session join while party is still in the throne room
-        const n = this.players.size;
-        const THRONE_SPAWN_R = 3;
-        const angle = (playerIndex / Math.max(n, 1)) * Math.PI * 2;
-        if (player) {
-          player.position = {
-            x: Math.sin(angle) * THRONE_SPAWN_R,
-            y: 1,
-            z: Math.cos(angle) * THRONE_SPAWN_R,
-          };
-          player.rotation = { x: 0, y: 0, z: 0 };
-        }
-      } else if (player) {
-        const totalPlayers = 3; // Max players for positioning
-
-        const spawnBaseX = COOP_MAIN_ENTRY_X;
-        const spawnBaseZ = COOP_MAIN_ENTRY_Z;
-
-        const angleStep = (Math.PI * 2) / totalPlayers;
-        const angle = playerIndex * angleStep;
-        const spawnRadius = 1.25;
-        const rawX = spawnBaseX + Math.sin(angle) * spawnRadius;
-        const rawZ = spawnBaseZ + Math.cos(angle) * spawnRadius;
-        const c = clampPositionToMainArenaXZ(rawX, rawZ);
-
-        player.position = {
-          x: c.x,
-          y: 1,
-          z: c.z,
-        };
-        const y = rotationYTowardArenaCenter(c.x, c.z);
-        player.rotation = { x: 0, y, z: 0 };
-      }
+      this._placePlayerAtCurrentSpawn(player);
     }
+
+    this.resumeGame();
   }
 
-  removePlayer(playerId) {
+  removePlayer(playerId, options = {}) {
     this.stopPrimeMateriaAura(playerId);
     this.removeBeastmasterTigerForPlayer(playerId);
     this.removeFaeBeastCompanionForPlayer(playerId);
@@ -7834,12 +7962,17 @@ class GameRoom {
       this.enemyAI.removePlayerFromAllAggro(playerId);
     }
 
+    const player = this.players.get(playerId);
+    if (options.stashSessionId && player) {
+      this.reclaimablePlayers.set(options.stashSessionId, { player, at: Date.now() });
+    }
+
     this.playerStatusEffects.delete(playerId);
     this.players.delete(playerId);
 
-    // Stop game if no players left
+    // Pause (don't wipe) if no living players left
     if (this.players.size === 0 && this.gameStarted) {
-      this.stopGame();
+      this.pauseGame();
       return;
     }
 
@@ -7889,6 +8022,7 @@ class GameRoom {
   // Stop the game
   stopGame() {
     this.gameStarted = false;
+    this.gamePaused = false;
     this.combatArenaActive = false;
     this.thronePortalOffer = [];
     this.pendingCoopArchetype = null;
@@ -13269,6 +13403,7 @@ class GameRoom {
 
   // Start enemy AI system
   startEnemyAI() {
+    if (this.gamePaused) return;
     if (!this.gameStarted || this.players.size === 0) return;
     if (this.gameMode === 'coop' && !this.combatArenaActive) return;
     if (this.gameMode === 'coop') {
@@ -14899,6 +15034,7 @@ class GameRoom {
     this.stopCompanionAI();
 
     this.players.clear();
+    this.reclaimablePlayers.clear();
     this.enemies.clear();
     this.enemyStatusEffects.clear();
     this.playerStatusEffects.clear();
@@ -14907,6 +15043,7 @@ class GameRoom {
     this.goldDrops.clear();
     this.merchantInventory = [];
     this.gameStarted = false;
+    this.gamePaused = false;
     this.killCount = 0;
     this.bossSpawned = false;
     this.skeletonKillCount = 0;
