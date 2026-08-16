@@ -12,7 +12,7 @@ import type { CoopPortalKind } from './ThroneRoom';
 import { MAIN_COMBAT_PEDESTAL_POSITION } from './ThroneRoom';
 
 const CAMP_ORB_COLOR: Record<CoopPortalKind, string> = {
-  purple: '#6c3dff',
+  purple: '#B18BFF',
   blue:   '#3b82f6',
   red:    '#ef4444',
   green:  '#22c55e',

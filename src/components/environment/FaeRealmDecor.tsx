@@ -1,13 +1,15 @@
 'use client';
 
-import React, { Suspense, useLayoutEffect, useMemo } from 'react';
+import React, { Suspense, useEffect, useLayoutEffect, useMemo } from 'react';
 import { Clone, useGLTF } from '@react-three/drei';
 import type { Group, Mesh, Object3D } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import {
   applySelfIllumination,
+  disposeClonedSkeletons,
   useDisposeClonedMaterials,
 } from '@/utils/disposeObject3D';
+import { DoubleSide, Material } from '@/utils/three-exports';
 import { prepareDecorScene } from './FloatingTrinketMesh';
 import {
   FAE_REALM_DECOR_GROUND_Y,
@@ -33,6 +35,13 @@ export function preloadFaeRealmDecor(
   }
 }
 
+function configureCutoutMaterial(mat: Material): Material {
+  mat.alphaTest = 0.5;
+  mat.side = DoubleSide;
+  mat.transparent = false;
+  return mat;
+}
+
 function prepareNumberedPylonScene(scene: Object3D): Object3D {
   const root = SkeletonUtils.clone(scene) as Group;
   root.traverse((child) => {
@@ -53,6 +62,43 @@ function prepareNumberedPylonScene(scene: Object3D): Object3D {
   return root;
 }
 
+function prepareSkinnedDecorScene(scene: Object3D): Object3D {
+  const root = SkeletonUtils.clone(scene) as Group;
+  root.traverse((child) => {
+    const mesh = child as Mesh;
+    if (!mesh.isMesh) return;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.frustumCulled = true;
+    if (mesh.material) {
+      mesh.material = Array.isArray(mesh.material)
+        ? mesh.material.map((m) => configureCutoutMaterial(m.clone()))
+        : configureCutoutMaterial(mesh.material.clone());
+    }
+  });
+  return root;
+}
+
+function SkinnedDecorInstance({
+  prepared,
+  position,
+  rotation,
+  scale,
+}: {
+  prepared: Object3D;
+  position: [number, number, number];
+  rotation: [number, number, number];
+  scale: number;
+}) {
+  const cloned = useMemo(() => SkeletonUtils.clone(prepared) as Group, [prepared]);
+  useEffect(() => {
+    return () => {
+      disposeClonedSkeletons(cloned);
+    };
+  }, [cloned]);
+  return <primitive object={cloned} position={position} rotation={rotation} scale={scale} />;
+}
+
 function DecorModelBatch({
   model,
   defs,
@@ -64,16 +110,18 @@ function DecorModelBatch({
   const { scene } = useGLTF(url);
   const meta = FAE_REALM_DECOR_MODEL_META[model];
   const numbered = isNumberedFaePylon(model);
+  const skinned = Boolean(meta.skinned);
 
-  const prepared = useMemo(
-    () => (numbered ? prepareNumberedPylonScene(scene) : scene),
-    [numbered, scene],
-  );
-  useDisposeClonedMaterials(numbered ? prepared : null);
+  const prepared = useMemo(() => {
+    if (numbered) return prepareNumberedPylonScene(scene);
+    if (skinned) return prepareSkinnedDecorScene(scene);
+    return scene;
+  }, [numbered, skinned, scene]);
+  useDisposeClonedMaterials(numbered || skinned ? prepared : null);
 
   useLayoutEffect(() => {
-    if (!numbered) prepareDecorScene(scene, false);
-  }, [numbered, scene]);
+    if (!numbered && !skinned) prepareDecorScene(scene, false);
+  }, [numbered, skinned, scene]);
 
   return (
     <>
@@ -81,12 +129,25 @@ function DecorModelBatch({
         const scaleMul = def.scale ?? 1;
         const s = meta.defaultScale * scaleMul;
         const y = FAE_REALM_DECOR_GROUND_Y + meta.groundY * s + def.position[1];
+        const position: [number, number, number] = [def.position[0], y, def.position[2]];
+        const rotation: [number, number, number] = [0, def.rotationY ?? 0, 0];
+        if (skinned) {
+          return (
+            <SkinnedDecorInstance
+              key={`${model}-${i}`}
+              prepared={prepared}
+              position={position}
+              rotation={rotation}
+              scale={s}
+            />
+          );
+        }
         return (
           <Clone
             key={`${model}-${i}`}
             object={prepared}
-            position={[def.position[0], y, def.position[2]]}
-            rotation={[0, def.rotationY ?? 0, 0]}
+            position={position}
+            rotation={rotation}
             scale={s}
             deep={false}
           />
@@ -120,7 +181,7 @@ function FaeRealmDecorInner({
   );
 }
 
-/** GIANTSPINE + scattered numbered pylons for the Fae Realm hex. */
+/** GIANTSPINE, pinkTree, barkRoot, and numbered pylons for the Fae Realm hex. */
 function FaeRealmDecor({
   layout = FAE_REALM_DECOR_LAYOUT,
 }: {

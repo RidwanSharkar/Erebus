@@ -16,7 +16,7 @@ const FAE_REALM_GRASS_COUNT = Math.round(
 );
 
 /** Center seal disc — leaves a clear pad under the accent ring. */
-const FAE_REALM_CENTER_SEAL_RADIUS = 6.75;
+const FAE_REALM_CENTER_SEAL_RADIUS = 6.25;
 
 interface FaeRealmRoomProps {
   combatActive?: boolean;

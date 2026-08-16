@@ -30,7 +30,7 @@ const SEAL_TEXTURE_BY_THEME: Record<RoomBorderTheme, string> = {
 
 const OUTER_TEXTURE_BY_THEME: Record<RoomBorderTheme, string> = {
   purple: '/outer0.png',
-  red: '/outer1.png',
+  red: '/outer1.webp',
   green: '/outer2.png',
   blue: '/outer3.png',
 };

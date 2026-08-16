@@ -34,6 +34,8 @@ interface EntropicBoltProps {
   direction: Vector3;
   isCryoflame?: boolean;
   colorVariant?: string;
+  /** Overrides `colorVariant` for custom palettes (defense towers, etc). */
+  themeOverride?: { primary: string; secondary: string; light: string };
   /** When true (default), position/direction follow authoritative ECS updates each frame. */
   ecsDriven?: boolean;
   /** R3F clock time when ECS despawn trail fade began; visual-only. */
@@ -67,6 +69,7 @@ function EntropicBolt({
   direction,
   isCryoflame = false,
   colorVariant,
+  themeOverride,
   ecsDriven = true,
   trailFadeOutStartElapsed,
 }: EntropicBoltProps) {
@@ -79,8 +82,12 @@ function EntropicBolt({
   const timeRef = useRef(0);
   const chaosSeed = useMemo(() => entropicChaosSeedFromId(id), [id]);
 
-  const theme = getEntropicColorTheme(colorVariant, isCryoflame);
+  const theme = themeOverride ?? getEntropicColorTheme(colorVariant, isCryoflame);
   const trailColor = useMemo(() => new Color(theme.primary), [theme.primary]);
+  const trailAccent = useMemo(
+    () => new Color(themeOverride ? theme.secondary : theme.primary),
+    [theme.primary, theme.secondary, themeOverride],
+  );
   const primaryColor = useMemo(() => new Color(theme.primary), [theme.primary]);
   const secondaryColor = useMemo(() => new Color(theme.secondary), [theme.secondary]);
 
@@ -196,6 +203,24 @@ function EntropicBolt({
         wobbleRef.current.rotation.x = Math.sin(t * 9.1 + s) * WOBBLE_ROLL;
         wobbleRef.current.rotation.z = Math.cos(t * 7.4 + s * 1.4) * WOBBLE_ROLL;
       }
+    } else {
+      boltRef.current.position.copy(position);
+      flightDirectionRef.current.copy(direction);
+      if (direction.lengthSq() > 1e-8) {
+        lastPosition.current.copy(position);
+      }
+      const visual = boltRef.current.position;
+      boltLight.current?.setPosition(visual.x, visual.y + 0.15, visual.z);
+      boltLight.current?.setIntensity(5.5);
+      if (orientRef.current) {
+        alignBoltToDirection(orientRef.current, flightDirectionRef.current);
+      }
+      if (wobbleRef.current) {
+        const t = timeRef.current;
+        const s = chaosSeed * 17.3;
+        wobbleRef.current.rotation.x = Math.sin(t * 9.1 + s) * WOBBLE_ROLL;
+        wobbleRef.current.rotation.z = Math.cos(t * 7.4 + s * 1.4) * WOBBLE_ROLL;
+      }
     }
   });
 
@@ -203,7 +228,7 @@ function EntropicBolt({
     <group>
       <EntropicBoltTrail
         color={trailColor}
-        accentColor={trailColor}
+        accentColor={trailAccent}
         size={0.07}
         meshRef={boltRef}
         opacity={1}

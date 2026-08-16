@@ -1,10 +1,12 @@
 /**
- * Fae Realm decorative pylons: one GIANTSPINE (throne-scale) plus scattered
- * 1 / 3 / 6 / 13.glb props across the hex grass. Deterministic — stable for MP.
+ * Fae Realm décor: GIANTSPINE, pinkTree centerpiece, two barkRoot flanks,
+ * plus numbered 1 / 3 / 6 / 13.glb pylons. Deterministic — stable for MP.
  */
 
 export type FaeRealmDecorModel =
   | 'giantSpine'
+  | 'pinkTree'
+  | 'barkRoot'
   | 'pylon1'
   | 'pylon3'
   | 'pylon6'
@@ -12,6 +14,8 @@ export type FaeRealmDecorModel =
 
 export const FAE_REALM_DECOR_PATHS: Record<FaeRealmDecorModel, string> = {
   giantSpine: '/models/trinket/pylons/GIANTSPINE.glb',
+  pinkTree: '/models/environ/pinkTree.glb',
+  barkRoot: '/models/environ/barkRoot.glb',
   pylon1: '/models/trinket/pylons/1.glb',
   pylon3: '/models/trinket/pylons/3.glb',
   pylon6: '/models/trinket/pylons/6.glb',
@@ -27,16 +31,24 @@ export type FaeRealmDecorDef = {
   scale?: number;
 };
 
+export type FaeRealmDecorModelMeta = {
+  groundY: number;
+  defaultScale: number;
+  /** WoW-export SkinnedMesh props need per-instance SkeletonUtils.clone. */
+  skinned?: boolean;
+};
+
 /**
  * Per-model ground alignment (mesh feet sit at y = groundY × scale) and visual size.
- * Raw heights: GIANTSPINE ≈ 19.8m, 1 ≈ 4.65m, 3 ≈ 6.85m, 6 ≈ 6.05m, 13 ≈ 0.89m.
+ * Raw heights: GIANTSPINE ≈ 19.8m, pinkTree ≈ 12.2m, barkRoot ≈ 10.9m,
+ * 1 ≈ 4.65m, 3 ≈ 6.85m, 6 ≈ 6.05m, 13 ≈ 0.89m.
  * Numbered pylons target ~2.8–3.5m (rim 5.glb ≈ 3.5m); 13 is a shorter accent (~1.4m).
+ * pinkTree targets ~7.6m; barkRoot targets ~2.4m tall / ~3.6m wide.
  */
-export const FAE_REALM_DECOR_MODEL_META: Record<
-  FaeRealmDecorModel,
-  { groundY: number; defaultScale: number }
-> = {
+export const FAE_REALM_DECOR_MODEL_META: Record<FaeRealmDecorModel, FaeRealmDecorModelMeta> = {
   giantSpine: { groundY: 2.385, defaultScale: 0.1 },
+  pinkTree: { groundY: 0.53, defaultScale: 0.22, skinned: true },
+  barkRoot: { groundY: 2.02, defaultScale: 0.22, skinned: true },
   pylon1: { groundY: 0.1937, defaultScale: 0.645 },
   pylon3: { groundY: 0.0789, defaultScale: 0.467 },
   pylon6: { groundY: 0.0403, defaultScale: 0.529 },
@@ -48,13 +60,21 @@ export const FAE_REALM_DECOR_GROUND_Y = 0;
 
 /**
  * Soft albedo fill for numbered charcoal pylons (matches rim 5.glb décor).
- * GIANTSPINE skips self-illumination (same as throne statues).
+ * GIANTSPINE / pinkTree / barkRoot skip self-illumination.
  */
 export const FAE_REALM_NUMBERED_PYLON_SELF_ILLUMINATION = 0.45;
 
+const NUMBERED_FAE_PYLONS = new Set<FaeRealmDecorModel>([
+  'pylon1',
+  'pylon3',
+  'pylon6',
+  'pylon13',
+]);
+
 /**
- * 1× GIANTSPINE north of center + ~18 numbered pylons in an annulus r ≈ 6–14.
- * Clears center combat/portal (r ≥ 5) and rim 5.glb pylons (r ≤ 15).
+ * 1× GIANTSPINE north of center, 1× pinkTree south of the seal, 2× barkRoot
+ * on opposite flanks. Clears center combat/portal (r ≥ 6.75), the tree
+ * at [0, −8.5], GIANTSPINE at [4.2, 11.2], and rim pylons (r ≤ 15).
  */
 export const FAE_REALM_DECOR_LAYOUT: readonly FaeRealmDecorDef[] = [
   {
@@ -64,7 +84,9 @@ export const FAE_REALM_DECOR_LAYOUT: readonly FaeRealmDecorDef[] = [
     scale: 0.9,
   },
 
+  { model: 'barkRoot', position: [-12.8, 0, -4.2], rotationY: 1.8, scale: 0.59 },
 
+  { model: 'barkRoot', position: [5.2, 0, -7.2], rotationY: 2.1, scale: 0.85 },
 ];
 
 export function listUniqueFaeRealmDecorModels(
@@ -78,5 +100,5 @@ export function faeRealmDecorGlbUrl(model: FaeRealmDecorModel): string {
 }
 
 export function isNumberedFaePylon(model: FaeRealmDecorModel): boolean {
-  return model !== 'giantSpine';
+  return NUMBERED_FAE_PYLONS.has(model);
 }

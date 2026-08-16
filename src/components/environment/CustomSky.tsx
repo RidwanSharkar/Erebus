@@ -541,16 +541,16 @@ const SKY_BY_ROOM: Record<RoomBorderTheme, SkyThemeUniforms> = {
     cloudWarmth: 0.0,
   },
   purple: {
-    zenith: '#120818',
-    upperMid: '#2a1050',
-    midHorizon: '#5a2088',
-    horizon: '#a060c0',
+    zenith: '#14081c',
+    upperMid: '#2e1458',
+    midHorizon: '#6a38a8',
+    horizon: '#B18BFF',
     ground: '#050308',
     sunColor: '#e8d0f8',
     sunDir: [0.5, 0.12, -0.45],
-    sunHalo0: '#e0a8ff',
-    sunHalo1: '#a040c8',
-    sunHalo2: '#601878',
+    sunHalo0: '#D4C2FF',
+    sunHalo1: '#9B6FE8',
+    sunHalo2: '#5C3D8F',
     cloudWarmth: 0.5,
   },
 };
@@ -802,6 +802,15 @@ export function resolveSkyPresetByIndex(index: number): CustomSkyPreset {
   return RANDOM_SKY_PRESETS[wrapped] ?? 'throneBlue';
 }
 
+/** Horizon hex for scene fog so the fog wall matches the active sky preset. */
+export function skyHorizonHexForPresetIndex(
+  index: number | undefined | null,
+  fallback: CustomSkyPreset = 'green',
+): string {
+  const preset = index != null ? resolveSkyPresetByIndex(index) : fallback;
+  return skyUniformsForPreset(preset).horizon;
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -897,6 +906,7 @@ const CustomSky: React.FC<{
         vertexShader: SKY_VERT,
         fragmentShader: SKY_FRAG,
         side: BackSide,
+        fog: false,
       }),
     [],
   );

@@ -24,7 +24,8 @@ import { parseCoopAllyKind, parseCoopAllyOffer, type CoopAllyKind } from '@/util
 import { parseFaeBeastCompanionKind, type FaeBeastCompanionKind } from '@/utils/faeBeastCompanion';
 
 import { patchEnemyRef, patchPlayerRef } from '@/utils/multiplayerRefPatch';
-import { buildMushroomInstances, getMushroomColliderCenter } from '@/utils/mushroomLayout';
+import { MUSHROOM_COUNT, buildMushroomInstances, getMushroomColliderCenter } from '@/utils/mushroomLayout';
+import { exploreFog } from '@/utils/exploreFogOfWar';
 import { clearKnightBlock } from '@/utils/knightBlockState';
 import { installWebGlDiagnostics, recordMultiplayerDisconnect } from '@/utils/webglDiagnostics';
 import { getBackendUrl } from '@/utils/backendUrl';
@@ -47,7 +48,8 @@ import {
 import { cancelKnightStyleMiss, playKnightStyleHit } from '@/utils/knightStyleMeleeSound';
 import { playVengefulSpiritHitSound } from '@/utils/beastAudioSounds';
 
-export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'merchant' | 'boss' | 'intro' | 'deep_sanctum' | 'sunken_temple' | 'eternity_palace' | 'eden' | 'false_eden' | 'delirium_gate' | 'erebus_gate' | 'dream_layer' | 'fae_realm' | 'eden_finale';
+export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'merchant' | 'boss' | 'intro' | 'deep_sanctum' | 'sunken_temple' | 'eternity_palace' | 'eden' | 'false_eden' | 'delirium_gate' | 'erebus_gate' | 'dream_layer' | 'fae_realm' | 'eden_finale' | 'explore' | 'defense';
+export type CoopDefenseWaveState = 'idle' | 'active' | 'break' | 'complete' | 'failed';
 export type DeliriumStructureState = {
   hp: number;
   maxHp: number;
@@ -595,6 +597,14 @@ interface MultiplayerContextType {
   coopFaeRealmBossKind: FaeBeastCompanionKind | null;
   coopFaeBeastCompanionGranted: boolean;
   coopFaeBeastCompanionKind: FaeBeastCompanionKind | null;
+  /** Explore mode: endless seeded world entered from the throne red portal. */
+  coopExploreActive: boolean;
+  coopExploreSeed: number;
+  /** Defense mode: throne-shell holdout with allied towers. */
+  coopDefenseActive: boolean;
+  coopDefenseWave: number;
+  coopDefenseWaveState: CoopDefenseWaveState;
+  coopDefenseBreakEndsAt: number;
   /** Co-op sunken temple: one-time 4-room sequence after Boss 1. */
   coopSunkenActive: boolean;
   coopSunkenRoomIndex: number;
@@ -720,6 +730,8 @@ interface MultiplayerContextType {
   previewRoom: (roomId: string) => void;
   clearPreview: () => void;
   startGame: () => void;
+  /** Co-op death retry: reset the live run to throne prep, then reload. */
+  restartCoopRunToThrone: () => void;
   /** Co-op: request transition from throne room to main combat arena (server-authoritative). */
   enterCombatArena: (chosenCampType?: string) => void;
   useCoopFountain: () => void;
@@ -776,8 +788,8 @@ interface MultiplayerContextType {
     options?: { source?: 'titans_grip' },
   ) => void;
 
-  /** Co-op: ring mushroom HP (server sync). */
-  mushroomState: { health: number[]; maxHealth: number } | null;
+  /** Co-op: ring mushroom HP (server sync). Explore packed-index HP lives in `exploreHealth`. */
+  mushroomState: { health: number[]; maxHealth: number; exploreHealth?: Record<number, number> } | null;
   damageMushroom: (index: number, damage: number, sourcePlayerId?: string) => void;
 
   // Experience system actions
@@ -889,6 +901,7 @@ export type MultiplayerActionsContextType = Pick<
   | 'previewRoom'
   | 'clearPreview'
   | 'startGame'
+  | 'restartCoopRunToThrone'
   | 'enterCombatArena'
   | 'useCoopFountain'
   | 'chooseCoopAlly'
@@ -1014,7 +1027,7 @@ interface MultiplayerProviderProps {
 }
 
 const VALID_CAMP_KEYS = new Set(['red', 'blue', 'green', 'purple']);
-const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'trial', 'merchant', 'boss', 'intro', 'deep_sanctum', 'sunken_temple', 'eternity_palace', 'eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer', 'fae_realm', 'eden_finale']);
+const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'trial', 'merchant', 'boss', 'intro', 'deep_sanctum', 'sunken_temple', 'eternity_palace', 'eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer', 'fae_realm', 'eden_finale', 'explore', 'defense']);
 const VALID_COOP_TERRAIN_THEMES = new Set(['purple', 'blue', 'green']);
 
 function normalizeThronePortalLayout(v: unknown): 'rim' | 'center' {
@@ -1262,7 +1275,7 @@ type CoopSessionSnapshotPayload = {
   coopSkyPresetIndex?: unknown;
   coopGrassPresetIndex?: unknown;
   merchantInventory?: unknown;
-  mushroomState?: { health?: number[]; maxHealth?: number };
+  mushroomState?: { health?: number[]; maxHealth?: number; exploreHealth?: Record<number, number> };
   coopIntroPending?: boolean;
   coopIntroActive?: boolean;
   coopIntroRoomIndex?: number;
@@ -1277,6 +1290,12 @@ type CoopSessionSnapshotPayload = {
   coopFaeRealmBossKind?: string | null;
   coopFaeBeastCompanionGranted?: boolean;
   coopFaeBeastCompanionKind?: string | null;
+  coopExploreActive?: boolean;
+  coopExploreSeed?: number;
+  coopDefenseActive?: boolean;
+  coopDefenseWave?: number;
+  coopDefenseWaveState?: string;
+  coopDefenseBreakEndsAt?: number;
   coopSunkenActive?: boolean;
   coopSunkenRoomIndex?: number;
   coopSunkenPortalOpen?: boolean;
@@ -1351,7 +1370,7 @@ type CoopSnapshotSetters = {
   setMerchantInventory: React.Dispatch<React.SetStateAction<MerchantStockItem[]>>;
   setMerchantPurchaseState: React.Dispatch<React.SetStateAction<MerchantPurchaseState>>;
   setMushroomState: React.Dispatch<
-    React.SetStateAction<{ health: number[]; maxHealth: number } | null>
+    React.SetStateAction<{ health: number[]; maxHealth: number; exploreHealth?: Record<number, number> } | null>
   >;
   setCoopIntroPending: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopIntroActive: React.Dispatch<React.SetStateAction<boolean>>;
@@ -1367,6 +1386,12 @@ type CoopSnapshotSetters = {
   setCoopFaeRealmBossKind: React.Dispatch<React.SetStateAction<FaeBeastCompanionKind | null>>;
   setCoopFaeBeastCompanionGranted: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopFaeBeastCompanionKind: React.Dispatch<React.SetStateAction<FaeBeastCompanionKind | null>>;
+  setCoopExploreActive: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopExploreSeed: React.Dispatch<React.SetStateAction<number>>;
+  setCoopDefenseActive: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopDefenseWave: React.Dispatch<React.SetStateAction<number>>;
+  setCoopDefenseWaveState: React.Dispatch<React.SetStateAction<CoopDefenseWaveState>>;
+  setCoopDefenseBreakEndsAt: React.Dispatch<React.SetStateAction<number>>;
   setCoopSunkenActive: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopSunkenRoomIndex: React.Dispatch<React.SetStateAction<number>>;
   setCoopSunkenPortalOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -1476,6 +1501,46 @@ function applyFaeRealmSnapshot(
   if ('coopFaeBeastCompanionKind' in data || 'faeBeastCompanionKind' in data) {
     const kind = (data as any).coopFaeBeastCompanionKind ?? (data as any).faeBeastCompanionKind;
     setters.setCoopFaeBeastCompanionKind(parseFaeBeastCompanionKind(kind));
+  }
+}
+
+function applyExploreSnapshot(
+  data: CoopSessionSnapshotPayload | null | undefined,
+  setters: Pick<CoopSnapshotSetters, 'setCoopExploreActive' | 'setCoopExploreSeed' | 'setMushroomState'>,
+) {
+  if (!data) return;
+  if ('coopExploreActive' in data) setters.setCoopExploreActive(!!data.coopExploreActive);
+  if ('coopExploreSeed' in data) {
+    const seed = Number(data.coopExploreSeed);
+    setters.setCoopExploreSeed(Number.isFinite(seed) ? (seed >>> 0) : 0);
+  }
+}
+
+const VALID_DEFENSE_WAVE_STATES = new Set(['idle', 'active', 'break', 'complete', 'failed']);
+
+function normalizeDefenseWaveState(v: unknown): CoopDefenseWaveState {
+  const k = String(v || '').toLowerCase();
+  return VALID_DEFENSE_WAVE_STATES.has(k) ? (k as CoopDefenseWaveState) : 'idle';
+}
+
+function applyDefenseSnapshot(
+  data: CoopSessionSnapshotPayload | null | undefined,
+  setters: Pick<
+    CoopSnapshotSetters,
+    'setCoopDefenseActive' | 'setCoopDefenseWave' | 'setCoopDefenseWaveState' | 'setCoopDefenseBreakEndsAt'
+  >,
+) {
+  if (!data) return;
+  if ('coopDefenseActive' in data) setters.setCoopDefenseActive(!!data.coopDefenseActive);
+  if ('coopDefenseWave' in data) {
+    setters.setCoopDefenseWave(Math.max(0, Number(data.coopDefenseWave) || 0));
+  }
+  if ('coopDefenseWaveState' in data) {
+    setters.setCoopDefenseWaveState(normalizeDefenseWaveState(data.coopDefenseWaveState));
+  }
+  if ('coopDefenseBreakEndsAt' in data) {
+    const at = Number(data.coopDefenseBreakEndsAt);
+    setters.setCoopDefenseBreakEndsAt(Number.isFinite(at) ? at : 0);
   }
 }
 
@@ -1767,10 +1832,13 @@ function applyCoopSessionSnapshot(
     setters.setMushroomState({
       health: [...data.mushroomState.health],
       maxHealth: data.mushroomState.maxHealth ?? 10,
+      exploreHealth: data.mushroomState.exploreHealth ?? {},
     });
   }
   applyIntroSnapshot(data, setters);
   applyFaeRealmSnapshot(data, setters);
+  applyExploreSnapshot(data, setters);
+  applyDefenseSnapshot(data, setters);
   applySunkenSnapshot(data, setters);
   applyEternitySnapshot(data, setters);
   applyDeepSanctumSnapshot(data, setters);
@@ -1911,6 +1979,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopFaeRealmBossKind, setCoopFaeRealmBossKind] = useState<FaeBeastCompanionKind | null>(null);
   const [coopFaeBeastCompanionGranted, setCoopFaeBeastCompanionGranted] = useState(false);
   const [coopFaeBeastCompanionKind, setCoopFaeBeastCompanionKind] = useState<FaeBeastCompanionKind | null>(null);
+  const [coopExploreActive, setCoopExploreActive] = useState(false);
+  const [coopExploreSeed, setCoopExploreSeed] = useState(0);
+  const [coopDefenseActive, setCoopDefenseActive] = useState(false);
+  const [coopDefenseWave, setCoopDefenseWave] = useState(0);
+  const [coopDefenseWaveState, setCoopDefenseWaveState] = useState<CoopDefenseWaveState>('idle');
+  const [coopDefenseBreakEndsAt, setCoopDefenseBreakEndsAt] = useState(0);
   const [coopSunkenActive, setCoopSunkenActive] = useState(false);
   const [coopSunkenRoomIndex, setCoopSunkenRoomIndex] = useState(0);
   const [coopSunkenPortalOpen, setCoopSunkenPortalOpen] = useState(false);
@@ -1953,7 +2027,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     subclass: WeaponSubclass;
   } | null>(null);
   const [reclaimedPlayerState, setReclaimedPlayerState] = useState<ReclaimedPlayerState | null>(null);
-  const [mushroomState, setMushroomState] = useState<{ health: number[]; maxHealth: number } | null>(null);
+  const [mushroomState, setMushroomState] = useState<{
+    health: number[];
+    maxHealth: number;
+    exploreHealth?: Record<number, number>;
+  } | null>(null);
   const [currentPreview, setCurrentPreview] = useState<RoomPreview | null>(null);
   const [selectedWeapons, setSelectedWeaponsState] = useState<{
     primary: WeaponType;
@@ -2041,6 +2119,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     subclass?: WeaponSubclass;
     gameMode: 'multiplayer' | 'coop';
   } | null>(null);
+  /** Guard so ack + `coop-run-restarted` cannot double-reload after death retry. */
+  const coopRunRestartReloadingRef = useRef(false);
+  /** Skip one coop-boon socket emit after a fresh create-room reset so stale talents are not pushed. */
+  const skipBoonSyncRef = useRef(false);
 
   // Throttling refs to prevent infinite re-render loops
   const lastPlayerMoveUpdate = useRef<{ [playerId: string]: number }>({});
@@ -2239,6 +2321,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopFaeRealmBossKind,
       setCoopFaeBeastCompanionGranted,
       setCoopFaeBeastCompanionKind,
+      setCoopExploreActive,
+      setCoopExploreSeed,
+      setCoopDefenseActive,
+      setCoopDefenseWave,
+      setCoopDefenseWaveState,
+      setCoopDefenseBreakEndsAt,
       setCoopSunkenActive,
       setCoopSunkenRoomIndex,
       setCoopSunkenPortalOpen,
@@ -2282,6 +2370,52 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       (window as any).controlSystemRef?.current?.setReaperCrossentropyStack(0);
       (window as any).controlSystemRef?.current?.setBackstabKillstreakStack(0);
       cancelPendingEnemyRemovals();
+
+      const reclaimed = !!(data as { reclaimed?: boolean }).reclaimed;
+      const created = !!(data as { created?: boolean }).created;
+      if (created && !reclaimed) {
+        skipBoonSyncRef.current = true;
+        exploreFog.reset();
+        setTalentLoadoutState(createDefaultTalentLoadout());
+        setStatPointData(StatSystem.getInitialStatPointData());
+        setSkillPointData(SkillPointSystem.getInitialSkillPointData());
+        setSelectedWeaponsState({ primary: WeaponType.NONE, secondary: WeaponType.NONE });
+        setSelectedArchetypeState(ARCHETYPE_ROGUE);
+        setSelectedWeaponAspectState(ASPECT_LEGIONNAIRE);
+        setWeaponAspectByWeapon({});
+        setAbilityLoadoutState(getDefaultLoadout());
+        setInventory([]);
+        setMerchantInventory([]);
+        setDreamLayerInventory([]);
+        setMerchantPurchaseState({
+          dashChargePurchased: false,
+          weaponTalentPurchases: 0,
+          oxygenPurchases: 0,
+          warpdrivePurchases: 0,
+          healPurchasedThisVisit: false,
+          weaponTalentPurchasedThisVisit: false,
+          utilityPurchasedThisVisit: false,
+          backfillDashPurchasedThisVisit: false,
+          backfillTalentPurchasedThisVisit: false,
+        });
+        setDreamLayerPurchaseState({
+          healPurchasedThisVisit: false,
+          wardingPurchasedThisVisit: false,
+          legendaryAPurchasedThisVisit: false,
+          legendaryBPurchasedThisVisit: false,
+          ringPurchasedThisVisit: false,
+        });
+        setCoopCurrentRoomKind(null);
+        setCoopExploreActive(false);
+        setCoopExploreSeed(0);
+        setCoopTransitionOverlay(false);
+        coopTransitionOverlayRef.current = false;
+        coopPendingPortalSnapRef.current = false;
+        setLateJoinCombatLoadout(null);
+        setCoopPetCompanionUpgrade(null);
+        clearClientProgressCheckpoint();
+      }
+
       setIsInRoom(true);
       setCurrentRoomId(data.roomId);
       setGameMode(data.gameMode || 'multiplayer');
@@ -2312,7 +2446,6 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setGoldDrops(initialGoldDrops);
       setCampTypes(campArchetypeFromRoomPayload(data));
 
-      const reclaimed = !!(data as { reclaimed?: boolean }).reclaimed;
       const reclaimedState = (data as { reclaimedPlayerState?: ReclaimedPlayerState | null }).reclaimedPlayerState;
       if (reclaimed && reclaimedState) {
         setReclaimedPlayerState(reclaimedState);
@@ -2594,33 +2727,66 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       (window as any).controlSystemRef?.current?.resetBackstabCooldownForRelentless();
     });
 
-    addEventHandler('mushroom-damaged', (data: { index: number; newHealth: number; maxHealth: number; damage?: number }) => {
+    addEventHandler('mushroom-damaged', (data: {
+      index: number;
+      newHealth: number;
+      maxHealth: number;
+      damage?: number;
+      position?: { x: number; y: number; z: number };
+    }) => {
       setMushroomState((prev) => {
-        if (!prev) return prev;
-        const h = [...prev.health];
-        if (data.index >= 0 && data.index < h.length) h[data.index] = data.newHealth;
-        return { health: h, maxHealth: data.maxHealth ?? prev.maxHealth };
+        const maxHealth = data.maxHealth ?? prev?.maxHealth ?? 30;
+        if (data.index >= 0 && data.index < MUSHROOM_COUNT) {
+          const h = prev?.health ? [...prev.health] : [];
+          while (h.length < MUSHROOM_COUNT) h.push(maxHealth);
+          if (data.index >= 0 && data.index < h.length) h[data.index] = data.newHealth;
+          return { health: h, maxHealth, exploreHealth: prev?.exploreHealth };
+        }
+        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
+        exploreHealth[data.index] = data.newHealth;
+        return {
+          health: prev?.health ?? [],
+          maxHealth,
+          exploreHealth,
+        };
       });
 
       if (typeof data.damage === 'number' && data.damage > 0) {
-        const inst = buildMushroomInstances()[data.index];
-        if (inst) {
-          const mgr = (window as any).damageNumberManager;
-          if (mgr?.addDamageNumber) {
-            const c = getMushroomColliderCenter(inst);
-            const pos = new Vector3(c.x, c.y + 1.0, c.z);
-            mgr.addDamageNumber(data.damage, false, pos, 'mushroom');
+        const mgr = (window as any).damageNumberManager;
+        if (mgr?.addDamageNumber) {
+          let pos: Vector3 | null = null;
+          if (data.position) {
+            pos = new Vector3(data.position.x, (data.position.y ?? 0.1) + 1.0, data.position.z);
+          } else {
+            const inst = buildMushroomInstances()[data.index];
+            if (inst) {
+              const c = getMushroomColliderCenter(inst);
+              pos = new Vector3(c.x, c.y + 1.0, c.z);
+            }
           }
+          if (pos) mgr.addDamageNumber(data.damage, false, pos, 'mushroom');
         }
       }
     });
 
-    addEventHandler('mushroom-destroyed', (data: { index: number }) => {
+    addEventHandler('mushroom-destroyed', (data: {
+      index: number;
+      position?: { x: number; y: number; z: number };
+    }) => {
       setMushroomState((prev) => {
-        if (!prev) return prev;
-        const h = [...prev.health];
-        if (data.index >= 0 && data.index < h.length) h[data.index] = 0;
-        return { ...prev, health: h };
+        if (data.index >= 0 && data.index < MUSHROOM_COUNT) {
+          if (!prev) return prev;
+          const h = [...prev.health];
+          if (data.index >= 0 && data.index < h.length) h[data.index] = 0;
+          return { ...prev, health: h };
+        }
+        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
+        exploreHealth[data.index] = 0;
+        return {
+          health: prev?.health ?? [],
+          maxHealth: prev?.maxHealth ?? 30,
+          exploreHealth,
+        };
       });
     });
 
@@ -3156,6 +3322,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       );
     });
 
+    addEventHandler('coop-run-restarted', () => {
+      if (coopRunRestartReloadingRef.current) return;
+      coopRunRestartReloadingRef.current = true;
+      window.location.reload();
+    });
+
     addEventHandler('coop-throne-sync', (data: any) => {
       cancelPendingEnemyRemovals();
       applyCoopSessionSnapshot(
@@ -3250,6 +3422,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopFaeRealmBossKind,
         setCoopFaeBeastCompanionGranted,
         setCoopFaeBeastCompanionKind,
+      });
+      applyExploreSnapshot(data, {
+        setCoopExploreActive,
+        setCoopExploreSeed,
+        setMushroomState,
+      });
+      applyDefenseSnapshot(data, {
+        setCoopDefenseActive,
+        setCoopDefenseWave,
+        setCoopDefenseWaveState,
+        setCoopDefenseBreakEndsAt,
       });
       if (data?.players && Array.isArray(data.players)) {
         setPlayers((prev) => {
@@ -3630,6 +3813,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopFaeBeastCompanionGranted,
         setCoopFaeBeastCompanionKind,
       });
+      applyExploreSnapshot(data, {
+        setCoopExploreActive,
+        setCoopExploreSeed,
+        setMushroomState,
+      });
+      applyDefenseSnapshot(data, {
+        setCoopDefenseActive,
+        setCoopDefenseWave,
+        setCoopDefenseWaveState,
+        setCoopDefenseBreakEndsAt,
+      });
       applySunkenSnapshot(data, {
         setCoopSunkenActive,
         setCoopSunkenRoomIndex,
@@ -3684,6 +3878,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setMushroomState({
           health: [...data.mushroomState.health],
           maxHealth: data.mushroomState.maxHealth ?? 10,
+          exploreHealth: data.mushroomState.exploreHealth ?? {},
         });
       }
       const transitionId = data?.coopCombatTransitionId != null
@@ -3720,6 +3915,25 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           return next;
         });
       }
+    });
+
+    addEventHandler('coop-defense-wave-state', (data: any) => {
+      applyDefenseSnapshot(data, {
+        setCoopDefenseActive,
+        setCoopDefenseWave,
+        setCoopDefenseWaveState,
+        setCoopDefenseBreakEndsAt,
+      });
+    });
+
+    addEventHandler('coop-defense-failed', (data: any) => {
+      applyDefenseSnapshot(data, {
+        setCoopDefenseActive,
+        setCoopDefenseWave,
+        setCoopDefenseWaveState,
+        setCoopDefenseBreakEndsAt,
+      });
+      setCoopDefenseWaveState('failed');
     });
 
     addEventHandler('room-preview', (data) => {
@@ -4088,10 +4302,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     const currentInstance = serverInstanceRef.current;
     const local = active.id ? playersRef.current.get(active.id) : undefined;
     const playerName = local?.name || `Player${Math.floor(Math.random() * 10000)}`;
-    const weapon = local?.weapon && local.weapon !== WeaponType.NONE
-      ? local.weapon
-      : WeaponType.SCYTHE;
-    const subclass = local?.subclass;
+    const freshJoin = !options?.expectExisting;
+    const weapon = freshJoin
+      ? WeaponType.NONE
+      : (local?.weapon && local.weapon !== WeaponType.NONE ? local.weapon : WeaponType.SCYTHE);
+    const subclass = freshJoin ? undefined : local?.subclass;
 
     const emitJoin = () => joinRoom(roomId, playerName, weapon, subclass, 'coop', options);
 
@@ -4209,6 +4424,30 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     if (socket && currentRoomId) {
       socket.emit('start-game', { roomId: currentRoomId });
     }
+  }, [socket, currentRoomId]);
+
+  const restartCoopRunToThrone = useCallback(() => {
+    const reload = () => {
+      if (coopRunRestartReloadingRef.current) return;
+      coopRunRestartReloadingRef.current = true;
+      window.location.reload();
+    };
+    if (!socket || !currentRoomId) {
+      reload();
+      return;
+    }
+    let settled = false;
+    const timeoutId = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reload();
+    }, 4000);
+    socket.emit('restart-coop-to-throne', { roomId: currentRoomId }, () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      reload();
+    });
   }, [socket, currentRoomId]);
 
   const startCoopPortalBlink = useCallback(() => {
@@ -4841,6 +5080,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   useEffect(() => {
     if (!socket || !currentRoomId || gameMode !== 'coop') return;
     if (!socket.connected) return;
+    if (skipBoonSyncRef.current) {
+      skipBoonSyncRef.current = false;
+      return;
+    }
 
     const localPlayerLevel = socket.id ? (players.get(socket.id)?.level ?? 1) : 1;
     const effectiveStats = StatSystem.getEffectiveStatsWithInventory(statPointData.stats, inventory);
@@ -5237,6 +5480,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     coopFaeRealmBossKind,
     coopFaeBeastCompanionGranted,
     coopFaeBeastCompanionKind,
+    coopExploreActive,
+    coopExploreSeed,
+    coopDefenseActive,
+    coopDefenseWave,
+    coopDefenseWaveState,
+    coopDefenseBreakEndsAt,
     coopSunkenActive,
     coopSunkenRoomIndex,
     coopSunkenPortalOpen,
@@ -5294,6 +5543,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     previewRoom,
     clearPreview,
     startGame,
+    restartCoopRunToThrone,
     enterCombatArena,
     useCoopFountain,
     chooseCoopAlly,
@@ -5386,7 +5636,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     closeChat,
     setPlayers
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, playerRosterMetaRev, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopSkyPresetIndex, coopGrassPresetIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, lateJoinCombatLoadout, clearLateJoinCombatLoadout, reclaimedPlayerState, clearReclaimedPlayerState, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, switchRoom, leaveRoom, previewRoom, clearPreview, startGame, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerArchetype, updatePlayerWeaponAspect, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastAlliedHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, selectedArchetype, selectedWeaponAspect, weaponAspectByWeapon, setSelectedWeapons, setSelectedArchetype, setSelectedWeaponAspect, rememberWeaponAspect, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, registerMerchantNpcGreetHandler, registerPlayerGoldChangedHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
+  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, playerRosterMetaRev, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopSkyPresetIndex, coopGrassPresetIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, lateJoinCombatLoadout, clearLateJoinCombatLoadout, reclaimedPlayerState, clearReclaimedPlayerState, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, switchRoom, leaveRoom, previewRoom, clearPreview, startGame, restartCoopRunToThrone, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerArchetype, updatePlayerWeaponAspect, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastAlliedHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, selectedArchetype, selectedWeaponAspect, weaponAspectByWeapon, setSelectedWeapons, setSelectedArchetype, setSelectedWeaponAspect, rememberWeaponAspect, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, registerMerchantNpcGreetHandler, registerPlayerGoldChangedHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
 
   const actionsValue: MultiplayerActionsContextType = useMemo(
     () => ({
@@ -5402,6 +5652,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       previewRoom,
       clearPreview,
       startGame,
+      restartCoopRunToThrone,
       enterCombatArena,
       useCoopFountain,
       chooseCoopAlly,
@@ -5495,6 +5746,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       previewRoom,
       clearPreview,
       startGame,
+      restartCoopRunToThrone,
       enterCombatArena,
       useCoopFountain,
       chooseCoopAlly,
@@ -5632,6 +5884,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopFaeRealmBossKind,
       coopFaeBeastCompanionGranted,
       coopFaeBeastCompanionKind,
+      coopExploreActive,
+      coopExploreSeed,
+      coopDefenseActive,
+      coopDefenseWave,
+      coopDefenseWaveState,
+      coopDefenseBreakEndsAt,
       coopSunkenActive,
       coopSunkenRoomIndex,
       coopSunkenPortalOpen,
@@ -5740,6 +5998,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopFaeRealmBossKind,
       coopFaeBeastCompanionGranted,
       coopFaeBeastCompanionKind,
+      coopExploreActive,
+      coopExploreSeed,
+      coopDefenseActive,
+      coopDefenseWave,
+      coopDefenseWaveState,
+      coopDefenseBreakEndsAt,
       coopPetCompanionUpgrade,
       coopEdenFountainUsed,
       coopEdenResumeKind,

@@ -14,6 +14,12 @@ import {
 
 export const VOID_PORTAL_RADIUS = 2.5;
 export const VOID_PORTAL_INTERACT_RADIUS = 3.3;
+export const VOID_PORTAL_SMALL_RADIUS = 1.75;
+
+/** Interact disk scales with visual radius so smaller portals don't overlap. */
+export function voidPortalInteractRadius(visualRadius: number = VOID_PORTAL_RADIUS): number {
+  return visualRadius * (VOID_PORTAL_INTERACT_RADIUS / VOID_PORTAL_RADIUS);
+}
 
 export type VoidPortalScheme = 'void' | 'boss' | 'sunken' | 'eternity' | 'finale';
 
@@ -25,12 +31,12 @@ const VOID_PORTAL_SCHEMES: Record<
   }
 > = {
   void: {
-    energyDim: [0.12, 0.0, 0.18],
-    energyBright: [0.72, 0.04, 1.0],
-    rim: '#7c3aed',
-    light: '#6c3dff',
-    particleDim: [0.12, 0.0, 0.18],
-    particleBright: [0.72, 0.04, 1.0],
+    energyDim: [0.22, 0.12, 0.32],
+    energyBright: [0.694, 0.545, 1.0],
+    rim: '#9B6FE8',
+    light: '#B18BFF',
+    particleDim: [0.22, 0.12, 0.32],
+    particleBright: [0.694, 0.545, 1.0],
   },
   boss: {
     energyDim: [0.18, 0.0, 0.02],
@@ -74,6 +80,12 @@ interface VoidPortalProps {
   /** Raises particle spawn band and point light (throne room tile height). */
   effectHeightOffset?: number;
   scheme?: VoidPortalScheme;
+  /** Visual maw radius. Default matches the original 2.5 throne void. */
+  radius?: number;
+  /** Falling-mote count. Defaults to VOID_DRAG_PARTICLE_COUNT (36). */
+  particleCount?: number;
+  /** Max spawn height of falling motes. Defaults to the original ~3.2 band. */
+  particleStartHeightMax?: number;
 }
 
 export default function VoidPortal({
@@ -82,6 +94,9 @@ export default function VoidPortal({
   visible = true,
   effectHeightOffset = 0,
   scheme = 'void',
+  radius = VOID_PORTAL_RADIUS,
+  particleCount,
+  particleStartHeightMax,
 }: VoidPortalProps) {
   const matRef = useRef<ShaderMaterialType>(null);
   const rimGlowRef = useRef<ShaderMaterialType>(null);
@@ -106,11 +121,13 @@ export default function VoidPortal({
 
   const { dragGeo, dragMat } = useMemo(
     () =>
-      createVoidDragSystem(VOID_PORTAL_RADIUS, palette, {
+      createVoidDragSystem(radius, palette, {
         open,
         effectHeightOffset,
+        count: particleCount,
+        startHeightMax: particleStartHeightMax,
       }),
-    [palette.particleBright, palette.particleDim],
+    [palette.particleBright, palette.particleDim, radius, particleCount, particleStartHeightMax],
   );
 
   useEffect(() => {
@@ -153,7 +170,7 @@ export default function VoidPortal({
     }
     dragMat.uniforms.uTime.value = t;
     dragMat.uniforms.uOpen.value = open;
-    dragMat.uniforms.uPortalRadius.value = VOID_PORTAL_RADIUS;
+    dragMat.uniforms.uPortalRadius.value = radius;
     const light = portalLight.current;
     if (light?.active) {
       light.setPosition(position[0], position[1] + 0.35 + effectHeightOffset, position[2]);
@@ -186,16 +203,16 @@ export default function VoidPortal({
 
   return (
     <group position={groupPosition}>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
-        <circleGeometry args={[VOID_PORTAL_RADIUS, 48]} />
+      <mesh key={`maw-${radius}`} rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
+        <circleGeometry args={[radius, 48]} />
         <primitive ref={matRef} object={mawMaterial} attach="material" />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]} renderOrder={2}>
-        <circleGeometry args={[VOID_PORTAL_RADIUS, 48]} />
+      <mesh key={`rim-${radius}`} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.008, 0]} renderOrder={2}>
+        <circleGeometry args={[radius, 48]} />
         <primitive ref={rimGlowRef} object={rimGlowMaterial} attach="material" />
       </mesh>
       <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.005, 0]} renderOrder={3}>
-        <ringGeometry args={[VOID_PORTAL_RADIUS * 0.9, VOID_PORTAL_RADIUS * 1.1, 48]} />
+        <ringGeometry args={[radius * 0.9, radius * 1.1, 48]} />
         <meshBasicMaterial
           color={palette.rim}
           transparent

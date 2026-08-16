@@ -67,8 +67,8 @@ const MELEE_PROFILES = {
     idField: 'tigerId',
     weightClass: 'beast',
     range: 2.6,
-    cooldownMs: 750, // was 850 — compensate for arc dodge window
-    swingLockMs: 1500,
+    cooldownMs: 875, // was 850 — compensate for arc dodge window
+    swingLockMs: 1250,
     hitDelayMs: 750,
     variants: 2,
     baseDamage: 19,
@@ -83,7 +83,7 @@ const MELEE_PROFILES = {
     idField: 'wolfId',
     weightClass: 'beast',
     range: 2.6,
-    cooldownMs: 750, // was 850
+    cooldownMs: 875, // was 850
     swingLockMs: 1100,
     hitDelayMs: 650,
     variants: 2,
@@ -98,7 +98,7 @@ const MELEE_PROFILES = {
     idField: 'bearId',
     weightClass: 'beast',
     range: 2.75,
-    cooldownMs: 1350, // was 1500
+    cooldownMs: 1450, // was 1500
     swingLockMs: 1500,
     hitDelayMs: 750,
     variants: 2,
@@ -113,7 +113,7 @@ const MELEE_PROFILES = {
     idField: 'serpentId',
     weightClass: 'beast',
     range: 2.75,
-    cooldownMs: 900, // was 1000
+    cooldownMs: 1100, // was 1000
     swingLockMs: 2250,
     hitDelayMs: 750,
     variants: 2,
@@ -159,7 +159,7 @@ const MELEE_PROFILES = {
     idField: 'wyvernId',
     weightClass: 'large-beast',
     range: 3.075,
-    cooldownMs: 1700,
+    cooldownMs: 2100,
     swingLockMs: 1500, // matches WyvernRenderer ATTACK_DURATION / attack clip
     hitDelayMs: 775,
     variants: 1,
@@ -175,7 +175,7 @@ const MELEE_PROFILES = {
     idField: 'terrorhawkId',
     weightClass: 'large-beast',
     range: 3.0,
-    cooldownMs: 1700,
+    cooldownMs: 2200,
     swingLockMs: 2100,
     hitDelayMs: 750,
     variants: 1,
@@ -189,8 +189,8 @@ const MELEE_PROFILES = {
     eventPrefix: 'destiny',
     idField: 'destinyId',
     weightClass: 'large-beast',
-    range: 4.0,
-    cooldownMs: 2000,
+    range: 4.1,
+    cooldownMs: 2200,
     swingLockMs: 1500,
     hitDelayMs: 1200,
     variants: 1,
@@ -208,7 +208,7 @@ const MELEE_PROFILES = {
     idField: 'knightId',
     weightClass: 'humanoid',
     range: 2.6,
-    cooldownMs: 2200, // was 2500
+    cooldownMs: 2100, // was 2500
     swingLockMs: 900,
     hitDelayMs: 795,
     variants: 1,
@@ -236,11 +236,11 @@ const MELEE_PROFILES = {
     idField: 'spectreId',
     weightClass: 'humanoid',
     range: 2.725,
-    cooldownMs: 1400, // was 1600
+    cooldownMs: 1500, // was 1600
     swingLockMs: 1200,
     hitDelayMs: 775,
     variants: 2,
-    baseDamage: 40,
+    baseDamage: 44,
     damageType: 'spectre_melee',
     alliedDiskRadius: 2.6,
   }),
@@ -250,7 +250,7 @@ const MELEE_PROFILES = {
     idField: 'deathKnightId',
     weightClass: 'humanoid',
     range: 2.725,
-    cooldownMs: 1400, // was 1600
+    cooldownMs: 1500, // was 1600
     swingLockMs: 1000,
     hitDelayMs: 750,
     variants: 2,
@@ -264,7 +264,7 @@ const MELEE_PROFILES = {
     idField: 'shamanId',
     weightClass: 'humanoid',
     range: 2.725,
-    cooldownMs: 850, // was 950
+    cooldownMs: 1350, // was 950
     swingLockMs: 950,
     hitDelayMs: 725,
     variants: 1,
@@ -311,7 +311,7 @@ const MELEE_PROFILES = {
     idField: 'nemesisId',
     weightClass: 'giant',
     range: 3.0,
-    cooldownMs: 1250,
+    cooldownMs: 1750,
     swingLockMs: 950,
     hitDelayMs: 750, // pre-overhaul NEMESIS_HIT_DELAY_MS
     variants: 2,
@@ -330,7 +330,7 @@ const MELEE_PROFILES = {
     idField: 'stoneGiantId',
     weightClass: 'giant',
     range: 3.0,
-    cooldownMs: 2500,
+    cooldownMs: 2100,
     swingLockMs: 1940,
     hitDelayMs: 825,
     variants: 2,
@@ -348,7 +348,7 @@ const MELEE_PROFILES = {
     idField: 'eternalOakId',
     weightClass: 'giant',
     range: 3.0,
-    cooldownMs: 2500,
+    cooldownMs: 2100,
     swingLockMs: 2240,
     hitDelayMs: 825,
     variants: 2,
@@ -366,7 +366,7 @@ const MELEE_PROFILES = {
     idField: 'colossusId',
     weightClass: 'giant',
     range: 3.0,
-    cooldownMs: 2500,
+    cooldownMs: 1900,
     swingLockMs: 1650,
     hitDelayMs: 735,
     variants: 2,
@@ -384,7 +384,7 @@ const MELEE_PROFILES = {
     idField: 'bossId',
     weightClass: 'giant',
     range: 2.9,
-    cooldownMs: 2750,
+    cooldownMs: 2150,
     swingLockMs: 1200,
     hitDelayMs: 875,
     variants: 1,

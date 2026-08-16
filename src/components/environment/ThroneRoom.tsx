@@ -4,6 +4,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { AdditiveBlending, BackSide, Group, MathUtils, MeshBasicMaterial, SphereGeometry, TorusGeometry, Vector3 } from '@/utils/three-exports';
 import CustomSky from './CustomSky';
 import ThroneCenterSeal, { THRONE_CENTER_SEAL_RADIUS } from './ThroneCenterSeal';
+import DefenseCenterPlatform, { DEFENSE_PLATFORM_RADIUS } from './DefenseCenterPlatform';
 import ThroneOuterFloor from './ThroneOuterFloor';
 import SanctumIncinerationRuneDisc, {
   sanctumRuneDiscScaleForBandInner,
@@ -52,6 +53,7 @@ import ThroneSkyRayDecor from './ThroneSkyRayDecor';
 import ThroneStatueDecor from './ThroneStatueDecor';
 import ThronePerimeterPylonDecor from './ThronePerimeterPylonDecor';
 import ThroneCenterDecor from './ThroneCenterDecor';
+import ThroneFireplaceDecor from '@/components/environment/ThroneFireplaceDecor';
 import CloudSeaOcean from './CloudSeaOcean';
 import ThroneIslandUnderside from './ThroneIslandUnderside';
 import ThroneRimMistfall from './ThroneRimMistfall';
@@ -137,6 +139,33 @@ export const THRONE_PORTAL_POSITIONS: ReadonlyArray<{ readonly x: number; readon
     Object.freeze({ x: -THRONE_PORTAL_HALF_SPACING_X, y: THRONE_PORTAL_Y, z: THRONE_PORTAL_Z }),
     Object.freeze({ x: THRONE_PORTAL_HALF_SPACING_X, y: THRONE_PORTAL_Y, z: THRONE_PORTAL_Z }),
   ]);
+
+/** Purple intro void portal — south rim center. */
+export const THRONE_VOID_PORTAL_POSITION = Object.freeze({ x: 0, y: 0, z: -11.5 });
+export const THRONE_VOID_PORTAL_RADIUS = 2.025;
+
+/** Side-portal X offset so red / blue sit clear of the larger purple center void. */
+export const THRONE_SIDE_VOID_PORTAL_SPACING_X = 7.75;
+export const THRONE_SIDE_VOID_PORTAL_Z = -9.0;
+export const THRONE_SIDE_VOID_PORTAL_RADIUS = 1.325;
+
+/** Red explore-mode void portal — inward of the south rim, west of the purple center void. */
+export const THRONE_EXPLORE_PORTAL_POSITION = Object.freeze({
+  x: -THRONE_SIDE_VOID_PORTAL_SPACING_X,
+  y: 0,
+  z: THRONE_SIDE_VOID_PORTAL_Z,
+});
+
+/** Blue defense-mode void portal — inward of the south rim, east of the purple center void. */
+export const THRONE_DEFENSE_PORTAL_POSITION = Object.freeze({
+  x: THRONE_SIDE_VOID_PORTAL_SPACING_X,
+  y: 0,
+  z: THRONE_SIDE_VOID_PORTAL_Z,
+});
+
+/** Defense arena: same throne shell, scaled up. Keep in sync with backend `DEFENSE_ROOM_SCALE`. */
+export const DEFENSE_ROOM_SCALE = 1.35;
+export const DEFENSE_ROOM_RADIUS = COOP_THRONE_ROOM_RADIUS * DEFENSE_ROOM_SCALE;
 
 /** Main map: reward pedestal at the far end of the arena (opposite the player entry). */
 export const MAIN_COMBAT_PEDESTAL_POSITION = Object.freeze({
@@ -290,7 +319,7 @@ export type ThroneMainRoomCamp = 'purple' | 'blue' | 'red' | 'green';
 export type CoopPortalKind = ThroneMainRoomCamp | 'stat' | 'trial' | 'merchant' | 'boss';
 
 const THRONE_PORTAL_COLOR_HEX: Record<CoopPortalKind, string> = {
-  purple: '#6c3dff',
+  purple: '#B18BFF',
   blue: '#3b82f6',
   red: '#ef4444',
   green: '#22c55e',
@@ -301,7 +330,7 @@ const THRONE_PORTAL_COLOR_HEX: Record<CoopPortalKind, string> = {
 };
 
 const PORTAL_RITUAL_COLORS: Record<CoopPortalKind, { base: string; glow: string }> = {
-  purple: { base: '#4c1d95', glow: '#c4b5fd' },
+  purple: { base: '#5C3D8F', glow: '#D4C2FF' },
   blue: { base: '#1e3a8a', glow: '#93c5fd' },
   red: { base: '#991b1b', glow: '#fca5a5' },
   green: { base: '#166534', glow: '#86efac' },
@@ -1378,8 +1407,9 @@ interface ThroneRoomProps {
   /**
    * `prep`: full staging room (pillars, pedestals, weapons, south-rim portals).
    * `bossArena`: same shell only — used for co-op boss fight + post-boss portals (`CoopMainArenaPortals`).
+   * `defense`: scaled prep shell without pedestals / portals — defense-mode arena.
    */
-  layout?: 'prep' | 'bossArena';
+  layout?: 'prep' | 'bossArena' | 'defense';
   /**
    * Two distinct main-room archetypes for the side-by-side portals on the south rim.
    * From server `thronePortalOffer` (initial prep only).
@@ -1404,7 +1434,7 @@ interface ThroneRoomProps {
   showcaseTick?: number;
   /** Local player foot position — drives pedestal proximity tooltips. */
   playerPositionRef?: React.MutableRefObject<Vector3>;
-  /** Co-op intro: center void portal opens after weapon selection delay. */
+  /** Co-op intro: south-rim void portal opens after weapon selection delay. */
   voidPortalOpen?: boolean;
   voidPortalOpenProgress?: number;
   /** Server-authoritative random CustomSky preset index. */
@@ -1435,10 +1465,11 @@ function ThroneRoom({
   /** All co-op boss tiers + post-boss intermission share the same purple shell (legacy Boss 2 / Archon look). */
   const usePurpleBossArenaShell = layout === 'bossArena';
   const isPrep = layout === 'prep';
+  const isDefense = layout === 'defense';
   const prepGrassPalette = resolveGrassPresetByIndex(grassPresetIndex);
 
   return (
-    <group name="throne-room">
+    <group name="throne-room" scale={isDefense ? DEFENSE_ROOM_SCALE : 1}>
       {usePurpleBossArenaShell ? (
         <CustomSky skyPresetIndex={skyPresetIndex} roomTheme="red" animateClouds={false} />
       ) : (
@@ -1462,13 +1493,23 @@ function ThroneRoom({
         <StylizedGrass
           fieldShape="disc"
           radius={THRONE_GRASS_OUTER_RADIUS}
-          excludeInnerRadius={usePurpleBossArenaShell ? 0 : THRONE_CENTER_SEAL_RADIUS}
-          count={THRONE_GRASS_COUNT}
+          excludeInnerRadius={
+            usePurpleBossArenaShell
+              ? 0
+              : isDefense
+                ? DEFENSE_PLATFORM_RADIUS
+                : THRONE_CENTER_SEAL_RADIUS
+          }
+          count={
+            isDefense
+              ? Math.round(THRONE_GRASS_COUNT * DEFENSE_ROOM_SCALE ** 2)
+              : THRONE_GRASS_COUNT
+          }
           roomTheme={usePurpleBossArenaShell ? undefined : 'green'}
           grassPalette={usePurpleBossArenaShell ? 'purple' : prepGrassPalette}
           bladeHeight={0.42}
           windStrength={combatActive ? 0 : 0.22}
-          densityScale={combatActive ? 0.5 : 1}
+          densityScale={isDefense ? 1 : combatActive ? 0.5 : 1}
         />
         <ThroneNatureProps />
         {/* <ThroneTurretProps /> */}
@@ -1480,7 +1521,8 @@ function ThroneRoom({
         position={THRONE_RUNE_DISC_POSITION}
       />
       {isPrep && <ThroneCenterSeal />}
-
+      {isDefense && <DefenseCenterPlatform />}
+      <ThroneFireplaceDecor />
 
       {isPrep && (
         <>
@@ -1511,10 +1553,31 @@ function ThroneRoom({
             />
           ) : null}
           <VoidPortal
-            position={[0, 0.005, 0]}
+            position={[THRONE_VOID_PORTAL_POSITION.x, 0.005, THRONE_VOID_PORTAL_POSITION.z]}
             open={voidPortalOpenProgress}
             visible={voidPortalOpen || voidPortalOpenProgress > 0.01}
             effectHeightOffset={0.3}
+            radius={THRONE_VOID_PORTAL_RADIUS}
+          />
+          <VoidPortal
+            position={[THRONE_EXPLORE_PORTAL_POSITION.x, 0.005, THRONE_EXPLORE_PORTAL_POSITION.z]}
+            scheme="boss"
+            open={voidPortalOpenProgress}
+            visible={voidPortalOpen || voidPortalOpenProgress > 0.01}
+            effectHeightOffset={0.3}
+            radius={THRONE_SIDE_VOID_PORTAL_RADIUS}
+            particleCount={10}
+            particleStartHeightMax={1.1}
+          />
+          <VoidPortal
+            position={[THRONE_DEFENSE_PORTAL_POSITION.x, 0.005, THRONE_DEFENSE_PORTAL_POSITION.z]}
+            scheme="sunken"
+            open={voidPortalOpenProgress}
+            visible={voidPortalOpen || voidPortalOpenProgress > 0.01}
+            effectHeightOffset={0.3}
+            radius={THRONE_SIDE_VOID_PORTAL_RADIUS}
+            particleCount={10}
+            particleStartHeightMax={1.1}
           />
           {/* // <ThroneCenterDecor /> */}
         </>

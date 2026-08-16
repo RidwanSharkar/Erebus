@@ -37,6 +37,7 @@ import ZombieRenderer from '@/components/enemies/ZombieRenderer';
 import VengefulSpiritRenderer from '@/components/enemies/VengefulSpiritRenderer';
 import AlliedKnightRenderer from '@/components/enemies/AlliedKnightRenderer';
 import AlliedHealerRenderer from '@/components/enemies/AlliedHealerRenderer';
+import DefenseTowerRenderer from '@/components/enemies/DefenseTowerRenderer';
 import AlliedHuntressRenderer from '@/components/enemies/AlliedHuntressRenderer';
 import AlliedPhantomRenderer from '@/components/enemies/AlliedPhantomRenderer';
 import AlliedDemonRenderer from '@/components/enemies/AlliedDemonRenderer';
@@ -223,6 +224,22 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
             isDying={enemy.isDying}
             staggerBuildup={enemy.staggerBuildup ?? 0}
             alliedOrbSlots={enemy.alliedOrbSlots}
+          />
+        );
+      })}
+
+      {(enemiesByType.get('allied-tower') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <DefenseTowerRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={enemy.position}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
           />
         );
       })}

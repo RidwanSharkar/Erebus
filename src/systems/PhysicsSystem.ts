@@ -16,7 +16,7 @@ export class PhysicsSystem extends BasePhysicsSystem {
 
   /** When false, castle wall AABB checks are skipped (co-op throne room). */
   private castleWallPhysicsEnabled = true;
-  private arenaBoundaryMode: 'circle' | 'square' | 'hex' = 'square';
+  private arenaBoundaryMode: 'circle' | 'square' | 'hex' | 'none' = 'square';
 
   /** Legacy fixed tree discs; disable when forest visuals use procedural positions. */
   private treeCollisionEnabled = true;
@@ -26,6 +26,9 @@ export class PhysicsSystem extends BasePhysicsSystem {
 
   /** Optional circular XZ disc obstacles (typically empty). */
   private cornerMountainObstacles: Array<{ x: number; z: number; radius: number }> = [];
+
+  /** Streamed explore-mode prop discs (trees/rocks); updated as chunks load/unload. */
+  private streamedObstacles: Array<{ x: number; z: number; radius: number }> = [];
 
   private _deltaPosition = new Vector3();
   private _currentPosition = new Vector3();
@@ -88,7 +91,7 @@ export class PhysicsSystem extends BasePhysicsSystem {
     this.arenaBoundaryMode = enabled ? 'square' : 'circle';
   }
 
-  public setArenaBoundaryMode(mode: 'circle' | 'square' | 'hex'): void {
+  public setArenaBoundaryMode(mode: 'circle' | 'square' | 'hex' | 'none'): void {
     this.arenaBoundaryMode = mode;
   }
 
@@ -109,6 +112,13 @@ export class PhysicsSystem extends BasePhysicsSystem {
     obstacles: Array<{ x: number; z: number; radius: number }> | null,
   ): void {
     this.cornerMountainObstacles = obstacles && obstacles.length > 0 ? obstacles.slice() : [];
+  }
+
+  /** Streamed circular XZ obstacles (explore-mode trees/rocks). Pass null or [] to clear. */
+  public setStreamedObstacles(
+    obstacles: Array<{ x: number; z: number; radius: number }> | null,
+  ): void {
+    this.streamedObstacles = obstacles && obstacles.length > 0 ? obstacles : [];
   }
 
   public update(entities: Entity[], deltaTime: number): void {
@@ -178,6 +188,7 @@ export class PhysicsSystem extends BasePhysicsSystem {
     const hexBoundary = this.arenaBoundaryMode === 'hex'
       ? this.getHexBoundaryCorrection(potentialPosition)
       : null;
+    const skipArenaClamp = this.arenaBoundaryMode === 'none';
 
     // Check for tree, corner mountains, throne pillars, and castle-wall collisions
     const treeCollision = this.treeCollisionEnabled
@@ -196,12 +207,12 @@ export class PhysicsSystem extends BasePhysicsSystem {
     }
 
     // Circular clamp only when castle walls are off (throne prep). Main arena uses wall AABBs + square interior.
-    if (hexBoundary && hexBoundary.outside) {
+    if (!skipArenaClamp && hexBoundary && hexBoundary.outside) {
       const corrected = this.clampToHexBoundary(potentialPosition);
       transform.setPosition(corrected.x, currentPosition.y + deltaPosition.y, corrected.z);
       this._velocityNormal.copy(movement.velocity).projectOnVector(hexBoundary.normal);
       movement.velocity.sub(this._velocityNormal.multiplyScalar(0.5));
-    } else if (!this.castleWallPhysicsEnabled && distanceFromCenter >= MAP_RADIUS) {
+    } else if (!skipArenaClamp && !this.castleWallPhysicsEnabled && distanceFromCenter >= MAP_RADIUS) {
       // If we hit the boundary, calculate tangent movement for smooth sliding
       const currentHorizontalPos = this._currentHorizontalPos.set(
         currentPosition.x,
@@ -447,6 +458,25 @@ export class PhysicsSystem extends BasePhysicsSystem {
     const horizontalPos = this._horizontalPosScratch.set(position.x, 0, position.z);
 
     for (const p of this.thronePillarObstacles) {
+      const center = this._centerScratch.set(p.x, 0, p.z);
+      const dist = horizontalPos.distanceTo(center);
+      const obstacleR = p.radius > 0 ? p.radius : THRONE_PILLAR_HULL_RADIUS;
+      const minCenterDist = obstacleR + this.horizontalClearanceRadius;
+      if (dist < minCenterDist) {
+        result.normal.copy(horizontalPos).sub(center);
+        if (result.normal.lengthSq() < 1e-6) {
+          result.normal.set(1, 0, 0);
+        } else {
+          result.normal.normalize();
+        }
+        result.pillarCenter.copy(center);
+        result.blockRadius = minCenterDist;
+        result.hasCollision = true;
+        return result;
+      }
+    }
+
+    for (const p of this.streamedObstacles) {
       const center = this._centerScratch.set(p.x, 0, p.z);
       const dist = horizontalPos.distanceTo(center);
       const obstacleR = p.radius > 0 ? p.radius : THRONE_PILLAR_HULL_RADIUS;

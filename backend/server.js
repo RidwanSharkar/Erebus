@@ -334,6 +334,40 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Co-op death retry: reset the live run back to throne prep (same room code).
+  socket.on('restart-coop-to-throne', (data, ack) => {
+    const reply = (payload) => {
+      if (typeof ack === 'function') ack(payload);
+    };
+    const roomId = normalizeRoomId(data?.roomId);
+    if (!roomId || !gameRooms.has(roomId)) {
+      reply({ ok: false, error: 'Room not found' });
+      return;
+    }
+
+    const room = gameRooms.get(roomId);
+    if (!room.getPlayer(socket.id)) {
+      reply({ ok: false, error: 'Player not in room' });
+      return;
+    }
+    if (room.gameMode !== 'coop' || !room.getGameStarted()) {
+      reply({ ok: false, error: 'Not a started co-op run' });
+      return;
+    }
+    if (typeof room.restartCoopRunToThrone !== 'function') {
+      reply({ ok: false, error: 'Restart unavailable' });
+      return;
+    }
+
+    const restarted = room.restartCoopRunToThrone(socket.id);
+    if (restarted) {
+      console.log(`🔁 Co-op run restarted to throne in room ${roomId} by ${socket.id}`);
+      reply({ ok: true, roomId });
+    } else {
+      reply({ ok: false, error: 'Restart failed' });
+    }
+  });
+
   // Co-op: leave the throne prep room and start the main arena (enemies + AI)
   socket.on('enter-combat-arena', (data) => {
     const { roomId, chosenCampType } = data || {};
@@ -362,6 +396,10 @@ io.on('connection', (socket) => {
       ok = room.activateDevErebusGate();
     } else if (camp === 'dev_delirium_gate') {
       ok = room.activateDevDeliriumGate();
+    } else if (camp === 'explore') {
+      ok = room.isInCoopThronePrep() ? room.beginExploreRoom() : false;
+    } else if (camp === 'defense') {
+      ok = room.isInCoopThronePrep() ? room.beginDefenseRoom() : false;
     } else if (room.isInCoopThronePrep()) {
       ok = room.beginFaeRealmRoom(1);
     } else if (room.coopFaeRealmPortalOpen && room.coopFaeRealmActive) {

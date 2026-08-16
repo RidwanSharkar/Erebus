@@ -4,7 +4,7 @@ import '@/utils/installAssetLoadQueue';
 import React, { Profiler, useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import { useThree, useFrame } from '@react-three/fiber';
-import { Vector3, Matrix4, Camera, PerspectiveCamera, Scene, WebGLRenderer, PCFSoftShadowMap, Color, Quaternion, Euler, Group, AdditiveBlending, MeshBasicMaterial, Mesh, MeshStandardMaterial } from '@/utils/three-exports';
+import { Vector3, Matrix4, Camera, PerspectiveCamera, Scene, WebGLRenderer, PCFSoftShadowMap, Color, Quaternion, Euler, Group, AdditiveBlending, MeshBasicMaterial, Mesh, MeshStandardMaterial, FogExp2 } from '@/utils/three-exports';
 import { ENABLE_REALTIME_SHADOWS } from '@/utils/renderConfig';
 import DragonRenderer from './dragon/DragonRenderer';
 import CharacterRenderer from './character/CharacterRenderer';
@@ -106,6 +106,7 @@ import CoopEnvironmentVfxLayer, { type CoopEnvironmentVfxLayerHandle } from './c
 import CoopTentacleSpineLayer, { type CoopTentacleSpineLayerHandle } from './coop/CoopTentacleSpineLayer';
 import CoopEnemyRenderLayer from './coop/layers/CoopEnemyRenderLayer';
 import CoopEnvironmentSceneLayer from './coop/layers/CoopEnvironmentSceneLayer';
+import { SKY_INDIGO_NIGHT } from './environment/CustomSky';
 import CoopPvpAbilityLayer, { type CoopPvpAbilityLayerHandle } from './coop/CoopPvpAbilityLayer';
 import type {
   BossLeapShockwaveState,
@@ -126,6 +127,10 @@ import type {
   WeaverLightningState,
 } from './coop/coopVfxLayerTypes';
 import { applyPlayerMove, getPlayerLivePosition, getPlayerLiveRotation } from '@/utils/playerLiveTransform';
+import { exploreFog } from '@/utils/exploreFogOfWar';
+import { setExploreObstacleListener } from '@/utils/exploreObstacles';
+import { setExploreMushroomListener } from '@/utils/exploreMushrooms';
+import { getExploreMushroom } from '@/utils/exploreWorldGen';
 import { useMultiplayerActions, useMultiplayerRoom, Player, EnemyDamageMeta, type Enemy as ServerEnemy, type GoldDrop, type PlayerMovementDirection, type BroadcastPlayerAttackAnimationData } from '@/contexts/MultiplayerContext';
 import {
   findNearestSelectableAllyCandidate,
@@ -425,6 +430,12 @@ import ThroneRoom, {
   THRONE_TALENT_PEDESTAL_POSITION,
   THRONE_PORTAL_POSITION,
   THRONE_PORTAL_POSITIONS,
+  THRONE_EXPLORE_PORTAL_POSITION,
+  THRONE_VOID_PORTAL_POSITION,
+  THRONE_VOID_PORTAL_RADIUS,
+  THRONE_DEFENSE_PORTAL_POSITION,
+  THRONE_SIDE_VOID_PORTAL_RADIUS,
+  DEFENSE_ROOM_RADIUS,
   MAIN_COMBAT_CHOICE_PORTAL_POSITIONS,
   CASTLE_ROOM_CHOICE_PORTAL_POSITIONS,
   MAIN_COMBAT_BOSS_PORTAL_POSITION,
@@ -471,12 +482,13 @@ import {
   getDreamLayerShopStockId,
   isDreamLayerSlotTaken,
 } from '@/utils/dreamLayerShopUtils';
-import { VOID_PORTAL_INTERACT_RADIUS } from '@/components/environment/VoidPortal';
+import { VOID_PORTAL_INTERACT_RADIUS, voidPortalInteractRadius } from '@/components/environment/VoidPortal';
 import { HEALING_FOUNTAIN_INTERACT_RADIUS } from '@/components/environment/HealingFountain';
 import { EDEN_FINALE_DAISY_INTERACT_RADIUS } from '@/components/environment/EdenFinaleDaisy';
 import { COOP_MAIN_ENTRY_Z, rotationYTowardArenaCenter } from '@/utils/coopArenaLayout';
+import { getDefenseTowerObstacles } from '@/utils/defenseLayout';
 import { KNIGHT_FROST_FREEZE_MS, KNIGHT_SMITE_RADIUS_BASE } from '@/utils/knightCoopAbilitiesConstants';
-import { MUSHROOM_COUNT, buildMushroomInstances, getMushroomColliderCenter } from '@/utils/mushroomLayout';
+import { MUSHROOM_COUNT, buildMushroomInstances, getMushroomColliderCenter, type MushroomInstance } from '@/utils/mushroomLayout';
 import { MUSHROOM_MAX_HP } from '@/utils/mushroomConstants';
 import MushroomEruptionVfx from '@/components/environment/MushroomEruptionVfx';
 
@@ -1269,6 +1281,9 @@ function preloadEnemyModelsForTypes(types: Iterable<string>): void {
           break;
         case 'allied-healer':
           void import('./enemies/AlliedHealerModel').then(mod => mod.preloadAlliedHealerModels());
+          break;
+        case 'allied-tower':
+          void import('./environment/DefenseTower').then(mod => mod.preloadDefenseTower());
           break;
         case 'allied-demon':
         case 'ghoul':
@@ -2077,6 +2092,7 @@ export function CoopGameScene({
     coopSkyPresetIndex,
     coopGrassPresetIndex,
     coopCurrentRoomKind,
+    coopExploreSeed,
     coopClearedRoomKind,
     selectedArchetype,
     selectedWeaponAspect,
@@ -2201,6 +2217,8 @@ export function CoopGameScene({
   const isSunkenTemple = coopCurrentRoomKind === 'sunken_temple';
   const isEternityPalace = coopCurrentRoomKind === 'eternity_palace';
   const isFaeRealm = coopCurrentRoomKind === 'fae_realm';
+  const isExplore = coopCurrentRoomKind === 'explore';
+  const isDefense = coopCurrentRoomKind === 'defense';
   const isErebusGate = coopCurrentRoomKind === 'erebus_gate';
   const isIntroCastleRoom = coopCurrentRoomKind === 'intro';
   const hexArenaVariant =
@@ -2215,6 +2233,8 @@ export function CoopGameScene({
             : 'stat' as const;
 
   const coopArenaClampBounds = useMemo(() => {
+    if (isExplore) return null;
+    if (isDefense) return DEFENSE_ROOM_RADIUS;
     if (inThroneRoom || inBossThroneArena) return COOP_THRONE_ROOM_RADIUS;
     if (isFaeRealm) return FAE_REALM_HEX_RADIUS;
     if (isEternityPalace) return ETERNITY_PALACE_HEX_RADIUS;
@@ -2223,9 +2243,9 @@ export function CoopGameScene({
     if (isCastleRoom) return CASTLE_ROOM_BOUNDS;
     if (isHexCombatArena) return HEX_ARENA_RADIUS;
     return MAIN_ARENA_HEX_RADIUS;
-  }, [inThroneRoom, inBossThroneArena, isCastleRoom, isFaeRealm, isEternityPalace, isSunkenTemple, isErebusGate, isHexCombatArena]);
+  }, [inThroneRoom, inBossThroneArena, isCastleRoom, isFaeRealm, isExplore, isDefense, isEternityPalace, isSunkenTemple, isErebusGate, isHexCombatArena]);
 
-  const dimThroneLikeLighting = inThroneRoom || inBossThroneArena;
+  const dimThroneLikeLighting = inThroneRoom || inBossThroneArena || isDefense;
 
   const isColoredCoopRoom =
     coopCurrentRoomKind === 'blue'
@@ -2239,7 +2259,23 @@ export function CoopGameScene({
     && !isSunkenTemple
     && !isEternityPalace
     && !isErebusGate
+    && !isDefense
     && !isColoredCoopRoom;
+
+  const [exploreMushrooms, setExploreMushrooms] = useState<MushroomInstance[]>([]);
+  useEffect(() => {
+    if (!isExplore) {
+      setExploreMushroomListener(null);
+      setExploreMushrooms([]);
+      return;
+    }
+    setExploreMushroomListener((instances) => {
+      setExploreMushrooms([...instances]);
+    });
+    return () => {
+      setExploreMushroomListener(null);
+    };
+  }, [isExplore]);
 
   const effectiveMushroomHealth = useMemo(() => {
     if (mushroomState?.health?.length === MUSHROOM_COUNT) return mushroomState.health;
@@ -2248,15 +2284,33 @@ export function CoopGameScene({
 
   const mushroomHiddenIndices = useMemo(() => {
     const s = new Set<number>();
+    if (isExplore) {
+      const eh = mushroomState?.exploreHealth;
+      if (eh) {
+        for (const [k, h] of Object.entries(eh)) {
+          if (h <= 0) s.add(Number(k));
+        }
+      }
+      return s;
+    }
     effectiveMushroomHealth.forEach((h, i) => {
       if (h <= 0) s.add(i);
     });
     return s;
-  }, [effectiveMushroomHealth]);
+  }, [isExplore, mushroomState, effectiveMushroomHealth]);
 
   const mushroomTargetsForMelee = useMemo(() => {
-    const instances = buildMushroomInstances();
     const out: Array<{ index: number; position: Vector3 }> = [];
+    if (isExplore) {
+      for (const inst of exploreMushrooms) {
+        const hp = mushroomState?.exploreHealth?.[inst.index];
+        if (hp !== undefined && hp <= 0) continue;
+        const c = getMushroomColliderCenter(inst);
+        out.push({ index: inst.index, position: new Vector3(c.x, c.y, c.z) });
+      }
+      return out;
+    }
+    const instances = buildMushroomInstances();
     for (const inst of instances) {
       if (effectiveMushroomHealth[inst.index] > 0) {
         const c = getMushroomColliderCenter(inst);
@@ -2264,7 +2318,7 @@ export function CoopGameScene({
       }
     }
     return out;
-  }, [effectiveMushroomHealth]);
+  }, [isExplore, exploreMushrooms, mushroomState, effectiveMushroomHealth]);
 
   const prevMushroomHealthRef = useRef<number[] | null>(null);
     // Reset the health snapshot whenever we enter a new combat room so the diff
@@ -2274,6 +2328,7 @@ export function CoopGameScene({
   }, [coopCombatArenaEnterSeq]);
 
   useEffect(() => {
+    if (isExplore) return;
     // When prev is null (first render after a room enter) default to the current
     // snapshot so the diff produces no eruptions — the authoritative state just
     // arrived from the server and nothing has changed yet.
@@ -2295,7 +2350,37 @@ export function CoopGameScene({
     if (spawned.length > 0) {
       environmentVfxLayerRef.current?.addMushroomEruptions(spawned.map(({ id, pos }) => ({ id, pos })));
     }
-  }, [effectiveMushroomHealth]);
+  }, [effectiveMushroomHealth, isExplore]);
+
+  const prevExploreMushroomHealthRef = useRef<Record<number, number>>({});
+  useEffect(() => {
+    if (!isExplore) {
+      prevExploreMushroomHealthRef.current = {};
+      return;
+    }
+    const cur = mushroomState?.exploreHealth ?? {};
+    const prev = prevExploreMushroomHealthRef.current;
+    const spawned: Array<{ id: string; pos: Vector3 }> = [];
+    for (const [k, h] of Object.entries(cur)) {
+      const idx = Number(k);
+      const wasAlive = prev[idx] === undefined || prev[idx]! > 0;
+      if (wasAlive && h <= 0) {
+        const inst =
+          exploreMushrooms.find((m) => m.index === idx)
+          ?? getExploreMushroom(coopExploreSeed || 1, idx);
+        if (inst) {
+          spawned.push({
+            id: `mushroom-erupt-${idx}-${Date.now()}`,
+            pos: new Vector3(inst.x, 0.1, inst.z),
+          });
+        }
+      }
+    }
+    prevExploreMushroomHealthRef.current = { ...cur };
+    if (spawned.length > 0) {
+      environmentVfxLayerRef.current?.addMushroomEruptions(spawned.map(({ id, pos }) => ({ id, pos })));
+    }
+  }, [isExplore, mushroomState?.exploreHealth, exploreMushrooms, coopExploreSeed]);
 
   const onMushroomMeleeHit = useCallback(
     (index: number, baseDamage: number) => {
@@ -2599,11 +2684,16 @@ export function CoopGameScene({
   }, []);
 
   /** Horizontal XZ cull radius for coop enemy React trees (~45 units). */
+  const isExploreRef = useRef(false);
+  isExploreRef.current = isExplore;
   const isCoopEnemyVisibleForRender = useCallback(
     (enemyX: number, enemyZ: number) => {
       if (playerEntityRef.current === null) return true;
       const playerPos = realTimePlayerPositionRef.current;
       if (!playerPos) return true;
+      if (isExploreRef.current) {
+        return exploreFog.isEnemyVisible(enemyX, enemyZ, playerPos.x, playerPos.z);
+      }
       const dx = enemyX - playerPos.x;
       const dz = enemyZ - playerPos.z;
       return dx * dx + dz * dz <= 45 * 45;
@@ -2783,6 +2873,25 @@ export function CoopGameScene({
   }, [gameStarted, engineReady, enemyTypesKey, coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq]);
 
   useEffect(() => {
+    if (!isDefense) return;
+    void import('@/components/environment/ThroneFireplaceDecor').then((mod) => {
+      mod.preloadThroneFireplaceDecor();
+    });
+    void import('@/components/environment/DefenseCenterPlatform').then((mod) => {
+      mod.preloadDefenseCenterPlatform();
+    });
+    void import('./environment/DefenseTower').then((mod) => {
+      mod.preloadDefenseTower();
+    });
+    void import('@/components/environment/ThroneStatueDecor').then((mod) => {
+      mod.preloadThroneStatueDecor();
+    });
+    void import('@/components/environment/ThronePerimeterPylonDecor').then((mod) => {
+      mod.preloadThronePerimeterPylonDecor();
+    });
+  }, [isDefense]);
+
+  useEffect(() => {
     if (inThroneRoom) {
       portalUseSentRef.current = false;
       void import('@/components/environment/ThroneStatueDecor').then((mod) => {
@@ -2790,6 +2899,9 @@ export function CoopGameScene({
       });
       void import('@/components/environment/ThronePerimeterPylonDecor').then((mod) => {
         mod.preloadThronePerimeterPylonDecor();
+      });
+      void import('@/components/environment/ThroneFireplaceDecor').then((mod) => {
+        mod.preloadThroneFireplaceDecor();
       });
       // Necromancer spirits may spawn on dummy hits — warm Summon/Attack clips early.
       void import('./enemies/VengefulSpiritModel').then((mod) => {
@@ -2886,6 +2998,10 @@ export function CoopGameScene({
     const r =
       inThroneRoom || inBossThroneArena
         ? COOP_THRONE_ROOM_RADIUS + 2
+        : isExplore
+          ? 9999
+        : isDefense
+          ? DEFENSE_ROOM_RADIUS + 2
         : isFaeRealm
           ? FAE_REALM_HEX_RADIUS
         : isEternityPalace
@@ -2899,12 +3015,18 @@ export function CoopGameScene({
           : isHexCombatArena
             ? HEX_ARENA_RADIUS
             : MAIN_ARENA_HEX_RADIUS;
-    const mainCoopRoom = !inThroneRoom && !inBossThroneArena && !isHexCombatArena && !isCastleRoom && !isSunkenTemple && !isErebusGate && !isFaeRealm && !isEternityPalace;
-    const boundaryMode = isCastleRoom || isSunkenTemple || isErebusGate ? 'circle' : (isHexCombatArena || isFaeRealm || isEternityPalace) ? 'hex' : 'circle';
+    const mainCoopRoom = !inThroneRoom && !inBossThroneArena && !isHexCombatArena && !isCastleRoom && !isSunkenTemple && !isErebusGate && !isFaeRealm && !isEternityPalace && !isExplore && !isDefense;
+    const boundaryMode = isExplore
+      ? 'none'
+      : isCastleRoom || isSunkenTemple || isErebusGate
+        ? 'circle'
+        : (isHexCombatArena || isFaeRealm || isEternityPalace)
+          ? 'hex'
+          : 'circle';
     phys?.setMapRadius(r);
     phys?.setArenaBoundaryMode?.(boundaryMode);
     const throneObstacles = inThroneRoom ? getThronePrepPhysicsObstacles() : null;
-    const castleWallsOn = false; // Main combat rooms use circular boundary projection for players; projectiles pass through the arena edge.
+    const castleWallsOn = false;
     phys?.setCastleWallPhysicsEnabled(castleWallsOn);
     phys?.setArenaBoundaryMode?.(boundaryMode);
     phys?.setTreeCollisionEnabled?.(!mainCoopRoom);
@@ -2915,7 +3037,55 @@ export function CoopGameScene({
     controlSystemRef.current?.setArenaBoundaryMode?.(boundaryMode);
     controlSystemRef.current?.setThroneChargePillars(throneObstacles);
     controlSystemRef.current?.setChargeCornerMountains(null);
-  }, [inThroneRoom, inBossThroneArena, isHexCombatArena, isCastleRoom, isFaeRealm, isEternityPalace, isSunkenTemple, isErebusGate, gameStarted, engineReady]);
+    const render = world.getSystem(RenderSystem);
+    if (isExplore) {
+      render?.setFog(new FogExp2(SKY_INDIGO_NIGHT.horizon, 0.045));
+      if (camera instanceof PerspectiveCamera) {
+        camera.far = 600;
+        camera.updateProjectionMatrix();
+      }
+    } else {
+      render?.setFog(null);
+      if (camera instanceof PerspectiveCamera) {
+        camera.far = 1000;
+        camera.updateProjectionMatrix();
+      }
+    }
+    return () => {
+      render?.setFog(null);
+      if (camera instanceof PerspectiveCamera) {
+        camera.far = 1000;
+        camera.updateProjectionMatrix();
+      }
+    };
+  }, [inThroneRoom, inBossThroneArena, isHexCombatArena, isCastleRoom, isFaeRealm, isExplore, isDefense, isEternityPalace, isSunkenTemple, isErebusGate, gameStarted, engineReady, camera]);
+
+  useEffect(() => {
+    if (isDefense) {
+      const discs = getDefenseTowerObstacles();
+      engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(discs);
+      controlSystemRef.current?.setStreamedObstacles(discs);
+      return () => {
+        engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(null);
+        controlSystemRef.current?.setStreamedObstacles(null);
+      };
+    }
+    if (!isExplore) {
+      setExploreObstacleListener(null);
+      engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(null);
+      controlSystemRef.current?.setStreamedObstacles(null);
+      return;
+    }
+    setExploreObstacleListener((discs) => {
+      engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(discs);
+      controlSystemRef.current?.setStreamedObstacles(discs);
+    });
+    return () => {
+      setExploreObstacleListener(null);
+      engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(null);
+      controlSystemRef.current?.setStreamedObstacles(null);
+    };
+  }, [isExplore, isDefense, engineReady]);
 
   const prevInThroneRef = useRef(inThroneRoom);
   // Place the local player at their server throne spawn ONCE per throne entry, then let the
@@ -3007,7 +3177,9 @@ export function CoopGameScene({
       );
 
       const tabHidden = typeof document !== 'undefined' && document.hidden;
-      const c = clampToMainArenaXZ(livePos.x, livePos.z, coopArenaClampBounds);
+      const c = coopArenaClampBounds == null
+        ? { x: livePos.x, z: livePos.z }
+        : clampToMainArenaXZ(livePos.x, livePos.z, coopArenaClampBounds);
       const spawnY = tabHidden ? PORTAL_FALL_GROUND_Y : VOID_PORTAL_FALL_SPAWN_Y;
       const snappedPos = {
         x: c.x,
@@ -3064,7 +3236,9 @@ export function CoopGameScene({
       playersTransformsRef,
       contextPlayersRef.current.get(socket.id)?.position,
     );
-    const c = clampToMainArenaXZ(livePos.x, livePos.z, coopArenaClampBounds);
+    const c = coopArenaClampBounds == null
+      ? { x: livePos.x, z: livePos.z }
+      : clampToMainArenaXZ(livePos.x, livePos.z, coopArenaClampBounds);
     const faceY = rotationYTowardArenaCenter(c.x, c.z);
     const phi = cameraSystemRef.current.getVerticalAngle();
     cameraSystemRef.current.setAngles(faceY + Math.PI, phi);
@@ -13425,6 +13599,7 @@ export function CoopGameScene({
         : serverEnemy.type === 'destiny' ? 1.8
         : serverEnemy.type === 'boss-skeleton' ? 1.2
         : serverEnemy.type === 'allied-healer' || serverEnemy.type === 'greed' || serverEnemy.type === 'allied-enchantress' ? 0.75
+        : serverEnemy.type === 'allied-tower' ? 1.4
         : serverEnemy.type === 'allied-knight' ? 0.85
         : serverEnemy.type === 'allied-huntress' ? 0.75
         : serverEnemy.type === 'allied-phantom' ? 0.75
@@ -13498,6 +13673,53 @@ export function CoopGameScene({
       mushroomEntityByIndexRef.current.clear();
     };
 
+    const spawnOrSyncMushroom = (inst: { index: number; x: number; z: number; h: number; cr: number }, hp: number) => {
+      if (hp <= 0) return;
+      const c = getMushroomColliderCenter(inst);
+      if (mushroomEntityByIndexRef.current.has(inst.index)) {
+        const eid = mushroomEntityByIndexRef.current.get(inst.index)!;
+        const ent = world.getEntity(eid);
+        if (ent) {
+          const h = ent.getComponent(Health);
+          if (h) {
+            h.currentHealth = hp;
+            h.maxHealth = MUSHROOM_MAX_HP;
+            h.isDead = false;
+          }
+          const t = ent.getComponent(Transform);
+          if (t) t.setPosition(c.x, c.y, c.z);
+        }
+        return;
+      }
+
+      const entity = world.createEntity();
+      const transform = world.createComponent(Transform);
+      transform.setPosition(c.x, c.y, c.z);
+      entity.addComponent(transform);
+
+      const health = new Health(MUSHROOM_MAX_HP);
+      health.currentHealth = hp;
+      health.invulnerabilityDuration = 0;
+      health.invulnerabilityTimer = 0;
+      health.isInvulnerable = false;
+      entity.addComponent(health);
+
+      const collider = world.createComponent(Collider);
+      collider.type = ColliderType.SPHERE;
+      collider.radius = 0.55;
+      collider.layer = CollisionLayer.ENEMY;
+      collider.isTrigger = true;
+      collider.setMask(CollisionLayer.PROJECTILE);
+      collider.setOffset(0, 0, 0);
+      entity.addComponent(collider);
+
+      const dm = new DestructibleMushroom(inst.index);
+      entity.addComponent(dm);
+      entity.userData = { ...entity.userData, mushroomIndex: inst.index };
+      world.notifyEntityAdded(entity);
+      mushroomEntityByIndexRef.current.set(inst.index, entity.id);
+    };
+
     if (
       inThroneRoom
       || inBossThroneArena
@@ -13505,8 +13727,26 @@ export function CoopGameScene({
       || isSunkenTemple
       || isErebusGate
       || isColoredCoopRoom
+      || isDefense
     ) {
       clearAllMushrooms();
+      return;
+    }
+
+    if (isExplore) {
+      const live = new Set(exploreMushrooms.map((m) => m.index));
+      for (const [idx, eid] of Array.from(mushroomEntityByIndexRef.current.entries())) {
+        const hp = mushroomState?.exploreHealth?.[idx];
+        if (!live.has(idx) || (hp !== undefined && hp <= 0)) {
+          if (world.getEntity(eid)) world.destroyEntity(eid);
+          mushroomEntityByIndexRef.current.delete(idx);
+        }
+      }
+      for (const inst of exploreMushrooms) {
+        const hp = mushroomState?.exploreHealth?.[inst.index];
+        if (hp !== undefined && hp <= 0) continue;
+        spawnOrSyncMushroom(inst, hp === undefined ? MUSHROOM_MAX_HP : hp);
+      }
       return;
     }
 
@@ -13522,7 +13762,7 @@ export function CoopGameScene({
         || (isEternityPalace
         && inst
         && !isInsideHexArenaXZ(inst.x, inst.z, ETERNITY_PALACE_HEX_RADIUS, 0.5));
-      if (healthArr[idx] <= 0 || outsideHex) {
+      if (healthArr[idx] <= 0 || outsideHex || !inst) {
         if (world.getEntity(eid)) world.destroyEntity(eid);
         mushroomEntityByIndexRef.current.delete(idx);
       }
@@ -13533,51 +13773,9 @@ export function CoopGameScene({
       const inst = instances[i]!;
       if (isFaeRealm && !isInsideHexArenaXZ(inst.x, inst.z, FAE_REALM_HEX_RADIUS, 0.5)) continue;
       if (isEternityPalace && !isInsideHexArenaXZ(inst.x, inst.z, ETERNITY_PALACE_HEX_RADIUS, 0.5)) continue;
-      const c = getMushroomColliderCenter(inst);
-      if (mushroomEntityByIndexRef.current.has(i)) {
-        const eid = mushroomEntityByIndexRef.current.get(i)!;
-        const ent = world.getEntity(eid);
-        if (ent) {
-          const h = ent.getComponent(Health);
-          if (h) {
-            h.currentHealth = healthArr[i];
-            h.maxHealth = MUSHROOM_MAX_HP;
-            h.isDead = false;
-          }
-          const t = ent.getComponent(Transform);
-          if (t) t.setPosition(c.x, c.y, c.z);
-        }
-        continue;
-      }
-
-      const entity = world.createEntity();
-      const transform = world.createComponent(Transform);
-      transform.setPosition(c.x, c.y, c.z);
-      entity.addComponent(transform);
-
-      const health = new Health(MUSHROOM_MAX_HP);
-      health.currentHealth = healthArr[i];
-      health.invulnerabilityDuration = 0;
-      health.invulnerabilityTimer = 0;
-      health.isInvulnerable = false;
-      entity.addComponent(health);
-
-      const collider = world.createComponent(Collider);
-      collider.type = ColliderType.SPHERE;
-      collider.radius = 0.55;
-      collider.layer = CollisionLayer.ENEMY;
-      collider.isTrigger = true;
-      collider.setMask(CollisionLayer.PROJECTILE);
-      collider.setOffset(0, 0, 0);
-      entity.addComponent(collider);
-
-      const dm = new DestructibleMushroom(i);
-      entity.addComponent(dm);
-      entity.userData = { ...entity.userData, mushroomIndex: i };
-      world.notifyEntityAdded(entity);
-      mushroomEntityByIndexRef.current.set(i, entity.id);
+      spawnOrSyncMushroom(inst, healthArr[i]);
     }
-  }, [gameStarted, engineReady, gameMode, inThroneRoom, inBossThroneArena, isCastleRoom, isFaeRealm, isEternityPalace, isSunkenTemple, isErebusGate, isColoredCoopRoom, effectiveMushroomHealth]);
+  }, [gameStarted, engineReady, gameMode, inThroneRoom, inBossThroneArena, isCastleRoom, isFaeRealm, isEternityPalace, isSunkenTemple, isErebusGate, isColoredCoopRoom, isDefense, isExplore, exploreMushrooms, mushroomState, effectiveMushroomHealth]);
 
   // Sync server players with local ECS entities — create/destroy only (positions via useFrame + playersTransformsRef).
   useEffect(() => {
@@ -14498,6 +14696,8 @@ export function CoopGameScene({
               }
 
               const offer = thronePortalOfferRef.current;
+              const rVoid2 = voidPortalInteractRadius(THRONE_VOID_PORTAL_RADIUS) ** 2;
+              const rSide2 = voidPortalInteractRadius(THRONE_SIDE_VOID_PORTAL_RADIUS) ** 2;
               const rPortal = VOID_PORTAL_INTERACT_RADIUS;
               const rPortal2 = rPortal * rPortal;
               if (
@@ -14506,10 +14706,29 @@ export function CoopGameScene({
                 cur !== WeaponType.NONE &&
                 throneVoidPortalOpenRef.current
               ) {
-                const dx = px - 0;
-                const dz = pz - 0;
+                const edx = px - THRONE_EXPLORE_PORTAL_POSITION.x;
+                const edz = pz - THRONE_EXPLORE_PORTAL_POSITION.z;
+                const ed2 = edx * edx + edz * edz;
+                if (ed2 < rSide2) {
+                  candidates.push({ kind: 'portal', d2: ed2, chosen: 'explore' });
+                }
+                const ddx = px - THRONE_DEFENSE_PORTAL_POSITION.x;
+                const ddz = pz - THRONE_DEFENSE_PORTAL_POSITION.z;
+                const dd2 = ddx * ddx + ddz * ddz;
+                if (dd2 < rSide2) {
+                  candidates.push({ kind: 'portal', d2: dd2, chosen: 'defense' });
+                }
+              }
+              if (
+                !portalUseSentRef.current &&
+                cur !== undefined &&
+                cur !== WeaponType.NONE &&
+                throneVoidPortalOpenRef.current
+              ) {
+                const dx = px - THRONE_VOID_PORTAL_POSITION.x;
+                const dz = pz - THRONE_VOID_PORTAL_POSITION.z;
                 const d2 = dx * dx + dz * dz;
-                if (d2 < rPortal2) {
+                if (d2 < rVoid2) {
                   candidates.push({ kind: 'portal', d2, chosen: 'intro' });
                 }
               } else if (
@@ -15737,8 +15956,9 @@ export function CoopGameScene({
               const abilityInRangeH = COOP_DEV_LOCALHOST_FEATURES && ad2 <= rAb2;
               const talentInRangeH = COOP_DEV_LOCALHOST_FEATURES && td2 <= rAb2;
               const offerH = thronePortalOfferRef.current;
-              const rPortalH = VOID_PORTAL_INTERACT_RADIUS;
-              const rPortal2H = rPortalH * rPortalH;
+              const rVoid2H = voidPortalInteractRadius(THRONE_VOID_PORTAL_RADIUS) ** 2;
+              const rSide2H = voidPortalInteractRadius(THRONE_SIDE_VOID_PORTAL_RADIUS) ** 2;
+              const rPortal2H = VOID_PORTAL_INTERACT_RADIUS * VOID_PORTAL_INTERACT_RADIUS;
               let portalCloseH = false;
               const curArchetypeHint = selectedArchetypeRef.current;
               if (
@@ -15747,7 +15967,16 @@ export function CoopGameScene({
                 curHint !== WeaponType.NONE &&
                 throneVoidPortalOpenRef.current
               ) {
-                portalCloseH = px * px + pz * pz < rPortal2H;
+                const edx = px - THRONE_EXPLORE_PORTAL_POSITION.x;
+                const edz = pz - THRONE_EXPLORE_PORTAL_POSITION.z;
+                const vdx = px - THRONE_VOID_PORTAL_POSITION.x;
+                const vdz = pz - THRONE_VOID_PORTAL_POSITION.z;
+                const ddx = px - THRONE_DEFENSE_PORTAL_POSITION.x;
+                const ddz = pz - THRONE_DEFENSE_PORTAL_POSITION.z;
+                portalCloseH =
+                  vdx * vdx + vdz * vdz < rVoid2H
+                  || edx * edx + edz * edz < rSide2H
+                  || ddx * ddx + ddz * ddz < rSide2H;
               } else if (
                 !portalUseSentRef.current &&
                 curHint !== undefined &&

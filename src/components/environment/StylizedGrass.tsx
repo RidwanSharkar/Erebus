@@ -43,10 +43,10 @@ const ARID_COLORS: TerrainPalette = {
 };
 
 const PURPLE_FIELD_COLORS: TerrainPalette = {
-  baseColor: '#2a1f2e',
-  tipColor: '#4a3a55',
+  baseColor: '#2c2040',
+  tipColor: '#6a4a88',
   groundColor: '#3a3d48',
-  groundLightColor: '#4a3d58',
+  groundLightColor: '#5C3D8F',
   groundLightIntensity: 0.22,
 };
 
@@ -581,7 +581,7 @@ interface StylizedGrassProps {
   densityScale?: number;
 }
 
-const GRASS_VERTEX = `
+export const GRASS_VERTEX = `
   attribute float aHeightRatio;
 
   uniform float uTime;
@@ -589,9 +589,10 @@ const GRASS_VERTEX = `
 
   varying float vHeightRatio;
   varying vec3 vWorldPos;
+  varying vec3 vLocalPos;
 
   void main() {
-    vec4 wp = instanceMatrix * vec4(position, 1.0);
+    vec4 local = instanceMatrix * vec4(position, 1.0);
     float hr = aHeightRatio;
 
     // Combat LOD: skip wind trig when strength is zeroed by the room.
@@ -599,24 +600,26 @@ const GRASS_VERTEX = `
       float bend = hr * hr;
 
       // Primary rolling wind wave — sweeps across the field
-      float phase = wp.x * 0.35 + wp.z * 0.25;
+      float phase = local.x * 0.35 + local.z * 0.25;
       float w1 = sin(phase + uTime * 1.3) * uWindStrength;
 
       // Secondary gust layer — offset frequency for organic feel
       float w2 = sin(phase * 2.1 + uTime * 2.1 + 1.7) * uWindStrength * 0.3;
 
       // Micro flutter — high-frequency per-blade shimmer
-      float w3 = cos(wp.x * 3.5 + wp.z * 2.0 + uTime * 4.5) * uWindStrength * 0.06;
+      float w3 = cos(local.x * 3.5 + local.z * 2.0 + uTime * 4.5) * uWindStrength * 0.06;
 
       float wind = (w1 + w2 + w3) * bend;
 
-      wp.x += wind;
-      wp.z += wind * 0.4;
+      local.x += wind;
+      local.z += wind * 0.4;
       // Slight vertical compression when bending for realism
-      wp.y -= abs(wind) * 0.1;
+      local.y -= abs(wind) * 0.1;
     }
 
     vHeightRatio = hr;
+    vLocalPos = local.xyz;
+    vec4 wp = modelMatrix * local;
     vWorldPos = wp.xyz;
 
     gl_Position = projectionMatrix * viewMatrix * wp;
@@ -625,7 +628,7 @@ const GRASS_VERTEX = `
 
 const SNOW_BRIGHTNESS_SCALE = 0.82;
 
-const GRASS_FRAGMENT = `
+export const GRASS_FRAGMENT = `
   uniform vec3 uBaseColor;
   uniform vec3 uTipColor;
   uniform vec3 uGroundLightColor;
@@ -639,6 +642,7 @@ const GRASS_FRAGMENT = `
 
   varying float vHeightRatio;
   varying vec3 vWorldPos;
+  varying vec3 vLocalPos;
 
   void main() {
     // Gradient from dark base to bright tip
@@ -662,8 +666,8 @@ const GRASS_FRAGMENT = `
 
     // Fade at the edge: radial (disc) or normalized rectangle edge (main arena)
     float dist = uUseSquareEdgeFade > 0.5
-      ? max(abs(vWorldPos.x) / uGrassHalfX, abs(vWorldPos.z) / uGrassHalfZ)
-      : length(vWorldPos.xz);
+      ? max(abs(vLocalPos.x) / uGrassHalfX, abs(vLocalPos.z) / uGrassHalfZ)
+      : length(vLocalPos.xz);
     col *= 1.0 - smoothstep(uGrassFadeInner, uGrassFadeOuter, dist) * 0.5;
 
     col *= uBrightnessScale;

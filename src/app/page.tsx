@@ -31,6 +31,8 @@ import StatsPanel from '../components/ui/StatsPanel';
 import DpsMeter from '../components/ui/DpsMeter';
 import LoadingScreen from '../components/ui/LoadingScreen';
 import PortalBlinkTransition from '../components/ui/PortalBlinkTransition';
+import ExploreMinimap from '../components/ui/ExploreMinimap';
+import DefenseWaveHud from '../components/ui/DefenseWaveHud';
 import RoomTitleAnnouncement from '../components/ui/RoomTitleAnnouncement';
 import ControlsTutorialOverlay from '../components/ui/ControlsTutorialOverlay';
 import AbilitySelectionModal from '../components/ui/AbilitySelectionModal';
@@ -258,6 +260,7 @@ function HomeContent() {
     subscribeEnemyDamage,
     joinRoom,
     switchRoom,
+    restartCoopRunToThrone,
     setAbilityLoadout,
     setTalentLoadout,
     unlockAbility,
@@ -707,6 +710,38 @@ function HomeContent() {
     );
     if (result.created && !result.gameStarted && socket) {
       socket.emit('start-game', { roomId: result.roomId });
+    }
+    if (result.created) {
+      setGameState({
+        playerHealth: 200,
+        maxHealth: 200,
+        playerShield: 100,
+        maxShield: 100,
+        playerEnergy: 100,
+        maxEnergy: 100,
+        currentWeapon: WeaponType.NONE,
+        currentSubclass: WeaponSubclass.ELEMENTAL,
+        mana: 150,
+        maxMana: 150,
+      });
+      setClassTalentPickedWeapons(new Set());
+      classBoonPickedWeaponsRef.current.clear();
+      setLocalPurchasedItems([]);
+      setPlayerExperience(0);
+      setPlayerLevel(1);
+      setPlayerGold(0);
+      setPlayerEssence(50);
+      setPlayerFlow(0);
+      setPlayerFate(STARTING_FATE);
+      setShowMerchantUI(false);
+      setDefeatDialogOpen(false);
+      setThroneAbilityWeapon(null);
+      setThroneTalentWeapon(null);
+      setCoopBoon(null);
+      setPedestalInteracted(false);
+      setSunkenLootModalOpen(false);
+      setEternityLootModalOpen(false);
+      setEternityPetUpgradeModalOpen(false);
     }
     setGameMode('coop');
     setShowCanvas(true);
@@ -2155,7 +2190,7 @@ function HomeContent() {
             <MerchantShopTooltipOverlay />
             <PlayerDamageFeedbackOverlay />
 
-            <DefeatRetryDialog open={defeatDialogOpen} />
+            <DefeatRetryDialog open={defeatDialogOpen} onRetry={restartCoopRunToThrone} />
 
             {/* Game UI - Outside Canvas */}
             <div className="absolute bottom-4 left-4" data-block-game-input>
@@ -2186,7 +2221,7 @@ function HomeContent() {
               />
             </div>
 
-            {/* Bottom-left HUD stack: DPS, Status, Inventory */}
+            {/* Bottom-left HUD stack: DPS, minimap, Status, Inventory */}
             <div
               className="fixed bottom-4 left-4 z-40 flex flex-col items-start gap-2"
               data-block-game-input
@@ -2196,6 +2231,8 @@ function HomeContent() {
                 totalDamage={dpsSnapshot.totalDamage}
                 onClear={handleClearDpsData}
               />
+              {gameMode === 'coop' && coopCurrentRoomKind === 'explore' && <ExploreMinimap />}
+              {gameMode === 'coop' && coopCurrentRoomKind === 'defense' && <DefenseWaveHud />}
               {(gameMode === 'pvp' || gameMode === 'coop') && (
                 <>
                   <PlayerStatusHud

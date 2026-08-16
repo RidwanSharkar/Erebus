@@ -60,10 +60,10 @@ const BORDER_PALETTE: Record<
     poles: 0x4ade80,
   },
   purple: {
-    particle: 0x8a2be2,
-    glow: 0xdda0dd,
-    archway: 0x8a2be2,
-    poles: 0xdda0dd,
+    particle: 0xb18bff,
+    glow: 0xd4c2ff,
+    archway: 0x9b6fe8,
+    poles: 0xd4c2ff,
   },
 };
 

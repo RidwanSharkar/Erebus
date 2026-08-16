@@ -29,6 +29,9 @@ const COOP_NAMED_BGM_CACHE_IDS = Object.freeze([
   'coop_bgm_boss',
 ] as const);
 
+const COOP_THRONE_FIREPLACE_CACHE_ID = 'coop_throne_fireplace';
+const COOP_THRONE_FIREPLACE_SRC = '/audio/sfx/ui/Fireplace.MP3';
+
 type CoopNamedBgmTrack = { cacheId: string; src: string };
 
 /**
@@ -42,7 +45,7 @@ function resolveCoopCombatBgm(
   if (roomKind === 'delirium_gate') {
     return { cacheId: 'coop_bgm_delirium_gate', src: '/audio/sfx/ui/tracks/deliriumGate.mp3' };
   }
-  if (roomKind === 'eden' || roomKind === 'false_eden' || roomKind === 'dream_layer' || roomKind === 'fae_realm' || roomKind === 'eden_finale') {
+  if (roomKind === 'explore' || roomKind === 'eden' || roomKind === 'false_eden' || roomKind === 'dream_layer' || roomKind === 'fae_realm' || roomKind === 'eden_finale') {
     return { cacheId: 'coop_bgm_eden', src: '/audio/sfx/ui/tracks/eden.mp3' };
   }
   if (roomKind === 'erebus_gate') {
@@ -399,6 +402,7 @@ export class AudioSystem extends System {
   private coopChaosInstance: number | null = null;
   private coopRoomInstance: number | null = null;
   private currentCoopRoomTrackId: string | null = null;
+  private coopThroneFireplaceInstance: number | null = null;
   private footstepsLoopInstance: number | null = null;
   private footstepsShouldPlay = false;
   private footstepsRate = 1;
@@ -1801,6 +1805,7 @@ export class AudioSystem extends System {
     }
     this.coopRoomInstance = null;
     this.currentCoopRoomTrackId = null;
+    this.stopThroneFireplaceAmbient();
   }
 
   /** Remove all coop room Howls from memory (large files). Call after stop. */
@@ -1898,6 +1903,7 @@ export class AudioSystem extends System {
       this.currentCoopRoomTrackId === 'coop_bgm_throne' &&
       this.coopRoomInstance !== null
     ) {
+      void this.startThroneFireplaceAmbient();
       return;
     }
     this.stopAllCoopRoomTracks();
@@ -1910,6 +1916,58 @@ export class AudioSystem extends System {
       '/audio/sfx/ui/tracks/throne.MP3',
       'hub',
     );
+    void this.startThroneFireplaceAmbient();
+  }
+
+  private getThroneFireplaceVolume(): number {
+    return 0.35 * this.getCoopBgmVolume();
+  }
+
+  /** Loop Fireplace.MP3 over throne prep BGM. Idempotent if already playing. */
+  private async startThroneFireplaceAmbient(): Promise<void> {
+    if (this.coopThroneFireplaceInstance !== null) {
+      return;
+    }
+    if (!this.soundCache.has(COOP_THRONE_FIREPLACE_CACHE_ID)) {
+      const sound = new Howl({
+        src: [COOP_THRONE_FIREPLACE_SRC],
+        volume: this.getThroneFireplaceVolume(),
+        loop: true,
+        preload: true,
+        html5: LARGE_BGM_HTML5,
+      });
+      try {
+        await new Promise<void>((resolve, reject) => {
+          sound.on('load', () => resolve());
+          sound.on('loaderror', (_id, err) => reject(new Error(String(err))));
+        });
+        this.soundCache.set(COOP_THRONE_FIREPLACE_CACHE_ID, sound);
+      } catch (e) {
+        console.warn(`Failed to load ${COOP_THRONE_FIREPLACE_SRC}:`, e);
+        return;
+      }
+    }
+    if (
+      this.coopBgmMode !== 'hub' ||
+      this.currentCoopRoomTrackId !== 'coop_bgm_throne' ||
+      this.coopThroneFireplaceInstance !== null
+    ) {
+      return;
+    }
+    const h = this.soundCache.get(COOP_THRONE_FIREPLACE_CACHE_ID);
+    if (!h) return;
+    h.volume(this.getThroneFireplaceVolume());
+    this.coopThroneFireplaceInstance = h.play();
+  }
+
+  private stopThroneFireplaceAmbient(): void {
+    const h = this.soundCache.get(COOP_THRONE_FIREPLACE_CACHE_ID);
+    if (h) {
+      h.stop();
+      h.unload();
+      this.soundCache.delete(COOP_THRONE_FIREPLACE_CACHE_ID);
+    }
+    this.coopThroneFireplaceInstance = null;
   }
 
   /**

@@ -13,7 +13,7 @@ import {
   type ThroneNaturePropModel,
 } from '@/utils/throneNaturePropLayout';
 
-function prepareNaturePropScene(scene: Object3D): void {
+export function prepareNaturePropScene(scene: Object3D): void {
   // Assimp FBX export leaves a Unity-style scale=100 on the mesh node.
   // Mesh positions are already ~meters — apply 100× and everything towers into the sky.
   scene.traverse((child) => {

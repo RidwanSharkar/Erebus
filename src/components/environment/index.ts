@@ -5,3 +5,4 @@ export { default as Pillar } from './Pillar';
 export { default as Pedestal } from './Pedestal';
 export { default as PillarCollision } from './PillarCollision';
 export { default as SimpleBorderEffects } from './SimpleBorderEffects';
+export { default as ThroneFireplaceDecor, preloadThroneFireplaceDecor } from './ThroneFireplaceDecor';

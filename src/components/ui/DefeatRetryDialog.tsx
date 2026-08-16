@@ -4,9 +4,16 @@ import React from 'react';
 
 interface DefeatRetryDialogProps {
   open: boolean;
+  onRetry?: () => void;
 }
 
-export default function DefeatRetryDialog({ open }: DefeatRetryDialogProps) {
+export default function DefeatRetryDialog({ open, onRetry }: DefeatRetryDialogProps) {
+  const [pending, setPending] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!open) setPending(false);
+  }, [open]);
+
   if (!open) return null;
 
   return (
@@ -33,12 +40,19 @@ export default function DefeatRetryDialog({ open }: DefeatRetryDialogProps) {
         </h2>
         <button
           type="button"
+          disabled={pending}
           onClick={() => {
+            if (pending) return;
+            setPending(true);
+            if (onRetry) {
+              onRetry();
+              return;
+            }
             window.location.reload();
           }}
-          className="w-full rounded-lg border border-red-700/60 bg-red-950/50 px-6 py-3 text-sm font-bold tracking-[0.2em] uppercase text-red-100 hover:bg-red-950/80 hover:border-red-500/70 transition-colors"
+          className="w-full rounded-lg border border-red-700/60 bg-red-950/50 px-6 py-3 text-sm font-bold tracking-[0.2em] uppercase text-red-100 hover:bg-red-950/80 hover:border-red-500/70 transition-colors disabled:opacity-60 disabled:pointer-events-none"
         >
-          RETRY
+          {pending ? 'RESTARTING…' : 'RETRY'}
         </button>
       </div>
     </div>

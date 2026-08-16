@@ -437,7 +437,7 @@ export class ControlSystem extends System {
 
   /** Max horizontal distance from origin for dash/charge (matches PhysicsSystem map boundary). */
   private playableRadius = MAIN_MAP_RADIUS;
-  private arenaBoundaryMode: 'circle' | 'square' | 'hex' = 'square';
+  private arenaBoundaryMode: 'circle' | 'square' | 'hex' | 'none' = 'square';
 
   /** When false, sword charge uses throne pillar circles instead of castle wall AABBs. */
   private castleWallChargeEnabled = true;
@@ -446,6 +446,9 @@ export class ControlSystem extends System {
 
   /** Optional circular XZ obstacles for charge collision (typically empty). */
   private chargeCornerMountains: Array<{ x: number; z: number; radius: number }> = [];
+
+  /** Streamed explore-mode prop discs for dash/charge collision. */
+  private streamedChargeObstacles: Array<{ x: number; z: number; radius: number }> = [];
   
   // Callback for bow release effects
   private onBowReleaseCallback?: (finalProgress: number, isPerfectShot?: boolean) => void;
@@ -1109,7 +1112,7 @@ export class ControlSystem extends System {
     this.arenaBoundaryMode = enabled ? 'square' : 'circle';
   }
 
-  public setArenaBoundaryMode(mode: 'circle' | 'square' | 'hex'): void {
+  public setArenaBoundaryMode(mode: 'circle' | 'square' | 'hex' | 'none'): void {
     this.arenaBoundaryMode = mode;
   }
 
@@ -1121,6 +1124,12 @@ export class ControlSystem extends System {
     obstacles: Array<{ x: number; z: number; radius: number }> | null,
   ): void {
     this.chargeCornerMountains = obstacles && obstacles.length > 0 ? obstacles.slice() : [];
+  }
+
+  public setStreamedObstacles(
+    obstacles: Array<{ x: number; z: number; radius: number }> | null,
+  ): void {
+    this.streamedChargeObstacles = obstacles && obstacles.length > 0 ? obstacles : [];
   }
 
   public setInputDisabled(disabled: boolean): void {
@@ -8928,6 +8937,7 @@ export class ControlSystem extends System {
   private readonly WALL_PLAYER_RADIUS = 0.5;
 
   private isInsidePlayableArena(x: number, z: number, radius: number): boolean {
+    if (this.arenaBoundaryMode === 'none') return true;
     if (this.arenaBoundaryMode === 'hex') {
       const apothem = radius * Math.cos(Math.PI / 6) - this.WALL_PLAYER_RADIUS;
       for (let i = 0; i < 6; i++) {
@@ -8958,6 +8968,20 @@ export class ControlSystem extends System {
 
     const horizontalPos = new Vector3(position.x, 0, position.z);
     for (const p of this.thronePillarChargeObstacles) {
+      const center = new Vector3(p.x, 0, p.z);
+      const dist = horizontalPos.distanceTo(center);
+      if (dist < p.radius + this.WALL_PLAYER_RADIUS) {
+        let normal = horizontalPos.clone().sub(center);
+        if (normal.lengthSq() < 1e-6) {
+          normal.set(1, 0, 0);
+        } else {
+          normal.normalize();
+        }
+        return { hasCollision: true, normal, pillarCenter: center };
+      }
+    }
+
+    for (const p of this.streamedChargeObstacles) {
       const center = new Vector3(p.x, 0, p.z);
       const dist = horizontalPos.distanceTo(center);
       if (dist < p.radius + this.WALL_PLAYER_RADIUS) {

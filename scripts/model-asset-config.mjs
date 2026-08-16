@@ -53,9 +53,10 @@ export const BASE_SCENE_REL_PATHS = new Set([
   'wyvern/drake_idle.glb',
   // Static environment skydomes (must keep meshes + textures)
   'environ/SKY.glb',
-  'environ/sky2.glb',
+  'environ/SKY2.glb',
   'environ/sky3.glb',
   'environ/sky4.glb',
+  'environ/skybox.glb',
   // Baked static VFX (no skin / animation; used as instanced trail puffs)
   'environ/arcaneEffectTrail.glb',
 ]);

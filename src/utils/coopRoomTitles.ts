@@ -78,12 +78,14 @@ const ROOM_TITLE_COLORS = {
   red: '#ef4444',
   blue: '#3b82f6',
   green: '#22c55e',
-  purple: '#6c3dff',
+  purple: '#B18BFF',
   boss: '#dc2626',
   intro: '#f5e6b8',
   sunken: '#7dd3fc',
   eternity: '#f97316',
   fae: '#f9a8d4',
+  explore: '#ef4444',
+  defense: '#3b82f6',
 } as const;
 
 const COLORED_HALL_BASE: Record<'red' | 'blue' | 'green' | 'purple', string> = {
@@ -184,6 +186,22 @@ export function buildRoomTitleAnnouncement(
       title: `FAE REALM ${toRomanNumeral(index)}`,
       color: ROOM_TITLE_COLORS.fae,
       glowColor: '#ec4899',
+    };
+  }
+
+  if (kind === 'explore') {
+    return {
+      title: 'THE WILDS',
+      color: ROOM_TITLE_COLORS.explore,
+      glowColor: '#dc2626',
+    };
+  }
+
+  if (kind === 'defense') {
+    return {
+      title: 'THRONE DEFENSE',
+      color: ROOM_TITLE_COLORS.defense,
+      glowColor: '#3b82f6',
     };
   }
 

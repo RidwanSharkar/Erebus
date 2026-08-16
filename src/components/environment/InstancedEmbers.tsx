@@ -175,7 +175,7 @@ const FLAME_PALETTES: Record<string, [[number,number,number],[number,number,numb
   red:    [[0.25, 0.02, 0.00], [1.00, 0.55, 0.05]],  // ember-orange → deep red
   green:  [[0.01, 0.18, 0.00], [0.08, 1.00, 0.04]],  // neon green
   blue:   [[0.00, 0.04, 0.22], [0.03, 0.75, 1.00]],  // frost / ice-blue
-  purple: [[0.12, 0.00, 0.18], [0.72, 0.04, 1.00]],  // void purple
+  purple: [[0.22, 0.12, 0.32], [0.694, 0.545, 1.00]],  // B18BFF void
   pink:   [[0.22, 0.00, 0.14], [1.00, 0.38, 0.78]],  // fae realm magenta flames
 };
 const DEFAULT_PALETTE = FLAME_PALETTES.red;

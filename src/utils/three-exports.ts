@@ -52,7 +52,9 @@ export {
   MeshPhongMaterial,
   ShaderMaterial,
   PointsMaterial,
-  LineBasicMaterial
+  LineBasicMaterial,
+  UniformsLib,
+  UniformsUtils,
 } from 'three';
 
 // Object3D and mesh classes
@@ -62,7 +64,8 @@ export {
   Group,
   Points,
   Line,
-  InstancedMesh
+  InstancedMesh,
+  InstancedBufferAttribute,
 } from 'three';
 
 // Scene and rendering

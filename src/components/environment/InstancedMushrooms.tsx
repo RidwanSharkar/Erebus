@@ -9,7 +9,7 @@ import {
   Color,
   DoubleSide,
 } from '@/utils/three-exports';
-import { MUSHROOM_COUNT, buildMushroomInstances } from '@/utils/mushroomLayout';
+import { MUSHROOM_COUNT, buildMushroomInstances, type MushroomInstance } from '@/utils/mushroomLayout';
 import { isInsideHexArenaXZ } from '@/utils/mapConstants';
 
 const STEM_VERT = `
@@ -84,16 +84,24 @@ export interface InstancedMushroomsProps {
   hiddenIndices?: ReadonlySet<number>;
   /** When set, hide mushrooms outside this hex circumradius (e.g. Fae Realm r=21). */
   hexRadius?: number;
+  /** Override arena-ring layout (explore streamed mushrooms). */
+  instances?: readonly MushroomInstance[];
+  /** InstancedMesh capacity when using a custom instance list. */
+  maxCount?: number;
 }
 
 const InstancedMushrooms: React.FC<InstancedMushroomsProps> = ({
   hiddenIndices,
   hexRadius,
+  instances: instancesProp,
+  maxCount,
 }) => {
   const stemRef = useRef<InstancedMesh>(null);
   const capRef = useRef<InstancedMesh>(null);
 
-  const instances = useMemo(() => buildMushroomInstances(), []);
+  const arenaInstances = useMemo(() => buildMushroomInstances(), []);
+  const instances = instancesProp ?? arenaInstances;
+  const capacity = Math.max(1, maxCount ?? instances.length ?? MUSHROOM_COUNT);
 
   const stemGeo = useMemo(() => new CylinderGeometry(0.06, 0.09, 0.32, 7, 2), []);
   const capGeo = useMemo(() => new CylinderGeometry(0.05, 0.28, 0.12, 10, 1), []);
@@ -146,12 +154,14 @@ const InstancedMushrooms: React.FC<InstancedMushroomsProps> = ({
     const scl = new Vector3();
     const pos = new Vector3();
 
-    for (let i = 0; i < MUSHROOM_COUNT; i++) {
-      const { x, z, h, cr } = instances[i]!;
+    const n = Math.min(instances.length, capacity);
+    for (let i = 0; i < n; i++) {
+      const inst = instances[i]!;
+      const { index, x, z, h, cr } = inst;
       const outsideHex =
         typeof hexRadius === 'number'
         && !isInsideHexArenaXZ(x, z, hexRadius, 0.5);
-      if (hide?.has(i) || outsideHex) {
+      if (hide?.has(index) || outsideHex) {
         stem.setMatrixAt(i, _zero);
         cap.setMatrixAt(i, _zero);
         continue;
@@ -169,9 +179,11 @@ const InstancedMushrooms: React.FC<InstancedMushroomsProps> = ({
       cap.setMatrixAt(i, m);
     }
 
+    stem.count = n;
+    cap.count = n;
     stem.instanceMatrix.needsUpdate = true;
     cap.instanceMatrix.needsUpdate = true;
-  }, [instances, hexRadius]);
+  }, [instances, hexRadius, capacity]);
 
   useLayoutEffect(() => {
     if (stemRef.current && capRef.current) {
@@ -200,8 +212,8 @@ const InstancedMushrooms: React.FC<InstancedMushroomsProps> = ({
 
   return (
     <group>
-      <instancedMesh ref={stemRef} args={[stemGeo, stemMat, MUSHROOM_COUNT]} frustumCulled={false} />
-      <instancedMesh ref={capRef} args={[capGeo, capMat, MUSHROOM_COUNT]} frustumCulled={false} />
+      <instancedMesh ref={stemRef} args={[stemGeo, stemMat, capacity]} frustumCulled={false} />
+      <instancedMesh ref={capRef} args={[capGeo, capMat, capacity]} frustumCulled={false} />
     </group>
   );
 };

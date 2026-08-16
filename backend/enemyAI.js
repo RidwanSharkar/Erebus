@@ -153,6 +153,8 @@ const TITAN_KNOCKBACK_DURATION = 0.5;
 const TITAN_PATROL_REACH = 0.5;
 const TITAN_PATROL_WAYPOINT_COUNT = 8;
 const TITAN_PATROL_RADIUS_FRAC = 0.65;
+const DEFENSE_ROOM_RADIUS = 15 * 1.35;
+const TITAN_EXPLORE_PATROL_RADIUS = 26;
 const TITAN_BLADESTORM_HEALTH_PCT = 0.4;
 const TITAN_BLADESTORM_POWERUP_MS = 1500;
 const TITAN_BLADESTORM_DAMAGE = 15;
@@ -236,7 +238,7 @@ const SPECTRE_MELEE_RANGE = 2.725;
 const SPECTRE_AGGRO_RADIUS = 15;
 const SPECTRE_SWING_LOCK_MS = 1200;
 const SPECTRE_HIT_DELAY_MS = 1000;
-const SPECTRE_WHIRLWIND_COOLDOWN_MS = 20000;
+const SPECTRE_WHIRLWIND_COOLDOWN_MS = 15000;
 const SPECTRE_WHIRLWIND_DURATION_MS = 7000;
 const SPECTRE_WHIRLWIND_TICK_MS = 500;
 const SPECTRE_WHIRLWIND_RADIUS = 3;
@@ -1001,8 +1003,8 @@ const BOSS2_SUMMON_ARENA_EXTENT = 12;
 
 // Boss 3: Weaver Nexus (scaled weaver + arcane nova)
 const BOSS3_CENTER_HOLD_DIST = 1.2;
-const BOSS3_SUMMON_CAST_MS = 3000;
-const BOSS3_NOVA_WINDUP_MS = 3000;
+const BOSS3_SUMMON_CAST_MS = 2400;
+const BOSS3_NOVA_WINDUP_MS = 2100;
 const BOSS3_NOVA_COOLDOWN_MS = 3000;
 const BOSS3_NOVA_MAX_RANGE = 14;
 const BOSS3_NOVA_TRAVEL_MS = 1500;
@@ -1541,6 +1543,10 @@ class EnemyAI {
 
   /** Clamp enemy XZ to the active arena footprint (circle for colored rooms, hex for stat/trial/merchant). */
   clampToArenaXZ(x, z) {
+    if (this.room?.coopExploreActive) return { x, z };
+    if (this.room?.coopDefenseActive) {
+      return clampToCircleXZ(x, z, DEFENSE_ROOM_RADIUS - 0.5);
+    }
     if (this.room?.currentCoopRoomKind === 'sunken_temple') {
       return clampToPentagonXZ(x, z);
     }
@@ -1554,6 +1560,9 @@ class EnemyAI {
   }
 
   _arenaPatrolRadius() {
+    if (this.room?.coopDefenseActive) {
+      return DEFENSE_ROOM_RADIUS * TITAN_PATROL_RADIUS_FRAC;
+    }
     if (this._isSmallCircleArena()) {
       return EREBUS_GATE_INNER_RADIUS * TITAN_PATROL_RADIUS_FRAC;
     }
@@ -2188,6 +2197,11 @@ class EnemyAI {
 
     if (enemy.type === 'allied-healer') {
       this.updateAlliedHealerAI(enemy, players);
+      return;
+    }
+
+    if (enemy.type === 'allied-tower') {
+      this.updateDefenseTowerAI(enemy);
       return;
     }
 
@@ -2892,7 +2906,10 @@ class EnemyAI {
       return 'idle';
     }
     const distance = options.distance ?? this.calculateHorizontalDistance(enemy.position, tpos);
-    const attackRange = profile.range;
+    const hull = resolved.kind === 'zombie' && typeof resolved.zombie?.hullRadius === 'number'
+      ? resolved.zombie.hullRadius
+      : 0;
+    const attackRange = profile.range + hull;
     const meleePressDistance = attackRange - (SHARED_MELEE_CLOSE_INSET || MELEE_CLOSE_INSET);
     const moveOpts = {
       meleeSurroundAttackRange: attackRange,
@@ -2974,7 +2991,7 @@ class EnemyAI {
     const attackRange = 2.6;
     const meleePressDistance = attackRange - MELEE_CLOSE_INSET;
     const attackCooldown = knight.attackCooldown ?? 2500;
-    const aggroRadius = 15;
+    const aggroRadius = this.resolveAggroRadius(15);
 
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(knight.position, tpos);
@@ -4102,7 +4119,7 @@ class EnemyAI {
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(shade.position, tpos);
     const attackRange = 10.0;
-    const aggroRadius = 15;
+    const aggroRadius = this.resolveAggroRadius(15);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(shade.position, tpos)) {
@@ -4501,7 +4518,7 @@ class EnemyAI {
 
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(wraith.position, tpos);
-    const aggroRadius = WRAITH_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(WRAITH_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(wraith.position, tpos)) {
@@ -4568,7 +4585,7 @@ class EnemyAI {
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(warlock.position, tpos);
-    const aggroRadius = 8;
+    const aggroRadius = this.resolveAggroRadius(8);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(warlock.position, tpos)) {
@@ -5239,7 +5256,7 @@ class EnemyAI {
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(templar.position, tpos);
-    const aggroRadius = 15;
+    const aggroRadius = this.resolveAggroRadius(15);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(templar.position, tpos)) {
@@ -5642,7 +5659,7 @@ class EnemyAI {
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(assassin.position, tpos);
-    const aggroRadius = 15;
+    const aggroRadius = this.resolveAggroRadius(15);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(assassin.position, tpos)) {
@@ -6208,7 +6225,7 @@ class EnemyAI {
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(viper.position, tpos);
     const attackRange = 12.0;
-    const aggroRadius = 15;
+    const aggroRadius = this.resolveAggroRadius(15);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(viper.position, tpos)) {
@@ -6454,7 +6471,7 @@ class EnemyAI {
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(weaver.position, tpos);
-    const aggroRadius = 15;
+    const aggroRadius = this.resolveAggroRadius(15);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(weaver.position, tpos)) {
@@ -7143,12 +7160,15 @@ class EnemyAI {
   // ─── Titan AI ────────────────────────────────────────────────────────────────
 
   _buildTitanPatrolWaypoints(spawnX, spawnZ) {
-    const patrolRadius = this._arenaPatrolRadius();
+    const explore = !!this.room?.coopExploreActive;
+    const patrolRadius = explore ? TITAN_EXPLORE_PATROL_RADIUS : this._arenaPatrolRadius();
+    const cx = explore ? spawnX : 0;
+    const cz = explore ? spawnZ : 0;
     const waypoints = [];
     for (let i = 0; i < TITAN_PATROL_WAYPOINT_COUNT; i++) {
       const angle = (Math.PI * 2 * i) / TITAN_PATROL_WAYPOINT_COUNT - Math.PI / 2;
-      const rawX = Math.cos(angle) * patrolRadius;
-      const rawZ = Math.sin(angle) * patrolRadius;
+      const rawX = cx + Math.cos(angle) * patrolRadius;
+      const rawZ = cz + Math.sin(angle) * patrolRadius;
       const clamped = this.clampToArenaXZ(rawX, rawZ);
       waypoints.push({ x: clamped.x, z: clamped.z });
     }
@@ -7231,7 +7251,7 @@ class EnemyAI {
 
     const titanProfile = getMeleeProfile('titan');
     const attackRange = titanProfile?.range ?? TITAN_ATTACK_RANGE;
-    const aggroRadius = TITAN_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(TITAN_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     // Proximity aggro — low radius, requires line of sight.
@@ -7821,7 +7841,7 @@ class EnemyAI {
 
     const attackRange = PALACE_HEAVY_ATTACK_RANGE;
     const attackCooldown = enemy.attackCooldown ?? 2500;
-    const aggroRadius = PALACE_HEAVY_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(PALACE_HEAVY_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed) {
@@ -10067,6 +10087,8 @@ class EnemyAI {
       case 'knight':
       case 'allied-knight':
         return 0.85;
+      case 'allied-tower':
+        return 1.4;
       case 'allied-demon':
         return 0.85;
       case 'allied-tiger':
@@ -10530,6 +10552,7 @@ class EnemyAI {
       case 'nemesis': return 2.5;
       case 'valkyrie': return VALKYRIE_WALK_SPEED;
       case 'player-zombie': return 2.0;
+      case 'allied-tower': return 0;
       default: return 2.0;
     }
   }
@@ -10761,6 +10784,7 @@ class EnemyAI {
   }
 
   findClosestCombatantForNemesis(nemesis, players, maxRadius = NEMESIS_AGGRO_RADIUS) {
+    maxRadius = this.resolveAggroRadius(maxRadius);
     let best = null;
     let bestDistSq = maxRadius * maxRadius;
     let bestKind = null;
@@ -10800,6 +10824,7 @@ class EnemyAI {
   }
 
   findClosestCombatantForSpectre(spectre, players, maxRadius = SPECTRE_AGGRO_RADIUS) {
+    maxRadius = this.resolveAggroRadius(maxRadius);
     let best = null;
     let bestDistSq = maxRadius * maxRadius;
     let bestKind = null;
@@ -10843,6 +10868,7 @@ class EnemyAI {
   }
 
   findClosestCombatantForValkyrie(valkyrie, players, maxRadius = VALKYRIE_AGGRO_RADIUS) {
+    maxRadius = this.resolveAggroRadius(maxRadius);
     let best = null;
     let bestDistSq = maxRadius * maxRadius;
     let bestKind = null;
@@ -11183,6 +11209,7 @@ class EnemyAI {
         || ally.type === 'allied-bear'
         || ally.type === 'allied-serpent'
         || ally.type === 'allied-spider'
+        || ally.type === 'allied-tower'
       );
   }
 
@@ -13074,6 +13101,121 @@ class EnemyAI {
     return true;
   }
 
+  _isDefenseTowerHostile(enemy, tower) {
+    if (!this.isValidAlliedKnightTarget(enemy, tower)) return false;
+    if (enemy.type === 'training-dummy' || enemy.isTrap) return false;
+    return true;
+  }
+
+  _findDefenseTowerNearestHostile(tower, range) {
+    const tx = tower.position?.x ?? 0;
+    const tz = tower.position?.z ?? 0;
+    const range2 = range * range;
+    let best = null;
+    let bestD2 = Infinity;
+    for (const enemy of this.room.enemies.values()) {
+      if (!this._isDefenseTowerHostile(enemy, tower)) continue;
+      const dx = (enemy.position?.x ?? 0) - tx;
+      const dz = (enemy.position?.z ?? 0) - tz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 <= range2 && d2 < bestD2) {
+        best = enemy;
+        bestD2 = d2;
+      }
+    }
+    return best;
+  }
+
+  _findDefenseTowerBestStripAim(tower, range, halfWidth) {
+    const tx = tower.position?.x ?? 0;
+    const tz = tower.position?.z ?? 0;
+    const range2 = range * range;
+    const radiusSq = halfWidth * halfWidth;
+    let found = false;
+    let bestDirX = 0;
+    let bestDirZ = 1;
+    let bestCount = 0;
+    let bestD2 = Infinity;
+    for (const enemy of this.room.enemies.values()) {
+      if (!this._isDefenseTowerHostile(enemy, tower)) continue;
+      const dx = (enemy.position?.x ?? 0) - tx;
+      const dz = (enemy.position?.z ?? 0) - tz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 > range2 || d2 < 1e-8) continue;
+      const len = Math.sqrt(d2);
+      const dirX = dx / len;
+      const dirZ = dz / len;
+      const count = this.countHostileEnemiesAlongSegmentXZ(
+        tx,
+        tz,
+        tx + dirX * range,
+        tz + dirZ * range,
+        radiusSq,
+        tower,
+      );
+      if (!found || count > bestCount || (count === bestCount && d2 < bestD2)) {
+        found = true;
+        bestCount = count;
+        bestD2 = d2;
+        bestDirX = dirX;
+        bestDirZ = dirZ;
+      }
+    }
+    return found ? { dirX: bestDirX, dirZ: bestDirZ } : null;
+  }
+
+  updateDefenseTowerAI(tower) {
+    if (!this.room || tower.isDying || (tower.health ?? 0) <= 0) return;
+    const now = Date.now();
+    if ((tower.attackReadyAt || 0) > now) return;
+
+    const range = tower.attackRange || 8;
+    const damage = tower.damage || 150;
+    const best = this._findDefenseTowerNearestHostile(tower, range);
+    if (!best) return;
+
+    tower.attackReadyAt = now + (tower.attackCooldown || 1500);
+    const tx = tower.position?.x ?? 0;
+    const tz = tower.position?.z ?? 0;
+    const dx = (best.position?.x ?? 0) - tx;
+    const dz = (best.position?.z ?? 0) - tz;
+    if (dx * dx + dz * dz > 1e-8) {
+      tower.rotation = Math.atan2(dx, dz);
+      this._queueMove(tower.id, tower.position, tower.rotation);
+    }
+
+    const muzzleY = tower.attackMuzzleY || 10.0;
+    const impactY = tower.attackImpactY || 1.0;
+    const targetId = best.id;
+    const origin = { x: tx, y: muzzleY, z: tz };
+    const impact = {
+      x: best.position?.x ?? tx,
+      y: impactY,
+      z: best.position?.z ?? tz,
+    };
+    const impactDelayMs = tower.attackImpactDelayMs || 280;
+    if (this.io) {
+      this.io.to(this.roomId).emit('defense-tower-attack', {
+        towerId: tower.id,
+        kind: 'bolt',
+        targetId,
+        origin,
+        impact,
+        damage,
+        timestamp: now,
+      });
+    }
+    this._scheduleTimeout(() => {
+      if (!this.room?.getGameStarted?.()) return;
+      const liveTower = this.room.getEnemy(tower.id);
+      if (!liveTower || liveTower.isDying || (liveTower.health ?? 0) <= 0) return;
+      this.room.damageEnemy(targetId, damage, null, null, {
+        sourceAlliedUnitId: liveTower.id,
+        damageType: 'defense_tower_bolt',
+      });
+    }, impactDelayMs);
+  }
+
   updateAlliedHealerAI(healer, players) {
     if (!this.room || healer.isDying || healer.health <= 0) return;
     if (this._shouldAlliesDisengageForDreamshroud()) {
@@ -13660,7 +13802,7 @@ class EnemyAI {
       for (const p of players) {
         if (!p || p.health <= 0) continue;
         const dist = this.calculateDistance(greed.position, p.position);
-        if (dist <= GREED_AGGRO_RADIUS && this.hasLineOfSight(greed.position, p.position)) {
+        if (dist <= this.resolveAggroRadius(GREED_AGGRO_RADIUS) && this.hasLineOfSight(greed.position, p.position)) {
           aggroData.isAggroed = true;
           aggroData.targetPlayerId = p.id;
           break;
@@ -14447,7 +14589,7 @@ class EnemyAI {
 
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(sentinel.position, tpos);
-    const aggroRadius = SENTINEL_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(SENTINEL_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(sentinel.position, tpos);
 
@@ -14534,7 +14676,7 @@ class EnemyAI {
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(spider.position, tpos);
-    const aggroRadius = BONE_SPIDER_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(BONE_SPIDER_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(spider.position, tpos);
 
@@ -14803,7 +14945,7 @@ class EnemyAI {
 
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(frostQueen.position, tpos);
-    const aggroRadius = FROST_QUEEN_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(FROST_QUEEN_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(frostQueen.position, tpos);
 
@@ -15334,7 +15476,7 @@ class EnemyAI {
 
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(medusa.position, tpos);
-    const aggroRadius = MEDUSA_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(MEDUSA_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(medusa.position, tpos);
 
@@ -16054,7 +16196,7 @@ class EnemyAI {
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(spectre.position, tpos);
     const attackRange = SPECTRE_MELEE_RANGE;
-    const aggroRadius = SPECTRE_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(SPECTRE_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(spectre.position, tpos);
 
@@ -16112,7 +16254,7 @@ class EnemyAI {
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(serpent.position, tpos);
-    const aggroRadius = SERPENT_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(SERPENT_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(serpent.position, tpos);
 
@@ -16182,7 +16324,7 @@ class EnemyAI {
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(wolf.position, tpos);
-    const aggroRadius = WOLF_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(WOLF_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(wolf.position, tpos);
 
@@ -16231,7 +16373,7 @@ class EnemyAI {
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(bear.position, tpos);
-    const aggroRadius = BEAR_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(BEAR_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(bear.position, tpos);
 
@@ -16335,7 +16477,7 @@ class EnemyAI {
     const distance = this.calculateDistance(tiger.position, tpos);
     const attackRange = TIGER_MELEE_RANGE;
     const attackCooldown = tiger.attackCooldown ?? 850;
-    const aggroRadius = TIGER_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(TIGER_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(tiger.position, tpos);
 
@@ -16420,7 +16562,7 @@ class EnemyAI {
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(skyray.position, tpos);
-    const aggroRadius = SKYRAY_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(SKYRAY_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(skyray.position, tpos);
 
@@ -16471,7 +16613,7 @@ class EnemyAI {
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(wyvern.position, tpos);
-    const aggroRadius = WYVERN_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(WYVERN_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(wyvern.position, tpos);
 
@@ -16750,6 +16892,7 @@ class EnemyAI {
     }
 
     const resolved = this.resolveAggroCombatTarget(aggroData, hawk, players);
+    const aggroRadius = this.resolveAggroRadius(TERRORHAWK_AGGRO_RADIUS);
 
     // --- Hover: wait for aggro within 12 ---
     if (phase === 'hover') {
@@ -16759,13 +16902,13 @@ class EnemyAI {
       const tpos = this.combatTargetPosition(resolved);
       const distance = this._terrorhawkHorizontalDistance(hawk.position, tpos);
       const losOk = this.hasLineOfSight(hawk.position, tpos);
-      if (!aggroData.isAggroed && distance <= TERRORHAWK_AGGRO_RADIUS && losOk) {
+      if (!aggroData.isAggroed && distance <= aggroRadius && losOk) {
         aggroData.isAggroed = true;
-      } else if (aggroData.isAggroed && distance > this.getCombatLeashRadius(aggroData, TERRORHAWK_AGGRO_RADIUS)) {
+      } else if (aggroData.isAggroed && distance > this.getCombatLeashRadius(aggroData, aggroRadius)) {
         aggroData.isAggroed = false;
         aggroData.threatFromDamage = false;
       }
-      this._maybeClearForcedEdgeSpawn(aggroData, distance, TERRORHAWK_AGGRO_RADIUS);
+      this._maybeClearForcedEdgeSpawn(aggroData, distance, aggroRadius);
       if (aggroData.isAggroed) {
         hawk.terrorhawkPhase = 'approach';
         this._queueMove(hawk.id, hawk.position, hawk.rotation);
@@ -16785,16 +16928,16 @@ class EnemyAI {
       const tpos = this.combatTargetPosition(resolved);
       const distance = this._terrorhawkHorizontalDistance(hawk.position, tpos);
       const losOk = this.hasLineOfSight(hawk.position, tpos);
-      if (!aggroData.isAggroed && distance <= TERRORHAWK_AGGRO_RADIUS && losOk) {
+      if (!aggroData.isAggroed && distance <= aggroRadius && losOk) {
         aggroData.isAggroed = true;
-      } else if (aggroData.isAggroed && distance > this.getCombatLeashRadius(aggroData, TERRORHAWK_AGGRO_RADIUS)) {
+      } else if (aggroData.isAggroed && distance > this.getCombatLeashRadius(aggroData, aggroRadius)) {
         aggroData.isAggroed = false;
         aggroData.threatFromDamage = false;
         hawk.terrorhawkPhase = 'hover';
         hawk.moveSpeed = 0;
         return;
       }
-      this._maybeClearForcedEdgeSpawn(aggroData, distance, TERRORHAWK_AGGRO_RADIUS);
+      this._maybeClearForcedEdgeSpawn(aggroData, distance, aggroRadius);
       if (!aggroData.isAggroed) {
         hawk.terrorhawkPhase = 'hover';
         hawk.moveSpeed = 0;
@@ -17339,7 +17482,7 @@ class EnemyAI {
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(deathKnight.position, tpos);
-    const aggroRadius = DEATH_KNIGHT_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(DEATH_KNIGHT_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(deathKnight.position, tpos);
 
@@ -17658,7 +17801,7 @@ class EnemyAI {
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(shaman.position, tpos);
-    const aggroRadius = SHAMAN_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(SHAMAN_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(shaman.position, tpos);
 
@@ -18881,7 +19024,7 @@ class EnemyAI {
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(destiny.position, tpos);
-    const aggroRadius = DESTINY_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(DESTINY_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(destiny.position, tpos);
 
@@ -19498,7 +19641,7 @@ class EnemyAI {
 
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(valkyrie.position, tpos);
-    const aggroRadius = VALKYRIE_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(VALKYRIE_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(valkyrie.position, tpos);
 
@@ -19755,7 +19898,7 @@ class EnemyAI {
 
     const nemesisProfile = getMeleeProfile('nemesis');
     const attackRange = nemesisProfile?.range ?? NEMESIS_ATTACK_RANGE;
-    const aggroRadius = NEMESIS_AGGRO_RADIUS;
+    const aggroRadius = this.resolveAggroRadius(NEMESIS_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
 
     if (!aggroData.isAggroed) {
@@ -20235,6 +20378,12 @@ class EnemyAI {
     return tauntData ? tauntData.taunterPlayerId : null;
   }
 
+  resolveAggroRadius(base) {
+    const n = Number(base) || 0;
+    if (!this.room?.coopExploreActive) return n;
+    return Math.max(1, n - 5);
+  }
+
   getCombatLeashRadius(aggroData, aggroRadius) {
     // Edge-spawned enemies must march the full arena length without de-aggroing.
     if (aggroData.forcedEdgeSpawn) return Number.POSITIVE_INFINITY;
@@ -20477,7 +20626,7 @@ class EnemyAI {
     const existing = this.enemyAggro.get(defenderEnemyId);
     const alreadyOnKnight = existing?.targetZombieId === allyId;
     const knightFocusCount = this._countEnemiesTargetingUnit(allyId);
-    if (!alreadyOnKnight && knightFocusCount >= ALLIED_KNIGHT_FOCUS_SOFT_CAP) {
+    if (ally.type !== 'allied-tower' && !alreadyOnKnight && knightFocusCount >= ALLIED_KNIGHT_FOCUS_SOFT_CAP) {
       if (existing) {
         existing.aggro += Math.max(aggroAmount, 50);
         existing.lastUpdate = Date.now();

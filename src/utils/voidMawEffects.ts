@@ -176,11 +176,16 @@ export function createVoidDragSystem(
     count?: number;
     open?: number;
     effectHeightOffset?: number;
+    startHeightMin?: number;
+    startHeightMax?: number;
   },
 ) {
   const count = options?.count ?? VOID_DRAG_PARTICLE_COUNT;
   const open = options?.open ?? 1;
   const effectHeightOffset = options?.effectHeightOffset ?? 0;
+  const startHeightMin = options?.startHeightMin ?? -0.3;
+  const startHeightMax = options?.startHeightMax ?? 3.2;
+  const startHeightSpan = startHeightMax - startHeightMin;
 
   const indices = new Float32Array(count);
   const origins = new Float32Array(count * 3);
@@ -198,7 +203,7 @@ export function createVoidDragSystem(
     origins[i * 3 + 2] = Math.sin(a) * r;
     speeds[i] = 1.8 + Math.random() * 2.0;
     sizes[i] = 1.4 + Math.random() * 2.4;
-    startHeights[i] = -0.3 + Math.random() * 3.5;
+    startHeights[i] = startHeightMin + Math.random() * startHeightSpan;
   }
 
   const dragGeo = new BufferGeometry();

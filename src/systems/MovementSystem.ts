@@ -16,6 +16,7 @@ export class MovementSystem extends System {
 
   /** When true, skip circular map clamp and rely on castle wall AABBs (matches PhysicsSystem). */
   private castleWallPhysicsEnabled = true;
+  private arenaBoundaryMode: 'circle' | 'square' | 'hex' | 'none' = 'square';
 
   private _inputDirection = new Vector3();
   private _cameraDirection = new Vector3();
@@ -54,6 +55,10 @@ export class MovementSystem extends System {
 
   public setCastleWallPhysicsEnabled(enabled: boolean): void {
     this.castleWallPhysicsEnabled = enabled;
+  }
+
+  public setArenaBoundaryMode(mode: 'circle' | 'square' | 'hex' | 'none'): void {
+    this.arenaBoundaryMode = mode;
   }
 
   public update(entities: Entity[], deltaTime: number): void {
@@ -203,7 +208,11 @@ export class MovementSystem extends System {
 
     const wallCollision = this.checkWallCollision(potentialPosition);
 
-    if (!this.castleWallPhysicsEnabled && distanceFromCenter >= MAP_RADIUS) {
+    if (
+      this.arenaBoundaryMode !== 'none'
+      && !this.castleWallPhysicsEnabled
+      && distanceFromCenter >= MAP_RADIUS
+    ) {
       const currentHorizontalPos = this._currentHorizontalPos.set(
         currentPosition.x,
         0,
