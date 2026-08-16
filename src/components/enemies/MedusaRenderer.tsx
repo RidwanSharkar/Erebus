@@ -192,7 +192,7 @@ function MedusaRenderer({
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <MedusaModel abilityClip={abilityClip} isDying={isDying} />
 
-      <Billboard position={[0, 6.2, 0]} follow lockX={false} lockY={false} lockZ={false}>
+      <Billboard position={[0, 9.2, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
             <EnemyHpBarPlanes

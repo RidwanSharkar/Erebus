@@ -1,6 +1,6 @@
 // Centralized input handling system
 import { EventEmitter } from '@/utils/EventEmitter';
-import { isEventOverGameUi } from '@/utils/gameUiInput';
+import { isEventInTextEntry, isEventOverGameUi } from '@/utils/gameUiInput';
 
 export interface InputEvents {
   keyDown: { key: string; code: string };
@@ -296,7 +296,7 @@ export class InputManager extends EventEmitter {
     }
 
     // Prevent default for game keys (unless all input is allowed, e.g., for chat)
-    if (this.isGameKey(key) && !this.allowAllInput) {
+    if (this.isGameKey(key) && !this.allowAllInput && !isEventInTextEntry(event)) {
       event.preventDefault();
     }
   }

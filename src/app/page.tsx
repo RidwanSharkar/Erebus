@@ -20,6 +20,8 @@ import EssenceDisplay from '../components/ui/EssenceDisplay';
 import CurrencyPanel from '../components/ui/CurrencyPanel';
 import HudActionButtons from '../components/ui/HudActionButtons';
 import RulebookPanel from '../components/ui/RulebookPanel';
+import SettingsPanel from '../components/ui/SettingsPanel';
+import { DEFAULT_ROOM_ID, sanitizeRoomCode } from '@/utils/roomCode';
 import { MultiplayerProvider, useMultiplayerActions, useMultiplayerRoom } from '../contexts/MultiplayerContext';
 import type { CoopRoomKind } from '../contexts/MultiplayerContext';
 import MerchantUI from '../components/ui/MerchantUI';
@@ -118,6 +120,11 @@ const DevPerformanceMeter = dynamic(() => import('../components/ui/DevPerformanc
 
 /** Prevents double bootstrap in React Strict Mode (ref resets on remount). */
 let coopEntryBootstrapStarted = false;
+
+function readRoomIdFromUrl(): string {
+  if (typeof window === 'undefined') return DEFAULT_ROOM_ID;
+  return sanitizeRoomCode(new URLSearchParams(window.location.search).get('room')) || DEFAULT_ROOM_ID;
+}
 
 const COOP_CAMP_COLORS = new Set<string>(['red', 'blue', 'green', 'purple']);
 
@@ -248,6 +255,7 @@ function HomeContent() {
     enemiesRef,
     subscribeEnemyDamage,
     joinRoom,
+    switchRoom,
     setAbilityLoadout,
     setTalentLoadout,
     unlockAbility,
@@ -542,6 +550,7 @@ function HomeContent() {
   const [playerFate, setPlayerFate] = useState(STARTING_FATE);
   const [showMerchantUI, setShowMerchantUI] = useState(false);
   const [showRulesPanel, setShowRulesPanel] = useState(false);
+  const [showSettingsPanel, setShowSettingsPanel] = useState(false);
   const [defeatDialogOpen, setDefeatDialogOpen] = useState(false);
   const defeatDialogRevealTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -683,6 +692,26 @@ function HomeContent() {
     setThroneTalentWeapon(weapon);
   }, []);
 
+  const handleSwitchRoom = useCallback(async (code: string, options?: { expectExisting?: boolean }) => {
+    const result = await switchRoom(code, options);
+    const next = `${window.location.pathname}?room=${encodeURIComponent(result.roomId)}`;
+    window.history.replaceState(null, '', next);
+    enqueueAnnouncement(
+      result.created ? `Created new room ${result.roomId}` : `Joined ${result.roomId}`,
+      result.created ? REWARD_ANNOUNCEMENT_COLORS.gold : REWARD_ANNOUNCEMENT_COLORS.unlocked,
+      `room-switch-${result.roomId}-${Date.now()}`,
+    );
+    if (!result.gameStarted && socket) {
+      socket.emit('start-game', { roomId: result.roomId });
+    }
+    setGameMode('coop');
+    setShowCanvas(true);
+    setLoadingSceneBootstrapReady(false);
+    setIsGameLoading(true);
+    setShowSettingsPanel(false);
+    return result;
+  }, [switchRoom, socket, enqueueAnnouncement]);
+
   // Auto-join default co-op room and start throne prep immediately; a 2nd player who joins
   // during prep is synced into the same throne room via `coop-throne-sync`.
   useEffect(() => {
@@ -693,7 +722,7 @@ function HomeContent() {
         const name = `Player${Math.floor(Math.random() * 10000)}`;
         const sw = bootstrapWeaponsRef.current;
         const joined = await joinRoom(
-          'default',
+          readRoomIdFromUrl(),
           name,
           sw.primary,
           getDefaultSubclassForWeapon(sw.primary),
@@ -1949,18 +1978,26 @@ function HomeContent() {
   const uiBlocksGameInput =
     (gameMode === 'pvp' && showMerchantUI) ||
     showRulesPanel ||
+    showSettingsPanel ||
     defeatDialogOpen ||
     throneAbilityWeapon !== null ||
     throneTalentWeapon !== null ||
     coopBoon !== null ||
-    sunkenLootModalOpen;
-    eternityLootModalOpen;
+    sunkenLootModalOpen ||
+    eternityLootModalOpen ||
     eternityPetUpgradeModalOpen;
 
   return (
       <main className="w-full h-screen bg-black relative">
         {showRulesPanel && (
           <RulebookPanel onClose={() => setShowRulesPanel(false)} />
+        )}
+        {showSettingsPanel && (
+          <SettingsPanel
+            currentRoomId={currentRoomId}
+            onClose={() => setShowSettingsPanel(false)}
+            onSwitchRoom={handleSwitchRoom}
+          />
         )}
 
         {showCanvas && (
@@ -1973,6 +2010,7 @@ function HomeContent() {
             <Suspense fallback={null}>
               {(gameMode === 'pvp' || gameMode === 'coop') && (
                 <CoopGameScene
+                  key={currentRoomId ?? 'none'}
                   onDamageNumbersUpdate={handleDamageNumbersUpdate}
                   onDamageNumberComplete={handleDamageNumberComplete}
                   onCameraUpdate={handleCameraUpdate}
@@ -2072,6 +2110,7 @@ function HomeContent() {
                 <HudActionButtons
                   onOpenRulebook={() => setShowRulesPanel(true)}
                   onOpenControls={handleOpenControlsTutorial}
+                  onOpenSettings={() => setShowSettingsPanel(true)}
                 />
               )}
 

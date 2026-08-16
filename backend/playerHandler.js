@@ -1,3 +1,5 @@
+const { MAX_PLAYERS_PER_ROOM, normalizeRoomId } = require('./roomConfig');
+
 /** playerId -> { lastBroadcastAt, lastPosition, lastRotation } — module-level so disconnect can clear. */
 const playerMoveRebroadcastState = new Map();
 /** playerId -> last validated deathgrasp hit timestamp */
@@ -684,7 +686,7 @@ function handlePlayerEvents(socket, gameRooms) {
     if (!gameRooms.has(roomId)) return;
 
     const room = gameRooms.get(roomId);
-    room.updatePlayerHealth(socket.id, health);
+    room.updatePlayerHealth(socket.id, health, maxHealth);
 
     // Broadcast health change to other players
     socket.to(roomId).emit('player-health-updated', {
@@ -1020,7 +1022,7 @@ function handlePlayerEvents(socket, gameRooms) {
 
   // Handle room preview request (get room info without joining)
   socket.on('preview-room', (data) => {
-    const { roomId = 'default' } = data || {};
+    const roomId = normalizeRoomId(data?.roomId);
     
     if (!gameRooms.has(roomId)) {
       // Room doesn't exist yet
@@ -1029,7 +1031,7 @@ function handlePlayerEvents(socket, gameRooms) {
         exists: false,
         players: [],
         playerCount: 0,
-        maxPlayers: 5,
+        maxPlayers: MAX_PLAYERS_PER_ROOM,
         enemies: []
       });
       return;
@@ -1043,7 +1045,7 @@ function handlePlayerEvents(socket, gameRooms) {
       exists: true,
       players: room.getPlayers(),
       playerCount: room.getPlayerCount(),
-      maxPlayers: 5,
+      maxPlayers: MAX_PLAYERS_PER_ROOM,
       enemies: room.getEnemies()
     });
   });

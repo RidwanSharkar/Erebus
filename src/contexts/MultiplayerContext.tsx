@@ -27,6 +27,9 @@ import { patchEnemyRef, patchPlayerRef } from '@/utils/multiplayerRefPatch';
 import { buildMushroomInstances, getMushroomColliderCenter } from '@/utils/mushroomLayout';
 import { clearKnightBlock } from '@/utils/knightBlockState';
 import { installWebGlDiagnostics, recordMultiplayerDisconnect } from '@/utils/webglDiagnostics';
+import { getBackendUrl } from '@/utils/backendUrl';
+import { resolveRoomHost } from '@/utils/roomHost';
+import { DEFAULT_ROOM_ID, sanitizeRoomCode } from '@/utils/roomCode';
 import { type Archetype, ARCHETYPE_NONE, ARCHETYPE_ROGUE, normalizeArchetype } from '@/utils/archetypes';
 import {
   type WeaponAspect,
@@ -689,7 +692,9 @@ interface MultiplayerContextType {
     weapon: WeaponType,
     subclass?: WeaponSubclass,
     gameMode?: 'multiplayer' | 'coop',
+    options?: SwitchRoomOptions,
   ) => Promise<JoinRoomResult>;
+  switchRoom: (roomId: string, options?: SwitchRoomOptions) => Promise<JoinRoomResult>;
   leaveRoom: () => void;
   previewRoom: (roomId: string) => void;
   clearPreview: () => void;
@@ -853,6 +858,7 @@ export type MultiplayerActionsContextType = Pick<
   | 'enemyTransformsRef'
   | 'enemyVisualRotationsRef'
   | 'joinRoom'
+  | 'switchRoom'
   | 'leaveRoom'
   | 'previewRoom'
   | 'clearPreview'
@@ -1178,12 +1184,18 @@ function campArchetypeFromRoomPayload(data: {
   return [];
 }
 
+export interface SwitchRoomOptions {
+  expectExisting?: boolean;
+}
+
 /** Result returned from `joinRoom` — used by bootstrap to skip redundant start-game / wait for party. */
 export interface JoinRoomResult {
   roomId: string;
   gameStarted: boolean;
   gameMode: 'multiplayer' | 'coop';
   playerCount: number;
+  created: boolean;
+  instance?: string | null;
 }
 
 type CoopSessionSnapshotPayload = {
@@ -1973,6 +1985,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   /** Deferred `io()` so React Strict Mode’s mount→unmount→mount does not disconnect a half-open socket. */
   const socketConnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeSocketRef = useRef<Socket | null>(null);
+  const serverInstanceRef = useRef<string | null>(null);
+  const intentionalReconnectRef = useRef(false);
 
   // Throttling refs to prevent infinite re-render loops
   const lastPlayerMoveUpdate = useRef<{ [playerId: string]: number }>({});
@@ -2006,28 +2020,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   useEffect(() => {
     installWebGlDiagnostics();
 
-    const serverUrl = process.env.NEXT_PUBLIC_BACKEND_URL ||
-      (process.env.NODE_ENV === 'production'
-        ? 'https://empyrea-game-backend.fly.dev'
-        : 'http://localhost:8080');
-
+    const serverUrl = getBackendUrl();
     console.log('🔌 Connecting to multiplayer server:', serverUrl);
 
-    socketConnectTimerRef.current = setTimeout(() => {
-      socketConnectTimerRef.current = null;
-      const newSocket = io(serverUrl, {
-      transports: ['websocket', 'polling'], // Prefer websocket first
-      timeout: 20000,
-      forceNew: true,
-      withCredentials: true,
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      reconnectionAttempts: 5,
-      upgrade: true, // Allow transport upgrades
-      rememberUpgrade: true // Remember successful upgrades
-    });
+    let cancelled = false;
+    let pinFailures = 0;
 
+    const attachHandlers = (newSocket: Socket) => {
     activeSocketRef.current = newSocket;
 
     // Store the socket in state
@@ -2045,6 +2044,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     // Connection event handlers
     addEventHandler('connect', () => {
       console.log('✅ Connected to multiplayer server');
+      pinFailures = 0;
       setIsConnected(true);
       setConnectionError(null);
 
@@ -2064,6 +2064,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
 
     addEventHandler('disconnect', (reason) => {
+      if (intentionalReconnectRef.current) {
+        console.log('🔄 Intentional reconnect:', reason);
+        setIsConnected(false);
+        return;
+      }
       recordMultiplayerDisconnect(String(reason));
       console.log('❌ Disconnected from server:', reason);
       cancelPendingEnemyRemovals();
@@ -2071,6 +2076,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setSocket(null); // Clear socket reference
       setIsInRoom(false);
       setCurrentRoomId(null);
+      serverInstanceRef.current = null;
       setPlayers(new Map());
       setEnemies(new Map());
       enemyTransformsRef.current.clear();
@@ -2107,12 +2113,24 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       console.error('🔥 Error details:', error.message, error);
       setConnectionError(error.message);
       setIsConnected(false);
-      // Don't clear socket reference immediately on connection error - let reconnection handle it
+      const pinned = (newSocket.io.opts.query as { fly_instance_id?: string } | undefined)?.fly_instance_id;
+      if (!pinned) return;
+      pinFailures += 1;
+      if (pinFailures >= 2) {
+        console.warn('Dropping fly instance pin after connect failures');
+        const query = { ...(newSocket.io.opts.query as Record<string, string> | undefined) };
+        delete query.fly_instance_id;
+        newSocket.io.opts.query = query;
+        pinFailures = 0;
+      }
     });
 
     // Room event handlers
     addEventHandler('room-joined', (data) => {
       console.log('🏠 Joined room:', data);
+      if (typeof data?.instance === 'string' && data.instance) {
+        serverInstanceRef.current = data.instance;
+      }
       (window as any).controlSystemRef?.current?.setReaperCrossentropyStack(0);
       (window as any).controlSystemRef?.current?.setBackstabKillstreakStack(0);
       cancelPendingEnemyRemovals();
@@ -3812,10 +3830,38 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     });
 
+    return eventHandlers;
+    };
+
+    socketConnectTimerRef.current = setTimeout(() => {
+      socketConnectTimerRef.current = null;
+      void (async () => {
+        const roomCode =
+          sanitizeRoomCode(new URLSearchParams(window.location.search).get('room')) || DEFAULT_ROOM_ID;
+        const host = await resolveRoomHost(roomCode);
+        if (cancelled) return;
+        const query = host?.instance ? { fly_instance_id: host.instance } : {};
+        if (host?.instance) {
+          console.log(`🔌 Pinning socket to instance ${host.instance} for room ${roomCode}`);
+        }
+        const newSocket = io(serverUrl, {
+          transports: ['websocket'],
+          timeout: 20000,
+          forceNew: true,
+          withCredentials: true,
+          reconnection: true,
+          reconnectionDelay: 1000,
+          reconnectionDelayMax: 5000,
+          reconnectionAttempts: 5,
+          query,
+        });
+        attachHandlers(newSocket);
+      })();
     }, 0);
 
     // Cleanup function
     return () => {
+      cancelled = true;
       cancelPendingEnemyRemovals();
       if (socketConnectTimerRef.current != null) {
         clearTimeout(socketConnectTimerRef.current);
@@ -3862,8 +3908,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     };
   }, [cancelPendingEnemyRemovals, notifyEnemyDamageListeners]); // `cancel` stable; handlers need fresh ref to cancel batching
 
-  const joinRoom = useCallback(async (roomId: string, playerName: string, weapon: WeaponType, subclass?: WeaponSubclass, gameMode?: 'multiplayer' | 'coop') => {
-    if (!socket || !isConnected) {
+  const joinRoom = useCallback(async (
+    roomId: string,
+    playerName: string,
+    weapon: WeaponType,
+    subclass?: WeaponSubclass,
+    gameMode?: 'multiplayer' | 'coop',
+    options?: SwitchRoomOptions,
+  ) => {
+    if (!socket || !socket.connected) {
       throw new Error('Not connected to server');
     }
 
@@ -3873,44 +3926,122 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         playerName,
         weapon,
         subclass,
-        gameMode: gameMode || 'multiplayer'
+        gameMode: gameMode || 'multiplayer',
+        expectExisting: !!options?.expectExisting,
       });
 
-      // Set up timeout for room join response
       const timeout = setTimeout(() => {
+        cleanup();
         reject(new Error('Room join timeout'));
       }, 10000);
 
-      // Listen for successful room join
+      const cleanup = () => {
+        clearTimeout(timeout);
+        socket.off('room-joined', handleRoomJoined);
+        socket.off('room-full', handleRoomFull);
+        socket.off('room-not-found', handleNotFound);
+      };
+
       const handleRoomJoined = (data: {
         roomId?: string;
         gameStarted?: boolean;
         gameMode?: string;
         players?: Player[];
+        created?: boolean;
+        instance?: string | null;
       }) => {
-        clearTimeout(timeout);
-        socket.off('room-joined', handleRoomJoined);
-        socket.off('room-full', handleRoomFull);
+        cleanup();
+        if (typeof data?.instance === 'string' && data.instance) {
+          serverInstanceRef.current = data.instance;
+        }
         resolve({
           roomId: data?.roomId ?? roomId,
           gameStarted: !!data?.gameStarted,
           gameMode: data?.gameMode === 'coop' ? 'coop' : 'multiplayer',
           playerCount: Array.isArray(data?.players) ? data.players.length : 1,
+          created: !!data?.created,
+          instance: data?.instance ?? serverInstanceRef.current,
         });
       };
 
-      // Listen for room full error
       const handleRoomFull = () => {
-        clearTimeout(timeout);
-        socket.off('room-joined', handleRoomJoined);
-        socket.off('room-full', handleRoomFull);
+        cleanup();
         reject(new Error('Room is full'));
+      };
+
+      const handleNotFound = () => {
+        cleanup();
+        reject(new Error('Room not found'));
       };
 
       socket.once('room-joined', handleRoomJoined);
       socket.once('room-full', handleRoomFull);
+      socket.once('room-not-found', handleNotFound);
     });
   }, [socket, isConnected]);
+
+  const switchRoom = useCallback(async (code: string, options?: SwitchRoomOptions) => {
+    const roomId = sanitizeRoomCode(code);
+    if (!roomId) {
+      throw new Error('Invalid room code');
+    }
+    const active = activeSocketRef.current || socket;
+    if (!active) {
+      throw new Error('Not connected to server');
+    }
+
+    const host = await resolveRoomHost(roomId);
+    const targetInstance = host?.instance ?? null;
+    const currentInstance = serverInstanceRef.current;
+    const local = active.id ? playersRef.current.get(active.id) : undefined;
+    const playerName = local?.name || `Player${Math.floor(Math.random() * 10000)}`;
+    const weapon = local?.weapon && local.weapon !== WeaponType.NONE
+      ? local.weapon
+      : WeaponType.SCYTHE;
+    const subclass = local?.subclass;
+
+    const emitJoin = () => joinRoom(roomId, playerName, weapon, subclass, 'coop', options);
+
+    if (!targetInstance || !currentInstance || targetInstance === currentInstance) {
+      return emitJoin();
+    }
+
+    intentionalReconnectRef.current = true;
+    const prevQuery = (active.io.opts.query as Record<string, string> | undefined) || {};
+    active.io.opts.query = { ...prevQuery, fly_instance_id: targetInstance };
+    console.log(`🔄 Re-pinning socket ${currentInstance} -> ${targetInstance} for room ${roomId}`);
+
+    return new Promise<JoinRoomResult>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        cleanup();
+        intentionalReconnectRef.current = false;
+        reject(new Error('Room switch timeout'));
+      }, 15000);
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        active.off('connect', onConnect);
+        active.off('connect_error', onError);
+      };
+
+      const onConnect = () => {
+        cleanup();
+        intentionalReconnectRef.current = false;
+        emitJoin().then(resolve).catch(reject);
+      };
+
+      const onError = (err: Error) => {
+        cleanup();
+        intentionalReconnectRef.current = false;
+        reject(err);
+      };
+
+      active.once('connect', onConnect);
+      active.once('connect_error', onError);
+      active.disconnect();
+      active.connect();
+    });
+  }, [socket, joinRoom]);
 
   const leaveRoom = useCallback(() => {
     if (socket) {
@@ -4994,6 +5125,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     endCoopPortalTransition,
     currentPreview,
     joinRoom,
+    switchRoom,
     leaveRoom,
     previewRoom,
     clearPreview,
@@ -5090,7 +5222,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     closeChat,
     setPlayers
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, playerRosterMetaRev, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopSkyPresetIndex, coopGrassPresetIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, lateJoinCombatLoadout, clearLateJoinCombatLoadout, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, leaveRoom, previewRoom, clearPreview, startGame, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerArchetype, updatePlayerWeaponAspect, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastAlliedHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, selectedArchetype, selectedWeaponAspect, weaponAspectByWeapon, setSelectedWeapons, setSelectedArchetype, setSelectedWeaponAspect, rememberWeaponAspect, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, registerMerchantNpcGreetHandler, registerPlayerGoldChangedHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
+  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, playerRosterMetaRev, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopSkyPresetIndex, coopGrassPresetIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, lateJoinCombatLoadout, clearLateJoinCombatLoadout, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, switchRoom, leaveRoom, previewRoom, clearPreview, startGame, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerArchetype, updatePlayerWeaponAspect, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastAlliedHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, selectedArchetype, selectedWeaponAspect, weaponAspectByWeapon, setSelectedWeapons, setSelectedArchetype, setSelectedWeaponAspect, rememberWeaponAspect, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, registerMerchantNpcGreetHandler, registerPlayerGoldChangedHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
 
   const actionsValue: MultiplayerActionsContextType = useMemo(
     () => ({
@@ -5101,6 +5233,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       enemyTransformsRef,
       enemyVisualRotationsRef,
       joinRoom,
+      switchRoom,
       leaveRoom,
       previewRoom,
       clearPreview,
@@ -5192,6 +5325,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     [
       socket,
       joinRoom,
+      switchRoom,
       leaveRoom,
       previewRoom,
       clearPreview,

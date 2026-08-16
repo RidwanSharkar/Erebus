@@ -54,11 +54,36 @@ const io = socketIo(server, {
 
 /** Default matches Next dev client `NEXT_PUBLIC_BACKEND_URL` fallback in MultiplayerContext. */
 const PORT = process.env.PORT || 8080;
+const { MAX_PLAYERS_PER_ROOM, EMPTY_ROOM_GRACE_MS, normalizeRoomId } = require('./roomConfig');
+const roomDirectory = require('./roomDirectory');
+const FLY_MACHINE_ID = roomDirectory.SELF;
+
+if (FLY_MACHINE_ID) {
+  const engineUpgrade = server.listeners('upgrade');
+  server.removeAllListeners('upgrade');
+  server.on('upgrade', (req, socket, head) => {
+    let target = null;
+    try {
+      target = new URL(req.url, 'http://local').searchParams.get('fly_instance_id');
+    } catch (_) {
+      target = null;
+    }
+    if (target && target !== FLY_MACHINE_ID) {
+      console.log(`fly-replay: ${FLY_MACHINE_ID} -> ${target} (${req.url})`);
+      socket.end(`HTTP/1.1 101 Switching Protocols\r\nfly-replay: instance=${target}\r\n\r\n`);
+      return;
+    }
+    for (const listener of engineUpgrade) {
+      listener.call(server, req, socket, head);
+    }
+  });
+}
 
 // Game state management
 const gameRooms = new Map();
 const playerSockets = new Map();
 const playerHeartbeats = new Map(); // Track last heartbeat for each player
+const roomReclaimTimers = new Map(); // roomId -> timeout for empty-room grace window
 
 // Import game modules
 const GameRoom = require('./gameRoom');
@@ -82,11 +107,53 @@ app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
+    instance: FLY_MACHINE_ID,
     rooms: gameRooms.size,
     totalSockets: playerSockets.size,
     playersInRooms: totalPlayersInRooms,
     roomDetails
   });
+});
+
+function summarizeLocalRooms() {
+  const rooms = [];
+  for (const [id, room] of gameRooms) {
+    if (room.getPlayerCount() === 0 && roomReclaimTimers.has(id)) continue;
+    rooms.push({
+      roomId: id,
+      playerCount: room.getPlayerCount(),
+      maxPlayers: MAX_PLAYERS_PER_ROOM,
+      gameStarted: room.getGameStarted(),
+      gameMode: room.gameMode || 'coop',
+      inThronePrep: typeof room.isInCoopThronePrep === 'function' ? room.isInCoopThronePrep() : false,
+    });
+  }
+  return rooms;
+}
+
+app.get('/internal/local-rooms', (req, res) => {
+  res.json({
+    instance: FLY_MACHINE_ID,
+    rooms: summarizeLocalRooms(),
+  });
+});
+
+app.get('/room-host', async (req, res) => {
+  try {
+    const room = normalizeRoomId(req.query.room);
+    const all = await roomDirectory.globalRooms(summarizeLocalRooms());
+    const instance = await roomDirectory.resolveHost(room, all);
+    const existing = all.find((entry) => entry.roomId === room);
+    res.json({
+      room,
+      instance,
+      exists: !!existing,
+      playerCount: existing?.playerCount ?? 0,
+    });
+  } catch (err) {
+    console.warn('room-host failed', err.message);
+    res.status(500).json({ error: 'room-host failed' });
+  }
 });
 
 // Socket.io connection handling
@@ -96,86 +163,73 @@ io.on('connection', (socket) => {
   // Store socket reference and initialize heartbeat
   playerSockets.set(socket.id, socket);
   playerHeartbeats.set(socket.id, Date.now());
+  socket.onAny(() => {
+    playerHeartbeats.set(socket.id, Date.now());
+  });
 
   // Handle room joining
   socket.on('join-room', (data) => {
-    const { roomId = 'default', playerName = `Player${Math.floor(Math.random() * 1000)}`, weapon = 'scythe', subclass, gameMode = 'multiplayer' } = data || {};
-    
-    // Leave any existing rooms first
+    const { playerName = `Player${Math.floor(Math.random() * 1000)}`, weapon = 'scythe', subclass, gameMode = 'multiplayer', expectExisting = false } = data || {};
+    const roomId = normalizeRoomId(data?.roomId);
+
+    const targetRoom = gameRooms.get(roomId);
+    if (expectExisting && !targetRoom) {
+      socket.emit('room-not-found', { roomId });
+      return;
+    }
+
+    const alreadyInTarget = !!(targetRoom && targetRoom.getPlayer(socket.id));
+    if (targetRoom && !alreadyInTarget && targetRoom.getPlayerCount() >= MAX_PLAYERS_PER_ROOM) {
+      socket.emit('room-full');
+      return;
+    }
+
+    if (alreadyInTarget) {
+      socket.join(roomId);
+      emitRoomJoined(socket, targetRoom, roomId, gameMode, { created: false });
+      return;
+    }
+
+    // Remove from any previous GameRoom (Socket.io leave alone leaves a ghost player).
+    detachPlayerFromRoom(socket.id, roomId);
+    clearPlayerHandlerState(socket.id);
+
+    // Leave any existing Socket.io rooms first
     Array.from(socket.rooms).forEach(room => {
       if (room !== socket.id) {
         socket.leave(room);
       }
     });
 
-    // Get or create room
-    if (!gameRooms.has(roomId)) {
-      const newRoom = new GameRoom(roomId, io);
-      newRoom.gameMode = gameMode; // Set game mode on room
-      gameRooms.set(roomId, newRoom);
-    }
-    
-    const room = gameRooms.get(roomId);
-    
-    // Check room capacity (max 3 players for co-op)
-    if (room.getPlayerCount() >= 3) {
+    const { room, created } = getOrCreateRoom(roomId, gameMode);
+
+    if (room.getPlayerCount() >= MAX_PLAYERS_PER_ROOM) {
       socket.emit('room-full');
       return;
     }
 
-    // Join room
     socket.join(roomId);
     room.addPlayer(socket.id, playerName, weapon, subclass, gameMode);
-    
-    console.log(`Player ${socket.id} joined room ${roomId} as ${playerName} with weapon ${weapon}`);
-    
-    // Send room state to new player
-    socket.emit('room-joined', {
-      roomId,
-      playerId: socket.id,
-      players: room.getPlayers(),
-      enemies: room.getEnemies(),
-      killCount: room.getKillCount(),
-      gameStarted: room.getGameStarted(),
-      gameMode: room.gameMode || gameMode,
-      campTypes: room.getCampTypes(),
-      combatArenaActive: room.gameMode !== 'coop' ? true : !!room.combatArenaActive,
-      thronePortalOffer: room.getThronePortalOffer(),
-      thronePortalLayout: room.getThronePortalLayout(),
-      coopMainArenaPortalPhase: room.getCoopMainArenaPortalPhase(),
-      coopBossThroneArena: room.getCoopBossThroneArena(),
-      coopCombatTransitionId: typeof room.getCoopCombatTransitionId === 'function'
-        ? room.getCoopCombatTransitionId()
-        : null,
-      coopThroneBossKind: typeof room.getCoopThroneBossKind === 'function' ? room.getCoopThroneBossKind() : null,
-      coopTerrainTheme: typeof room.getCoopTerrainTheme === 'function' ? room.getCoopTerrainTheme() : null,
-      coopCurrentRoomKind: typeof room.getCoopCurrentRoomKind === 'function' ? room.getCoopCurrentRoomKind() : null,
-      coopClearedRoomKind: typeof room.getCoopClearedRoomKind === 'function' ? room.getCoopClearedRoomKind() : null,
-      merchantInventory: typeof room.getMerchantInventory === 'function' ? room.getMerchantInventory() : [],
-      mushroomState: typeof room.getMushroomState === 'function' ? room.getMushroomState() : null,
-      goldDrops: typeof room.getGoldDrops === 'function' ? room.getGoldDrops() : [],
-      lateJoinCombatLoadout: (() => {
-        const p = room.getPlayer(socket.id);
-        if (!p?.lateJoinCombatLoadout) return null;
-        p.lateJoinCombatLoadout = false;
-        return { weapon: p.weapon, subclass: p.subclass };
-      })(),
-      ...(typeof room._getDeepSanctumPayloadFields === 'function' ? room._getDeepSanctumPayloadFields() : {}),
-      ...(typeof room._getEdenPayloadFields === 'function' ? room._getEdenPayloadFields() : {}),
-      ...(typeof room._getCoopSkyPayloadFields === 'function' ? room._getCoopSkyPayloadFields() : {}),
-      ...(typeof room._getCoopGrassPayloadFields === 'function' ? room._getCoopGrassPayloadFields() : {}),
-    });
 
-    if (typeof room.isInCoopThronePrep === 'function' && room.isInCoopThronePrep()) {
-      socket.emit('coop-throne-sync', room.getCoopThroneSyncPayload());
-    }
-    
-    // Notify other players
+    console.log(`Player ${socket.id} joined room ${roomId} as ${playerName} with weapon ${weapon}${created ? ' (created)' : ''}`);
+
+    emitRoomJoined(socket, room, roomId, gameMode, { created });
+
     socket.to(roomId).emit('player-joined', {
       playerId: socket.id,
       playerName,
       players: room.getPlayers()
     });
+  });
+
+  socket.on('list-rooms', async () => {
+    try {
+      const rooms = await roomDirectory.globalRooms(summarizeLocalRooms());
+      socket.emit('rooms-list', { rooms });
+    } catch (err) {
+      console.warn('list-rooms failed', err.message);
+      socket.emit('rooms-list', { rooms: summarizeLocalRooms().map((r) => ({ ...r, instance: FLY_MACHINE_ID })) });
+    }
   });
 
   // Register player event handlers
@@ -463,16 +517,91 @@ io.on('connection', (socket) => {
   });
 });
 
-// Player cleanup function
-function cleanupPlayer(playerId) {
-  console.log(`Cleaning up player: ${playerId}`);
-  
-  // Remove from all rooms
+/** Cancel a pending empty-room reclaim timer. */
+function cancelRoomReclaim(roomId) {
+  const timer = roomReclaimTimers.get(roomId);
+  if (!timer) return;
+  clearTimeout(timer);
+  roomReclaimTimers.delete(roomId);
+}
+
+/** Keep an emptied room reserved under its code until the grace window expires. */
+function scheduleRoomReclaim(roomId) {
+  cancelRoomReclaim(roomId);
+  const timer = setTimeout(() => {
+    roomReclaimTimers.delete(roomId);
+    const room = gameRooms.get(roomId);
+    if (!room || room.getPlayerCount() > 0) return;
+    console.log(`Cleaning up empty room after grace: ${roomId}`);
+    room.destroy();
+    gameRooms.delete(roomId);
+  }, EMPTY_ROOM_GRACE_MS);
+  roomReclaimTimers.set(roomId, timer);
+}
+
+/** Reuse the original GameRoom for this code, cancelling any pending reclaim. */
+function getOrCreateRoom(roomId, gameMode) {
+  cancelRoomReclaim(roomId);
+  let created = false;
+  if (!gameRooms.has(roomId)) {
+    const newRoom = new GameRoom(roomId, io);
+    newRoom.gameMode = gameMode;
+    gameRooms.set(roomId, newRoom);
+    created = true;
+  }
+  return { room: gameRooms.get(roomId), created };
+}
+
+function emitRoomJoined(socket, room, roomId, gameMode, extra = {}) {
+  socket.emit('room-joined', {
+    roomId,
+    playerId: socket.id,
+    players: room.getPlayers(),
+    enemies: room.getEnemies(),
+    killCount: room.getKillCount(),
+    gameStarted: room.getGameStarted(),
+    gameMode: room.gameMode || gameMode,
+    instance: FLY_MACHINE_ID,
+    created: !!extra.created,
+    campTypes: room.getCampTypes(),
+    combatArenaActive: room.gameMode !== 'coop' ? true : !!room.combatArenaActive,
+    thronePortalOffer: room.getThronePortalOffer(),
+    thronePortalLayout: room.getThronePortalLayout(),
+    coopMainArenaPortalPhase: room.getCoopMainArenaPortalPhase(),
+    coopBossThroneArena: room.getCoopBossThroneArena(),
+    coopCombatTransitionId: typeof room.getCoopCombatTransitionId === 'function'
+      ? room.getCoopCombatTransitionId()
+      : null,
+    coopThroneBossKind: typeof room.getCoopThroneBossKind === 'function' ? room.getCoopThroneBossKind() : null,
+    coopTerrainTheme: typeof room.getCoopTerrainTheme === 'function' ? room.getCoopTerrainTheme() : null,
+    coopCurrentRoomKind: typeof room.getCoopCurrentRoomKind === 'function' ? room.getCoopCurrentRoomKind() : null,
+    coopClearedRoomKind: typeof room.getCoopClearedRoomKind === 'function' ? room.getCoopClearedRoomKind() : null,
+    merchantInventory: typeof room.getMerchantInventory === 'function' ? room.getMerchantInventory() : [],
+    mushroomState: typeof room.getMushroomState === 'function' ? room.getMushroomState() : null,
+    goldDrops: typeof room.getGoldDrops === 'function' ? room.getGoldDrops() : [],
+    lateJoinCombatLoadout: (() => {
+      const p = room.getPlayer(socket.id);
+      if (!p?.lateJoinCombatLoadout) return null;
+      p.lateJoinCombatLoadout = false;
+      return { weapon: p.weapon, subclass: p.subclass };
+    })(),
+    ...(typeof room._getDeepSanctumPayloadFields === 'function' ? room._getDeepSanctumPayloadFields() : {}),
+    ...(typeof room._getEdenPayloadFields === 'function' ? room._getEdenPayloadFields() : {}),
+    ...(typeof room._getCoopSkyPayloadFields === 'function' ? room._getCoopSkyPayloadFields() : {}),
+    ...(typeof room._getCoopGrassPayloadFields === 'function' ? room._getCoopGrassPayloadFields() : {}),
+  });
+
+  if (typeof room.isInCoopThronePrep === 'function' && room.isInCoopThronePrep()) {
+    socket.emit('coop-throne-sync', room.getCoopThroneSyncPayload());
+  }
+}
+
+/** Remove a player from their GameRoom without dropping the socket. */
+function detachPlayerFromRoom(playerId, keepRoomId) {
   for (const [roomId, room] of gameRooms) {
     if (room.getPlayer(playerId)) {
       room.removePlayer(playerId);
-      
-      // Notify remaining players in room
+
       const socket = playerSockets.get(playerId);
       if (socket) {
         socket.to(roomId).emit('player-left', {
@@ -480,19 +609,21 @@ function cleanupPlayer(playerId) {
           players: room.getPlayers()
         });
       }
-      
-      // Clean up empty rooms
-      if (room.getPlayerCount() === 0) {
-        console.log(`Cleaning up empty room: ${roomId}`);
-        room.destroy(); // Clean up timers
-        gameRooms.delete(roomId);
+
+      if (room.getPlayerCount() === 0 && roomId !== keepRoomId) {
+        console.log(`Reserving empty room: ${roomId}`);
+        scheduleRoomReclaim(roomId);
       }
-      
-      break; // Player should only be in one room
+
+      break;
     }
   }
-  
-  // Remove references
+}
+
+// Player cleanup function
+function cleanupPlayer(playerId) {
+  console.log(`Cleaning up player: ${playerId}`);
+  detachPlayerFromRoom(playerId);
   playerSockets.delete(playerId);
   playerHeartbeats.delete(playerId);
   clearPlayerHandlerState(playerId);
@@ -501,7 +632,7 @@ function cleanupPlayer(playerId) {
 // Periodic cleanup of stale connections (every 30 seconds)
 setInterval(() => {
   const now = Date.now();
-  const STALE_THRESHOLD = 45000; // 45 seconds without heartbeat = stale (allows for 2 missed heartbeats)
+  const STALE_THRESHOLD = 60000; // 60 seconds without heartbeat = stale
 
   // console.log(`Running cleanup check. Active connections: ${playerSockets.size}`);
 
@@ -528,6 +659,10 @@ server.listen(PORT, () => {
 // Graceful shutdown
 function gracefulShutdown(signal) {
   console.log(`${signal} received, shutting down gracefully`);
+  for (const timer of roomReclaimTimers.values()) {
+    clearTimeout(timer);
+  }
+  roomReclaimTimers.clear();
   // Destroy all active rooms so their timers and AI loops are stopped
   for (const room of gameRooms.values()) {
     try { room.destroy(); } catch (_) {}

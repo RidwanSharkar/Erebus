@@ -1,6 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
+import type { MutableRefObject } from 'react';
 import { useFrame } from '@react-three/fiber';
 import type { Position3 } from '@/utils/position3';
+import type { Player } from '@/contexts/MultiplayerContext';
 import { Vector3, Color, Mesh, PlaneGeometry, MeshBasicMaterial, Group } from '@/utils/three-exports';
 
 interface PlayerHealthBarProps {
@@ -13,16 +15,19 @@ interface PlayerHealthBarProps {
   maxShield?: number;
   camera: any;
   showDistance?: number;
+  playersRef?: MutableRefObject<Map<string, Player>>;
 }
 
 export default function PlayerHealthBar({
+  playerId,
   position,
   health,
   maxHealth,
   shield = 0,
-  maxShield = 100,
+  maxShield = 25,
   camera,
-  showDistance = 35
+  showDistance = 35,
+  playersRef,
 }: PlayerHealthBarProps) {
   const groupRef = useRef<Group>(null);
   const meshRefs = useRef<{
@@ -137,8 +142,14 @@ export default function PlayerHealthBar({
     );
     const distance = camera.position.distanceTo(worldPosition);
 
-    // Show/hide based on distance and health status
-    const shouldShow = distance <= showDistance && (health < maxHealth || shield < maxShield);
+    const live = playersRef?.current.get(playerId);
+    const liveHealth = live?.health ?? health;
+    const liveMaxHealth = live?.maxHealth ?? maxHealth;
+    const liveShield = live?.shield ?? shield;
+    const liveMaxShield = live?.maxShield ?? maxShield;
+
+    // Always show nearby allies so full HP/shield is visible at spawn
+    const shouldShow = distance <= showDistance;
     
     if (shouldShow !== visible) {
       setVisible(shouldShow);
@@ -159,7 +170,7 @@ export default function PlayerHealthBar({
 
     // Update health bar scale and color
     if (meshRefs.current.healthBar) {
-      const healthPercentage = Math.max(0, Math.min(1, health / maxHealth));
+      const healthPercentage = Math.max(0, Math.min(1, liveHealth / liveMaxHealth));
       meshRefs.current.healthBar.scale.x = healthPercentage;
       
       // Position health bar to align left when scaling
@@ -177,8 +188,8 @@ export default function PlayerHealthBar({
     }
 
     // Update shield bar scale
-    if (meshRefs.current.shieldBar && maxShield > 0) {
-      const shieldPercentage = Math.max(0, Math.min(1, shield / maxShield));
+    if (meshRefs.current.shieldBar && liveMaxShield > 0) {
+      const shieldPercentage = Math.max(0, Math.min(1, liveShield / liveMaxShield));
       meshRefs.current.shieldBar.scale.x = shieldPercentage;
       
       // Position shield bar to align left when scaling

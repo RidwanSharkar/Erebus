@@ -6,6 +6,7 @@ import { CardinalNotch } from './LevelBadge';
 interface HudActionButtonsProps {
   onOpenRulebook: () => void;
   onOpenControls: () => void;
+  onOpenSettings: () => void;
 }
 
 const BUTTON_SIZE = 40;
@@ -77,6 +78,7 @@ function HudCircleButton({
 export default function HudActionButtons({
   onOpenRulebook,
   onOpenControls,
+  onOpenSettings,
 }: HudActionButtonsProps) {
   return (
     <div className="mt-2 flex items-center gap-2" data-block-game-input>
@@ -89,6 +91,11 @@ export default function HudActionButtons({
         onClick={onOpenControls}
         title="Replay controls"
         iconSrc="/icons/strike.svg"
+      />
+      <HudCircleButton
+        onClick={onOpenSettings}
+        title="Settings"
+        iconSrc="/icons/settings.svg"
       />
     </div>
   );

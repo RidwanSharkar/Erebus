@@ -7456,8 +7456,8 @@ class GameRoom {
 
   // Player management
   addPlayer(playerId, playerName, weapon = 'scythe', subclass, gameMode = 'coop') {
-    // In co-op mode, health scales with kill count
-    const baseHealth = 500;
+    // In co-op mode, health scales with kill count (matches client ExperienceSystem.BASE_HEALTH)
+    const baseHealth = 200;
     const maxHealth = baseHealth + this.killCount;
 
     // Create player object with default position
@@ -7472,6 +7472,8 @@ class GameRoom {
       archetype: 'ROGUE',
       health: maxHealth, // Start with full health
       maxHealth: maxHealth,
+      shield: 25,
+      maxShield: 25,
       level: 1, // Start at level 1
       essence: 0,
       gold: 0,
@@ -14739,9 +14741,12 @@ class GameRoom {
     return !!(weapon && weapon !== 'none');
   }
 
-  updatePlayerHealth(playerId, health) {
+  updatePlayerHealth(playerId, health, maxHealth) {
     const player = this.players.get(playerId);
     if (player) {
+      if (typeof maxHealth === 'number' && maxHealth > 0) {
+        player.maxHealth = maxHealth;
+      }
       player.health = Math.max(0, Math.min(player.maxHealth, health));
     }
   }
@@ -14749,7 +14754,7 @@ class GameRoom {
   updatePlayerShield(playerId, shield, maxShield) {
     const player = this.players.get(playerId);
     if (player) {
-      player.shield = Math.max(0, Math.min(maxShield || player.maxShield || 100, shield));
+      player.shield = Math.max(0, Math.min(maxShield || player.maxShield || 25, shield));
       if (maxShield !== undefined) {
         player.maxShield = maxShield;
       }

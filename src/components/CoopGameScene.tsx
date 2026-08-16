@@ -4905,6 +4905,12 @@ export function CoopGameScene({
   const lastEmittedNetworkShieldRef = useRef<{ shield: number; maxShield: number } | null>(null);
   const lastEmittedNetworkEnergyRef = useRef<{ energy: number; maxEnergy: number } | null>(null);
 
+  // Re-broadcast true HP/shield when the roster changes so late joiners aren't stuck on the join snapshot.
+  useEffect(() => {
+    lastEmittedNetworkHealthRef.current = null;
+    lastEmittedNetworkShieldRef.current = null;
+  }, [playerIdsKey]);
+
   const triggerLocalPlayerDamageFeedback = useCallback(({
     damage,
     damageType = 'physical',
@@ -17227,7 +17233,7 @@ export function CoopGameScene({
 
         // Use shield values from the synchronized player data
         const shieldAmount = player.shield ?? 0;
-        const maxShieldAmount = player.maxShield ?? 100;
+        const maxShieldAmount = player.maxShield ?? 25;
 
         return (
           <PlayerHealthBar
@@ -17238,7 +17244,9 @@ export function CoopGameScene({
             health={player.health}
             maxHealth={player.maxHealth}
             shield={shieldAmount}
+            maxShield={maxShieldAmount}
             camera={camera}
+            playersRef={contextPlayersRef}
             showDistance={35}
           />
         );
