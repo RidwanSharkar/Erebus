@@ -1,0 +1,115 @@
+/** Explore-mode reward camp kinds and shared tables (mirrored in backend/gameRoom.js). */
+
+export type ExploreCampKind =
+  | 'gold'
+  | 'stat'
+  | 'tempest'
+  | 'eldritch'
+  | 'infernal'
+  | 'abyssal'
+  | 'boss';
+
+export type ExploreCampBoonColor = 'blue' | 'green' | 'red' | 'purple';
+
+/** Chance that a wilderness pack becomes a reward camp, by wilderness level. */
+export const EXPLORE_CAMP_CHANCE_BY_LEVEL: Readonly<Record<1 | 2 | 3 | 4, number>> = Object.freeze({
+  1: 0.10,
+  2: 0.17,
+  3: 0.25,
+  4: 0.35,
+});
+
+export const EXPLORE_CAMP_GOLD_BY_LEVEL: Readonly<Record<1 | 2 | 3 | 4, number>> = Object.freeze({
+  1: 100,
+  2: 200,
+  3: 300,
+  4: 400,
+});
+
+export const EXPLORE_CAMP_STAT_BY_LEVEL: Readonly<Record<1 | 2 | 3 | 4, number>> = Object.freeze({
+  1: 3,
+  2: 4,
+  3: 5,
+  4: 6,
+});
+
+export const EXPLORE_CAMP_BOON_COLOR: Readonly<
+  Record<'tempest' | 'eldritch' | 'infernal' | 'abyssal', ExploreCampBoonColor>
+> = Object.freeze({
+  tempest: 'blue',
+  eldritch: 'green',
+  infernal: 'red',
+  abyssal: 'purple',
+});
+
+export const EXPLORE_CAMP_PROP_URL: Readonly<Record<ExploreCampKind, string>> = Object.freeze({
+  gold: '/models/trinket/shardGoldcluster.glb',
+  stat: '/models/trinket/pylons/redProp.glb', // blueProp.glb
+  tempest: '/models/trinket/pylons/statProp.glb',
+  eldritch: '/models/trinket/pylons/greenProp.glb',
+  infernal: '/models/trinket/shardScarlet.glb',
+  abyssal: '/models/trinket/shardAmethyst.glb',
+  boss: '/models/trinket/pylons/bossProp.glb',
+});
+
+/** Soft albedo fill so charcoal pylons stay readable in explore night lighting. */
+export const EXPLORE_CAMP_PROP_SELF_ILLUMINATION = 0.45;
+
+/** Collision disc radius for reward camp props (boss prop has no collision). */
+export const EXPLORE_CAMP_COLLIDE_RADIUS = 1.4;
+
+/** XZ interaction radius — matches MAIN_COMBAT_PEDESTAL_INTERACT_RADIUS. */
+export const EXPLORE_CAMP_INTERACT_RADIUS = 3.0;
+
+/** Cap on unclaimed / in-progress camps so the world cannot stockpile forever. */
+export const EXPLORE_CAMP_MAX_ACTIVE = 3;
+
+/**
+ * Leave-despawn (mirrored in backend/gameRoom.js).
+ * ~40ft at meter-scale. Timer starts only after a player has approached within this range,
+ * then stayed farther away for EXPLORE_CAMP_DESPAWN_DELAY_MS.
+ */
+export const EXPLORE_CAMP_DESPAWN_DIST = 12;
+export const EXPLORE_CAMP_DESPAWN_DELAY_MS = 30000;
+
+/** Pack-member kill thresholds for explore boss encounters 1 / 2 / 3. */
+export const EXPLORE_BOSS_KILL_THRESHOLDS = Object.freeze([20, 45, 75] as const);
+
+export const EXPLORE_BOSS_SPAWN_DIST = 15;
+
+/** Non-boss camp kinds used when rolling a pack into a reward camp. */
+export const EXPLORE_REWARD_CAMP_KINDS = Object.freeze([
+  'gold',
+  'stat',
+  'tempest',
+  'eldritch',
+  'infernal',
+  'abyssal',
+] as const satisfies readonly ExploreCampKind[]);
+
+export type ExploreCampPublic = {
+  id: string;
+  kind: ExploreCampKind;
+  level: number | null;
+  x: number;
+  z: number;
+  cleared: boolean;
+  collides: boolean;
+  claimedBy: string[];
+};
+
+export function isExploreCampKind(value: unknown): value is ExploreCampKind {
+  return (
+    value === 'gold'
+    || value === 'stat'
+    || value === 'tempest'
+    || value === 'eldritch'
+    || value === 'infernal'
+    || value === 'abyssal'
+    || value === 'boss'
+  );
+}
+
+export function exploreCampCollideRadius(kind: ExploreCampKind): number {
+  return kind === 'boss' ? 0 : EXPLORE_CAMP_COLLIDE_RADIUS;
+}

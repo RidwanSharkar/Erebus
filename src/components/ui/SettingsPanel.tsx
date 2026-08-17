@@ -53,14 +53,18 @@ function roomStatus(room: RoomListEntry): { label: string; className: string } {
 
 interface SettingsPanelProps {
   currentRoomId: string | null;
+  gameStarted?: boolean;
   onClose: () => void;
   onSwitchRoom: (roomId: string, options?: { expectExisting?: boolean }) => Promise<unknown> | unknown;
+  onEndGame?: () => void;
 }
 
 export default function SettingsPanel({
   currentRoomId,
+  gameStarted = false,
   onClose,
   onSwitchRoom,
+  onEndGame,
 }: SettingsPanelProps) {
   const { socket } = useMultiplayerActions();
   const [rooms, setRooms] = useState<RoomListEntry[]>([]);
@@ -69,6 +73,7 @@ export default function SettingsPanel({
   const [createNameError, setCreateNameError] = useState<string | null>(null);
   const [joinError, setJoinError] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [endingGame, setEndingGame] = useState(false);
 
   useEffect(() => {
     if (!socket) return;
@@ -142,6 +147,12 @@ export default function SettingsPanel({
     if (!code || code === currentRoomId) return;
     void switchOrShowError(code);
   }, [manualCode, currentRoomId, switchOrShowError]);
+
+  const handleEndGame = useCallback(() => {
+    if (!onEndGame || endingGame || switching || !gameStarted) return;
+    setEndingGame(true);
+    onEndGame();
+  }, [onEndGame, endingGame, switching, gameStarted]);
 
   return (
     <div
@@ -292,7 +303,17 @@ export default function SettingsPanel({
           </section>
         </div>
 
-        <div className="shrink-0 border-t border-blue-400/20 px-6 py-3 text-center">
+        <div className="shrink-0 space-y-2 border-t border-blue-400/20 px-6 py-3 text-center">
+          {onEndGame && (
+            <button
+              type="button"
+              onClick={handleEndGame}
+              disabled={endingGame || switching || !gameStarted}
+              className="w-full rounded border border-rose-500/60 bg-rose-950/50 px-4 py-2 text-sm font-medium text-rose-300 hover:border-rose-400 hover:text-rose-200 disabled:cursor-not-allowed disabled:border-gray-700 disabled:bg-gray-900/40 disabled:text-gray-500"
+            >
+              {endingGame ? 'Ending…' : 'END GAME'}
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}

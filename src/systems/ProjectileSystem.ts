@@ -72,12 +72,17 @@ function weaponAspectFromUserData(ud: Record<string, unknown> | undefined): Weap
   return typeof raw === 'string' && isWeaponAspect(raw) ? raw : undefined;
 }
 
+export const DEFAULT_PROJECTILE_ORIGIN_CULL_RADIUS = 40;
+
 export class ProjectileSystem extends System {
   public readonly requiredComponents = [Transform, Projectile];
   private world: World;
   private combatSystem: CombatSystem | null = null;
   private projectilesToDestroy: number[] = [];
-  
+  /** Absolute distance from world origin; `null` disables the origin cull (explore mode). */
+  private originCullRadius: number | null = DEFAULT_PROJECTILE_ORIGIN_CULL_RADIUS;
+  private originCullRadiusSquared = DEFAULT_PROJECTILE_ORIGIN_CULL_RADIUS * DEFAULT_PROJECTILE_ORIGIN_CULL_RADIUS;
+
 
   
   // Object pools for performance (keeping vector pool for calculations)
@@ -137,6 +142,15 @@ export class ProjectileSystem extends System {
 
   public setCombatSystem(combatSystem: CombatSystem): void {
     this.combatSystem = combatSystem;
+  }
+
+  /**
+   * Arena safety net: destroy projectiles farther than `radius` from (0,0,0).
+   * Pass `null` to disable (unbounded explore worlds). Restore with `40` for rooms.
+   */
+  public setOriginCullRadius(radius: number | null): void {
+    this.originCullRadius = radius;
+    this.originCullRadiusSquared = radius == null ? 0 : radius * radius;
   }
 
   public setCrossentropyBoltBroadcastCallback(
@@ -1163,16 +1177,12 @@ export class ProjectileSystem extends System {
 
   private checkWorldBounds(entity: Entity, transform: Transform): void {
     const pos = transform.position;
-    const maxDistance = 40; // Maximum distance from origin
-    const maxDistanceSquared = maxDistance * maxDistance;
 
-    // Check if projectile is too far from origin (using squared distance)
-    if (pos.lengthSq() > maxDistanceSquared) {
+    if (this.originCullRadius != null && pos.lengthSq() > this.originCullRadiusSquared) {
       this.projectilesToDestroy.push(entity.id);
-      return; // Early exit
+      return;
     }
 
-    // Check if projectile is below ground (simple ground check)
     if (pos.y < -10) {
       this.projectilesToDestroy.push(entity.id);
     }

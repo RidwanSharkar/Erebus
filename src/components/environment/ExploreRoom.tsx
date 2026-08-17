@@ -13,8 +13,11 @@ import {
 import type { Vector3 } from 'three';
 import CustomSky from './CustomSky';
 import ExploreChunkStreamer from './ExploreChunkStreamer';
+import ExploreCampProps, { preloadExploreCampPropGlbs } from './ExploreCampProps';
 import { EXPLORE_PLAYER_VIEW_RADIUS, exploreFog } from '@/utils/exploreFogOfWar';
 import { useMultiplayerRoom } from '@/contexts/MultiplayerContext';
+
+preloadExploreCampPropGlbs();
 
 const GROUND_RADIUS = 80;
 const GROUND_FADE_INNER = 45;
@@ -125,6 +128,7 @@ export default function ExploreRoom({
         combatActive={combatActive}
         mushroomHiddenIndices={mushroomHiddenIndices}
       />
+      <ExploreCampProps />
     </group>
   );
 }

@@ -54,7 +54,13 @@ const io = socketIo(server, {
 
 /** Default matches Next dev client `NEXT_PUBLIC_BACKEND_URL` fallback in MultiplayerContext. */
 const PORT = process.env.PORT || 8080;
-const { MAX_PLAYERS_PER_ROOM, EMPTY_ROOM_GRACE_MS, normalizeRoomId } = require('./roomConfig');
+const {
+  MAX_PLAYERS_PER_ROOM,
+  EMPTY_ROOM_GRACE_MS,
+  normalizeRoomId,
+  isDefaultFamilyId,
+  nextDefaultFallbackId,
+} = require('./roomConfig');
 const roomDirectory = require('./roomDirectory');
 const FLY_MACHINE_ID = roomDirectory.SELF;
 
@@ -119,10 +125,12 @@ function summarizeLocalRooms() {
   const rooms = [];
   for (const [id, room] of gameRooms) {
     const playerCount = room.getPlayerCount();
+    const occupancy = typeof room.getOccupancy === 'function' ? room.getOccupancy() : playerCount;
     const reserved = playerCount === 0;
     rooms.push({
       roomId: id,
       playerCount,
+      occupancy,
       maxPlayers: MAX_PLAYERS_PER_ROOM,
       gameStarted: room.getGameStarted(),
       gameMode: room.gameMode || 'coop',
@@ -131,6 +139,40 @@ function summarizeLocalRooms() {
     });
   }
   return rooms;
+}
+
+function isRoomUnavailableForDefaultFallback(entry) {
+  const live = entry?.playerCount ?? 0;
+  const occ = typeof entry?.occupancy === 'number' ? entry.occupancy : live;
+  return live > 0 || occ >= MAX_PLAYERS_PER_ROOM;
+}
+
+async function allocateDefaultFallbackRoom(fromId) {
+  const from = normalizeRoomId(fromId);
+  const all = await roomDirectory.globalRooms(summarizeLocalRooms());
+  const unavailable = new Set();
+  for (const entry of all) {
+    const id = normalizeRoomId(entry?.roomId);
+    if (!isDefaultFamilyId(id)) continue;
+    if (isRoomUnavailableForDefaultFallback(entry)) unavailable.add(id);
+  }
+  const roomId = nextDefaultFallbackId(from, unavailable);
+  if (!roomId) return null;
+  const existing = all.find((entry) => normalizeRoomId(entry?.roomId) === roomId);
+  return { roomId, exists: !!existing };
+}
+
+async function emitRoomFull(socket, roomId) {
+  const payload = { roomId };
+  if (isDefaultFamilyId(roomId)) {
+    try {
+      const fallback = await allocateDefaultFallbackRoom(roomId);
+      if (fallback?.roomId) payload.suggestedRoomId = fallback.roomId;
+    } catch (err) {
+      console.warn('default-fallback suggest failed', err.message);
+    }
+  }
+  socket.emit('room-full', payload);
 }
 
 app.get('/internal/local-rooms', (req, res) => {
@@ -158,6 +200,21 @@ app.get('/room-host', async (req, res) => {
   }
 });
 
+app.get('/default-fallback', async (req, res) => {
+  try {
+    const from = normalizeRoomId(req.query.from);
+    const result = await allocateDefaultFallbackRoom(from);
+    if (!result) {
+      res.json({ roomId: null, exists: false });
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    console.warn('default-fallback failed', err.message);
+    res.status(500).json({ error: 'default-fallback failed' });
+  }
+});
+
 // Socket.io connection handling
 io.on('connection', (socket) => {
   console.log(`Player connected: ${socket.id}`);
@@ -170,7 +227,8 @@ io.on('connection', (socket) => {
   });
 
   // Handle room joining
-  socket.on('join-room', (data) => {
+  socket.on('join-room', async (data) => {
+    try {
     const { playerName = `Player${Math.floor(Math.random() * 1000)}`, weapon = 'scythe', subclass, gameMode = 'multiplayer', expectExisting = false } = data || {};
     const roomId = normalizeRoomId(data?.roomId);
     const sessionId = sanitizeSessionId(data?.sessionId);
@@ -187,7 +245,7 @@ io.on('connection', (socket) => {
       ? targetRoom.getOccupancy()
       : (targetRoom ? targetRoom.getPlayerCount() : 0);
     if (targetRoom && !alreadyInTarget && !reclaiming && occupancy >= MAX_PLAYERS_PER_ROOM) {
-      socket.emit('room-full');
+      await emitRoomFull(socket, roomId);
       return;
     }
 
@@ -213,7 +271,7 @@ io.on('connection', (socket) => {
     const occupancyAfter = typeof room.getOccupancy === 'function' ? room.getOccupancy() : room.getPlayerCount();
     const reclaimNow = !!(sessionId && typeof room.peekReclaimable === 'function' && room.peekReclaimable(sessionId));
     if (!reclaimNow && occupancyAfter >= MAX_PLAYERS_PER_ROOM) {
-      socket.emit('room-full');
+      await emitRoomFull(socket, roomId);
       return;
     }
 
@@ -235,6 +293,9 @@ io.on('connection', (socket) => {
       playerName,
       players: room.getPlayers()
     });
+    } catch (err) {
+      console.warn('join-room failed', err.message);
+    }
   });
 
   socket.on('list-rooms', async () => {
@@ -244,6 +305,17 @@ io.on('connection', (socket) => {
     } catch (err) {
       console.warn('list-rooms failed', err.message);
       socket.emit('rooms-list', { rooms: summarizeLocalRooms().filter((r) => !r.reserved).map((r) => ({ ...r, instance: FLY_MACHINE_ID })) });
+    }
+  });
+
+  socket.on('allocate-default-fallback', async (data) => {
+    try {
+      const from = normalizeRoomId(data?.from);
+      const result = await allocateDefaultFallbackRoom(from);
+      socket.emit('default-fallback', result || { roomId: null, exists: false });
+    } catch (err) {
+      console.warn('allocate-default-fallback failed', err.message);
+      socket.emit('default-fallback', { roomId: null, exists: false });
     }
   });
 
@@ -334,7 +406,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Co-op death retry: reset the live run back to throne prep (same room code).
+  // Co-op death retry / legacy clients: same full wipe as end-coop-game.
   socket.on('restart-coop-to-throne', (data, ack) => {
     const reply = (payload) => {
       if (typeof ack === 'function') ack(payload);
@@ -365,6 +437,40 @@ io.on('connection', (socket) => {
       reply({ ok: true, roomId });
     } else {
       reply({ ok: false, error: 'Restart failed' });
+    }
+  });
+
+  // Settings END GAME: full pre-weapon throne reset (same room code).
+  socket.on('end-coop-game', (data, ack) => {
+    const reply = (payload) => {
+      if (typeof ack === 'function') ack(payload);
+    };
+    const roomId = normalizeRoomId(data?.roomId);
+    if (!roomId || !gameRooms.has(roomId)) {
+      reply({ ok: false, error: 'Room not found' });
+      return;
+    }
+
+    const room = gameRooms.get(roomId);
+    if (!room.getPlayer(socket.id)) {
+      reply({ ok: false, error: 'Player not in room' });
+      return;
+    }
+    if (room.gameMode !== 'coop' || !room.getGameStarted()) {
+      reply({ ok: false, error: 'Not a started co-op run' });
+      return;
+    }
+    if (typeof room.endCoopGameToThrone !== 'function') {
+      reply({ ok: false, error: 'End game unavailable' });
+      return;
+    }
+
+    const ended = room.endCoopGameToThrone(socket.id);
+    if (ended) {
+      console.log(`⏹ Co-op game ended to throne in room ${roomId} by ${socket.id}`);
+      reply({ ok: true, roomId });
+    } else {
+      reply({ ok: false, error: 'End game failed' });
     }
   });
 
@@ -518,6 +624,20 @@ io.on('connection', (socket) => {
     const ok = room.claimDeepSanctumReward(socket.id);
     if (ok) {
       socket.emit('coop-deep-sanctum-reward-claimed-success', { roomId, timestamp: Date.now() });
+    }
+  });
+
+  socket.on('explore-camp-claim', (data) => {
+    const { roomId, campId } = data || {};
+    if (!roomId || !campId || !gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    if (!room.getPlayer(socket.id)) return;
+    if (typeof room.claimExploreCamp !== 'function') return;
+
+    const ok = room.claimExploreCamp(socket.id, campId);
+    if (ok) {
+      socket.emit('explore-camp-claim-success', { roomId, campId, timestamp: Date.now() });
     }
   });
 

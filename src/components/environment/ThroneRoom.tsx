@@ -1476,8 +1476,7 @@ function ThroneRoom({
         <CustomSky skyPresetIndex={skyPresetIndex} skyPreset="throneBlue" />
       )}
       {!combatActive && <ThroneSkyRayDecor />}
-      <ThroneStatueDecor />
-      <ThronePerimeterPylonDecor />
+   
 
       {/* Celestial cloud sea + floating-island shell — prep only 
       {isPrep && (

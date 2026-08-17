@@ -129,6 +129,11 @@ import type {
 import { applyPlayerMove, getPlayerLivePosition, getPlayerLiveRotation } from '@/utils/playerLiveTransform';
 import { exploreFog } from '@/utils/exploreFogOfWar';
 import { setExploreObstacleListener } from '@/utils/exploreObstacles';
+import {
+  EXPLORE_CAMP_INTERACT_RADIUS,
+  exploreCampCollideRadius,
+  type ExploreCampPublic,
+} from '@/utils/exploreCamps';
 import { setExploreMushroomListener } from '@/utils/exploreMushrooms';
 import { getExploreMushroom } from '@/utils/exploreWorldGen';
 import { useMultiplayerActions, useMultiplayerRoom, Player, EnemyDamageMeta, type Enemy as ServerEnemy, type GoldDrop, type PlayerMovementDirection, type BroadcastPlayerAttackAnimationData } from '@/contexts/MultiplayerContext';
@@ -352,7 +357,7 @@ import { RenderSystem } from '@/systems/RenderSystem';
 import { ControlSystem, type RoomBoomDashKey, type RoomBoomDashPayload, type RoomBoomDashVariant } from '@/systems/ControlSystem';
 import { AudioSystem } from '@/systems/AudioSystem';
 import { CameraSystem } from '@/systems/CameraSystem';
-import { ProjectileSystem } from '@/systems/ProjectileSystem';
+import { ProjectileSystem, DEFAULT_PROJECTILE_ORIGIN_CULL_RADIUS } from '@/systems/ProjectileSystem';
 import { PhysicsSystem } from '@/systems/PhysicsSystem';
 import { CollisionSystem } from '@/systems/CollisionSystem';
 import { CombatSystem } from '@/systems/CombatSystem';
@@ -1567,6 +1572,8 @@ interface CoopGameSceneProps {
   portalsUnlocked?: boolean;
   /** Called when the player presses X near the combat pedestal in the main arena. */
   onCombatArenaPedestalInteract?: (rewardKind?: string | null) => void;
+  /** Called when the player presses X near a cleared explore reward camp prop. */
+  onExploreCampInteract?: (camp: ExploreCampPublic) => void;
   /** Called when the player presses X near the sunken temple sentinel (room IV). */
   onSunkenSentinelInteract?: () => void;
   /** Called when the player presses X near the Eternity's Palace Architect (room IV). */
@@ -1949,6 +1956,7 @@ export function CoopGameScene({
   pedestalBoonReady = false,
   portalsUnlocked = false,
   onCombatArenaPedestalInteract,
+  onExploreCampInteract,
   onSunkenSentinelInteract,
   onEternityPalaceArchitectInteract,
   extraDashChargePurchased = false,
@@ -2093,6 +2101,7 @@ export function CoopGameScene({
     coopGrassPresetIndex,
     coopCurrentRoomKind,
     coopExploreSeed,
+    exploreCamps,
     coopClearedRoomKind,
     selectedArchetype,
     selectedWeaponAspect,
@@ -3037,6 +3046,7 @@ export function CoopGameScene({
     controlSystemRef.current?.setArenaBoundaryMode?.(boundaryMode);
     controlSystemRef.current?.setThroneChargePillars(throneObstacles);
     controlSystemRef.current?.setChargeCornerMountains(null);
+    world.getSystem(ProjectileSystem)?.setOriginCullRadius(isExplore ? null : DEFAULT_PROJECTILE_ORIGIN_CULL_RADIUS);
     const render = world.getSystem(RenderSystem);
     if (isExplore) {
       render?.setFog(new FogExp2(SKY_INDIGO_NIGHT.horizon, 0.045));
@@ -3052,6 +3062,7 @@ export function CoopGameScene({
       }
     }
     return () => {
+      world.getSystem(ProjectileSystem)?.setOriginCullRadius(DEFAULT_PROJECTILE_ORIGIN_CULL_RADIUS);
       render?.setFog(null);
       if (camera instanceof PerspectiveCamera) {
         camera.far = 1000;
@@ -3059,6 +3070,11 @@ export function CoopGameScene({
       }
     };
   }, [inThroneRoom, inBossThroneArena, isHexCombatArena, isCastleRoom, isFaeRealm, isExplore, isDefense, isEternityPalace, isSunkenTemple, isErebusGate, gameStarted, engineReady, camera]);
+
+  const exploreCampsRef = useRef(exploreCamps);
+  exploreCampsRef.current = exploreCamps;
+  const onExploreCampInteractRef = useRef(onExploreCampInteract);
+  onExploreCampInteractRef.current = onExploreCampInteract;
 
   useEffect(() => {
     if (isDefense) {
@@ -3076,16 +3092,35 @@ export function CoopGameScene({
       controlSystemRef.current?.setStreamedObstacles(null);
       return;
     }
+
+    const chunkDiscsRef = { current: [] as Array<{ x: number; z: number; radius: number }> };
+    const applyMerged = () => {
+      const campDiscs: Array<{ x: number; z: number; radius: number }> = [];
+      for (const camp of exploreCampsRef.current) {
+        if (!camp.collides) continue;
+        const radius = exploreCampCollideRadius(camp.kind);
+        if (radius <= 0) continue;
+        campDiscs.push({ x: camp.x, z: camp.z, radius });
+      }
+      const merged = campDiscs.length > 0
+        ? [...chunkDiscsRef.current, ...campDiscs]
+        : chunkDiscsRef.current;
+      engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(merged);
+      controlSystemRef.current?.setStreamedObstacles(merged);
+    };
+
     setExploreObstacleListener((discs) => {
-      engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(discs);
-      controlSystemRef.current?.setStreamedObstacles(discs);
+      chunkDiscsRef.current = discs ?? [];
+      applyMerged();
     });
+    applyMerged();
+
     return () => {
       setExploreObstacleListener(null);
       engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(null);
       controlSystemRef.current?.setStreamedObstacles(null);
     };
-  }, [isExplore, isDefense, engineReady]);
+  }, [isExplore, isDefense, engineReady, exploreCamps]);
 
   const prevInThroneRef = useRef(inThroneRoom);
   // Place the local player at their server throne spawn ONCE per throne entry, then let the
@@ -15318,6 +15353,25 @@ export function CoopGameScene({
             }
           } else if (
             xEdge &&
+            isExploreRef.current
+          ) {
+            const localId = socket?.id ?? null;
+            const r2 = EXPLORE_CAMP_INTERACT_RADIUS * EXPLORE_CAMP_INTERACT_RADIUS;
+            let best: { camp: ExploreCampPublic; d2: number } | null = null;
+            for (const camp of exploreCampsRef.current) {
+              if (!camp.cleared) continue;
+              if (localId && camp.claimedBy.includes(localId)) continue;
+              const dx = px - camp.x;
+              const dz = pz - camp.z;
+              const d2 = dx * dx + dz * dz;
+              if (d2 > r2) continue;
+              if (!best || d2 < best.d2) best = { camp, d2 };
+            }
+            if (best) {
+              onExploreCampInteractRef.current?.(best.camp);
+            }
+          } else if (
+            xEdge &&
             coopCurrentRoomKindRef.current === 'deep_sanctum' &&
             deepSanctumRewardKindRef.current &&
             pedDx * pedDx + pedDz * pedDz < pedR2
@@ -16263,6 +16317,23 @@ export function CoopGameScene({
                   if (d2 < rPortal * rPortal) {
                     nextHint = COOP_INTERACT_HINT_TEXT;
                   }
+                }
+              } else if (isExploreRef.current) {
+                const localId = socket?.id ?? null;
+                const r2 = EXPLORE_CAMP_INTERACT_RADIUS * EXPLORE_CAMP_INTERACT_RADIUS;
+                let nearCamp = false;
+                for (const camp of exploreCampsRef.current) {
+                  if (!camp.cleared) continue;
+                  if (localId && camp.claimedBy.includes(localId)) continue;
+                  const dx = px - camp.x;
+                  const dz = pz - camp.z;
+                  if (dx * dx + dz * dz <= r2) {
+                    nearCamp = true;
+                    break;
+                  }
+                }
+                if (nearCamp) {
+                  nextHint = COOP_INTERACT_HINT_TEXT;
                 }
               } else if (
                 coopCurrentRoomKindRef.current === 'deep_sanctum' &&

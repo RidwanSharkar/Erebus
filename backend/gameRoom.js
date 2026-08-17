@@ -518,6 +518,30 @@ const EXPLORE_DESPAWN_DIST = 30;
 const EXPLORE_TENTACLE_SPAWN_CHANCE = 0.2;
 const EXPLORE_TENTACLE_LIVE_CAP = 6;
 const EXPLORE_WILDERNESS_RING = 80;
+
+/** Chance that a wilderness pack becomes a reward camp, by wilderness level. */
+const EXPLORE_CAMP_CHANCE_BY_LEVEL = Object.freeze({ 1: 0.40, 2: 0.20, 3: 0.30, 4: 0.50 });
+const EXPLORE_CAMP_GOLD_BY_LEVEL = Object.freeze({ 1: 100, 2: 200, 3: 300, 4: 400 });
+const EXPLORE_CAMP_STAT_BY_LEVEL = Object.freeze({ 1: 3, 2: 4, 3: 5, 4: 6 });
+const EXPLORE_CAMP_BOON_COLOR = Object.freeze({
+  tempest: 'blue',
+  eldritch: 'green',
+  infernal: 'red',
+  abyssal: 'purple',
+});
+const EXPLORE_REWARD_CAMP_KINDS = Object.freeze([
+  'gold', 'stat', 'tempest', 'eldritch', 'infernal', 'abyssal',
+]);
+const EXPLORE_CAMP_COLLIDE_RADIUS = 1.4;
+const EXPLORE_CAMP_MAX_ACTIVE = 3;
+const EXPLORE_CAMP_PROP_OFFSET_MIN = 4;
+const EXPLORE_CAMP_PROP_OFFSET_MAX = 6;
+/** ~40ft at meter-scale. Timer starts only after a player has approached within this range. */
+const EXPLORE_CAMP_DESPAWN_DIST = 12;
+const EXPLORE_CAMP_DESPAWN_DELAY_MS = 30000;
+/** Pack-member kill thresholds for explore boss encounters 1 / 2 / 3. */
+const EXPLORE_BOSS_KILL_THRESHOLDS = Object.freeze([20, 45, 75]);
+const EXPLORE_BOSS_SPAWN_DIST = 15;
 /** Pack recipes by wilderness level. Members are a type string or `{ type, campColor }`. */
 const EXPLORE_WILDERNESS_PACKS = Object.freeze({
   1: Object.freeze([
@@ -600,7 +624,8 @@ const DEFENSE_ROOM_RADIUS = COOP_THRONE_ROOM_RADIUS * DEFENSE_ROOM_SCALE;
 const DEFENSE_TOWER_TRIANGLE_RADIUS = 7;
 const DEFENSE_TOWER_HULL_RADIUS = 1.4;
 const DEFENSE_TOWER_MAX_HP = 3000;
-const DEFENSE_TOWER_MUZZLE_Y = 10.0;
+/** Crown world Y: nativeMaxY(8.405) × scale(0.893) + lift(0.286) ≈ 7.8. Keep in sync with defenseLayout.ts. */
+const DEFENSE_TOWER_MUZZLE_Y = 7.8;
 const DEFENSE_TOWER_IMPACT_Y = 1.0;
 const DEFENSE_TOWER_BOLT_PROFILE = Object.freeze({
   kind: 'bolt',
@@ -1200,6 +1225,15 @@ class GameRoom {
     this.coopExploreSeed = 0;
     this._exploreSpawnTimer = null;
     this._exploreSpawnSlot = 0;
+    /** @type {Map<string, { id: string, kind: string, level: number|null, x: number, z: number, memberIds: Set<string>, cleared: boolean, claimedBy: Set<string>, collides: boolean }>} */
+    this.exploreCamps = new Map();
+    this._exploreCampSeq = 0;
+    /** Pack-member kills in the current explore session (excludes tentacles). */
+    this.exploreKillCount = 0;
+    /** Next boss encounter index (0 = first at 20 kills, 1 = second at 45, 2 = third at 75). */
+    this.exploreBossEncounterIndex = 0;
+    /** @type {Set<string>} Active explore boss / elite knight ids — exempt from far-despawn. */
+    this.exploreBossIds = new Set();
 
     /** Defense mode: throne-shell holdout with allied towers. */
     this.coopDefenseActive = false;
@@ -1683,8 +1717,13 @@ class GameRoom {
   /**
    * Reset a co-op occupant for throne prep. `fullRunReset` also revives HP and wipes
    * run progress (boons, gold, relics) while keeping weapon / aspect / archetype.
+   * `stripLoadout` additionally clears weapon / aspect / archetype (pre-pedestal hub).
    */
-  _resetCoopOccupantForThronePrep(player, { fullRunReset = false, emitCurrency = false } = {}) {
+  _resetCoopOccupantForThronePrep(player, {
+    fullRunReset = false,
+    stripLoadout = false,
+    emitCurrency = false,
+  } = {}) {
     if (!player) return;
     player.merchantDashChargePurchased = false;
     player.merchantWeaponTalentPurchases = 0;
@@ -1762,6 +1801,13 @@ class GameRoom {
       player.hasPersephone = false;
       player.persephoneConsumed = false;
       player.exodiaSetCount = 0;
+    }
+
+    if (stripLoadout) {
+      player.weapon = 'none';
+      player.subclass = undefined;
+      player.archetype = 'NONE';
+      player.weaponAspect = defaultWeaponAspectForWeapon('none');
     }
 
     if (emitCurrency && this.io) {
@@ -1850,6 +1896,7 @@ class GameRoom {
     this.coopExploreSeed = 0;
     this._stopExploreSpawns();
     this._exploreSpawnSlot = 0;
+    this._resetExploreCampState();
     this._resetDefenseState();
     this.coopSunkenActive = false;
     this.coopSunkenRoomIndex = 0;
@@ -1893,19 +1940,21 @@ class GameRoom {
 
   /**
    * Apply throne-prep flags, occupant reset, teleport, and training dummy.
-   * @param {{ occupantReset?: 'start' | 'restart' }} [opts]
+   * @param {{ occupantReset?: 'start' | 'restart' | 'end' }} [opts]
    */
   _resetCoopRunToThronePrep({ occupantReset = 'start' } = {}) {
     this._resetCoopRunFlags();
 
     if (this.gameMode === 'coop') {
-      const fullRunReset = occupantReset === 'restart';
-      const occupants = occupantReset === 'restart'
+      const fullRunReset = occupantReset === 'restart' || occupantReset === 'end';
+      const stripLoadout = occupantReset === 'end';
+      const occupants = (occupantReset === 'restart' || occupantReset === 'end')
         ? 'all'
         : 'connected';
       const apply = (player) => {
         this._resetCoopOccupantForThronePrep(player, {
           fullRunReset,
+          stripLoadout,
           emitCurrency: this.players.has(player.id),
         });
       };
@@ -1930,7 +1979,7 @@ class GameRoom {
     }
   }
 
-  _emitCoopGameStarted(initiatingPlayerId) {
+  _emitCoopGameStarted(initiatingPlayerId, { fullReset = false } = {}) {
     if (!this.io) return;
     this.io.to(this.roomId).emit('game-started', {
       roomId: this.roomId,
@@ -1941,6 +1990,7 @@ class GameRoom {
       players: this.getPlayers(),
       /** Full snapshot so clients never miss `enemy-spawned` (e.g. throne training dummy). */
       enemies: this.getEnemies(),
+      ...(fullReset ? { fullReset: true } : {}),
       ...this.getCoopSessionSnapshotFields(),
     });
   }
@@ -1980,26 +2030,35 @@ class GameRoom {
   }
 
   /**
-   * Mid-run death retry: wipe the current co-op mode and return everyone to throne prep.
-   * Does not clear `gameStarted` — same room code, fresh hub.
+   * Mid-run death retry: same full hub wipe as Settings END GAME
+   * (talents / stats / EXP / loadout cleared; same room code).
    */
   restartCoopRunToThrone(initiatingPlayerId) {
+    return this.endCoopGameToThrone(initiatingPlayerId);
+  }
+
+  /**
+   * Settings END GAME: full hub reset to pre-weapon throne prep (same room code).
+   * Strips weapons / aspects / archetypes in addition to the death-retry wipe.
+   */
+  endCoopGameToThrone(initiatingPlayerId) {
     if (this.gameMode !== 'coop' || !this.gameStarted) {
       return false;
     }
 
     this.gamePaused = false;
     this._tearDownCoopCombatForRestart();
-    this._resetCoopRunToThronePrep({ occupantReset: 'restart' });
-    this._emitCoopGameStarted(initiatingPlayerId);
+    this._resetCoopRunToThronePrep({ occupantReset: 'end' });
+    this._emitCoopGameStarted(initiatingPlayerId, { fullReset: true });
     if (this.io) {
       this.io.to(this.roomId).emit('coop-run-restarted', {
         roomId: this.roomId,
         initiatingPlayerId,
+        fullReset: true,
         timestamp: Date.now(),
       });
     }
-    console.log(`🔁 Co-op run restarted to throne prep in room ${this.roomId} by ${initiatingPlayerId}`);
+    console.log(`⏹ Co-op game ended to throne prep in room ${this.roomId} by ${initiatingPlayerId}`);
     return true;
   }
 
@@ -3099,7 +3158,171 @@ class GameRoom {
     return {
       coopExploreActive: this.coopExploreActive,
       coopExploreSeed: this.coopExploreSeed,
+      exploreCamps: this.getExploreCampState(),
+      exploreKillCount: this.exploreKillCount,
+      exploreBossEncounterIndex: this.exploreBossEncounterIndex,
     };
+  }
+
+  _resetExploreCampState() {
+    this.exploreCamps = new Map();
+    this._exploreCampSeq = 0;
+    this.exploreKillCount = 0;
+    this.exploreBossEncounterIndex = 0;
+    this.exploreBossIds = new Set();
+  }
+
+  getExploreCampState() {
+    const out = [];
+    for (const camp of this.exploreCamps.values()) {
+      out.push({
+        id: camp.id,
+        kind: camp.kind,
+        level: camp.level,
+        x: camp.x,
+        z: camp.z,
+        cleared: !!camp.cleared,
+        collides: !!camp.collides,
+        claimedBy: [...camp.claimedBy],
+      });
+    }
+    return out;
+  }
+
+  _broadcastExploreCamps() {
+    if (!this.io) return;
+    this.io.to(this.roomId).emit('explore-camps-updated', {
+      exploreCamps: this.getExploreCampState(),
+      timestamp: Date.now(),
+    });
+  }
+
+  _countActiveExploreCamps() {
+    let n = 0;
+    for (const camp of this.exploreCamps.values()) {
+      if (camp.kind === 'boss') continue;
+      n += 1;
+    }
+    return n;
+  }
+
+  _pickExploreRewardCampKind() {
+    return EXPLORE_REWARD_CAMP_KINDS[Math.floor(Math.random() * EXPLORE_REWARD_CAMP_KINDS.length)];
+  }
+
+  /**
+   * Place the reward prop on the pack centroid (average of member positions).
+   * If the centroid sits in a tree/rock disc, try small radial jitters, then fall back
+   * to the centroid anyway so the prop still appears at the camp.
+   * @param {Array<{ x: number, z: number }>} positions
+   * @returns {{ x: number, z: number }|null}
+   */
+  _pickExploreCampPropPosition(positions) {
+    if (!positions || positions.length === 0) return null;
+    let sx = 0;
+    let sz = 0;
+    for (const p of positions) {
+      sx += p.x;
+      sz += p.z;
+    }
+    const cx = sx / positions.length;
+    const cz = sz / positions.length;
+    const seed = this.coopExploreSeed || 1;
+    const pad = EXPLORE_CAMP_COLLIDE_RADIUS + 0.5;
+    if (!exploreWorldGen.isExploreBlocked(seed, cx, cz, pad)) {
+      return { x: cx, z: cz };
+    }
+    for (let attempt = 0; attempt < 24; attempt++) {
+      const ang = Math.random() * Math.PI * 2;
+      const dist = EXPLORE_CAMP_PROP_OFFSET_MIN
+        + Math.random() * (EXPLORE_CAMP_PROP_OFFSET_MAX - EXPLORE_CAMP_PROP_OFFSET_MIN);
+      const x = cx + Math.cos(ang) * dist;
+      const z = cz + Math.sin(ang) * dist;
+      if (exploreWorldGen.isExploreBlocked(seed, x, z, pad)) continue;
+      return { x, z };
+    }
+    // Centroid fallback even if blocked — better than no prop.
+    return { x: cx, z: cz };
+  }
+
+  _createExploreCamp({ kind, level, x, z, cleared = false, collides = true }) {
+    const id = `explore-camp-${++this._exploreCampSeq}-${Date.now().toString(36)}`;
+    const camp = {
+      id,
+      kind,
+      level: level == null ? null : (level | 0),
+      x,
+      z,
+      memberIds: new Set(),
+      cleared: !!cleared,
+      claimedBy: new Set(),
+      collides: kind === 'boss' ? false : !!collides,
+      // Server-only leave-despawn state (not sent in getExploreCampState).
+      approached: false,
+      farSince: 0,
+    };
+    this.exploreCamps.set(id, camp);
+    console.log(
+      `🏕️ Explore reward camp ${id} kind=${kind} level=${camp.level} at (${Number(x).toFixed(1)}, ${Number(z).toFixed(1)}) cleared=${!!cleared}`
+    );
+    this._broadcastExploreCamps();
+    return camp;
+  }
+
+  /**
+   * Remove a reward camp prop and its remaining pack members (skip / leave despawn).
+   * @param {{ id: string, memberIds?: Set<string> }} camp
+   */
+  _despawnExploreCamp(camp) {
+    if (!camp) return;
+    const memberIds = camp.memberIds ? [...camp.memberIds] : [];
+    for (const id of memberIds) {
+      const enemy = this.enemies.get(id);
+      if (!enemy) continue;
+      this._clearEnemyDoTTimers(id);
+      this._pruneEnemyMaps(id);
+      if (this.enemyAI) this.enemyAI.removeEnemyAggro(id);
+      this.enemies.delete(id);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-removed', { enemyId: id, timestamp: Date.now() });
+      }
+    }
+    this.exploreCamps.delete(camp.id);
+    console.log(`🏕️ Explore camp ${camp.id} despawned (left behind)`);
+    this._broadcastExploreCamps();
+  }
+
+  /**
+   * After a player approaches a camp then leaves beyond EXPLORE_CAMP_DESPAWN_DIST,
+   * despawn the prop + pack after EXPLORE_CAMP_DESPAWN_DELAY_MS so skipped camps
+   * do not linger on the horizon.
+   */
+  _tickExploreCampDespawn() {
+    if (!this.exploreCamps || this.exploreCamps.size === 0) return;
+    const players = this._getExplorePlayers();
+    if (players.length === 0) return;
+    const now = Date.now();
+    const toDespawn = [];
+    for (const camp of this.exploreCamps.values()) {
+      let nearest = Infinity;
+      for (const p of players) {
+        const d = Math.hypot(p.position.x - camp.x, p.position.z - camp.z);
+        if (d < nearest) nearest = d;
+      }
+      if (nearest <= EXPLORE_CAMP_DESPAWN_DIST) {
+        camp.approached = true;
+        camp.farSince = 0;
+        continue;
+      }
+      if (!camp.approached) continue;
+      if (!camp.farSince) camp.farSince = now;
+      if (now - camp.farSince >= EXPLORE_CAMP_DESPAWN_DELAY_MS) {
+        toDespawn.push(camp);
+      }
+    }
+    for (const camp of toDespawn) {
+      this._despawnExploreCamp(camp);
+    }
   }
 
   _getDefensePayloadFields() {
@@ -5148,6 +5371,7 @@ class GameRoom {
     this.coopExploreActive = true;
     this.coopExploreSeed = (Math.random() * 0x7fffffff) | 0;
     this._exploreSpawnSlot = 0;
+    this._resetExploreCampState();
     this._resetDefenseState();
     this.currentCoopRoomKind = 'explore';
     this.clearedCoopRoomKind = null;
@@ -5252,6 +5476,7 @@ class GameRoom {
     this.coopExploreSeed = 0;
     this._stopExploreSpawns();
     this._exploreSpawnSlot = 0;
+    this._resetExploreCampState();
     this.coopDefenseActive = true;
     this.coopDefenseWave = 0;
     this.coopDefenseWaveState = 'idle';
@@ -5646,13 +5871,18 @@ class GameRoom {
     return this._pickRandomCampColor();
   }
 
-  _spawnExplorePackMember(member, pos) {
+  _spawnExplorePackMember(member, pos, campId = null) {
     const type = explorePackMemberType(member);
     const specified = typeof member === 'string' ? null : member.campColor;
     const campColor = this._resolveExplorePackCampColor(type, specified);
     const campDef = GameRoom.CAMP_TYPES[campColor] || GameRoom.CAMP_TYPES.red;
     const slot = this._exploreSpawnSlot++;
     const enemy = this._buildEnemy(type, 0, slot, pos, campDef);
+    if (campId) {
+      enemy.exploreCampId = campId;
+      const camp = this.exploreCamps.get(campId);
+      if (camp) camp.memberIds.add(enemy.id);
+    }
     this.enemies.set(enemy.id, enemy);
     if (this.io) {
       this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
@@ -5666,6 +5896,11 @@ class GameRoom {
     const toRemove = [];
     for (const [id, enemy] of this.enemies) {
       if (!enemy || this.isAlliedUnitEnemy(enemy)) continue;
+      // Camp packs and explore bosses persist until killed.
+      if (enemy.exploreCampId) continue;
+      if (this.exploreBossIds?.has(id)) continue;
+      if (enemy.isBoss1EliteKnight) continue;
+      if (COOP_BOSS_TYPES.has(enemy.type)) continue;
       const ex = enemy.position?.x || 0;
       const ez = enemy.position?.z || 0;
       let nearest = Infinity;
@@ -5698,19 +5933,43 @@ class GameRoom {
   _tickExploreSpawns() {
     if (!this.coopExploreActive || !this.gameStarted || !this.combatArenaActive) return;
     this._despawnExploreFarEnemies();
+    this._tickExploreCampDespawn();
     const live = this._countExploreLiveHostiles();
     if (live < EXPLORE_LIVE_CAP) {
       const players = this._getExplorePlayers();
       if (players.length > 0) {
         const anchor = players[Math.floor(Math.random() * players.length)];
         const level = exploreWildernessLevel(anchor.position.x, anchor.position.z);
+        const tableLevel = Math.min(Math.max(level | 0, 1), 4);
         const recipe = this._pickExploreWildernessRecipe(level);
         if (recipe && live + recipe.length <= EXPLORE_LIVE_CAP) {
           const positions = this._pickExplorePackPositions(recipe.length, anchor);
           if (positions && positions.length === recipe.length) {
-            for (let i = 0; i < recipe.length; i++) {
-              this._spawnExplorePackMember(recipe[i], positions[i]);
+            let campId = null;
+            const chance = EXPLORE_CAMP_CHANCE_BY_LEVEL[tableLevel] ?? 0.5;
+            if (
+              this._countActiveExploreCamps() < EXPLORE_CAMP_MAX_ACTIVE
+              && Math.random() < chance
+            ) {
+              const propPos = this._pickExploreCampPropPosition(positions);
+              if (propPos) {
+                const kind = this._pickExploreRewardCampKind();
+                const camp = this._createExploreCamp({
+                  kind,
+                  level: tableLevel,
+                  x: propPos.x,
+                  z: propPos.z,
+                  cleared: false,
+                  collides: true,
+                });
+                campId = camp.id;
+              }
             }
+            for (let i = 0; i < recipe.length; i++) {
+              this._spawnExplorePackMember(recipe[i], positions[i], campId);
+            }
+            // Explore streams packs outside spawnEnemyWave — wake AI if it idle-paused.
+            this.startEnemyAI();
           }
         }
       }
@@ -5728,8 +5987,214 @@ class GameRoom {
         if (this.io) {
           this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
         }
+        this.startEnemyAI();
       }
     }
+  }
+
+  /**
+   * Called from the shared enemy-death path while explore is active.
+   * Tracks pack kills toward boss thresholds and clears reward camps when all members die.
+   */
+  _registerExploreEnemyDeath(enemy) {
+    if (!this.coopExploreActive || !enemy) return;
+
+    const campId = enemy.exploreCampId;
+    if (campId) {
+      const camp = this.exploreCamps.get(campId);
+      if (camp && camp.memberIds.has(enemy.id)) {
+        camp.memberIds.delete(enemy.id);
+        if (camp.memberIds.size === 0 && !camp.cleared) {
+          camp.cleared = true;
+          this._broadcastExploreCamps();
+        }
+      }
+    }
+
+    // Boss encounter progress: pack members only (exclude tentacles, allies, bosses).
+    if (this.isAlliedUnitEnemy(enemy)) return;
+    if (enemy.type === 'tentacle-spine') return;
+    if (COOP_BOSS_TYPES.has(enemy.type)) return;
+    if (enemy.isBoss1EliteKnight) return;
+    if (this.exploreBossIds?.has(enemy.id)) return;
+
+    this.exploreKillCount += 1;
+    this._maybeSpawnExploreBossEncounter();
+  }
+
+  _maybeSpawnExploreBossEncounter() {
+    if (!this.coopExploreActive || this.bossSpawned) return;
+    const index = this.exploreBossEncounterIndex | 0;
+    if (index >= EXPLORE_BOSS_KILL_THRESHOLDS.length) return;
+    const threshold = EXPLORE_BOSS_KILL_THRESHOLDS[index];
+    if (this.exploreKillCount < threshold) return;
+    this._spawnExploreBossEncounter(index);
+  }
+
+  _pickExploreBossSpawnPosition() {
+    const players = this._getExplorePlayers();
+    if (players.length === 0) return null;
+    const anchor = players[Math.floor(Math.random() * players.length)];
+    const ax = anchor.position.x;
+    const az = anchor.position.z;
+    const seed = this.coopExploreSeed || 1;
+    for (let attempt = 0; attempt < 24; attempt++) {
+      const ang = Math.random() * Math.PI * 2;
+      const x = ax + Math.cos(ang) * EXPLORE_BOSS_SPAWN_DIST;
+      const z = az + Math.sin(ang) * EXPLORE_BOSS_SPAWN_DIST;
+      if (exploreWorldGen.isExploreBlocked(seed, x, z, 1.5)) continue;
+      return { x, y: 0, z };
+    }
+    return {
+      x: ax + EXPLORE_BOSS_SPAWN_DIST,
+      y: 0,
+      z: az,
+    };
+  }
+
+  _spawnExploreBossEncounter(index) {
+    if (!this.coopExploreActive || this.bossSpawned) return null;
+    const pos = this._pickExploreBossSpawnPosition();
+    if (!pos) return null;
+
+    this.exploreBossEncounterIndex = (index | 0) + 1;
+    this.exploreBossIds = new Set();
+    this.boss1EliteKnightIds = null;
+
+    let spawned = null;
+    if (index === 0) {
+      this.coopThroneBossKind = 'boss';
+      if (Math.random() < COOP_BOSS1_ELITE_KNIGHTS_CHANCE) {
+        spawned = this.spawnBoss1EliteKnights(pos);
+      } else {
+        spawned = this.spawnBoss('boss', { position: pos });
+      }
+    } else if (index === 1) {
+      this.coopThroneBossKind = 'boss2';
+      spawned = this.spawnBoss2Encounter({ position: pos });
+    } else {
+      this.coopThroneBossKind = 'destiny';
+      spawned = this.spawnBoss('destiny', { position: pos });
+    }
+
+    if (!spawned) {
+      // Roll back so the threshold can retry on the next kill.
+      this.exploreBossEncounterIndex = index | 0;
+      this.coopThroneBossKind = null;
+      return null;
+    }
+
+    if (Array.isArray(spawned)) {
+      for (const e of spawned) {
+        if (e?.id) this.exploreBossIds.add(e.id);
+      }
+    } else if (spawned?.id) {
+      this.exploreBossIds.add(spawned.id);
+    }
+
+    this.bossSpawned = true;
+    this.startEnemyAI();
+    console.log(
+      `👹 Explore boss encounter ${index + 1} spawned near (${pos.x.toFixed(1)}, ${pos.z.toFixed(1)})`
+    );
+    return spawned;
+  }
+
+  _spawnExploreBossRewardCamp(pos) {
+    if (!pos) return null;
+    return this._createExploreCamp({
+      kind: 'boss',
+      level: null,
+      x: pos.x || 0,
+      z: pos.z || 0,
+      cleared: true,
+      collides: false,
+    });
+  }
+
+  _onExploreBossEncounterCleared(deathPosition) {
+    this.bossSpawned = false;
+    this.exploreBossIds = new Set();
+    this.boss1EliteKnightIds = null;
+    this.coopThroneBossKind = null;
+    this._spawnExploreBossRewardCamp(deathPosition || { x: 0, z: 0 });
+  }
+
+  /**
+   * Client claimed an explore reward camp (X near cleared prop).
+   * Gold/stat are shared to all players; boon/boss props stay until every player claims.
+   * @param {string} playerId
+   * @param {string} campId
+   * @returns {boolean}
+   */
+  claimExploreCamp(playerId, campId) {
+    if (!this.coopExploreActive || !this.players.get(playerId)) return false;
+    const camp = this.exploreCamps.get(campId);
+    if (!camp || !camp.cleared) return false;
+    if (camp.claimedBy.has(playerId)) return false;
+
+    const level = Math.min(Math.max((camp.level | 0) || 1, 1), 4);
+    let gold = 0;
+    let statPoints = 0;
+    let boonColor = null;
+
+    if (camp.kind === 'gold') {
+      gold = EXPLORE_CAMP_GOLD_BY_LEVEL[level] || 100;
+      for (const player of this.players.values()) {
+        player.gold = (player.gold || 0) + gold;
+        if (this.io) {
+          this.io.to(this.roomId).emit('player-gold-changed', {
+            playerId: player.id,
+            gold: player.gold,
+            timestamp: Date.now(),
+          });
+        }
+      }
+      camp.claimedBy.add(playerId);
+      this.exploreCamps.delete(campId);
+    } else if (camp.kind === 'stat') {
+      statPoints = EXPLORE_CAMP_STAT_BY_LEVEL[level] || 3;
+      camp.claimedBy.add(playerId);
+      this.exploreCamps.delete(campId);
+    } else if (
+      camp.kind === 'tempest'
+      || camp.kind === 'eldritch'
+      || camp.kind === 'infernal'
+      || camp.kind === 'abyssal'
+      || camp.kind === 'boss'
+    ) {
+      boonColor = EXPLORE_CAMP_BOON_COLOR[camp.kind] || null;
+      camp.claimedBy.add(playerId);
+      let allClaimed = true;
+      for (const p of this.players.values()) {
+        if (!camp.claimedBy.has(p.id)) {
+          allClaimed = false;
+          break;
+        }
+      }
+      if (allClaimed) {
+        this.exploreCamps.delete(campId);
+      }
+    } else {
+      return false;
+    }
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('explore-camp-claimed', {
+        campId,
+        kind: camp.kind,
+        level: camp.level,
+        playerId,
+        gold,
+        statPoints,
+        boonColor,
+        exploreCamps: this.getExploreCampState(),
+        timestamp: Date.now(),
+      });
+    } else {
+      this._broadcastExploreCamps();
+    }
+    return true;
   }
 
   /**
@@ -7974,6 +8439,7 @@ class GameRoom {
     this.coopExploreSeed = 0;
     this._stopExploreSpawns();
     this._exploreSpawnSlot = 0;
+    this._resetExploreCampState();
     this._resetDefenseState();
 
     this.coopSunkenActive = false;
@@ -8724,6 +9190,10 @@ class GameRoom {
    */
   pauseGame() {
     if (!this.gameStarted) return;
+    if (this.coopCombatTransition) {
+      this._clearCoopCombatTransitionTimer();
+      this.coopCombatTransition = null;
+    }
     this.gamePaused = true;
     this.stopEnemySpawning();
     if (this.enemyAI) this.enemyAI.stopAI();
@@ -12996,6 +13466,10 @@ class GameRoom {
       // Spawn a world gold pile for eligible enemy kills.
       this.spawnGoldDropForKill(enemy);
 
+      if (this.coopExploreActive) {
+        this._registerExploreEnemyDeath(enemy);
+      }
+
       // Dream Layer unique drops from non-boss enemies (bosses roll after spawnBossItemDrops).
       if (!COOP_BOSS_TYPES.has(enemy.type)) {
         this._tryDreamLayerDropOnKill(enemy);
@@ -13133,7 +13607,11 @@ class GameRoom {
 
           this._clearBossSummonedAdds(enemyId);
           this.coopBossesDefeatedCount += 1;
-          this._schedulePostBossPortalIntermission();
+          if (this.coopExploreActive) {
+            this._onExploreBossEncounterCleared(enemy.position);
+          } else {
+            this._schedulePostBossPortalIntermission();
+          }
 
           console.log(`🎉 BOSS DEFEATED by player ${fromPlayerId}!`);
         } // end else (normal single-boss)
@@ -13207,7 +13685,11 @@ class GameRoom {
               });
             }
             this.coopBossesDefeatedCount += 1;
-            this._schedulePostBossPortalIntermission();
+            if (this.coopExploreActive) {
+              this._onExploreBossEncounterCleared(enemy.position);
+            } else {
+              this._schedulePostBossPortalIntermission();
+            }
             console.log(`🎉 BOSS1 ELITE KNIGHTS DEFEATED by player ${fromPlayerId}!`);
           }
         }
@@ -14225,7 +14707,8 @@ class GameRoom {
 
   // Spawn the boss enemy
   // @param {string|null} forceType — optional explicit boss type ('boss'|'boss2'|'boss3'|'destiny')
-  spawnBoss(forceType = null) {
+  // @param {{ position?: { x: number, y?: number, z: number } }|null} options
+  spawnBoss(forceType = null, options = null) {
     if (!this.gameStarted || this.bossSpawned) {
       this._devSpawnBoss2 = false;
       this._devSpawnBoss3 = false;
@@ -14264,8 +14747,10 @@ class GameRoom {
 
     const bossId = `${bossType}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
-    // Spawn boss at center of arena
-    const position = { x: 0, y: 0, z: 0 };
+    const overridePos = options?.position;
+    const position = overridePos
+      ? { x: overridePos.x || 0, y: overridePos.y || 0, z: overridePos.z || 0 }
+      : { x: 0, y: 0, z: 0 };
 
     const maxHealth = this.getCoopBossMaxHealth(bossType);
     const moveSpeed =
@@ -14278,7 +14763,7 @@ class GameRoom {
       type: bossType,
       position,
       initialPosition: { ...position },
-      rotation: rotationYTowardEntry(0, 0),
+      rotation: rotationYTowardEntry(position.x, position.z),
       health: maxHealth,
       maxHealth: maxHealth,
       moveSpeed,
@@ -14322,7 +14807,7 @@ class GameRoom {
           : bossType === 'boss2'
             ? 'Boss tier 2 (Archon)'
             : 'Boss tier 1';
-    console.log(`👹 ${label} spawned with ${maxHealth} HP at center of arena!`);
+    console.log(`👹 ${label} spawned with ${maxHealth} HP at (${position.x.toFixed?.(1) ?? position.x}, ${position.z.toFixed?.(1) ?? position.z})!`);
     this.startEnemyAI();
     return bossData;
   }
@@ -14330,8 +14815,9 @@ class GameRoom {
   /**
    * Boss-2 encounter slot: 50% early Weaver (boss3), else 60% Archon (boss2) / 40% Weaver.
    * Slot kind stays `boss2`; the spawned enemy type may be boss2 or boss3.
+   * @param {{ position?: { x: number, y?: number, z: number } }|null} options
    */
-  spawnBoss2Encounter() {
+  spawnBoss2Encounter(options = null) {
     if (!this.gameStarted || this.bossSpawned) {
       return null;
     }
@@ -14342,14 +14828,15 @@ class GameRoom {
       bossType = 'boss3';
     }
     console.log(`👹 Boss-2 encounter roll → ${bossType}`);
-    return this.spawnBoss(bossType);
+    return this.spawnBoss(bossType, options);
   }
 
   /**
    * Alternate Boss1 encounter: two elite knights (random distinct colors) instead of the GLB boss.
    * Both IDs are tracked in `this.boss1EliteKnightIds`; the encounter completes only when both fall.
+   * @param {{ x: number, y?: number, z: number }|null} origin — optional center; knights spawn offset around it.
    */
-  spawnBoss1EliteKnights() {
+  spawnBoss1EliteKnights(origin = null) {
     if (!this.gameStarted || this.bossSpawned) {
       return null;
     }
@@ -14358,10 +14845,12 @@ class GameRoom {
     const rand = () => Math.random().toString(36).substr(2, 9);
     const shuffled = [...KNIGHT_SOUL_TYPES].sort(() => Math.random() - 0.5);
     const soulTypes = shuffled.slice(0, 2);
+    const ox = origin?.x || 0;
+    const oz = origin?.z || 0;
 
     const spawnConfigs = [
-      { soulType: soulTypes[0], pos: { x: -4, y: 0, z: 2 } },
-      { soulType: soulTypes[1], pos: { x: 4, y: 0, z: 2 } },
+      { soulType: soulTypes[0], pos: { x: ox - 4, y: 0, z: oz + 2 } },
+      { soulType: soulTypes[1], pos: { x: ox + 4, y: 0, z: oz + 2 } },
     ];
 
     this.boss1EliteKnightIds = new Set();

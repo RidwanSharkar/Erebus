@@ -1949,10 +1949,14 @@ class EnemyAI {
     if (enemies.length === 0 || players.length === 0) {
       this._meleePeerGrid = null;
       this._enemySpatialGrid = null;
-      if (this.aiTimer) {
-        clearInterval(this.aiTimer);
-        this.aiTimer = null;
-        this._aiPausedForIdle = true;
+      // Explore streams packs via a separate timer — keep AI alive so new spawns get ticks.
+      // Regular rooms still pause between empty waves (spawnEnemyWave restarts AI).
+      if (players.length === 0 || !this.room?.coopExploreActive) {
+        if (this.aiTimer) {
+          clearInterval(this.aiTimer);
+          this.aiTimer = null;
+          this._aiPausedForIdle = true;
+        }
       }
       return;
     }
@@ -13184,7 +13188,7 @@ class EnemyAI {
       this._queueMove(tower.id, tower.position, tower.rotation);
     }
 
-    const muzzleY = tower.attackMuzzleY || 10.0;
+    const muzzleY = tower.attackMuzzleY || 7.8;
     const impactY = tower.attackImpactY || 1.0;
     const targetId = best.id;
     const origin = { x: tx, y: muzzleY, z: tz };

@@ -21,9 +21,9 @@ import CurrencyPanel from '../components/ui/CurrencyPanel';
 import HudActionButtons from '../components/ui/HudActionButtons';
 import RulebookPanel from '../components/ui/RulebookPanel';
 import SettingsPanel from '../components/ui/SettingsPanel';
-import { DEFAULT_ROOM_ID, sanitizeRoomCode } from '@/utils/roomCode';
-import { resolveRoomHost } from '@/utils/roomHost';
-import { saveClientProgressCheckpoint, loadClientProgressCheckpoint } from '@/utils/clientProgressCheckpoint';
+import { DEFAULT_ROOM_ID, nextDefaultFallbackId, sanitizeRoomCode, suggestedRoomIdFromError } from '@/utils/roomCode';
+import { allocateDefaultFallback, resolveRoomHost } from '@/utils/roomHost';
+import { saveClientProgressCheckpoint, loadClientProgressCheckpoint, isCoopFullResetPending } from '@/utils/clientProgressCheckpoint';
 import { MultiplayerProvider, useMultiplayerActions, useMultiplayerRoom } from '../contexts/MultiplayerContext';
 import type { CoopRoomKind } from '../contexts/MultiplayerContext';
 import MerchantUI from '../components/ui/MerchantUI';
@@ -96,6 +96,12 @@ import {
 import { useAnnouncementQueue } from '../utils/announcementQueue';
 import { ITEM_RARITY_COLORS, isItemRarity } from '../utils/itemRarity';
 import { DpsTracker, type DpsSnapshot } from '../utils/DpsTracker';
+import {
+  EXPLORE_CAMP_BOON_COLOR,
+  EXPLORE_CAMP_GOLD_BY_LEVEL,
+  EXPLORE_CAMP_STAT_BY_LEVEL,
+  type ExploreCampPublic,
+} from '../utils/exploreCamps';
 import { getWeaponAspectLabel, defaultWeaponAspect, type WeaponAspect } from '../utils/weaponAspects';
 
 // Extend Window interface to include audioSystem
@@ -124,6 +130,9 @@ const DevPerformanceMeter = dynamic(() => import('../components/ui/DevPerformanc
 
 /** Prevents double bootstrap in React Strict Mode (ref resets on remount). */
 let coopEntryBootstrapStarted = false;
+
+const LOADING_STALL_FALLBACK_MS = 12_000;
+const MAX_DEFAULT_FALLBACK_ATTEMPTS = 3;
 
 function readRoomIdFromUrl(): string {
   if (typeof window === 'undefined') return DEFAULT_ROOM_ID;
@@ -260,7 +269,7 @@ function HomeContent() {
     subscribeEnemyDamage,
     joinRoom,
     switchRoom,
-    restartCoopRunToThrone,
+    endCoopGame,
     setAbilityLoadout,
     setTalentLoadout,
     unlockAbility,
@@ -283,6 +292,7 @@ function HomeContent() {
     clearReclaimedPlayerState,
     claimPreBossReward,
     claimDeepSanctumReward,
+    claimExploreCamp,
     registerDeepSanctumRewardClaimedHandler,
     chooseSunkenTempleLoot,
     chooseEternityPalaceLoot,
@@ -301,12 +311,14 @@ function HomeContent() {
     merchantPurchaseState,
     currentRoomId,
     isConnected,
+    isInRoom,
     coopTransitionOverlay,
     coopPortalBlinkSeq,
     combatArenaActive,
     gameMode: sessionGameMode,
     gameStarted,
     coopCombatArenaEnterSeq,
+    coopFullResetSeq,
     coopMainArenaIntermissionSeq,
     coopIntroIntermissionSeq,
     coopSunkenIntermissionSeq,
@@ -462,6 +474,11 @@ function HomeContent() {
   const [loadingSceneBootstrapReady, setLoadingSceneBootstrapReady] = useState(false);
   const [isGameLoading, setIsGameLoading] = useState(true);
   const [showCanvas, setShowCanvas] = useState(false);
+  const defaultFallbackAttemptsRef = useRef(0);
+  const defaultFallbackInFlightRef = useRef(false);
+  const handleSwitchRoomRef = useRef<(code: string, options?: { expectExisting?: boolean }) => Promise<unknown>>(
+    async () => undefined,
+  );
   const coopCurrentRoomKindRef = useRef(coopCurrentRoomKind);
   const coopColoredRoomVisitIndexRef = useRef(coopColoredRoomVisitIndex);
   const coopBossRoomVisitIndexRef = useRef(coopBossRoomVisitIndex);
@@ -590,8 +607,8 @@ function HomeContent() {
   const [throneAbilityWeapon, setThroneAbilityWeapon] = useState<WeaponType | null>(null);
   const [throneTalentWeapon, setThroneTalentWeapon] = useState<WeaponType | null>(null);
   type CoopBoonState =
-    | { kind: 'class'; options: TalentId[]; weaponForPick: WeaponType }
-    | { kind: 'room'; options: TalentId[] };
+    | { kind: 'class'; options: TalentId[]; weaponForPick: WeaponType; exploreCampId?: string }
+    | { kind: 'room'; options: TalentId[]; exploreCampId?: string; exploreRoomColor?: CoopRoomColor };
   const [coopBoon, setCoopBoon] = useState<CoopBoonState | null>(null);
   const [sunkenLootModalOpen, setSunkenLootModalOpen] = useState(false);
   const [eternityLootModalOpen, setEternityLootModalOpen] = useState(false);
@@ -683,6 +700,7 @@ function HomeContent() {
   }, []);
 
   const handleSceneReady = useCallback(() => {
+    defaultFallbackAttemptsRef.current = 0;
     setLoadingSceneBootstrapReady(true);
     requestAnimationFrame(() => {
       requestAnimationFrame(() => setIsGameLoading(false));
@@ -750,6 +768,71 @@ function HomeContent() {
     setShowSettingsPanel(false);
     return result;
   }, [switchRoom, socket, enqueueAnnouncement]);
+  handleSwitchRoomRef.current = handleSwitchRoom;
+
+  /** END GAME / fresh hub: wipe page-local XP, currencies, and class-boon pick tracking. */
+  const lastCoopFullResetSeqRef = useRef(0);
+  useEffect(() => {
+    if (coopFullResetSeq === lastCoopFullResetSeqRef.current) return;
+    lastCoopFullResetSeqRef.current = coopFullResetSeq;
+    if (coopFullResetSeq <= 0) return;
+    setGameState({
+      playerHealth: 200,
+      maxHealth: 200,
+      playerShield: 100,
+      maxShield: 100,
+      playerEnergy: 100,
+      maxEnergy: 100,
+      currentWeapon: WeaponType.NONE,
+      currentSubclass: WeaponSubclass.ELEMENTAL,
+      mana: 150,
+      maxMana: 150,
+    });
+    setClassTalentPickedWeapons(new Set());
+    classBoonPickedWeaponsRef.current.clear();
+    setLocalPurchasedItems([]);
+    setPlayerExperience(0);
+    setPlayerLevel(1);
+    setPlayerGold(0);
+    setPlayerEssence(50);
+    setPlayerFlow(0);
+    setPlayerFate(STARTING_FATE);
+    setShowMerchantUI(false);
+    setDefeatDialogOpen(false);
+    setThroneAbilityWeapon(null);
+    setThroneTalentWeapon(null);
+    setCoopBoon(null);
+    setPedestalInteracted(false);
+    setSunkenLootModalOpen(false);
+    setEternityLootModalOpen(false);
+    setEternityPetUpgradeModalOpen(false);
+  }, [coopFullResetSeq]);
+
+  const runDefaultRoomFallback = useCallback(async (suggested?: string | null) => {
+    if (defaultFallbackInFlightRef.current) return false;
+    if (defaultFallbackAttemptsRef.current >= MAX_DEFAULT_FALLBACK_ATTEMPTS) return false;
+    if (gameStarted && playersRef.current.size > 1) return false;
+
+    defaultFallbackInFlightRef.current = true;
+    defaultFallbackAttemptsRef.current += 1;
+    try {
+      const from = currentRoomId || readRoomIdFromUrl();
+      let code = suggested ? sanitizeRoomCode(suggested) : '';
+      if (!code) {
+        const alloc = await allocateDefaultFallback(from);
+        code = alloc?.roomId || nextDefaultFallbackId(from) || '';
+      }
+      if (!code || code === sanitizeRoomCode(from)) return false;
+      console.warn(`Loading stall failsafe: switching to ${code}`);
+      await handleSwitchRoomRef.current(code, { expectExisting: false });
+      return true;
+    } catch (err) {
+      console.error('Default room fallback failed:', err);
+      return false;
+    } finally {
+      defaultFallbackInFlightRef.current = false;
+    }
+  }, [gameStarted, currentRoomId, playersRef]);
 
   // Auto-join default co-op room and start throne prep immediately; a 2nd player who joins
   // during prep is synced into the same throne room via `coop-throne-sync`.
@@ -779,10 +862,20 @@ function HomeContent() {
         setIsGameLoading(true);
       } catch (e) {
         console.error('Failed to bootstrap game:', e);
-        coopEntryBootstrapStarted = false;
+        const ok = await runDefaultRoomFallback(suggestedRoomIdFromError(e));
+        if (!ok) coopEntryBootstrapStarted = false;
       }
     })();
-  }, [isConnected, socket, joinRoom]);
+  }, [isConnected, socket, joinRoom, runDefaultRoomFallback]);
+
+  useEffect(() => {
+    if (!isGameLoading || loadingSceneBootstrapReady) return;
+    if (isInRoom && gameStarted) return;
+    const timer = window.setTimeout(() => {
+      void runDefaultRoomFallback();
+    }, LOADING_STALL_FALLBACK_MS);
+    return () => window.clearTimeout(timer);
+  }, [isGameLoading, loadingSceneBootstrapReady, isInRoom, gameStarted, runDefaultRoomFallback]);
 
   // Reset pedestal / portal state each time the player enters a new combat arena.
   const lastArenaEnterSeqRef = useRef(-1);
@@ -1263,6 +1356,7 @@ function HomeContent() {
 
   useEffect(() => {
     if (reclaimedPlayerState) return;
+    if (isCoopFullResetPending()) return;
     saveClientProgressCheckpoint({
       localPurchasedItems,
       classTalentPickedWeapons: [...classTalentPickedWeapons] as string[],
@@ -1477,6 +1571,118 @@ function HomeContent() {
     coopDeepSanctumIntermissionSeq,
   ]);
 
+  const exploreCampClaimedRef = useRef<Set<string>>(new Set());
+
+  const handleExploreCampInteract = useCallback((camp: ExploreCampPublic) => {
+    if (gameMode !== 'coop' || !camp?.cleared) return;
+    if (exploreCampClaimedRef.current.has(camp.id)) return;
+    if (socket?.id && camp.claimedBy.includes(socket.id)) return;
+    if (coopBoon !== null) return;
+
+    const level = Math.min(4, Math.max(1, Number(camp.level) || 1)) as 1 | 2 | 3 | 4;
+
+    if (camp.kind === 'gold') {
+      exploreCampClaimedRef.current.add(camp.id);
+      playPedestalInteractAndDelay(() => {
+        claimExploreCamp(camp.id);
+        window.audioSystem?.playUIGoldPickupSound?.();
+        const gold = EXPLORE_CAMP_GOLD_BY_LEVEL[level];
+        enqueueAnnouncement(
+          `+${gold} GOLD`,
+          REWARD_ANNOUNCEMENT_COLORS.gold,
+          `explore-gold-${camp.id}`,
+        );
+      });
+      return;
+    }
+
+    if (camp.kind === 'stat') {
+      exploreCampClaimedRef.current.add(camp.id);
+      playPedestalInteractAndDelay(() => {
+        claimExploreCamp(camp.id);
+        // Stat points are applied on all clients via explore-camp-claimed.
+        window.audioSystem?.playUIInterface3Sound?.();
+        const pts = EXPLORE_CAMP_STAT_BY_LEVEL[level];
+        enqueueAnnouncement(
+          `+${pts} STAT POINTS`,
+          REWARD_ANNOUNCEMENT_COLORS.stat,
+          `explore-stat-${camp.id}`,
+        );
+      });
+      return;
+    }
+
+    if (
+      camp.kind === 'tempest'
+      || camp.kind === 'eldritch'
+      || camp.kind === 'infernal'
+      || camp.kind === 'abyssal'
+    ) {
+      const color = EXPLORE_CAMP_BOON_COLOR[camp.kind];
+      const options = rollRoomBoonOptions(
+        color,
+        selectedWeapons.primary,
+        talentLoadout,
+        abilityLoadout,
+        {
+          universalGreen: universalGreenZombieRoomBoonExcludedIdsRef.current,
+          roomBoomDash: roomBoomDashBoonExcludedIdsRef.current,
+          runeblade: runebladeRoomBoonExcludedIdsRef.current,
+          scytheEntropic: scytheEntropicRoomBoonExcludedIdsRef.current,
+          sabres: sabresRoomBoonExcludedIdsRef.current,
+          bow: bowRoomBoonExcludedIdsRef.current,
+        },
+        selectedWeaponAspect,
+      );
+      if (options.length === 0) {
+        exploreCampClaimedRef.current.add(camp.id);
+        playPedestalInteractAndDelay(() => {
+          claimExploreCamp(camp.id);
+        });
+        return;
+      }
+      playPedestalInteractAndDelay(() => {
+        setCoopBoon({
+          kind: 'room',
+          options,
+          exploreCampId: camp.id,
+          exploreRoomColor: color,
+        });
+      });
+      return;
+    }
+
+    if (camp.kind === 'boss') {
+      const options = rollClassBoonOptions(selectedWeapons.primary, talentLoadout);
+      if (options.length === 0) {
+        exploreCampClaimedRef.current.add(camp.id);
+        playPedestalInteractAndDelay(() => {
+          claimExploreCamp(camp.id);
+        });
+        return;
+      }
+      playPedestalInteractAndDelay(() => {
+        setCoopBoon({
+          kind: 'class',
+          options,
+          weaponForPick: selectedWeapons.primary,
+          exploreCampId: camp.id,
+        });
+      });
+    }
+  }, [
+    gameMode,
+    socket?.id,
+    coopBoon,
+    selectedWeapons.primary,
+    talentLoadout,
+    abilityLoadout,
+    selectedWeaponAspect,
+    claimExploreCamp,
+    playPedestalInteractAndDelay,
+    enqueueAnnouncement,
+  ]);
+
   const handleThroneWeaponEquipped = useCallback(
     (weapon: WeaponType) => {
       if (combatArenaActive) return;
@@ -1508,7 +1714,8 @@ function HomeContent() {
         const options = rollClassBoonOptions(prev.weaponForPick, talentLoadout);
         return options.length > 0 ? { ...prev, options } : prev;
       }
-      const color = coopRoomBoonColorFromContext(coopClearedRoomColor, coopClearedRoomKind, campTypes);
+      const color = prev.exploreRoomColor
+        ?? coopRoomBoonColorFromContext(coopClearedRoomColor, coopClearedRoomKind, campTypes);
       const options = rollRoomBoonOptions(
         color,
         selectedWeapons.primary,
@@ -1542,6 +1749,8 @@ function HomeContent() {
 
   const handleCoopBoonPick = useCallback(
     (id: TalentId, kind: 'class' | 'room', classPickWeapon?: WeaponType) => {
+      const exploreCampId = coopBoon && 'exploreCampId' in coopBoon ? coopBoon.exploreCampId : undefined;
+
       setTalentLoadout((prev) => {
         const next = applyTalentIdToLoadout(prev, id);
         window.dispatchEvent(
@@ -1590,8 +1799,13 @@ function HomeContent() {
         for (const exId of expandRoomBoomDashExclusionsAfterPick(id)) {
           roomBoomDashBoonExcludedIdsRef.current.add(exId);
         }
-        clearCoopClearedRoomColor();
-        setPortalsUnlocked(true);
+        if (exploreCampId) {
+          exploreCampClaimedRef.current.add(exploreCampId);
+          claimExploreCamp(exploreCampId);
+        } else {
+          clearCoopClearedRoomColor();
+          setPortalsUnlocked(true);
+        }
       }
       if (kind === 'class') {
         if (
@@ -1606,7 +1820,10 @@ function HomeContent() {
             return next;
           });
         }
-        if (coopMainArenaPortalPhase !== null) {
+        if (exploreCampId) {
+          exploreCampClaimedRef.current.add(exploreCampId);
+          claimExploreCamp(exploreCampId);
+        } else if (coopMainArenaPortalPhase !== null) {
           clearCoopClearedRoomColor();
           setPortalsUnlocked(true);
         } else if (!combatArenaActive) {
@@ -1617,7 +1834,7 @@ function HomeContent() {
       window.audioSystem?.playUIInterface3Sound?.();
       setCoopBoon(null);
     },
-    [clearCoopClearedRoomColor, coopMainArenaPortalPhase, combatArenaActive, setTalentLoadout, setAbilityLoadout, abilityLoadout, enqueueAnnouncement, announceThroneEnterPortal],
+    [clearCoopClearedRoomColor, coopMainArenaPortalPhase, combatArenaActive, setTalentLoadout, setAbilityLoadout, abilityLoadout, enqueueAnnouncement, announceThroneEnterPortal, coopBoon, claimExploreCamp],
   );
 
   const handleWeaponAspectCycled = useCallback(
@@ -2060,8 +2277,10 @@ function HomeContent() {
         {showSettingsPanel && (
           <SettingsPanel
             currentRoomId={currentRoomId}
+            gameStarted={gameStarted}
             onClose={() => setShowSettingsPanel(false)}
             onSwitchRoom={handleSwitchRoom}
+            onEndGame={endCoopGame}
           />
         )}
 
@@ -2123,6 +2342,7 @@ function HomeContent() {
                   }
                   portalsUnlocked={portalsUnlocked}
                   onCombatArenaPedestalInteract={handleCombatArenaPedestalInteract}
+                  onExploreCampInteract={handleExploreCampInteract}
                   onSunkenSentinelInteract={handleSunkenSentinelInteract}
                   onEternityPalaceArchitectInteract={handleEternityPalaceArchitectInteract}
                   onInteractHintChange={onCoopInteractHintChange}
@@ -2190,7 +2410,7 @@ function HomeContent() {
             <MerchantShopTooltipOverlay />
             <PlayerDamageFeedbackOverlay />
 
-            <DefeatRetryDialog open={defeatDialogOpen} onRetry={restartCoopRunToThrone} />
+            <DefeatRetryDialog open={defeatDialogOpen} onRetry={endCoopGame} />
 
             {/* Game UI - Outside Canvas */}
             <div className="absolute bottom-4 left-4" data-block-game-input>
@@ -2281,7 +2501,11 @@ function HomeContent() {
             {gameMode === 'coop' && coopBoon !== null && (
               <CoopBoonPickerModal
                 kind={coopBoon.kind}
-                roomColor={coopBoon.kind === 'room' ? coopClearedRoomColor ?? campTypes[0] : undefined}
+                roomColor={
+                  coopBoon.kind === 'room'
+                    ? (coopBoon.exploreRoomColor ?? coopClearedRoomColor ?? campTypes[0])
+                    : undefined
+                }
                 options={coopBoon.options}
                 weapon={
                   coopBoon.kind === 'class'

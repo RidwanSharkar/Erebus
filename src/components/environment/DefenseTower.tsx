@@ -13,12 +13,10 @@ export const DEFENSE_TOWER_MODEL_SCALE = 0.893;
 export const DEFENSE_TOWER_MODEL_Y = 0.286;
 /** HP billboard just above the scaled crown (native max Y ≈ 8.405). */
 export const DEFENSE_TOWER_HP_BAR_Y = 8.2;
-/** Crown / muzzle height for downward bolt shots. Keep in sync with defenseLayout + backend. */
-export const DEFENSE_TOWER_MUZZLE_Y = 7.0;
+/** Crown world Y: nativeMaxY(8.405) × scale(0.893) + lift(0.286) ≈ 7.8. Keep in sync with defenseLayout + backend. */
+export const DEFENSE_TOWER_MUZZLE_Y = 7.8;
 
 const TOWER_GLOW_MAT_NAME = 'genericglow_alpha_128';
-/** WoW glow card is RGBA + alphaMode OPAQUE — cut out black holes. */
-const TOWER_GLOW_ALPHA_TEST = 0.08;
 
 useGLTF.preload(TOWER_PATH);
 
@@ -26,18 +24,17 @@ export function preloadDefenseTower(): void {
   useGLTF.preload(TOWER_PATH);
 }
 
+/** Hide WoW glow-card quads — alphaTest alone still leaves a black square after self-illumination. */
 function configureTowerGlow(root: Group): Group {
   root.traverse((child) => {
     const mesh = child as Mesh;
     if (!mesh.isMesh || !mesh.material) return;
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     for (const mat of mats) {
-      const glow = mat as Material & { name?: string; transparent?: boolean; depthWrite?: boolean };
+      const glow = mat as Material & { name?: string };
       if ((glow.name || '') !== TOWER_GLOW_MAT_NAME) continue;
-      glow.alphaTest = TOWER_GLOW_ALPHA_TEST;
-      glow.transparent = false;
-      glow.depthWrite = true;
-      glow.needsUpdate = true;
+      mesh.visible = false;
+      break;
     }
   });
   return root;
