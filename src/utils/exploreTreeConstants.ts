@@ -50,6 +50,11 @@ export function exploreTreeWoodFromScale(variant: number, scale: number): number
   return Math.round(range[0] + t * (range[1] - range[0]));
 }
 
+/** Flat wood bonus from wilderness level (1–4), applied to trees and roots. */
+export function exploreWildernessWoodBonus(level: number): number {
+  return (Math.min(4, Math.max(1, Math.floor(level) || 1)) - 1) * 20;
+}
+
 /** Explore destructible roots — keep numeric values in sync with `backend/exploreTreeConstants.js`. */
 
 export const EXPLORE_ROOT_MAX_HP = 500;
@@ -108,6 +113,11 @@ export function exploreRockCombatRadius(discRadius: number): number {
 export function exploreRockStoneFromScale(scale: number): number {
   const t = exploreRockScaleT(scale);
   return Math.round(EXPLORE_ROCK_STONE_MIN + t * (EXPLORE_ROCK_STONE_MAX - EXPLORE_ROCK_STONE_MIN));
+}
+
+/** Flat stone bonus from wilderness level (1–4), applied to rocks. */
+export function exploreWildernessStoneBonus(level: number): number {
+  return (Math.min(4, Math.max(1, Math.floor(level) || 1)) - 1) * 30;
 }
 
 /** Explore destructible GIANTSPINE — keep numeric values in sync with `backend/exploreTreeConstants.js`. */

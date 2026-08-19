@@ -143,6 +143,8 @@ interface DamageEvent {
   huntersMark?: boolean;
   /** Bow Perfect Shot — Sniper may detonate Hunter's Mark. */
   perfectShot?: boolean;
+  /** Tempest Rounds burst hit — Sniper may detonate Hunter's Mark. */
+  tempestRoundsHit?: boolean;
   /** Co-op: Cobra venom DoT tick — Wyvern Sting talent may raise zombie on kill. */
   wyvernStingVenomZombie?: boolean;
   /** Co-op: Reaping Talons / Wyvern Talons detonation — may raise zombie on kill. */
@@ -255,6 +257,7 @@ export class CombatSystem extends System {
       entanglementBarrage?: boolean;
       huntersMark?: boolean;
       perfectShot?: boolean;
+      tempestRoundsHit?: boolean;
       cloudkill?: boolean;
       cloudkillDamage?: boolean;
       tempestBurstArcticChill?: boolean;
@@ -736,6 +739,9 @@ export class CombatSystem extends System {
         glacialBiteChill?: boolean;
         glacialTalons?: boolean;
         entanglementBarrage?: boolean;
+        huntersMark?: boolean;
+        perfectShot?: boolean;
+        tempestRoundsHit?: boolean;
         tempestBurstArcticChill?: boolean;
         tempestBurstWyvernZombie?: boolean;
         infernalDashRoom?: boolean;
@@ -1155,7 +1161,8 @@ export class CombatSystem extends System {
                       damageEvent.cloudkillProc === true ||
                       damageEvent.tempestBurstArcticChill === true ||
                       damageEvent.tempestBurstWyvernZombie === true ||
-                      damageEvent.perfectShot === true)
+                      damageEvent.perfectShot === true ||
+                      damageEvent.tempestRoundsHit === true)
                   ? {
                       damageType: 'projectile' as const,
                       ...(damageEvent.staggerToAdd != null && damageEvent.staggerToAdd > 0
@@ -1171,6 +1178,9 @@ export class CombatSystem extends System {
                       ...((damageEvent.perfectShot === true ||
                         source?.getComponent(Projectile)?.isPerfectShot === true)
                         ? { perfectShot: true as const }
+                        : {}),
+                      ...(damageEvent.tempestRoundsHit === true
+                        ? { tempestRoundsHit: true as const }
                         : {}),
                     }
                   : damageType === 'cloudkill'
@@ -2668,6 +2678,7 @@ export class CombatSystem extends System {
     tempestBurstWyvernZombie?: boolean,
     huntersMark?: boolean,
     perfectShot?: boolean,
+    tempestRoundsHit?: boolean,
   ): void {
     this.damageQueue.push({
       target,
@@ -2710,6 +2721,7 @@ export class CombatSystem extends System {
       tempestBurstWyvernZombie,
       huntersMark,
       perfectShot,
+      tempestRoundsHit,
     });
   }
 

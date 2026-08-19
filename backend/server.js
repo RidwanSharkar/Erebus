@@ -455,6 +455,14 @@ io.on('connection', (socket) => {
     room.shrineClaim(socket.id, { gift });
   });
 
+  socket.on('cathedral-claim', (data) => {
+    const { roomId, itemType } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.cathedralClaim !== 'function') return;
+    room.cathedralClaim(socket.id, { itemType });
+  });
+
   socket.on('obelisk-buy-talent', (data) => {
     const { roomId, talentId } = data || {};
     if (!roomId || !gameRooms.has(roomId)) return;
@@ -616,6 +624,8 @@ io.on('connection', (socket) => {
       ok = room.isInCoopThronePrep() ? room.beginDefenseRoom() : false;
     } else if (camp === 'dungeon') {
       ok = room.isInCoopThronePrep() ? room.beginDungeonRoom() : false;
+    } else if (camp === 'sky_temple') {
+      ok = room.isInCoopThronePrep() ? room.beginSkyTempleRoom() : false;
     } else if (room.isInCoopThronePrep()) {
       ok = room.beginFaeRealmRoom(1);
     } else if (room.coopFaeRealmPortalOpen && room.coopFaeRealmActive) {

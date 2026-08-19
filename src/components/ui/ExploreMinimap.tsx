@@ -91,6 +91,17 @@ function drawBuildingIcon(ctx: CanvasRenderingContext2D, type: string, px: numbe
     ctx.fillRect(px - 3.0, py - 1.1, 6.0, 2.2);
     return;
   }
+  if (type === 'cathedral') {
+    ctx.beginPath();
+    ctx.moveTo(px, py - 4.6);
+    ctx.lineTo(px + 2.4, py - 1.4);
+    ctx.lineTo(px + 2.4, py + 4.0);
+    ctx.lineTo(px - 2.4, py + 4.0);
+    ctx.lineTo(px - 2.4, py - 1.4);
+    ctx.closePath();
+    ctx.fill();
+    return;
+  }
   if (type === 'tower' || type === 'watch-tower' || type === 'siege-tower') {
     ctx.beginPath();
     ctx.moveTo(px, py - 4.2);

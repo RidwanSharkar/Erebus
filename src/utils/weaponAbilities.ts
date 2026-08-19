@@ -166,7 +166,7 @@ export const universalAbilityPool: UniversalAbility[] = [
   {
     id: 'BOW_P', sourceWeapon: WeaponType.BOW, sourceKey: 'P',
     name: 'Tempest Rounds', cooldown: 0, icon: '🏹',
-    description: ' Replaces primary attack with a 3-round burst attack. Each arrow deals 30 damage.',
+    description: ' Replaces primary attack with a 3-round burst attack. Each arrow deals 30 damage. Sniper: burst hits detonate Hunter\'s Mark like a Perfect Shot, and deal +1 damage per AGILITY when fired from over 10 meters away.',
     allowedWeapons: [WeaponType.BOW],
   },
 
@@ -466,7 +466,7 @@ export const weaponAbilities: Record<WeaponType, AbilityData[]> = {
       name: 'Tempest Rounds',
       key: 'P',
       cooldown: 0,
-      description: '{PASSIVE} Replaces primary attack with a 3-round burst attack. Each arrow deals 30 damage.',
+      description: '{PASSIVE} Replaces primary attack with a 3-round burst attack. Each arrow deals 30 damage. Sniper: burst hits detonate Hunter\'s Mark like a Perfect Shot, and deal +1 damage per AGILITY when fired from over 10 meters away.',
       isPassive: true
     }
   ],
@@ -674,7 +674,8 @@ const BOW_PRIMARY_ATTACK: PrimaryAttackData = {
 
 const BOW_TEMPEST_ROUNDS_PRIMARY: PrimaryAttackData = {
   name: 'Tempest Rounds',
-  description: 'Replaces primary attack with a 3-round burst attack. Each arrow deals 30 damage.',
+  description:
+    'Replaces primary attack with a 3-round burst attack. Each arrow deals 30 damage. Sniper: burst hits detonate Hunter\'s Mark like a Perfect Shot, and deal +1 damage per AGILITY when fired from over 10 meters away.',
 };
 
 const CLOUDKILL_PRIMARY_ADDON =

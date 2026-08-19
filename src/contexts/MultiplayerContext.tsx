@@ -26,7 +26,7 @@ import {
   isExploreCampKind,
   type ExploreCampPublic,
 } from '@/utils/exploreCamps';
-import type { ExploreBuildingKind, ExploreFirePitHealAction, ExploreResearchState, ExploreResearchUpgradeId, ExploreShrineGiftId } from '@/utils/exploreBuildings';
+import type { ExploreBuildingKind, ExploreCathedralOfferEntry, ExploreFirePitHealAction, ExploreResearchState, ExploreResearchUpgradeId, ExploreShrineGiftId } from '@/utils/exploreBuildings';
 import { EMPTY_EXPLORE_RESEARCH, normalizeExploreResearch } from '@/utils/exploreBuildings';
 
 import { patchEnemyRef, patchPlayerRef } from '@/utils/multiplayerRefPatch';
@@ -57,7 +57,7 @@ import {
 import { cancelKnightStyleMiss, playKnightStyleHit } from '@/utils/knightStyleMeleeSound';
 import { playVengefulSpiritHitSound } from '@/utils/beastAudioSounds';
 
-export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'merchant' | 'boss' | 'intro' | 'deep_sanctum' | 'sunken_temple' | 'eternity_palace' | 'eden' | 'false_eden' | 'delirium_gate' | 'erebus_gate' | 'dream_layer' | 'fae_realm' | 'eden_finale' | 'explore' | 'defense' | 'dungeon';
+export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'merchant' | 'boss' | 'intro' | 'deep_sanctum' | 'sunken_temple' | 'eternity_palace' | 'eden' | 'false_eden' | 'delirium_gate' | 'erebus_gate' | 'dream_layer' | 'fae_realm' | 'eden_finale' | 'explore' | 'defense' | 'dungeon' | 'sky_temple';
 export type CoopDefenseWaveState = 'idle' | 'active' | 'break' | 'complete' | 'failed';
 export type DeliriumStructureState = {
   hp: number;
@@ -212,6 +212,8 @@ export interface EnemyDamageMeta {
   huntersMark?: boolean;
   /** Bow Perfect Shot — Sniper may detonate Hunter's Mark on server. */
   perfectShot?: boolean;
+  /** Tempest Rounds burst hit — Sniper may detonate Hunter's Mark on server. */
+  tempestRoundsHit?: boolean;
   /** Druid Rejuvenating Shot — enemy hit applies Entanglement on server. */
   rejuvenatingShotEntangle?: boolean;
   /** Necromancer Mantra totem — pulse applies Entanglement on server. */
@@ -297,6 +299,10 @@ export interface Enemy {
   powered?: boolean;
   /** Explore shrine: true after its one gift has been claimed. */
   shrineUsed?: boolean;
+  /** Explore cathedral: true after its legendary has been claimed. */
+  cathedralUsed?: boolean;
+  /** Explore cathedral: 4 rolled legendary options for this building. */
+  cathedralOffer?: ExploreCathedralOfferEntry[];
 }
 
 export interface ConfirmedEnemyDamageEvent {
@@ -675,8 +681,15 @@ interface MultiplayerContextType {
   coopDefenseWave: number;
   coopDefenseWaveState: CoopDefenseWaveState;
   coopDefenseBreakEndsAt: number;
+  coopDefenseFountainActive: boolean;
+  coopDefenseFountainUsed: boolean;
+  coopDefenseMilestoneWave: number;
+  coopDefenseGrantRoomBoon: boolean;
+  coopDefenseGrantClassBoon: boolean;
   /** Dungeon mode: walkable nexus interior sandbox. */
   coopDungeonActive: boolean;
+  /** Sky Temple mode: walkable outdoor temple plaza sandbox. */
+  coopSkyTempleActive: boolean;
   /** Co-op sunken temple: one-time 4-room sequence after Boss 1. */
   coopSunkenActive: boolean;
   coopSunkenRoomIndex: number;
@@ -880,6 +893,7 @@ interface MultiplayerContextType {
   barracksRecruitAlly: (kind: CoopAllyKind) => void;
   researchPurchase: (id: ExploreResearchUpgradeId) => void;
   shrineClaim: (gift: ExploreShrineGiftId) => void;
+  cathedralClaim: (itemType: string) => void;
   obeliskBuyTalent: (talentId: string) => void;
   firePitHeal: (action: ExploreFirePitHealAction) => void;
 
@@ -1061,6 +1075,7 @@ export type MultiplayerActionsContextType = Pick<
   | 'barracksRecruitAlly'
   | 'researchPurchase'
   | 'shrineClaim'
+  | 'cathedralClaim'
   | 'obeliskBuyTalent'
   | 'firePitHeal'
   | 'updatePlayerExperience'
@@ -1164,7 +1179,7 @@ interface MultiplayerProviderProps {
 }
 
 const VALID_CAMP_KEYS = new Set(['red', 'blue', 'green', 'purple']);
-const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'trial', 'merchant', 'boss', 'intro', 'deep_sanctum', 'sunken_temple', 'eternity_palace', 'eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer', 'fae_realm', 'eden_finale', 'explore', 'defense', 'dungeon']);
+const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'trial', 'merchant', 'boss', 'intro', 'deep_sanctum', 'sunken_temple', 'eternity_palace', 'eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer', 'fae_realm', 'eden_finale', 'explore', 'defense', 'dungeon', 'sky_temple']);
 const VALID_COOP_TERRAIN_THEMES = new Set(['purple', 'blue', 'green']);
 
 function normalizeThronePortalLayout(v: unknown): 'rim' | 'center' {
@@ -1447,7 +1462,13 @@ type CoopSessionSnapshotPayload = {
   coopDefenseWave?: number;
   coopDefenseWaveState?: string;
   coopDefenseBreakEndsAt?: number;
+  coopDefenseFountainActive?: boolean;
+  coopDefenseFountainUsed?: boolean;
+  coopDefenseMilestoneWave?: number;
+  coopDefenseGrantRoomBoon?: boolean;
+  coopDefenseGrantClassBoon?: boolean;
   coopDungeonActive?: boolean;
+  coopSkyTempleActive?: boolean;
   coopSunkenActive?: boolean;
   coopSunkenRoomIndex?: number;
   coopSunkenPortalOpen?: boolean;
@@ -1561,7 +1582,13 @@ type CoopSnapshotSetters = {
   setCoopDefenseWave: React.Dispatch<React.SetStateAction<number>>;
   setCoopDefenseWaveState: React.Dispatch<React.SetStateAction<CoopDefenseWaveState>>;
   setCoopDefenseBreakEndsAt: React.Dispatch<React.SetStateAction<number>>;
+  setCoopDefenseFountainActive: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopDefenseFountainUsed: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopDefenseMilestoneWave: React.Dispatch<React.SetStateAction<number>>;
+  setCoopDefenseGrantRoomBoon: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopDefenseGrantClassBoon: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopDungeonActive: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopSkyTempleActive: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopSunkenActive: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopSunkenRoomIndex: React.Dispatch<React.SetStateAction<number>>;
   setCoopSunkenPortalOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -1807,7 +1834,15 @@ function applyDefenseSnapshot(
   data: CoopSessionSnapshotPayload | null | undefined,
   setters: Pick<
     CoopSnapshotSetters,
-    'setCoopDefenseActive' | 'setCoopDefenseWave' | 'setCoopDefenseWaveState' | 'setCoopDefenseBreakEndsAt'
+    | 'setCoopDefenseActive'
+    | 'setCoopDefenseWave'
+    | 'setCoopDefenseWaveState'
+    | 'setCoopDefenseBreakEndsAt'
+    | 'setCoopDefenseFountainActive'
+    | 'setCoopDefenseFountainUsed'
+    | 'setCoopDefenseMilestoneWave'
+    | 'setCoopDefenseGrantRoomBoon'
+    | 'setCoopDefenseGrantClassBoon'
   >,
 ) {
   if (!data) return;
@@ -1822,6 +1857,21 @@ function applyDefenseSnapshot(
     const at = Number(data.coopDefenseBreakEndsAt);
     setters.setCoopDefenseBreakEndsAt(Number.isFinite(at) ? at : 0);
   }
+  if ('coopDefenseFountainActive' in data) {
+    setters.setCoopDefenseFountainActive(!!data.coopDefenseFountainActive);
+  }
+  if ('coopDefenseFountainUsed' in data) {
+    setters.setCoopDefenseFountainUsed(!!data.coopDefenseFountainUsed);
+  }
+  if ('coopDefenseMilestoneWave' in data) {
+    setters.setCoopDefenseMilestoneWave(Math.max(0, Number(data.coopDefenseMilestoneWave) || 0));
+  }
+  if ('coopDefenseGrantRoomBoon' in data) {
+    setters.setCoopDefenseGrantRoomBoon(!!data.coopDefenseGrantRoomBoon);
+  }
+  if ('coopDefenseGrantClassBoon' in data) {
+    setters.setCoopDefenseGrantClassBoon(!!data.coopDefenseGrantClassBoon);
+  }
 }
 
 function applyDungeonSnapshot(
@@ -1830,6 +1880,14 @@ function applyDungeonSnapshot(
 ) {
   if (!data) return;
   if ('coopDungeonActive' in data) setters.setCoopDungeonActive(!!data.coopDungeonActive);
+}
+
+function applySkyTempleSnapshot(
+  data: CoopSessionSnapshotPayload | null | undefined,
+  setters: Pick<CoopSnapshotSetters, 'setCoopSkyTempleActive'>,
+) {
+  if (!data) return;
+  if ('coopSkyTempleActive' in data) setters.setCoopSkyTempleActive(!!data.coopSkyTempleActive);
 }
 
 function parseCoopSunkenLootOffer(raw: unknown): DreamLayerStockItem[] {
@@ -2037,6 +2095,7 @@ type FreshCoopClientProgressSetters = {
   setCoopExploreSeed: React.Dispatch<React.SetStateAction<number>>;
   setExploreCamps: React.Dispatch<React.SetStateAction<ExploreCampPublic[]>>;
   setCoopDungeonActive: React.Dispatch<React.SetStateAction<boolean>>;
+  setCoopSkyTempleActive: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopTransitionOverlay: React.Dispatch<React.SetStateAction<boolean>>;
   coopTransitionOverlayRef: React.MutableRefObject<boolean>;
   coopPendingPortalSnapRef: React.MutableRefObject<boolean>;
@@ -2090,6 +2149,7 @@ function applyFreshCoopClientProgress(setters: FreshCoopClientProgressSetters) {
   setters.setCoopExploreSeed(0);
   setters.setExploreCamps([]);
   setters.setCoopDungeonActive(false);
+  setters.setCoopSkyTempleActive(false);
   setters.setCoopTransitionOverlay(false);
   setters.coopTransitionOverlayRef.current = false;
   setters.coopPendingPortalSnapRef.current = false;
@@ -2214,6 +2274,7 @@ function applyCoopSessionSnapshot(
   applyExploreSnapshot(data, setters);
   applyDefenseSnapshot(data, setters);
   applyDungeonSnapshot(data, setters);
+  applySkyTempleSnapshot(data, setters);
   applySunkenSnapshot(data, setters);
   applyEternitySnapshot(data, setters);
   applyDeepSanctumSnapshot(data, setters);
@@ -2365,7 +2426,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopDefenseWave, setCoopDefenseWave] = useState(0);
   const [coopDefenseWaveState, setCoopDefenseWaveState] = useState<CoopDefenseWaveState>('idle');
   const [coopDefenseBreakEndsAt, setCoopDefenseBreakEndsAt] = useState(0);
+  const [coopDefenseFountainActive, setCoopDefenseFountainActive] = useState(false);
+  const [coopDefenseFountainUsed, setCoopDefenseFountainUsed] = useState(false);
+  const [coopDefenseMilestoneWave, setCoopDefenseMilestoneWave] = useState(0);
+  const [coopDefenseGrantRoomBoon, setCoopDefenseGrantRoomBoon] = useState(false);
+  const [coopDefenseGrantClassBoon, setCoopDefenseGrantClassBoon] = useState(false);
   const [coopDungeonActive, setCoopDungeonActive] = useState(false);
+  const [coopSkyTempleActive, setCoopSkyTempleActive] = useState(false);
   const [coopSunkenActive, setCoopSunkenActive] = useState(false);
   const [coopSunkenRoomIndex, setCoopSunkenRoomIndex] = useState(0);
   const [coopSunkenPortalOpen, setCoopSunkenPortalOpen] = useState(false);
@@ -2757,7 +2824,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopDefenseWave,
       setCoopDefenseWaveState,
       setCoopDefenseBreakEndsAt,
+      setCoopDefenseFountainActive,
+      setCoopDefenseFountainUsed,
+      setCoopDefenseMilestoneWave,
+      setCoopDefenseGrantRoomBoon,
+      setCoopDefenseGrantClassBoon,
       setCoopDungeonActive,
+      setCoopSkyTempleActive,
       setCoopSunkenActive,
       setCoopSunkenRoomIndex,
       setCoopSunkenPortalOpen,
@@ -2812,6 +2885,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopExploreSeed,
       setExploreCamps,
       setCoopDungeonActive,
+      setCoopSkyTempleActive,
       setCoopTransitionOverlay,
       coopTransitionOverlayRef,
       coopPendingPortalSnapRef,
@@ -3216,6 +3290,49 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         const next = new Map(prev);
         next.set(data.id!, { ...existing, shrineUsed });
         return next;
+      });
+    });
+
+    addEventHandler('explore-cathedral-used', (data: { id?: string; cathedralUsed?: boolean }) => {
+      if (typeof data?.id !== 'string') return;
+      const cathedralUsed = data.cathedralUsed === true;
+      patchEnemyRef(enemiesRef, data.id, { cathedralUsed });
+      setEnemies((prev) => {
+        const existing = prev.get(data.id!);
+        if (!existing || existing.cathedralUsed === cathedralUsed) return prev;
+        const next = new Map(prev);
+        next.set(data.id!, { ...existing, cathedralUsed });
+        return next;
+      });
+    });
+
+    addEventHandler('explore-building-hp', (data: {
+      buildings?: Array<{ id?: string; health?: number; maxHealth?: number }>;
+    }) => {
+      const list = data?.buildings;
+      if (!Array.isArray(list) || list.length === 0) return;
+      for (const entry of list) {
+        if (typeof entry?.id !== 'string') continue;
+        const patch: Partial<Enemy> = {};
+        if (typeof entry.health === 'number') patch.health = entry.health;
+        if (typeof entry.maxHealth === 'number') patch.maxHealth = entry.maxHealth;
+        if (Object.keys(patch).length === 0) continue;
+        patchEnemyRef(enemiesRef, entry.id, patch);
+      }
+      setEnemies((prev) => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const entry of list) {
+          if (typeof entry?.id !== 'string') continue;
+          const existing = next.get(entry.id);
+          if (!existing) continue;
+          const health = typeof entry.health === 'number' ? entry.health : existing.health;
+          const maxHealth = typeof entry.maxHealth === 'number' ? entry.maxHealth : existing.maxHealth;
+          if (existing.health === health && existing.maxHealth === maxHealth) continue;
+          next.set(entry.id, { ...existing, health, maxHealth });
+          changed = true;
+        }
+        return changed ? next : prev;
       });
     });
 
@@ -4302,8 +4419,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopDefenseWave,
         setCoopDefenseWaveState,
         setCoopDefenseBreakEndsAt,
+        setCoopDefenseFountainActive,
+        setCoopDefenseFountainUsed,
+        setCoopDefenseMilestoneWave,
+        setCoopDefenseGrantRoomBoon,
+        setCoopDefenseGrantClassBoon,
       });
       applyDungeonSnapshot(data, { setCoopDungeonActive });
+      applySkyTempleSnapshot(data, { setCoopSkyTempleActive });
       if (data?.players && Array.isArray(data.players)) {
         setPlayers((prev) => {
           const next = new Map(prev);
@@ -4757,8 +4880,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopDefenseWave,
         setCoopDefenseWaveState,
         setCoopDefenseBreakEndsAt,
+        setCoopDefenseFountainActive,
+        setCoopDefenseFountainUsed,
+        setCoopDefenseMilestoneWave,
+        setCoopDefenseGrantRoomBoon,
+        setCoopDefenseGrantClassBoon,
       });
       applyDungeonSnapshot(data, { setCoopDungeonActive });
+      applySkyTempleSnapshot(data, { setCoopSkyTempleActive });
       applySunkenSnapshot(data, {
         setCoopSunkenActive,
         setCoopSunkenRoomIndex,
@@ -4858,8 +4987,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopDefenseWave,
         setCoopDefenseWaveState,
         setCoopDefenseBreakEndsAt,
+        setCoopDefenseFountainActive,
+        setCoopDefenseFountainUsed,
+        setCoopDefenseMilestoneWave,
+        setCoopDefenseGrantRoomBoon,
+        setCoopDefenseGrantClassBoon,
       });
       applyDungeonSnapshot(data, { setCoopDungeonActive });
+      applySkyTempleSnapshot(data, { setCoopSkyTempleActive });
     });
 
     addEventHandler('coop-defense-failed', (data: any) => {
@@ -4868,9 +5003,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopDefenseWave,
         setCoopDefenseWaveState,
         setCoopDefenseBreakEndsAt,
+        setCoopDefenseFountainActive,
+        setCoopDefenseFountainUsed,
+        setCoopDefenseMilestoneWave,
+        setCoopDefenseGrantRoomBoon,
+        setCoopDefenseGrantClassBoon,
       });
       applyDungeonSnapshot(data, { setCoopDungeonActive });
-      setCoopDefenseWaveState('failed');
+      applySkyTempleSnapshot(data, { setCoopSkyTempleActive });
     });
 
     addEventHandler('room-preview', (data) => {
@@ -5767,6 +5907,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
+  const cathedralClaim = useCallback((itemType: string) => {
+    if (socket && currentRoomId) {
+      socket.emit('cathedral-claim', {
+        roomId: currentRoomId,
+        itemType,
+      });
+    }
+  }, [socket, currentRoomId]);
+
   const obeliskBuyTalent = useCallback((talentId: string) => {
     if (socket && currentRoomId) {
       socket.emit('obelisk-buy-talent', {
@@ -5825,6 +5974,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         ...(meta?.entanglementBarrage ? { entanglementBarrage: true } : {}),
         ...(meta?.huntersMark ? { huntersMark: true } : {}),
         ...(meta?.perfectShot ? { perfectShot: true } : {}),
+        ...(meta?.tempestRoundsHit ? { tempestRoundsHit: true } : {}),
         ...(meta?.rejuvenatingShotEntangle ? { rejuvenatingShotEntangle: true } : {}),
         ...(meta?.necromancerTotemEntangle ? { necromancerTotemEntangle: true } : {}),
         ...(meta?.tempestBurstArcticChill ? { tempestBurstArcticChill: true } : {}),
@@ -6637,7 +6787,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     coopDefenseWave,
     coopDefenseWaveState,
     coopDefenseBreakEndsAt,
+    coopDefenseFountainActive,
+    coopDefenseFountainUsed,
+    coopDefenseMilestoneWave,
+    coopDefenseGrantRoomBoon,
+    coopDefenseGrantClassBoon,
     coopDungeonActive,
+    coopSkyTempleActive,
     coopSunkenActive,
     coopSunkenRoomIndex,
     coopSunkenPortalOpen,
@@ -6736,6 +6892,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     barracksRecruitAlly,
     researchPurchase,
     shrineClaim,
+    cathedralClaim,
     obeliskBuyTalent,
     firePitHeal,
     detonateWyvernConcentratedVenom,
@@ -6879,6 +7036,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       barracksRecruitAlly,
       researchPurchase,
       shrineClaim,
+      cathedralClaim,
       obeliskBuyTalent,
       firePitHeal,
       updatePlayerExperience,
@@ -6992,6 +7150,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       placeBuilding,
       barracksRecruitAlly,
       shrineClaim,
+      cathedralClaim,
       obeliskBuyTalent,
       firePitHeal,
       updatePlayerExperience,
@@ -7118,7 +7277,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopDefenseWave,
       coopDefenseWaveState,
       coopDefenseBreakEndsAt,
+      coopDefenseFountainActive,
+      coopDefenseFountainUsed,
+      coopDefenseMilestoneWave,
+      coopDefenseGrantRoomBoon,
+      coopDefenseGrantClassBoon,
       coopDungeonActive,
+      coopSkyTempleActive,
       coopSunkenActive,
       coopSunkenRoomIndex,
       coopSunkenPortalOpen,
@@ -7246,7 +7411,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopDefenseWave,
       coopDefenseWaveState,
       coopDefenseBreakEndsAt,
+      coopDefenseFountainActive,
+      coopDefenseFountainUsed,
+      coopDefenseMilestoneWave,
+      coopDefenseGrantRoomBoon,
+      coopDefenseGrantClassBoon,
       coopDungeonActive,
+      coopSkyTempleActive,
       coopPetCompanionUpgrade,
       coopEdenFountainUsed,
       coopEdenResumeKind,

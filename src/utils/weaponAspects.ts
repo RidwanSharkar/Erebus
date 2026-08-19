@@ -145,7 +145,7 @@ export const WEAPON_ASPECT_DISPLAY: Record<WeaponAspect, WeaponAspectDisplayMeta
     label: 'Aspect of Vengeance',
     shortLabel: 'Sniper',
     description:
-      "Hunter's Mark: Barrage marks enemies for 5s. A Perfect Shot on a marked enemy creates a lightning bolt at the enemy location. Terminal Velocity: Perfect Shot and Reaping Talons (forward and return) deal +20 + 2 per AGILITY bonus damage when the target is hit from over 10 meters away.",
+      "Hunter's Mark: Barrage marks enemies for 5s. A Perfect Shot or Tempest Rounds hit on a marked enemy creates a lightning bolt at the enemy location. Terminal Velocity: Perfect Shot and Reaping Talons (forward and return) deal +20 + 2 per AGILITY bonus damage when the target is hit from over 10 meters away. Tempest Rounds fired from over 10 meters away deal +1 damage per AGILITY.",
   },
   DRUID: {
     id: 'DRUID',

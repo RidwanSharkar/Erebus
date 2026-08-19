@@ -46,6 +46,7 @@ import ResearchStationRenderer from '@/components/enemies/ResearchStationRendere
 import ShrineRenderer from '@/components/enemies/ShrineRenderer';
 import ObeliskRenderer from '@/components/enemies/ObeliskRenderer';
 import ShieldBatteryRenderer from '@/components/enemies/ShieldBatteryRenderer';
+import CathedralRenderer from '@/components/enemies/CathedralRenderer';
 import AlliedHuntressRenderer from '@/components/enemies/AlliedHuntressRenderer';
 import AlliedPhantomRenderer from '@/components/enemies/AlliedPhantomRenderer';
 import AlliedDemonRenderer from '@/components/enemies/AlliedDemonRenderer';
@@ -401,6 +402,24 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
             powered={enemy.powered !== false}
+          />
+        );
+      })}
+
+      {(enemiesByType.get('cathedral') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <CathedralRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={enemy.position}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+            powered={enemy.powered !== false}
+            cathedralUsed={enemy.cathedralUsed === true}
           />
         );
       })}

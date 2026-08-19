@@ -131,9 +131,16 @@ export class PhysicsSystem extends BasePhysicsSystem {
     this.streamedObstacles = obstacles && obstacles.length > 0 ? obstacles : [];
   }
 
+  /** Last walkable mesh stand point — used to recover if the player falls through / off. */
+  private hasLastMeshGround = false;
+  private lastMeshGroundX = 0;
+  private lastMeshGroundY = 1;
+  private lastMeshGroundZ = 0;
+
   /** Triangle mesh for dungeon ground / walls. Pass null to restore flat Y=0 ground. */
   public setMeshCollider(collider: Object3D | null): void {
     this.meshCollider = collider;
+    if (!collider) this.hasLastMeshGround = false;
   }
 
   public hasMeshCollider(): boolean {
@@ -831,26 +838,61 @@ export class PhysicsSystem extends BasePhysicsSystem {
     out.y = feetY + this.meshPlayerRadius;
     out.z = z;
     out.blocked = blocked;
+    this.rememberMeshGround(out.x, out.y, out.z);
     return out;
+  }
+
+  /** Highest walkable hit below a high origin — recovers from spawning inside / falling under mesh. */
+  private probeHighestWalkableGroundY(x: number, z: number): number | null {
+    const hits = this.meshRaycast(
+      this._meshRayOrigin.set(x, 24, z),
+      this._meshDown,
+      48,
+      false,
+    );
+    let bestY: number | null = null;
+    for (let i = 0; i < hits.length; i++) {
+      const hit = hits[i];
+      if (this.hitWalkableNy(hit) == null) continue;
+      if (bestY == null || hit.point.y > bestY) bestY = hit.point.y;
+    }
+    return bestY;
+  }
+
+  private rememberMeshGround(x: number, y: number, z: number): void {
+    this.hasLastMeshGround = true;
+    this.lastMeshGroundX = x;
+    this.lastMeshGroundY = y;
+    this.lastMeshGroundZ = z;
   }
 
   private applyMeshGround(transform: Transform, movement: Movement, sphereRadius: number): void {
     const feetY = transform.position.y - sphereRadius;
-    const groundY = this.probeWalkableGroundY(
+    let groundY = this.probeWalkableGroundY(
       transform.position.x,
       transform.position.z,
       feetY,
     );
     if (groundY == null) {
+      groundY = this.probeHighestWalkableGroundY(transform.position.x, transform.position.z);
+    }
+    if (groundY == null) {
+      if (this.hasLastMeshGround) {
+        transform.setPosition(this.lastMeshGroundX, this.lastMeshGroundY, this.lastMeshGroundZ);
+        movement.velocity.y = 0;
+        movement.isGrounded = true;
+        return;
+      }
       movement.isGrounded = false;
       return;
     }
     const desiredY = groundY + sphereRadius;
     const above = transform.position.y - desiredY;
-    if (movement.velocity.y <= 0.2 && above <= this.meshMaxStepUp) {
+    if (movement.velocity.y <= 0.2 && above <= Math.max(this.meshMaxStepUp, 8)) {
       transform.position.y = desiredY;
       movement.velocity.y = 0;
       movement.isGrounded = true;
+      this.rememberMeshGround(transform.position.x, desiredY, transform.position.z);
       return;
     }
     movement.isGrounded = false;
@@ -933,10 +975,19 @@ export class PhysicsSystem extends BasePhysicsSystem {
     }
 
     const clamped = this.clampPositionToPlayableAabb(x, z);
+    if (clamped.x !== x || clamped.z !== z) {
+      const clampedGround = this.probeWalkableGroundY(clamped.x, clamped.z, feetY);
+      if (clampedGround != null) feetY = clampedGround;
+      x = clamped.x;
+      z = clamped.z;
+    }
     const nextY = movement.isGrounded
       ? feetY + this.meshPlayerRadius
       : currentPosition.y + deltaPosition.y;
-    transform.setPosition(clamped.x, nextY, clamped.z);
+    transform.setPosition(x, nextY, z);
+    if (movement.isGrounded) {
+      this.rememberMeshGround(x, nextY, z);
+    }
     transform.matrixNeedsUpdate = true;
   }
 }

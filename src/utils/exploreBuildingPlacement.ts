@@ -3,6 +3,7 @@ import type { ExploreBuildingKind } from '@/utils/exploreBuildings';
 import {
   EXPLORE_MAX_TOWERS,
   exploreBuildingRequiresFirePit,
+  exploreBuildingRequiresShrineOrObelisk,
   exploreBuildingRequiresSpiritLounge,
   getExploreBuildingDef,
   isExploreTowerType,
@@ -21,6 +22,7 @@ export interface ExploreBuildingPlacementRules {
   firePits: readonly { x: number; z: number }[];
   liveTowerCount: number;
   hasLiveSpiritLounge: boolean;
+  hasLiveShrineOrObelisk: boolean;
 }
 
 export function isExploreBuildingPlacementBlocked(
@@ -39,6 +41,9 @@ export function isExploreBuildingPlacementBlocked(
     return true;
   }
   if (exploreBuildingRequiresSpiritLounge(kind) && !rules?.hasLiveSpiritLounge) {
+    return true;
+  }
+  if (exploreBuildingRequiresShrineOrObelisk(kind) && !rules?.hasLiveShrineOrObelisk) {
     return true;
   }
   if (isExploreTowerType(kind) && (rules?.liveTowerCount ?? 0) >= EXPLORE_MAX_TOWERS) {

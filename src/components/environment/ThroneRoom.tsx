@@ -151,6 +151,7 @@ export const THRONE_SIDE_VOID_PORTAL_Z = -10.16;
 export const THRONE_EXPLORE_PORTAL_RADIUS = 1.58;
 export const THRONE_DEFENSE_PORTAL_RADIUS = 1.325;
 export const THRONE_DUNGEON_PORTAL_RADIUS = 1.12;
+export const THRONE_SKY_TEMPLE_PORTAL_RADIUS = 0.95;
 
 /** Red explore-mode void portal — west of the purple center void. */
 export const THRONE_EXPLORE_PORTAL_POSITION = Object.freeze({
@@ -171,6 +172,13 @@ export const THRONE_DUNGEON_PORTAL_POSITION = Object.freeze({
   x: 8.25,
   y: 0,
   z: -8.0,
+});
+
+/** Orange sky-temple void portal — immediately east of the green dungeon portal. */
+export const THRONE_SKY_TEMPLE_PORTAL_POSITION = Object.freeze({
+  x: 10.15,
+  y: 0,
+  z: -5.85,
 });
 
 /** Defense playable circle (platform group scale). Keep in sync with backend `DEFENSE_ROOM_SCALE`. */
@@ -1596,6 +1604,16 @@ function ThroneRoom({
               radius={THRONE_DUNGEON_PORTAL_RADIUS}
               particleCount={10}
               particleStartHeightMax={1.1}
+            />
+            <VoidPortal
+              position={[THRONE_SKY_TEMPLE_PORTAL_POSITION.x, 0.005, THRONE_SKY_TEMPLE_PORTAL_POSITION.z]}
+              scheme="sky_temple"
+              open={voidPortalOpenProgress}
+              visible={voidPortalOpen || voidPortalOpenProgress > 0.01}
+              effectHeightOffset={0.3}
+              radius={THRONE_SKY_TEMPLE_PORTAL_RADIUS}
+              particleCount={8}
+              particleStartHeightMax={1.0}
             />
             {/* // <ThroneCenterDecor /> */}
           </>

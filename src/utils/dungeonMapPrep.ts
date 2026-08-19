@@ -6,12 +6,19 @@ import {
   Group,
   Mesh,
   MeshBasicMaterial,
+  PlaneGeometry,
 } from '@/utils/three-exports';
+import {
+  DUNGEON_NEXUS_MODEL_POSITION,
+  DUNGEON_NEXUS_MODEL_SCALE,
+} from '@/utils/dungeonLayout';
 
 /** Native XZ cell size for frustum chunks (before `DUNGEON_NEXUS_MODEL_SCALE`). */
 export const DUNGEON_CULL_CELL_NATIVE = 48;
 /** Native XZ cell size for defense arena frustum chunks (before `DEFENSE_ARENA_MODEL_SCALE`). */
 export const DEFENSE_CULL_CELL_NATIVE = 48;
+/** Native XZ cell size for sky temple frustum chunks (before `SKY_TEMPLE_MODEL_SCALE`). */
+export const SKY_TEMPLE_CULL_CELL_NATIVE = 48;
 
 const NOOP_RAYCAST: Mesh['raycast'] = () => {};
 
@@ -153,7 +160,7 @@ function splitMeshesSpatially(root: Object3D, cellSize: number): void {
   }
 }
 
-function toUnlitMaterial(material: Material): MeshBasicMaterial {
+function toUnlitMaterial(material: Material, colorScale = 1): MeshBasicMaterial {
   const src = material as Material & {
     map?: MeshBasicMaterial['map'];
     color?: { clone: () => Color };
@@ -166,6 +173,7 @@ function toUnlitMaterial(material: Material): MeshBasicMaterial {
     fog: true,
     toneMapped: true,
   });
+  if (colorScale !== 1) unlit.color.multiplyScalar(colorScale);
   unlit.userData.dungeonUnlit = true;
   return unlit;
 }
@@ -177,17 +185,80 @@ function disposeBoundsTree(geometry: BufferGeometry): void {
   }
 }
 
+function worldToNative(x: number, y: number, z: number): { x: number; y: number; z: number } {
+  const scale = DUNGEON_NEXUS_MODEL_SCALE;
+  const lift = DUNGEON_NEXUS_MODEL_POSITION[1];
+  return {
+    x: x / scale,
+    y: (y - lift) / scale,
+    z: z / scale,
+  };
+}
+
+/**
+ * Hidden walkable ledges from RallyArea overlook (y ≈ −15.5, z ≈ −85) onto Lair9
+ * (y ≈ −33.3, z ≈ −96). Each step drops ≤ 2.2 (under meshMaxStepDown 2.4).
+ * Authored in world space, converted to native GLB space for the scaled collider.
+ */
+function createDungeonDescentCollider(): Group {
+  const group = new Group();
+  group.name = 'dungeon-descent-collider';
+
+  const startY = -15.5;
+  const endY = -33.3;
+  const startZ = -85;
+  const endZ = -96;
+  const minX = -20;
+  const maxX = -8;
+  const steps = 9;
+  const worldWidth = maxX - minX;
+  const worldDepth = 2;
+  const nativeWidth = worldWidth / DUNGEON_NEXUS_MODEL_SCALE;
+  const nativeDepth = worldDepth / DUNGEON_NEXUS_MODEL_SCALE;
+  const centerX = (minX + maxX) * 0.5;
+
+  const mat = new MeshBasicMaterial({
+    color: 0x000000,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  });
+  mat.userData.dungeonDescent = true;
+
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const worldY = startY + t * (endY - startY);
+    const worldZ = startZ + t * (endZ - startZ);
+    const native = worldToNative(centerX, worldY, worldZ);
+    const geo = new PlaneGeometry(nativeWidth, nativeDepth);
+    geo.userData.dungeonChunk = true;
+    geo.computeBoundingSphere();
+    const mesh = new Mesh(geo, mat);
+    mesh.name = `dungeon-descent-ledge-${i}`;
+    mesh.position.set(native.x, native.y, native.z);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.visible = false;
+    mesh.frustumCulled = true;
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    group.add(mesh);
+  }
+
+  return group;
+}
+
 /**
  * Unlit visual map: spatially chunked for frustum culling, no raycasts.
  * Shared by dungeon (plus a hidden collider) and defense (visual only).
  */
 export function prepareStaticMapVisual(
   source: Object3D,
-  options: { cellSize: number; name: string },
+  options: { cellSize: number; name: string; colorScale?: number },
 ): Group {
   const visual = source.clone(true) as Group;
   visual.name = options.name;
   splitMeshesSpatially(visual, options.cellSize);
+  const colorScale = options.colorScale ?? 1;
 
   visual.traverse((child) => {
     const mesh = child as Mesh;
@@ -197,7 +268,7 @@ export function prepareStaticMapVisual(
     mesh.frustumCulled = true;
     mesh.raycast = NOOP_RAYCAST;
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    const converted = mats.map((mat) => toUnlitMaterial(mat));
+    const converted = mats.map((mat) => toUnlitMaterial(mat, colorScale));
     mesh.material = converted.length === 1 ? converted[0]! : converted;
   });
 
@@ -205,20 +276,24 @@ export function prepareStaticMapVisual(
 }
 
 /**
- * Visual cave: unlit, no raycasts, spatially chunked for frustum culling.
- * Hidden collider: same chunks, BVH-friendly, used only by mesh walking.
+ * Unlit visual map plus a hidden collider clone (no authored extra geometry).
+ * Shared by sky temple; dungeon adds descent ledges on top.
  */
-export function prepareDungeonMapScenes(source: Object3D): {
+export function prepareMeshMapScenes(
+  source: Object3D,
+  options: { cellSize: number; visualName: string; colliderName: string; colorScale?: number },
+): {
   visual: Group;
   collider: Group;
 } {
   const visual = prepareStaticMapVisual(source, {
-    cellSize: DUNGEON_CULL_CELL_NATIVE,
-    name: 'dungeon-lair-visual',
+    cellSize: options.cellSize,
+    name: options.visualName,
+    colorScale: options.colorScale,
   });
 
   const collider = visual.clone(true) as Group;
-  collider.name = 'dungeon-lair-collider';
+  collider.name = options.colliderName;
   collider.visible = false;
   collider.traverse((child) => {
     const mesh = child as Mesh;
@@ -232,20 +307,41 @@ export function prepareDungeonMapScenes(source: Object3D): {
   return { visual, collider };
 }
 
+/**
+ * Visual cave: unlit, no raycasts, spatially chunked for frustum culling.
+ * Hidden collider: same chunks, BVH-friendly, used only by mesh walking.
+ */
+export function prepareDungeonMapScenes(source: Object3D): {
+  visual: Group;
+  collider: Group;
+} {
+  const { visual, collider } = prepareMeshMapScenes(source, {
+    cellSize: DUNGEON_CULL_CELL_NATIVE,
+    visualName: 'dungeon-lair-visual',
+    colliderName: 'dungeon-lair-collider',
+  });
+  collider.add(createDungeonDescentCollider());
+  return { visual, collider };
+}
+
 function visitMapScenes(
   root: Object3D,
   disposeMats: boolean,
   seenGeo: Set<BufferGeometry>,
 ): void {
+  const seenMats = new Set<Material>();
   root.traverse((child) => {
     const mesh = child as Mesh;
     if (!mesh.isMesh) return;
-    if (disposeMats) {
-      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      for (let i = 0; i < mats.length; i++) {
-        const mat = mats[i];
-        if (mat?.userData?.dungeonUnlit) mat.dispose();
-      }
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (let i = 0; i < mats.length; i++) {
+      const mat = mats[i];
+      if (!mat || seenMats.has(mat)) continue;
+      const dropUnlit = disposeMats && mat.userData?.dungeonUnlit;
+      const dropDescent = mat.userData?.dungeonDescent;
+      if (!dropUnlit && !dropDescent) continue;
+      seenMats.add(mat);
+      mat.dispose();
     }
     const geo = mesh.geometry;
     if (!geo?.userData?.dungeonChunk || seenGeo.has(geo)) return;

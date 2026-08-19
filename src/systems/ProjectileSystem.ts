@@ -871,12 +871,14 @@ export class ProjectileSystem extends System {
         damageType = 'poison_dart';
       }
 
+      const isBurstArrow =
+        projectile.projectileType === 'burst_arrow' ||
+        renderer?.mesh?.userData?.projectileType === 'burst_arrow';
       const isBowPrimary =
         projectile.isBowLmbPrimary === true ||
         renderer?.mesh?.userData?.isRegularArrow === true ||
         renderer?.mesh?.userData?.isChargedArrow === true ||
-        projectile.projectileType === 'burst_arrow' ||
-        renderer?.mesh?.userData?.projectileType === 'burst_arrow';
+        isBurstArrow;
 
       let cloudkillProc = false;
       let tempestBurstArcticChill = false;
@@ -899,7 +901,7 @@ export class ProjectileSystem extends System {
           }
         }
 
-        if (isLocalOwner && projectile.projectileType === 'burst_arrow') {
+        if (isLocalOwner && isBurstArrow) {
           const loadout = cs?.getTalentLoadout?.() ?? cs?.talentLoadout;
           if (shouldApplyArcticStingTalent(loadout) && Math.random() < TEMPEST_BURST_ARCTIC_STING_PROC_CHANCE) {
             tempestBurstArcticChill = true;
@@ -955,10 +957,10 @@ export class ProjectileSystem extends System {
         );
       } else {
       let outgoingDamage = projectile.damage;
-      if (projectile.isPerfectShot === true) {
+      if (projectile.isPerfectShot === true || isBurstArrow) {
         const csTv = (window as any).controlSystemRef?.current;
         const localEntTv = csTv?.getPlayerEntity?.() as { id: number } | null | undefined;
-        if (localEntTv && projectile.owner === localEntTv.id && csTv?.getTerminalVelocityBonusAtRange) {
+        if (localEntTv && projectile.owner === localEntTv.id) {
           const targetTransform = target.getComponent(Transform);
           if (targetTransform) {
             const tp = targetTransform.getWorldPosition();
@@ -966,7 +968,12 @@ export class ProjectileSystem extends System {
               tp.x - projectile.startPosition.x,
               tp.z - projectile.startPosition.z,
             );
-            outgoingDamage += csTv.getTerminalVelocityBonusAtRange(horiz) || 0;
+            if (projectile.isPerfectShot === true) {
+              outgoingDamage += csTv.getTerminalVelocityBonusAtRange?.(horiz) || 0;
+            }
+            if (isBurstArrow) {
+              outgoingDamage += csTv.getTempestRoundsLongRangeBonusAtRange?.(horiz) || 0;
+            }
           }
         }
       }
@@ -1010,6 +1017,7 @@ export class ProjectileSystem extends System {
         tempestBurstWyvernZombie || projectile.tempestBurstWyvernZombie === true,
         huntersMarkBarrage,
         projectile.isPerfectShot === true,
+        isBurstArrow,
       );
       }
 
@@ -1027,6 +1035,21 @@ export class ProjectileSystem extends System {
           // Solo: detonate Hunter's Mark into stagger lightning.
           if (this.combatSystem?.usesNetworkedEnemyDamage() !== true) {
             cs?.trySniperHuntersMarkDetonate?.(target);
+          }
+        }
+      }
+
+      if (
+        isBurstArrow &&
+        projectile.isPerfectShot !== true &&
+        target.getComponent(Enemy)
+      ) {
+        const csBurst = (window as any).controlSystemRef?.current;
+        const localEntBurst = csBurst?.getPlayerEntity?.() as { id: number } | null | undefined;
+        if (localEntBurst && projectile.owner === localEntBurst.id) {
+          // Solo: Tempest Rounds detonate Hunter's Mark as if they were a Perfect Shot.
+          if (this.combatSystem?.usesNetworkedEnemyDamage() !== true) {
+            csBurst?.trySniperHuntersMarkDetonate?.(target);
           }
         }
       }

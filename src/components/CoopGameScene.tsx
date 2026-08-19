@@ -158,17 +158,22 @@ import {
   EXPLORE_RESEARCH_UPGRADES,
   EXPLORE_SHRINE_INTERACT_RADIUS,
   EXPLORE_OBELISK_INTERACT_RADIUS,
+  EXPLORE_CATHEDRAL_INTERACT_RADIUS,
   EXPLORE_SHRINE_GIFTS,
   FIRE_PIT_HULL_RADIUS,
   EXPLORE_TOWER_HULL_RADIUS,
   RESEARCH_STATION_HULL_RADIUS,
   SHRINE_HULL_RADIUS,
   OBELISK_HULL_RADIUS,
+  CATHEDRAL_HULL_RADIUS,
   EXPLORE_OBELISK_TALENT_GOLD_COST,
   exploreBuildingRequiresSpiritLounge,
+  exploreBuildingRequiresShrineOrObelisk,
+  getExploreLowHungerMaxEnergyBonus,
   isExploreTowerType,
   isPlayerExploreBuildingType,
   type ExploreBuildingKind,
+  type ExploreCathedralOfferEntry,
 } from '@/utils/exploreBuildings';
 import type { ExploreBuildingPlacementRules, ExploreObstacleDisc } from '@/utils/exploreBuildingPlacement';
 import { getExploreMushroom } from '@/utils/exploreWorldGen';
@@ -487,6 +492,8 @@ import ThroneRoom, {
   THRONE_DEFENSE_PORTAL_RADIUS,
   THRONE_DUNGEON_PORTAL_POSITION,
   THRONE_DUNGEON_PORTAL_RADIUS,
+  THRONE_SKY_TEMPLE_PORTAL_POSITION,
+  THRONE_SKY_TEMPLE_PORTAL_RADIUS,
   DEFENSE_ROOM_RADIUS,
   MAIN_COMBAT_CHOICE_PORTAL_POSITIONS,
   CASTLE_ROOM_CHOICE_PORTAL_POSITIONS,
@@ -548,6 +555,7 @@ import {
   resolveDungeonPlayerCenterY,
   subscribeDungeonMeshCollider,
 } from '@/utils/dungeonLayout';
+import { SKY_TEMPLE_PLAYABLE_AABB, SKY_TEMPLE_SPAWN } from '@/utils/skyTempleLayout';
 import { KNIGHT_FROST_FREEZE_MS, KNIGHT_SMITE_RADIUS_BASE } from '@/utils/knightCoopAbilitiesConstants';
 import { MUSHROOM_COUNT, buildMushroomInstances, getMushroomColliderCenter, type MushroomInstance } from '@/utils/mushroomLayout';
 import { MUSHROOM_MAX_HP } from '@/utils/mushroomConstants';
@@ -1382,6 +1390,9 @@ function preloadEnemyModelsForTypes(types: Iterable<string>): void {
         case 'shield-battery':
           void import('./environment/ShieldBattery').then(mod => mod.preloadShieldBattery());
           break;
+        case 'cathedral':
+          void import('./environment/Cathedral').then(mod => mod.preloadCathedral());
+          break;
         case 'allied-demon':
         case 'ghoul':
           void import('./enemies/GhoulModel').then(mod => mod.preloadGhoulModels());
@@ -1636,6 +1647,8 @@ interface CoopGameSceneProps {
   onStoneUpdate?: (stone: number) => void;
   onMeatUpdate?: (meat: number) => void;
   onHungerUpdate?: (hunger: number, starvingCritical: boolean) => void;
+  /** Live hunger 0–100 from page (explore). Used for the low-hunger max-energy bonus. */
+  playerHunger?: number;
   onFateUpdate?: (fate: number) => void;
   onMerchantUIUpdate?: (isVisible: boolean) => void;
   onSceneReady?: () => void;
@@ -1686,6 +1699,8 @@ interface CoopGameSceneProps {
   onResearchPanelOpenChange?: (open: boolean) => void;
   /** Explore shrine gift panel visibility. */
   onShrinePanelOpenChange?: (open: boolean) => void;
+  /** Explore cathedral legendary panel visibility. */
+  onCathedralPanelOpenChange?: (open: boolean, offer?: ExploreCathedralOfferEntry[]) => void;
   /** Explore obelisk shop panel visibility. */
   onObeliskPanelOpenChange?: (open: boolean) => void;
   /** Explore fire-pit cook panel visibility. */
@@ -2050,6 +2065,7 @@ export function CoopGameScene({
   onStoneUpdate,
   onMeatUpdate,
   onHungerUpdate,
+  playerHunger = 0,
   onFateUpdate,
   onMerchantUIUpdate,
   onSceneReady,
@@ -2077,6 +2093,7 @@ export function CoopGameScene({
   onBarracksRecruitOpenChange,
   onResearchPanelOpenChange,
   onShrinePanelOpenChange,
+  onCathedralPanelOpenChange,
   onObeliskPanelOpenChange,
   onFirePitHealOpenChange,
   onLocalPlayerDefeated,
@@ -2123,6 +2140,7 @@ export function CoopGameScene({
     barracksRecruitAlly,
     researchPurchase,
     shrineClaim,
+    cathedralClaim,
     obeliskBuyTalent,
     firePitHeal,
     detonateWyvernConcentratedVenom,
@@ -2246,6 +2264,8 @@ export function CoopGameScene({
     coopExploreSeed,
     exploreCamps,
     coopClearedRoomKind,
+    coopDefenseFountainActive,
+    coopDefenseFountainUsed,
     selectedArchetype,
     selectedWeaponAspect,
     weaponAspectByWeapon,
@@ -2372,6 +2392,8 @@ export function CoopGameScene({
   const isExplore = coopCurrentRoomKind === 'explore';
   const isDefense = coopCurrentRoomKind === 'defense';
   const isDungeon = coopCurrentRoomKind === 'dungeon';
+  const isSkyTemple = coopCurrentRoomKind === 'sky_temple';
+  const isMeshWalkRoom = isDungeon || isSkyTemple;
   const isErebusGate = coopCurrentRoomKind === 'erebus_gate';
   const isIntroCastleRoom = coopCurrentRoomKind === 'intro';
   const hexArenaVariant =
@@ -2388,6 +2410,7 @@ export function CoopGameScene({
   const coopArenaClampBounds = useMemo(() => {
     if (isExplore) return null;
     if (isDungeon) return null;
+    if (isSkyTemple) return null;
     if (isDefense) return DEFENSE_ROOM_RADIUS;
     if (inThroneRoom || inBossThroneArena) return COOP_THRONE_ROOM_RADIUS;
     if (isFaeRealm) return FAE_REALM_HEX_RADIUS;
@@ -2397,9 +2420,9 @@ export function CoopGameScene({
     if (isCastleRoom) return CASTLE_ROOM_BOUNDS;
     if (isHexCombatArena) return HEX_ARENA_RADIUS;
     return MAIN_ARENA_HEX_RADIUS;
-  }, [inThroneRoom, inBossThroneArena, isCastleRoom, isFaeRealm, isExplore, isDefense, isDungeon, isEternityPalace, isSunkenTemple, isErebusGate, isHexCombatArena]);
+  }, [inThroneRoom, inBossThroneArena, isCastleRoom, isFaeRealm, isExplore, isDefense, isDungeon, isSkyTemple, isEternityPalace, isSunkenTemple, isErebusGate, isHexCombatArena]);
 
-  const dimThroneLikeLighting = inThroneRoom || inBossThroneArena || isDefense || isDungeon;
+  const dimThroneLikeLighting = inThroneRoom || inBossThroneArena || isDefense || isDungeon || isSkyTemple;
 
   const isColoredCoopRoom =
     coopCurrentRoomKind === 'blue'
@@ -2415,6 +2438,7 @@ export function CoopGameScene({
     && !isErebusGate
     && !isDefense
     && !isDungeon
+    && !isSkyTemple
     && !isColoredCoopRoom;
 
   const [exploreMushrooms, setExploreMushrooms] = useState<MushroomInstance[]>([]);
@@ -3029,7 +3053,7 @@ export function CoopGameScene({
   const isExploreRef = useRef(false);
   isExploreRef.current = isExplore;
   const isDungeonRef = useRef(false);
-  isDungeonRef.current = isDungeon;
+  isDungeonRef.current = isMeshWalkRoom;
   const isCoopEnemyVisibleForRender = useCallback(
     (enemyX: number, enemyZ: number) => {
       if (playerEntityRef.current === null) return true;
@@ -3151,6 +3175,8 @@ export function CoopGameScene({
   researchPurchaseRef.current = researchPurchase;
   const shrineClaimRef = useRef(shrineClaim);
   shrineClaimRef.current = shrineClaim;
+  const cathedralClaimRef = useRef(cathedralClaim);
+  cathedralClaimRef.current = cathedralClaim;
   const obeliskBuyTalentRef = useRef(obeliskBuyTalent);
   obeliskBuyTalentRef.current = obeliskBuyTalent;
   const firePitHealRef = useRef(firePitHeal);
@@ -3161,6 +3187,8 @@ export function CoopGameScene({
   onResearchPanelOpenChangeRef.current = onResearchPanelOpenChange;
   const onShrinePanelOpenChangeRef = useRef(onShrinePanelOpenChange);
   onShrinePanelOpenChangeRef.current = onShrinePanelOpenChange;
+  const onCathedralPanelOpenChangeRef = useRef(onCathedralPanelOpenChange);
+  onCathedralPanelOpenChangeRef.current = onCathedralPanelOpenChange;
   const onObeliskPanelOpenChangeRef = useRef(onObeliskPanelOpenChange);
   onObeliskPanelOpenChangeRef.current = onObeliskPanelOpenChange;
   const onFirePitHealOpenChangeRef = useRef(onFirePitHealOpenChange);
@@ -3168,6 +3196,8 @@ export function CoopGameScene({
   const nearBarracksRef = useRef(false);
   const nearResearchRef = useRef(false);
   const nearShrineRef = useRef(false);
+  const nearCathedralRef = useRef(false);
+  const nearCathedralOfferRef = useRef<ExploreCathedralOfferEntry[]>([]);
   const nearObeliskRef = useRef(false);
   const nearFirePitRef = useRef(false);
   const [buildPlacementActive, setBuildPlacementActive] = useState(false);
@@ -3176,7 +3206,7 @@ export function CoopGameScene({
   buildPlacementKindRef.current = buildPlacementKind;
   const exploreChunkDiscsRef = useRef<Array<{ x: number; z: number; radius: number }>>([]);
   const buildPlacementExtraDiscsRef = useRef<ExploreObstacleDisc[]>([]);
-  const buildPlacementRulesRef = useRef<ExploreBuildingPlacementRules>({ firePits: [], liveTowerCount: 0, hasLiveSpiritLounge: false });
+  const buildPlacementRulesRef = useRef<ExploreBuildingPlacementRules>({ firePits: [], liveTowerCount: 0, hasLiveSpiritLounge: false, hasLiveShrineOrObelisk: false });
   const lastInteractHintRef = useRef<string | null>(null);
   const initialWeaponsForEngineRef = useRef(
     selectedWeapons ?? { primary: WeaponType.NONE, secondary: WeaponType.NONE },
@@ -3222,6 +3252,10 @@ export function CoopGameScene({
   coopEternityFountainPhaseRef.current = coopEternityFountainPhase;
   const coopEternityFountainUsedRef = useRef(coopEternityFountainUsed);
   coopEternityFountainUsedRef.current = coopEternityFountainUsed;
+  const coopDefenseFountainActiveRef = useRef(coopDefenseFountainActive);
+  coopDefenseFountainActiveRef.current = coopDefenseFountainActive;
+  const coopDefenseFountainUsedRef = useRef(coopDefenseFountainUsed);
+  coopDefenseFountainUsedRef.current = coopDefenseFountainUsed;
   const coopEternityLootPhaseCompleteRef = useRef(coopEternityLootPhaseComplete);
   coopEternityLootPhaseCompleteRef.current = coopEternityLootPhaseComplete;
   const coopPetCompanionUpgradeRef = useRef(coopPetCompanionUpgrade);
@@ -3287,6 +3321,13 @@ export function CoopGameScene({
   }, [isDungeon]);
 
   useEffect(() => {
+    if (!isSkyTemple) return;
+    void import('@/components/environment/SkyTempleMap').then((mod) => {
+      mod.preloadSkyTempleMap();
+    });
+  }, [isSkyTemple]);
+
+  useEffect(() => {
     if (!isDefense) return;
     void import('@/components/environment/DefenseArenaMap').then((mod) => {
       mod.preloadDefenseArenaMap();
@@ -3319,6 +3360,9 @@ export function CoopGameScene({
     void import('./environment/ShieldBattery').then((mod) => {
       mod.preloadShieldBattery();
     });
+    void import('./environment/Cathedral').then((mod) => {
+      mod.preloadCathedral();
+    });
   }, [isExplore]);
 
   useEffect(() => {
@@ -3326,6 +3370,9 @@ export function CoopGameScene({
       portalUseSentRef.current = false;
       void import('@/components/environment/DungeonNexusMap').then((mod) => {
         mod.preloadDungeonNexusMap();
+      });
+      void import('@/components/environment/SkyTempleMap').then((mod) => {
+        mod.preloadSkyTempleMap();
       });
       void import('@/components/environment/ThroneStatueDecor').then((mod) => {
         mod.preloadThroneStatueDecor();
@@ -3444,7 +3491,7 @@ export function CoopGameScene({
     const r =
       inThroneRoom || inBossThroneArena
         ? COOP_THRONE_ROOM_RADIUS + 2
-        : isExplore || isDungeon
+        : isExplore || isMeshWalkRoom
           ? 9999
         : isDefense
           ? DEFENSE_ROOM_RADIUS + 2
@@ -3461,8 +3508,8 @@ export function CoopGameScene({
           : isHexCombatArena
             ? HEX_ARENA_RADIUS
             : MAIN_ARENA_HEX_RADIUS;
-    const mainCoopRoom = !inThroneRoom && !inBossThroneArena && !isHexCombatArena && !isCastleRoom && !isSunkenTemple && !isErebusGate && !isFaeRealm && !isEternityPalace && !isExplore && !isDefense && !isDungeon;
-    const boundaryMode = isExplore || isDungeon
+    const mainCoopRoom = !inThroneRoom && !inBossThroneArena && !isHexCombatArena && !isCastleRoom && !isSunkenTemple && !isErebusGate && !isFaeRealm && !isEternityPalace && !isExplore && !isDefense && !isDungeon && !isSkyTemple;
+    const boundaryMode = isExplore || isMeshWalkRoom
       ? 'none'
       : isCastleRoom || isSunkenTemple || isErebusGate
         ? 'circle'
@@ -3483,7 +3530,7 @@ export function CoopGameScene({
     controlSystemRef.current?.setArenaBoundaryMode?.(boundaryMode);
     controlSystemRef.current?.setThroneChargePillars(throneObstacles);
     controlSystemRef.current?.setChargeCornerMountains(null);
-    world.getSystem(ProjectileSystem)?.setOriginCullRadius(isExplore || isDungeon ? null : DEFAULT_PROJECTILE_ORIGIN_CULL_RADIUS);
+    world.getSystem(ProjectileSystem)?.setOriginCullRadius(isExplore || isMeshWalkRoom ? null : DEFAULT_PROJECTILE_ORIGIN_CULL_RADIUS);
     const roomFog = isExplore
       ? new FogExp2(SKY_INDIGO_NIGHT.horizon, 0.045)
       : isDungeon
@@ -3512,7 +3559,7 @@ export function CoopGameScene({
         camera.updateProjectionMatrix();
       }
     };
-  }, [inThroneRoom, inBossThroneArena, isHexCombatArena, isCastleRoom, isFaeRealm, isExplore, isDefense, isDungeon, isEternityPalace, isSunkenTemple, isErebusGate, gameStarted, engineReady, camera, scene, playerEntity]);
+  }, [inThroneRoom, inBossThroneArena, isHexCombatArena, isCastleRoom, isFaeRealm, isExplore, isDefense, isDungeon, isSkyTemple, isMeshWalkRoom, isEternityPalace, isSunkenTemple, isErebusGate, gameStarted, engineReady, camera, scene, playerEntity]);
 
   const exploreCampsRef = useRef(exploreCamps);
   exploreCampsRef.current = exploreCamps;
@@ -3529,9 +3576,9 @@ export function CoopGameScene({
         controlSystemRef.current?.setStreamedObstacles(null);
       };
     }
-    if (isDungeon) {
+    if (isMeshWalkRoom) {
       const phys = engineRef.current?.getWorld().getSystem(PhysicsSystem);
-      phys?.setPlayableAabb(DUNGEON_PLAYABLE_AABB);
+      phys?.setPlayableAabb(isDungeon ? DUNGEON_PLAYABLE_AABB : SKY_TEMPLE_PLAYABLE_AABB);
       const unsub = subscribeDungeonMeshCollider((collider) => {
         engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setMeshCollider(collider);
         if (!collider || playerEntityRef.current === null || !socket?.id) return;
@@ -3539,7 +3586,12 @@ export function CoopGameScene({
         const tr = ent?.getComponent(Transform);
         if (!tr) return;
         const movement = ent?.getComponent(Movement);
-        const groundY = resolveDungeonPlayerCenterY(tr.position.x, tr.position.z);
+        const groundY = resolveDungeonPlayerCenterY(
+          tr.position.x,
+          tr.position.z,
+          0.5,
+          isSkyTemple ? SKY_TEMPLE_SPAWN.y : undefined,
+        );
         const needsSnap =
           tr.position.y > groundY + 0.35
           || movement?.isPortalFalling
@@ -3577,6 +3629,7 @@ export function CoopGameScene({
       const firePits: Array<{ x: number; z: number }> = [];
       let liveTowerCount = 0;
       let hasLiveSpiritLounge = false;
+      let hasLiveShrineOrObelisk = false;
       for (const enemy of enemiesRef.current.values()) {
         if (!isPlayerExploreBuildingType(enemy.type)) continue;
         if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
@@ -3584,6 +3637,7 @@ export function CoopGameScene({
         buildingDiscs.push({ x: enemy.position.x, z: enemy.position.z, radius, kind: enemy.type });
         if (enemy.type === 'fire-pit') firePits.push({ x: enemy.position.x, z: enemy.position.z });
         if (enemy.type === 'barracks') hasLiveSpiritLounge = true;
+        if (enemy.type === 'shrine' || enemy.type === 'obelisk') hasLiveShrineOrObelisk = true;
         if (isExploreTowerType(enemy.type)) liveTowerCount += 1;
       }
       const merged = [
@@ -3592,7 +3646,7 @@ export function CoopGameScene({
         ...buildingDiscs,
       ];
       buildPlacementExtraDiscsRef.current = merged;
-      buildPlacementRulesRef.current = { firePits, liveTowerCount, hasLiveSpiritLounge };
+      buildPlacementRulesRef.current = { firePits, liveTowerCount, hasLiveSpiritLounge, hasLiveShrineOrObelisk };
       engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(merged);
       controlSystemRef.current?.setStreamedObstacles(merged);
     };
@@ -3609,7 +3663,7 @@ export function CoopGameScene({
       engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(null);
       controlSystemRef.current?.setStreamedObstacles(null);
     };
-  }, [isExplore, isDefense, isDungeon, engineReady, exploreCamps, enemies]);
+  }, [isExplore, isDefense, isDungeon, isSkyTemple, isMeshWalkRoom, engineReady, exploreCamps, enemies]);
 
   useEffect(() => {
     if (isExplore) return;
@@ -3689,7 +3743,12 @@ export function CoopGameScene({
     rotation?: { x: number; y: number; z: number } | null,
   ) => {
     if (!engineRef.current || playerEntityRef.current === null || !socket?.id) return false;
-    const y = resolveDungeonPlayerCenterY(x, z);
+    const y = resolveDungeonPlayerCenterY(
+      x,
+      z,
+      0.5,
+      isSkyTemple ? SKY_TEMPLE_SPAWN.y : undefined,
+    );
     const ent = engineRef.current.getWorld().getEntity(playerEntityRef.current);
     const tr = ent?.getComponent(Transform);
     if (tr) {
@@ -3717,7 +3776,7 @@ export function CoopGameScene({
     resetLocalPositionEmitThrottleRef.current({ x, y, z }, rot);
     cameraSystemRef.current?.snapToTarget();
     return true;
-  }, [socket?.id, playersTransformsRef, contextPlayersRef, pendingPortalSnapRef]);
+  }, [socket?.id, playersTransformsRef, contextPlayersRef, pendingPortalSnapRef, isSkyTemple]);
 
   applyDungeonGroundSnapRef.current = applyDungeonGroundSnap;
 
@@ -3806,7 +3865,7 @@ export function CoopGameScene({
     if (combatEnterChanged) {
       const exploreLateJoinGround =
         isExplore && !coopTransitionOverlayRef.current;
-      const dungeonGroundSnap = isDungeon;
+      const dungeonGroundSnap = isMeshWalkRoom;
 
       if (!exploreLateJoinGround && !dungeonGroundSnap) {
         pendingPortalSnapRef.current = true;
@@ -3821,13 +3880,18 @@ export function CoopGameScene({
           ? { x: me.position.x, y: PORTAL_FALL_GROUND_Y, z: me.position.z }
           : null;
       const dungeonServerPos =
-        isDungeon
+        isMeshWalkRoom
         && me?.position
         && Number.isFinite(me.position.x)
         && Number.isFinite(me.position.z)
           ? {
               x: me.position.x,
-              y: resolveDungeonPlayerCenterY(me.position.x, me.position.z),
+              y: resolveDungeonPlayerCenterY(
+                me.position.x,
+                me.position.z,
+                0.5,
+                isSkyTemple ? SKY_TEMPLE_SPAWN.y : undefined,
+              ),
               z: me.position.z,
             }
           : null;
@@ -3835,6 +3899,7 @@ export function CoopGameScene({
       const hasLiveTransform = playersTransformsRef.current.has(socket.id);
       const ent = engineRef.current.getWorld().getEntity(playerEntityRef.current);
       const tr = ent?.getComponent(Transform);
+      const fallbackSpawn = isSkyTemple ? SKY_TEMPLE_SPAWN : DUNGEON_SPAWN;
       const livePos = exploreServerPos
         ?? dungeonServerPos
         ?? ((refPlayer || hasLiveTransform)
@@ -3845,7 +3910,7 @@ export function CoopGameScene({
             )
           : tr
             ? { x: tr.position.x, y: tr.position.y, z: tr.position.z }
-            : { x: DUNGEON_SPAWN.x, y: DUNGEON_SPAWN.y, z: DUNGEON_SPAWN.z });
+            : { x: fallbackSpawn.x, y: fallbackSpawn.y, z: fallbackSpawn.z });
       const liveRot = me?.rotation ?? getPlayerLiveRotation(
         socket.id,
         playersTransformsRef,
@@ -3859,7 +3924,12 @@ export function CoopGameScene({
       const spawnY = exploreLateJoinGround || tabHidden
         ? PORTAL_FALL_GROUND_Y
         : dungeonGroundSnap
-          ? resolveDungeonPlayerCenterY(c.x, c.z)
+          ? resolveDungeonPlayerCenterY(
+            c.x,
+            c.z,
+            0.5,
+            isSkyTemple ? SKY_TEMPLE_SPAWN.y : undefined,
+          )
           : VOID_PORTAL_FALL_SPAWN_Y;
       const snappedPos = {
         x: c.x,
@@ -3905,7 +3975,7 @@ export function CoopGameScene({
     if (intermissionChanged) {
       lastAppliedIntermissionSeqRef.current = coopMainArenaIntermissionSeq;
     }
-  }, [coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, gameStarted, engineReady, socket?.id, coopArenaClampBounds, contextPlayersRef, playersTransformsRef, pendingPortalSnapRef, isExplore, isDungeon, playerEntity, players]);
+  }, [coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, gameStarted, engineReady, socket?.id, coopArenaClampBounds, contextPlayersRef, playersTransformsRef, pendingPortalSnapRef, isExplore, isDungeon, isSkyTemple, isMeshWalkRoom, playerEntity, players]);
 
   /**
    * Local hero rotation follows the camera. Default orbit (theta=0) puts the camera on the "wrong" side
@@ -5875,14 +5945,17 @@ export function CoopGameScene({
       const newMaxEnergy =
         getOxygenMaxEnergy(oxygenPurchases) +
         exodiaSetBonuses.maxEnergy +
-        getFireAffinityMaxEnergyBonus(selectedWeaponAspect);
+        getFireAffinityMaxEnergyBonus(selectedWeaponAspect) +
+        getExploreLowHungerMaxEnergyBonus(playerHunger, isExplore);
       const baseRegen = 40;
       energy.regenRate = hasOwnedItem(ownedItemTypes, INFINITE_AMBER)
         ? baseRegen * INFINITE_AMBER_ENERGY_REGEN_MULT
         : baseRegen;
       if (energy.maxEnergy !== newMaxEnergy) {
-        const gained = newMaxEnergy - energy.maxEnergy;
-        energy.setEnergy(energy.currentEnergy + gained, newMaxEnergy);
+        const nextCurrent = newMaxEnergy > energy.maxEnergy
+          ? energy.currentEnergy + (newMaxEnergy - energy.maxEnergy)
+          : Math.min(energy.currentEnergy, newMaxEnergy);
+        energy.setEnergy(nextCurrent, newMaxEnergy);
         updatePlayerEnergy(socket?.id || '', energy.currentEnergy, energy.maxEnergy);
       }
     }
@@ -5899,6 +5972,8 @@ export function CoopGameScene({
     engineReady,
     socket?.id,
     updatePlayerEnergy,
+    playerHunger,
+    isExplore,
   ]);
 
   useEffect(() => {
@@ -14546,6 +14621,7 @@ export function CoopGameScene({
         : serverEnemy.type === 'shrine' ? SHRINE_HULL_RADIUS
         : serverEnemy.type === 'obelisk' ? OBELISK_HULL_RADIUS
         : serverEnemy.type === 'shield-battery' ? FIRE_PIT_HULL_RADIUS
+        : serverEnemy.type === 'cathedral' ? CATHEDRAL_HULL_RADIUS
         : serverEnemy.type === 'allied-knight' ? 0.85
         : serverEnemy.type === 'allied-huntress' ? 0.75
         : serverEnemy.type === 'allied-phantom' ? 0.75
@@ -14675,6 +14751,7 @@ export function CoopGameScene({
       || isColoredCoopRoom
       || isDefense
       || isDungeon
+      || isSkyTemple
     ) {
       clearAllMushrooms();
       return;
@@ -14722,7 +14799,7 @@ export function CoopGameScene({
       if (isEternityPalace && !isInsideHexArenaXZ(inst.x, inst.z, ETERNITY_PALACE_HEX_RADIUS, 0.5)) continue;
       spawnOrSyncMushroom(inst, healthArr[i]);
     }
-  }, [gameStarted, engineReady, gameMode, inThroneRoom, inBossThroneArena, isCastleRoom, isFaeRealm, isEternityPalace, isSunkenTemple, isErebusGate, isColoredCoopRoom, isDefense, isDungeon, isExplore, exploreMushrooms, mushroomState, effectiveMushroomHealth]);
+  }, [gameStarted, engineReady, gameMode, inThroneRoom, inBossThroneArena, isCastleRoom, isFaeRealm, isEternityPalace, isSunkenTemple, isErebusGate, isColoredCoopRoom, isDefense, isDungeon, isSkyTemple, isExplore, exploreMushrooms, mushroomState, effectiveMushroomHealth]);
 
   // Explore: destructible trees (server HP; ECS for projectiles)
   useEffect(() => {
@@ -15951,6 +16028,9 @@ export function CoopGameScene({
               if (exploreBuildingRequiresSpiritLounge(kind) && !buildPlacementRulesRef.current.hasLiveSpiritLounge) {
                 continue;
               }
+              if (exploreBuildingRequiresShrineOrObelisk(kind) && !buildPlacementRulesRef.current.hasLiveShrineOrObelisk) {
+                continue;
+              }
               enterPlacing(kind);
               break;
             }
@@ -16008,6 +16088,19 @@ export function CoopGameScene({
             buildHotkeyPrevRef.current[`shrine-${digit}`] = digitDown;
             if (digitEdge) {
               shrineClaimRef.current(gift.id);
+              break;
+            }
+          }
+        } else if (nearCathedralRef.current && buildModeRef.current === 'idle') {
+          const offer = nearCathedralOfferRef.current;
+          for (let i = 0; i < offer.length && i < 4; i += 1) {
+            const digit = String(i + 1);
+            const digitDown = cs.isKeyPressed(digit);
+            const prev = buildHotkeyPrevRef.current[`cathedral-${digit}`] ?? false;
+            const digitEdge = digitDown && !prev;
+            buildHotkeyPrevRef.current[`cathedral-${digit}`] = digitDown;
+            if (digitEdge) {
+              cathedralClaimRef.current(offer[i]!.type);
               break;
             }
           }
@@ -16186,6 +16279,7 @@ export function CoopGameScene({
               const rExplore2 = voidPortalInteractRadius(THRONE_EXPLORE_PORTAL_RADIUS) ** 2;
               const rDefense2 = voidPortalInteractRadius(THRONE_DEFENSE_PORTAL_RADIUS) ** 2;
               const rDungeon2 = voidPortalInteractRadius(THRONE_DUNGEON_PORTAL_RADIUS) ** 2;
+              const rSkyTemple2 = voidPortalInteractRadius(THRONE_SKY_TEMPLE_PORTAL_RADIUS) ** 2;
               const rPortal = VOID_PORTAL_INTERACT_RADIUS;
               const rPortal2 = rPortal * rPortal;
               if (
@@ -16211,6 +16305,12 @@ export function CoopGameScene({
                 const gd2 = gdx * gdx + gdz * gdz;
                 if (gd2 < rDungeon2) {
                   candidates.push({ kind: 'portal', d2: gd2, chosen: 'dungeon' });
+                }
+                const sdx = px - THRONE_SKY_TEMPLE_PORTAL_POSITION.x;
+                const sdz = pz - THRONE_SKY_TEMPLE_PORTAL_POSITION.z;
+                const sd2 = sdx * sdx + sdz * sdz;
+                if (sd2 < rSkyTemple2) {
+                  candidates.push({ kind: 'portal', d2: sd2, chosen: 'sky_temple' });
                 }
               }
               if (
@@ -16646,6 +16746,19 @@ export function CoopGameScene({
                 if ((window as any).audioSystem?.playUISelectionSound) {
                   (window as any).audioSystem.playUISelectionSound();
                 }
+              }
+            }
+          } else if (
+            xEdge
+            && coopCurrentRoomKindRef.current === 'defense'
+            && coopDefenseFountainActiveRef.current
+            && !coopDefenseFountainUsedRef.current
+          ) {
+            const fountainR2 = HEALING_FOUNTAIN_INTERACT_RADIUS * HEALING_FOUNTAIN_INTERACT_RADIUS;
+            if (px * px + pz * pz < fountainR2) {
+              useCoopFountainRef.current();
+              if ((window as any).audioSystem?.playFountainSound) {
+                (window as any).audioSystem.playFountainSound();
               }
             }
           } else if (
@@ -17583,6 +17696,7 @@ export function CoopGameScene({
               const rExplore2H = voidPortalInteractRadius(THRONE_EXPLORE_PORTAL_RADIUS) ** 2;
               const rDefense2H = voidPortalInteractRadius(THRONE_DEFENSE_PORTAL_RADIUS) ** 2;
               const rDungeon2H = voidPortalInteractRadius(THRONE_DUNGEON_PORTAL_RADIUS) ** 2;
+              const rSkyTemple2H = voidPortalInteractRadius(THRONE_SKY_TEMPLE_PORTAL_RADIUS) ** 2;
               const rPortal2H = VOID_PORTAL_INTERACT_RADIUS * VOID_PORTAL_INTERACT_RADIUS;
               let portalCloseH = false;
               const curArchetypeHint = selectedArchetypeRef.current;
@@ -17600,11 +17714,14 @@ export function CoopGameScene({
                 const ddz = pz - THRONE_DEFENSE_PORTAL_POSITION.z;
                 const gdx = px - THRONE_DUNGEON_PORTAL_POSITION.x;
                 const gdz = pz - THRONE_DUNGEON_PORTAL_POSITION.z;
+                const sdx = px - THRONE_SKY_TEMPLE_PORTAL_POSITION.x;
+                const sdz = pz - THRONE_SKY_TEMPLE_PORTAL_POSITION.z;
                 portalCloseH =
                   vdx * vdx + vdz * vdz < rVoid2H
                   || edx * edx + edz * edz < rExplore2H
                   || ddx * ddx + ddz * ddz < rDefense2H
-                  || gdx * gdx + gdz * gdz < rDungeon2H;
+                  || gdx * gdx + gdz * gdz < rDungeon2H
+                  || sdx * sdx + sdz * sdz < rSkyTemple2H;
               } else if (
                 !portalUseSentRef.current &&
                 curHint !== undefined &&
@@ -17784,6 +17901,15 @@ export function CoopGameScene({
                     nextHint = COOP_INTERACT_HINT_TEXT;
                   }
                 }
+              } else if (
+                coopCurrentRoomKindRef.current === 'defense'
+                && coopDefenseFountainActiveRef.current
+                && !coopDefenseFountainUsedRef.current
+              ) {
+                const fountainR2 = HEALING_FOUNTAIN_INTERACT_RADIUS * HEALING_FOUNTAIN_INTERACT_RADIUS;
+                if (px * px + pz * pz < fountainR2) {
+                  nextHint = COOP_INTERACT_HINT_TEXT;
+                }
               } else if (coopCurrentRoomKindRef.current === 'eden_finale') {
                 const daisyR2 = EDEN_FINALE_DAISY_INTERACT_RADIUS * EDEN_FINALE_DAISY_INTERACT_RADIUS;
                 if (px * px + pz * pz < daisyR2) {
@@ -17897,9 +18023,14 @@ export function CoopGameScene({
                 const barracksR2 = EXPLORE_BARRACKS_INTERACT_RADIUS * EXPLORE_BARRACKS_INTERACT_RADIUS;
                 const researchR2 = EXPLORE_RESEARCH_INTERACT_RADIUS * EXPLORE_RESEARCH_INTERACT_RADIUS;
                 const shrineR2 = EXPLORE_SHRINE_INTERACT_RADIUS * EXPLORE_SHRINE_INTERACT_RADIUS;
+                const cathedralR2 = EXPLORE_CATHEDRAL_INTERACT_RADIUS * EXPLORE_CATHEDRAL_INTERACT_RADIUS;
                 const obeliskR2 = EXPLORE_OBELISK_INTERACT_RADIUS * EXPLORE_OBELISK_INTERACT_RADIUS;
                 const firePitR2 = EXPLORE_FIRE_PIT_INTERACT_RADIUS * EXPLORE_FIRE_PIT_INTERACT_RADIUS;
-                type NearInteract = { kind: 'barracks' | 'research' | 'shrine' | 'obelisk' | 'fire-pit'; distSq: number };
+                type NearInteract = {
+                  kind: 'barracks' | 'research' | 'shrine' | 'cathedral' | 'obelisk' | 'fire-pit';
+                  distSq: number;
+                  offer?: ExploreCathedralOfferEntry[];
+                };
                 let bestInteract: NearInteract | null = null;
                 let nearUnpowered = false;
                 for (const enemy of enemiesRef.current.values()) {
@@ -17941,6 +18072,19 @@ export function CoopGameScene({
                     }
                     continue;
                   }
+                  if (enemy.type === 'cathedral') {
+                    if (distSq > cathedralR2) continue;
+                    if (enemy.powered === false) {
+                      nearUnpowered = true;
+                      continue;
+                    }
+                    if (enemy.cathedralUsed) continue;
+                    if (!bestInteract || distSq < bestInteract.distSq) {
+                      const offer = Array.isArray(enemy.cathedralOffer) ? enemy.cathedralOffer : [];
+                      bestInteract = { kind: 'cathedral', distSq, offer };
+                    }
+                    continue;
+                  }
                   if (enemy.type === 'obelisk') {
                     if (distSq > obeliskR2) continue;
                     if (enemy.powered === false) {
@@ -17962,22 +18106,28 @@ export function CoopGameScene({
                 const nearBarracks = bestInteract?.kind === 'barracks';
                 const nearResearch = bestInteract?.kind === 'research';
                 const nearShrine = bestInteract?.kind === 'shrine';
+                const nearCathedral = bestInteract?.kind === 'cathedral';
                 const nearObelisk = bestInteract?.kind === 'obelisk';
                 const nearFirePit = bestInteract?.kind === 'fire-pit';
                 nearBarracksRef.current = nearBarracks;
                 nearResearchRef.current = nearResearch;
                 nearShrineRef.current = nearShrine;
+                nearCathedralRef.current = nearCathedral;
+                nearCathedralOfferRef.current = nearCathedral ? (bestInteract?.offer ?? []) : [];
                 nearObeliskRef.current = nearObelisk;
                 nearFirePitRef.current = nearFirePit;
                 onBarracksRecruitOpenChangeRef.current?.(nearBarracks);
                 onResearchPanelOpenChangeRef.current?.(nearResearch);
                 onShrinePanelOpenChangeRef.current?.(nearShrine);
+                onCathedralPanelOpenChangeRef.current?.(nearCathedral, nearCathedral ? nearCathedralOfferRef.current : undefined);
                 onObeliskPanelOpenChangeRef.current?.(nearObelisk);
                 onFirePitHealOpenChangeRef.current?.(nearFirePit);
                 if (nearBarracks) {
                   nextHint = 'Recruit an ancestor — press 1–5 or use the panel';
                 } else if (nearShrine) {
                   nextHint = 'Choose a shrine gift — press 1–4 or use the panel';
+                } else if (nearCathedral) {
+                  nextHint = 'Choose a legendary — press 1–4 or use the panel';
                 } else if (nearObelisk) {
                   nextHint = 'Buy a class talent — press 1–9 or use the panel';
                 } else if (nearResearch) {
@@ -18972,7 +19122,7 @@ export function CoopGameScene({
         <>
           {/* Drifting cloud mist — camera-relative overlay; thinned while enemies are active */}
           <DriftingMist
-            enabled={!isCastleRoom && !isDungeon && !isDefense}
+            enabled={!isCastleRoom && !isDungeon && !isSkyTemple && !isDefense}
             combatActive={combatArenaActive && enemies.size > 0}
           />
           {inThroneRoom ? (
@@ -19072,6 +19222,8 @@ export function CoopGameScene({
               coopEdenFountainUsed={coopEdenFountainUsed}
               coopEdenResumeKind={coopEdenResumeKind}
               coopFalseEdenCleared={coopFalseEdenCleared}
+              coopDefenseFountainActive={coopDefenseFountainActive}
+              coopDefenseFountainUsed={coopDefenseFountainUsed}
               deliriumStructure={deliriumStructure}
               world={engineRef.current?.getWorld()}
               camera={camera as PerspectiveCamera}

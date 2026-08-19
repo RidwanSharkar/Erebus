@@ -20,7 +20,7 @@ const {
   ETERNITY_PALACE_ENTRY_X,
   ETERNITY_PALACE_ENTRY_Z,
 } = require('./coopArenaLayout');
-const { rollCoopSkyPresetIndex } = require('./coopSkyPresets');
+const { rollCoopSkyPresetIndex, rollSkyTempleSkyPresetIndex } = require('./coopSkyPresets');
 const { rollCoopGrassPresetIndex } = require('./coopGrassPresets');
 const mushroomLayout = require('./mushroomLayout');
 const mushroomConstants = require('./mushroomConstants');
@@ -486,7 +486,7 @@ const COOP_SPECIAL_ROOM_TYPES = Object.freeze(['stat', 'trial', 'merchant']);
 const COOP_MID_ACT_SPECIAL_ROOM_TYPES = Object.freeze(['stat', 'trial']);
 const COOP_PRE_BOSS_SPECIAL_TYPES = Object.freeze(['stat', 'trial']);
 const COOP_PRE_BOSS_REWARD_TO_MERCHANT_MS = 5000;
-const COOP_ROOM_TYPES = Object.freeze([...COOP_COLORED_ROOM_TYPES, ...COOP_SPECIAL_ROOM_TYPES, 'boss', 'intro', 'deep_sanctum', 'sunken_temple', 'eternity_palace', 'eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer', 'fae_realm', 'eden_finale', 'explore', 'defense', 'dungeon']);
+const COOP_ROOM_TYPES = Object.freeze([...COOP_COLORED_ROOM_TYPES, ...COOP_SPECIAL_ROOM_TYPES, 'boss', 'intro', 'deep_sanctum', 'sunken_temple', 'eternity_palace', 'eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer', 'fae_realm', 'eden_finale', 'explore', 'defense', 'dungeon', 'sky_temple']);
 const COOP_SURPRISE_CHANCE = 0.29;
 const COOP_SURPRISE_KINDS = Object.freeze(['eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer']);
 const EREBUS_GATE_RADIUS = CASTLE_ROOM_HALF_SIZE;
@@ -519,7 +519,7 @@ const EXPLORE_SPAWN_RING_MIN = 18;
 const EXPLORE_SPAWN_RING_MAX = 26;
 const EXPLORE_SPAWN_MIN_PLAYER_DIST = 18;
 const EXPLORE_SPAWN_MIN_SEPARATION = 6;
-const EXPLORE_PACK_MIN_SEPARATION = 30;
+const EXPLORE_PACK_MIN_SEPARATION = 33;
 const EXPLORE_PACK_CLUSTER_MIN = 3;
 const EXPLORE_PACK_CLUSTER_MAX = 6;
 const EXPLORE_DESPAWN_DIST = 30;
@@ -529,7 +529,7 @@ const EXPLORE_WILDERNESS_RING = 80;
 
 /** Chance that a wilderness pack becomes a reward camp, by wilderness level. */
 const EXPLORE_CAMP_CHANCE_BY_LEVEL = Object.freeze({ 1: 0.40, 2: 0.20, 3: 0.30, 4: 0.50 });
-const EXPLORE_CAMP_GOLD_BY_LEVEL = Object.freeze({ 1: 100, 2: 200, 3: 300, 4: 400 });
+const EXPLORE_CAMP_GOLD_BY_LEVEL = Object.freeze({ 1: 75, 2: 150, 3: 250, 4: 350 });
 const EXPLORE_CAMP_STAT_BY_LEVEL = Object.freeze({ 1: 3, 2: 4, 3: 5, 4: 6 });
 const EXPLORE_CAMP_BOON_COLOR = Object.freeze({
   tempest: 'blue',
@@ -644,12 +644,38 @@ const DUNGEON_PLAYABLE_MAX_Z = 16.95;
 const DUNGEON_SPAWN_X = -17.63;
 const DUNGEON_SPAWN_Y = 1;
 const DUNGEON_SPAWN_Z = -20.1;
+const SKY_TEMPLE_PLAYABLE_MIN_X = -37;
+const SKY_TEMPLE_PLAYABLE_MAX_X = 37;
+const SKY_TEMPLE_PLAYABLE_MIN_Z = -32;
+const SKY_TEMPLE_PLAYABLE_MAX_Z = 22.5;
+const SKY_TEMPLE_SPAWN_X = 0;
+const SKY_TEMPLE_SPAWN_Y = 4;
+const SKY_TEMPLE_SPAWN_Z = -28;
+/** Fixed encounter on plaza flanks. Keep in sync with `src/utils/skyTempleLayout.ts`. */
+const SKY_TEMPLE_PACK = Object.freeze([
+  Object.freeze({ type: 'spectre', x: -26, y: 0, z: 2, campColor: 'purple' }),
+  Object.freeze({ type: 'death-knight', x: -22, y: 0, z: -6, campColor: 'red' }),
+  Object.freeze({ type: 'assassin', x: 24, y: 0, z: 0, campColor: 'green' }),
+  Object.freeze({ type: 'knight', x: 21, y: 0, z: 5, campColor: 'red' }),
+  Object.freeze({ type: 'knight', x: 27, y: 0, z: -5, campColor: 'blue' }),
+]);
 /** RallyArea past the entrance stairs. Keep in sync with `src/utils/dungeonLayout.ts`. */
 /** y is RallyArea world floor height (native Y ≈ −25 × scale 0.625 + lift ≈ −15.5). */
 const DUNGEON_ENTRANCE_PACK = Object.freeze([
   Object.freeze({ type: 'knight', x: -21.5, y: -15.5, z: -82, campColor: 'red' }),
   Object.freeze({ type: 'knight', x: -14.0, y: -15.5, z: -80, campColor: 'blue' }),
   Object.freeze({ type: 'wyvern', x: -17.6, y: -15.5, z: -80, campColor: 'red' }),
+]);
+/** Lair9 chamber past the RallyArea overlook. Reachable via hidden descent collider. */
+const DUNGEON_BRIDGE_PACK = Object.freeze([
+  Object.freeze({ type: 'knight', x: -11.6, y: -33.3, z: -96.2, campColor: 'red' }),
+  Object.freeze({ type: 'knight', x: -8.5, y: -34.9, z: -96.2, campColor: 'blue' }),
+  Object.freeze({ type: 'knight', x: -10.5, y: -35.9, z: -98.5, campColor: 'red' }),
+]);
+/** Lair9 island further in, after pack 2. Keep in sync with `src/utils/dungeonLayout.ts`. */
+const DUNGEON_PRE_BOSS_PACK = Object.freeze([
+  Object.freeze({ type: 'wyvern', x: -18.8, y: -36.0, z: -101.4, campColor: 'red' }),
+  Object.freeze({ type: 'wyvern', x: 0.1, y: -36.9, z: -101.2, campColor: 'blue' }),
 ]);
 const DEFENSE_TOWER_TRIANGLE_RADIUS = 7;
 const DEFENSE_TOWER_HULL_RADIUS = 1.4;
@@ -702,7 +728,8 @@ const EXPLORE_SIEGE_TOWER_ARROW_PROFILE = Object.freeze({
 const SIEGE_TOWER_MUZZLE_Y = 6.64;
 const SIEGE_TOWER_ARROW_SPEED = 40;
 const DEFENSE_WAVE_BREAK_MS = 5000;
-const DEFENSE_WAVE_COUNT = 20;
+const DEFENSE_WAVES_PER_LEVEL = 6;
+const DEFENSE_WAVE_COUNT = 24;
 const DEFENSE_TOWER_DEFS = Object.freeze([
   Object.freeze({ id: 'defense-tower-n', x: 0, z: DEFENSE_TOWER_TRIANGLE_RADIUS }),
   Object.freeze({
@@ -969,9 +996,17 @@ function clampPositionToDungeonXZ(x, z) {
   };
 }
 
+function clampPositionToSkyTempleXZ(x, z) {
+  return {
+    x: Math.max(SKY_TEMPLE_PLAYABLE_MIN_X, Math.min(SKY_TEMPLE_PLAYABLE_MAX_X, x)),
+    z: Math.max(SKY_TEMPLE_PLAYABLE_MIN_Z, Math.min(SKY_TEMPLE_PLAYABLE_MAX_Z, z)),
+  };
+}
+
 function clampPositionToPlayableXZ(room, x, z) {
   if (room?.coopExploreActive) return { x, z };
   if (room?.coopDungeonActive) return clampPositionToDungeonXZ(x, z);
+  if (room?.coopSkyTempleActive) return clampPositionToSkyTempleXZ(x, z);
   if (room?.coopDefenseActive) {
     const maxR = DEFENSE_ROOM_RADIUS - 0.5;
     const len = Math.hypot(x, z);
@@ -1362,10 +1397,21 @@ class GameRoom {
     this.coopDefenseWave = 0;
     this.coopDefenseWaveState = 'idle';
     this.coopDefenseBreakEndsAt = 0;
+    this.coopDefenseFountainActive = false;
+    this.coopDefenseFountainUsed = false;
+    this.coopDefenseMilestoneWave = 0;
+    this.coopDefenseGrantRoomBoon = false;
+    this.coopDefenseGrantClassBoon = false;
     this._defenseBreakTimer = null;
 
     /** Dungeon mode: walkable nexus interior sandbox (no waves). */
     this.coopDungeonActive = false;
+    /** Highest dungeon pack id that has been spawned this visit (1–3). */
+    this._dungeonPackSpawned = 0;
+
+    /** Sky Temple mode: walkable outdoor temple plaza sandbox (no waves). */
+    this.coopSkyTempleActive = false;
+    this._skyTemplePackSpawned = false;
 
     /** Co-op sunken temple: one-time 4-room sequence after Boss 1 (mid-run). */
     this.coopSunkenActive = false;
@@ -2047,6 +2093,7 @@ class GameRoom {
     this._resetExploreCampState();
     this._resetDefenseState();
     this._resetDungeonState();
+    this._resetSkyTempleState();
     this.coopSunkenActive = false;
     this.coopSunkenRoomIndex = 0;
     this.coopSunkenPortalOpen = false;
@@ -2149,6 +2196,7 @@ class GameRoom {
     this._stopExploreSpawns();
     this._resetDefenseState();
     this._resetDungeonState();
+    this._resetSkyTempleState();
     this._clearCoopCombatTransitionTimer();
     this.coopCombatTransition = null;
     this._clearCoopRewardChoiceGraceTimer();
@@ -2274,6 +2322,7 @@ class GameRoom {
       ...this._getExplorePayloadFields(),
       ...this._getDefensePayloadFields(),
       ...this._getDungeonPayloadFields(),
+      ...this._getSkyTemplePayloadFields(),
       ...this._getSunkenPayloadFields(),
       ...this._getEternityPayloadFields(),
       ...this._getDeepSanctumPayloadFields(),
@@ -3102,6 +3151,21 @@ class GameRoom {
       if (!this._isAlliedBeastCompanion(enemy) || enemy.isDying || (enemy.health ?? 0) <= 0) continue;
       // Don't snap mid walk-in.
       if (enemy.beastCompanionPhase === 'entering') continue;
+      if (this.enemyAI?._isExploreBaseGarrisonBeast?.(enemy)) {
+        const slot = this.enemyAI._getExploreBaseDefenderSlot?.(enemy);
+        if (slot) {
+          enemy.position = { x: slot.x, y: 0, z: slot.z };
+          if (this.io) {
+            this.io.to(this.roomId).emit('enemy-moved', {
+              enemyId: enemy.id,
+              position: enemy.position,
+              rotation: enemy.rotation,
+              timestamp: Date.now(),
+            });
+          }
+        }
+        continue;
+      }
       const owner = this.players.get(enemy.ownerPlayerId);
       if (!owner) continue;
       const slot = enemy.companionSlot === 'fae'
@@ -3162,6 +3226,8 @@ class GameRoom {
       || this.currentCoopRoomKind === 'fae_realm'
       || this.currentCoopRoomKind === 'explore'
       || this.currentCoopRoomKind === 'defense'
+      || this.currentCoopRoomKind === 'dungeon'
+      || this.currentCoopRoomKind === 'sky_temple'
       || this.currentCoopRoomKind === 'eternity_palace'
       || this.currentCoopRoomKind === 'eden'
       || this.currentCoopRoomKind === 'false_eden'
@@ -3408,7 +3474,10 @@ class GameRoom {
    */
   _rollCoopSkyPresetForEntry(roomKind) {
     if (roomKind === 'sunken_temple') return;
-    this.coopSkyPresetIndex = rollCoopSkyPresetIndex();
+    this.coopSkyPresetIndex =
+      roomKind === 'sky_temple'
+        ? rollSkyTempleSkyPresetIndex()
+        : rollCoopSkyPresetIndex();
   }
 
   /** Roll a new random grass palette for prep ThroneRoom entry. */
@@ -3701,12 +3770,23 @@ class GameRoom {
       coopDefenseWave: this.coopDefenseWave,
       coopDefenseWaveState: this.coopDefenseWaveState,
       coopDefenseBreakEndsAt: this.coopDefenseBreakEndsAt,
+      coopDefenseFountainActive: this.coopDefenseFountainActive,
+      coopDefenseFountainUsed: this.coopDefenseFountainUsed,
+      coopDefenseMilestoneWave: this.coopDefenseMilestoneWave,
+      coopDefenseGrantRoomBoon: this.coopDefenseGrantRoomBoon,
+      coopDefenseGrantClassBoon: this.coopDefenseGrantClassBoon,
     };
   }
 
   _getDungeonPayloadFields() {
     return {
       coopDungeonActive: this.coopDungeonActive,
+    };
+  }
+
+  _getSkyTemplePayloadFields() {
+    return {
+      coopSkyTempleActive: this.coopSkyTempleActive,
     };
   }
 
@@ -5754,6 +5834,7 @@ class GameRoom {
     this._resetExploreCampState();
     this._resetDefenseState();
     this._resetDungeonState();
+    this._resetSkyTempleState();
     this.currentCoopRoomKind = 'explore';
     this.clearedCoopRoomKind = null;
     this.combatArenaActive = true;
@@ -5783,6 +5864,7 @@ class GameRoom {
         ...this._getExplorePayloadFields(),
         ...this._getDefensePayloadFields(),
         ...this._getDungeonPayloadFields(),
+        ...this._getSkyTemplePayloadFields(),
         ...this._getFaeRealmPayloadFields(),
         ...this._getIntroPayloadFields(),
         timestamp: Date.now(),
@@ -5820,6 +5902,11 @@ class GameRoom {
     this.coopDefenseWave = 0;
     this.coopDefenseWaveState = 'idle';
     this.coopDefenseBreakEndsAt = 0;
+    this.coopDefenseFountainActive = false;
+    this.coopDefenseFountainUsed = false;
+    this.coopDefenseMilestoneWave = 0;
+    this.coopDefenseGrantRoomBoon = false;
+    this.coopDefenseGrantClassBoon = false;
   }
 
   _stopDefenseTimers() {
@@ -5860,10 +5947,16 @@ class GameRoom {
     this._exploreSpawnSlot = 0;
     this._resetExploreCampState();
     this._resetDungeonState();
+    this._resetSkyTempleState();
     this.coopDefenseActive = true;
     this.coopDefenseWave = 0;
     this.coopDefenseWaveState = 'idle';
     this.coopDefenseBreakEndsAt = 0;
+    this.coopDefenseFountainActive = false;
+    this.coopDefenseFountainUsed = false;
+    this.coopDefenseMilestoneWave = 0;
+    this.coopDefenseGrantRoomBoon = false;
+    this.coopDefenseGrantClassBoon = false;
     this.currentCoopRoomKind = 'defense';
     this.clearedCoopRoomKind = null;
     this.combatArenaActive = true;
@@ -5893,6 +5986,7 @@ class GameRoom {
         ...this._getExplorePayloadFields(),
         ...this._getDefensePayloadFields(),
         ...this._getDungeonPayloadFields(),
+        ...this._getSkyTemplePayloadFields(),
         ...this._getFaeRealmPayloadFields(),
         ...this._getIntroPayloadFields(),
         timestamp: Date.now(),
@@ -5924,32 +6018,72 @@ class GameRoom {
     this.repositionAllBeastCompanionsNearOwners();
   }
 
-  _hasDungeonEntrancePack() {
+  _hasDungeonPack(packId) {
     for (const enemy of this.enemies.values()) {
-      if (enemy?._dungeonEntrancePack && !enemy.isDying && (enemy.health == null || enemy.health > 0)) {
+      if (enemy?._dungeonPack === packId && !enemy.isDying && (enemy.health == null || enemy.health > 0)) {
         return true;
       }
     }
     return false;
   }
 
-  _spawnDungeonEntrancePack() {
-    if (!this.coopDungeonActive || this._hasDungeonEntrancePack()) return;
-    for (let i = 0; i < DUNGEON_ENTRANCE_PACK.length; i++) {
-      const spec = DUNGEON_ENTRANCE_PACK[i];
+  _spawnDungeonPack(specList, packId) {
+    if (!this.coopDungeonActive || this._hasDungeonPack(packId)) return;
+    const slotBase = packId * 10;
+    for (let i = 0; i < specList.length; i++) {
+      const spec = specList[i];
       const campDef = GameRoom.CAMP_TYPES[spec.campColor] || GameRoom.CAMP_TYPES.red;
-      const enemy = this._buildEnemy(spec.type, 0, i, { x: spec.x, y: spec.y ?? 0, z: spec.z }, campDef);
-      enemy._dungeonEntrancePack = true;
+      const enemy = this._buildEnemy(spec.type, 0, slotBase + i, { x: spec.x, y: spec.y ?? 0, z: spec.z }, campDef);
+      enemy._dungeonPack = packId;
+      enemy._dungeonSpawnY = spec.y ?? 0;
+      if (packId === 1) enemy._dungeonEntrancePack = true;
       this.enemies.set(enemy.id, enemy);
       if (this.io) {
         this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
       }
       this._emitEnemySummonVfx(enemy);
     }
+    this._dungeonPackSpawned = packId;
+  }
+
+  _spawnDungeonEntrancePack() {
+    this._spawnDungeonPack(DUNGEON_ENTRANCE_PACK, 1);
+  }
+
+  _onDungeonPackKill() {
+    if (!this.coopDungeonActive) return;
+    const current = this._dungeonPackSpawned;
+    if (!current || this._hasDungeonPack(current)) return;
+    if (current === 1) {
+      this._spawnDungeonPack(DUNGEON_BRIDGE_PACK, 2);
+    } else if (current === 2) {
+      this._spawnDungeonPack(DUNGEON_PRE_BOSS_PACK, 3);
+    }
   }
 
   _resetDungeonState() {
     this.coopDungeonActive = false;
+    this._dungeonPackSpawned = 0;
+  }
+
+  _resetSkyTempleState() {
+    this.coopSkyTempleActive = false;
+    this._skyTemplePackSpawned = false;
+  }
+
+  _spawnSkyTemplePack() {
+    if (!this.coopSkyTempleActive || this._skyTemplePackSpawned) return;
+    for (let i = 0; i < SKY_TEMPLE_PACK.length; i++) {
+      const spec = SKY_TEMPLE_PACK[i];
+      const campDef = GameRoom.CAMP_TYPES[spec.campColor] || GameRoom.CAMP_TYPES.red;
+      const enemy = this._buildEnemy(spec.type, 0, i, { x: spec.x, y: spec.y ?? 0, z: spec.z }, campDef);
+      this.enemies.set(enemy.id, enemy);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
+      }
+      this._emitEnemySummonVfx(enemy);
+    }
+    this._skyTemplePackSpawned = true;
   }
 
   beginDungeonRoom() {
@@ -5975,7 +6109,9 @@ class GameRoom {
     this._exploreSpawnSlot = 0;
     this._resetExploreCampState();
     this._resetDefenseState();
+    this._resetSkyTempleState();
     this.coopDungeonActive = true;
+    this._dungeonPackSpawned = 0;
     this.currentCoopRoomKind = 'dungeon';
     this.clearedCoopRoomKind = null;
     this.combatArenaActive = true;
@@ -6005,6 +6141,7 @@ class GameRoom {
         ...this._getExplorePayloadFields(),
         ...this._getDefensePayloadFields(),
         ...this._getDungeonPayloadFields(),
+        ...this._getSkyTemplePayloadFields(),
         ...this._getFaeRealmPayloadFields(),
         ...this._getIntroPayloadFields(),
         timestamp: Date.now(),
@@ -6029,6 +6166,93 @@ class GameRoom {
         x: DUNGEON_SPAWN_X + Math.sin(angle) * spawnRadius,
         y: DUNGEON_SPAWN_Y,
         z: DUNGEON_SPAWN_Z + Math.cos(angle) * spawnRadius,
+      };
+      player.rotation = { x: 0, y: 0, z: 0 };
+      idx++;
+    }
+    this.repositionAllBeastCompanionsNearOwners();
+  }
+
+  beginSkyTempleRoom() {
+    if (!this.gameStarted || this.gameMode !== 'coop') return false;
+    if (this.combatArenaActive || !this.isInCoopThronePrep()) return false;
+    for (const player of this.players.values()) {
+      if (!this._playerThronePrepReady(player)) return false;
+    }
+
+    this.removeThroneTrainingDummy();
+    this._clearAllCombatEnemies();
+    this.coopFaeRealmPending = false;
+    this.coopFaeRealmActive = false;
+    this.coopIntroPending = false;
+    this.coopIntroActive = false;
+    this.thronePortalOffer = [];
+    this.coopMainArenaPortalPhase = null;
+    this.coopBossThroneArena = false;
+    this.coopThroneBossKind = null;
+    this.coopExploreActive = false;
+    this.coopExploreSeed = 0;
+    this._stopExploreSpawns();
+    this._exploreSpawnSlot = 0;
+    this._resetExploreCampState();
+    this._resetDefenseState();
+    this._resetDungeonState();
+    this.coopSkyTempleActive = true;
+    this._skyTemplePackSpawned = false;
+    this.currentCoopRoomKind = 'sky_temple';
+    this.clearedCoopRoomKind = null;
+    this.combatArenaActive = true;
+    this.skeletonKillCount = 0;
+    this.bossSpawned = false;
+    this.merchantInventory = [];
+    this._resetMushroomState();
+
+    const coopCombatTransitionId = this._beginCoopCombatTransition({ spawnInitialWave: true });
+    this.teleportAllPlayersToSkyTempleSpawn();
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('combat-arena-entered', {
+        players: this.getPlayers(),
+        coopBossThroneArena: false,
+        coopThroneBossKind: null,
+        coopTerrainTheme: this.getCoopTerrainTheme(),
+        coopCurrentRoomKind: this.currentCoopRoomKind,
+        coopClearedRoomKind: null,
+        merchantInventory: this.getMerchantInventory(),
+        coopColoredRoomVisitIndex: null,
+        coopBossRoomVisitIndex: null,
+        coopCombatTransitionId,
+        coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
+        mushroomState: this.getMushroomState(),
+        ...this._getExplorePayloadFields(),
+        ...this._getDefensePayloadFields(),
+        ...this._getDungeonPayloadFields(),
+        ...this._getSkyTemplePayloadFields(),
+        ...this._getFaeRealmPayloadFields(),
+        ...this._getIntroPayloadFields(),
+        timestamp: Date.now(),
+      });
+    }
+    return true;
+  }
+
+  teleportAllPlayersToSkyTempleSpawn() {
+    if (this.gameMode === 'coop') {
+      this.coopRoomEntryToken += 1;
+      this.coopPostTeleportPositionGuardUntil = Date.now() + COOP_POST_TELEPORT_POSITION_GUARD_MS;
+      this._rollCoopSkyPresetForEntry('sky_temple');
+    }
+    const totalPlayers = Math.max(this.players.size, 1);
+    let idx = 0;
+    for (const player of this.players.values()) {
+      const angleStep = (Math.PI * 2) / Math.max(3, totalPlayers);
+      const angle = idx * angleStep;
+      const spawnRadius = totalPlayers <= 1 ? 0 : 0.75;
+      player.position = {
+        x: SKY_TEMPLE_SPAWN_X + Math.sin(angle) * spawnRadius,
+        y: SKY_TEMPLE_SPAWN_Y,
+        z: SKY_TEMPLE_SPAWN_Z + Math.cos(angle) * spawnRadius,
       };
       player.rotation = { x: 0, y: 0, z: 0 };
       idx++;
@@ -6095,13 +6319,13 @@ class GameRoom {
   }
 
   _defenseWildernessLevel(waveIndex) {
-    return Math.min(4, Math.max(1, Math.ceil(waveIndex / 5)));
+    return Math.min(4, Math.max(1, Math.ceil(waveIndex / DEFENSE_WAVES_PER_LEVEL)));
   }
 
   _defenseTowerSummonCount(waveIndex) {
-    if (waveIndex <= 5) return 1;
-    if (waveIndex <= 10) return Math.random() < 0.5 ? 1 : 2;
-    if (waveIndex <= 15) return 2;
+    if (waveIndex <= DEFENSE_WAVES_PER_LEVEL) return 1;
+    if (waveIndex <= DEFENSE_WAVES_PER_LEVEL * 2) return Math.random() < 0.5 ? 1 : 2;
+    if (waveIndex <= DEFENSE_WAVES_PER_LEVEL * 3) return 2;
     return Math.random() < 0.5 ? 2 : 3;
   }
 
@@ -6133,29 +6357,38 @@ class GameRoom {
 
   _startDefenseWave(waveIndex) {
     if (!this.coopDefenseActive || !this.gameStarted || !this.combatArenaActive) return;
-    if (this.coopDefenseWaveState === 'failed' || this.coopDefenseWaveState === 'complete') return;
+    if (this.coopDefenseWaveState === 'complete') return;
     this._stopDefenseTimers();
     const idx = Math.max(1, Math.floor(waveIndex));
     if (idx > DEFENSE_WAVE_COUNT) {
       this.coopDefenseWaveState = 'complete';
       this.coopDefenseBreakEndsAt = 0;
+      this.coopDefenseGrantRoomBoon = false;
+      this.coopDefenseGrantClassBoon = false;
+      this.coopDefenseMilestoneWave = 0;
       this._emitDefenseWaveState();
       return;
     }
     this.coopDefenseWave = idx;
     this.coopDefenseWaveState = 'active';
     this.coopDefenseBreakEndsAt = 0;
+    this.coopDefenseGrantRoomBoon = false;
+    this.coopDefenseGrantClassBoon = false;
+    this.coopDefenseMilestoneWave = 0;
 
     const liveTowers = this._defenseLiveTowers();
-    for (let i = liveTowers.length - 1; i > 0; i--) {
+    const spawnSlots = liveTowers.length > 0
+      ? liveTowers
+      : DEFENSE_TOWER_DEFS.map((def) => ({ def, tower: { position: { x: def.x, z: def.z } } }));
+    for (let i = spawnSlots.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
-      const tmp = liveTowers[i];
-      liveTowers[i] = liveTowers[j];
-      liveTowers[j] = tmp;
+      const tmp = spawnSlots[i];
+      spawnSlots[i] = spawnSlots[j];
+      spawnSlots[j] = tmp;
     }
-    const summonCount = Math.min(this._defenseTowerSummonCount(idx), liveTowers.length);
+    const summonCount = Math.min(this._defenseTowerSummonCount(idx), spawnSlots.length);
     const level = this._defenseWildernessLevel(idx);
-    const chosen = liveTowers.slice(0, summonCount);
+    const chosen = spawnSlots.slice(0, summonCount);
 
     for (const { def, tower } of chosen) {
       const recipe = this._pickExploreWildernessRecipe(level);
@@ -6166,7 +6399,8 @@ class GameRoom {
         enemy._defenseWaveIndex = idx;
         enemy._defenseTowerId = def.id;
         this._emitEnemySummonVfx(enemy);
-        if (enemy.type !== 'titan' && this.enemyAI?.applyAlliedUnitThreat) {
+        const liveAlly = this.enemies.get(def.id);
+        if (enemy.type !== 'titan' && liveAlly && this.enemyAI?.applyAlliedUnitThreat) {
           this.enemyAI.applyAlliedUnitThreat(enemy.id, def.id, 200);
         }
       }
@@ -6179,10 +6413,22 @@ class GameRoom {
     }
   }
 
+  _applyDefenseWaveMilestones(clearedWave) {
+    this.coopDefenseMilestoneWave = clearedWave;
+    this.coopDefenseGrantRoomBoon = clearedWave > 0 && clearedWave % 4 === 0;
+    this.coopDefenseGrantClassBoon = clearedWave > 0 && clearedWave % 7 === 0;
+    if (clearedWave > 0 && clearedWave % 10 === 0 && !this.coopDefenseFountainActive) {
+      this.coopDefenseFountainActive = true;
+      this.coopDefenseFountainUsed = false;
+    }
+  }
+
   _registerDefenseWaveKill() {
     if (!this.coopDefenseActive || this.coopDefenseWaveState !== 'active') return;
     if (this._countDefenseLiveWaveHostiles() > 0) return;
-    if (this.coopDefenseWave >= DEFENSE_WAVE_COUNT) {
+    const clearedWave = this.coopDefenseWave;
+    this._applyDefenseWaveMilestones(clearedWave);
+    if (clearedWave >= DEFENSE_WAVE_COUNT) {
       this.coopDefenseWaveState = 'complete';
       this.coopDefenseBreakEndsAt = 0;
       this._emitDefenseWaveState();
@@ -6191,50 +6437,12 @@ class GameRoom {
     this.coopDefenseWaveState = 'break';
     this.coopDefenseBreakEndsAt = Date.now() + DEFENSE_WAVE_BREAK_MS;
     this._emitDefenseWaveState();
-    const nextWave = this.coopDefenseWave + 1;
+    const nextWave = clearedWave + 1;
     this._stopDefenseTimers();
     this._defenseBreakTimer = setTimeout(() => {
       this._defenseBreakTimer = null;
       this._startDefenseWave(nextWave);
     }, DEFENSE_WAVE_BREAK_MS);
-  }
-
-  _onDefenseTowerDestroyed() {
-    if (!this.coopDefenseActive) return;
-    if (this._countDefenseLiveTowers() > 0) return;
-    this._failDefenseRoom();
-  }
-
-  _failDefenseRoom() {
-    if (!this.coopDefenseActive) return;
-    this._stopDefenseTimers();
-    this.coopDefenseWaveState = 'failed';
-    this.coopDefenseBreakEndsAt = 0;
-    const ids = [];
-    for (const enemy of this.enemies.values()) {
-      if (!enemy || this.isAlliedUnitEnemy(enemy)) continue;
-      if (enemy.isDying) continue;
-      ids.push(enemy.id);
-    }
-    for (const id of ids) {
-      const enemy = this.enemies.get(id);
-      if (!enemy) continue;
-      enemy.health = 0;
-      enemy.isDying = true;
-      if (this.enemyAI) this.enemyAI.removeEnemyAggro(id);
-      this._pruneEnemyMaps(id);
-      this.enemies.delete(id);
-      if (this.io) {
-        this.io.to(this.roomId).emit('enemy-removed', { enemyId: id, timestamp: Date.now() });
-      }
-    }
-    this._emitDefenseWaveState();
-    if (this.io) {
-      this.io.to(this.roomId).emit('coop-defense-failed', {
-        ...this._getDefensePayloadFields(),
-        timestamp: Date.now(),
-      });
-    }
   }
 
   _stopExploreSpawns() {
@@ -6249,6 +6457,10 @@ class GameRoom {
     if (this._exploreHungerTimer) {
       clearInterval(this._exploreHungerTimer);
       this._exploreHungerTimer = null;
+    }
+    if (this._exploreCathedralGoldTimer) {
+      clearInterval(this._exploreCathedralGoldTimer);
+      this._exploreCathedralGoldTimer = null;
     }
   }
 
@@ -6266,6 +6478,10 @@ class GameRoom {
     this._exploreHungerTimer = setInterval(() => {
       this._tickExploreHunger();
     }, 1000);
+    this._tickExploreCathedralGold();
+    this._exploreCathedralGoldTimer = setInterval(() => {
+      this._tickExploreCathedralGold();
+    }, exploreBuildings.EXPLORE_CATHEDRAL_GOLD_INTERVAL_MS);
   }
 
   _isPlayerHungerStarvingCritical(player, now = Date.now()) {
@@ -6414,6 +6630,25 @@ class GameRoom {
     this.io.to(this.roomId).emit('enemy-healed', { heals, timestamp: now });
   }
 
+  _tickExploreCathedralGold() {
+    if (!this.coopExploreActive || !this.gameStarted || this.gamePaused) return;
+    const live = this._countLiveExploreBuildingsOfType('cathedral');
+    if (live <= 0) return;
+    const gain = live * exploreBuildings.EXPLORE_CATHEDRAL_GOLD;
+    const now = Date.now();
+    for (const player of this.players.values()) {
+      if (!player || (player.health ?? 0) <= 0) continue;
+      player.gold = (player.gold || 0) + gain;
+      if (this.io) {
+        this.io.to(this.roomId).emit('player-gold-changed', {
+          playerId: player.id,
+          gold: player.gold,
+          timestamp: now,
+        });
+      }
+    }
+  }
+
   _getExplorePlayers() {
     return Array.from(this.players.values()).filter((p) => p && p.position);
   }
@@ -6446,6 +6681,11 @@ class GameRoom {
     }
     for (const pos of extraPositions) {
       if (Math.hypot(pos.x - x, pos.z - z) < memberSeparation) return false;
+    }
+    if (packCenterCheck && this.exploreCamps && this.exploreCamps.size > 0) {
+      for (const camp of this.exploreCamps.values()) {
+        if (Math.hypot((camp.x || 0) - x, (camp.z || 0) - z) < minEnemySeparation) return false;
+      }
     }
     if (
       this.coopExploreActive &&
@@ -7046,8 +7286,18 @@ class GameRoom {
     return true;
   }
 
-  /** Heal all players +100 HP and unlock the dual colored portals after intro room 4 ally choice. */
+  /** Heal all players +100 HP. Defense fountain is optional and despawns after one use. */
   useCoopFountain(playerId) {
+    if (this.coopDefenseActive && this.coopDefenseFountainActive && !this.coopDefenseFountainUsed) {
+      const trigger = this.players.get(playerId);
+      if (!trigger) return false;
+      this._applyCoopFountainHealAll(playerId);
+      this.coopDefenseFountainUsed = true;
+      this.coopDefenseFountainActive = false;
+      this._emitDefenseWaveState();
+      return true;
+    }
+
     if (this.currentCoopRoomKind === 'eden') {
       if (this.coopEdenFountainUsed) return false;
       const trigger = this.players.get(playerId);
@@ -8749,7 +8999,11 @@ class GameRoom {
     }
     if (this.gameMode !== 'coop' || !this.combatArenaActive || this.bossSpawned) return;
     if (this.coopExploreActive) return;
-    if (this.coopDungeonActive) return;
+    if (this.coopSkyTempleActive) return;
+    if (this.coopDungeonActive) {
+      this._onDungeonPackKill();
+      return;
+    }
     if (this.coopDefenseActive) {
       this._registerDefenseWaveKill();
       return;
@@ -9103,6 +9357,7 @@ class GameRoom {
     this._resetExploreCampState();
     this._resetDefenseState();
     this._resetDungeonState();
+    this._resetSkyTempleState();
 
     this.coopSunkenActive = false;
     this.coopSunkenRoomIndex = 0;
@@ -11210,6 +11465,8 @@ class GameRoom {
     if (newHealth <= 0) {
       const wood = this._exploreHarvestWood(
         exploreTreeConstants.exploreTreeWoodFromScale(inst.variant, inst.scale),
+        inst.x,
+        inst.z,
       );
       if (this.io) {
         this.io.to(this.roomId).emit('tree-destroyed', {
@@ -11286,6 +11543,8 @@ class GameRoom {
     if (newHealth <= 0) {
       const wood = this._exploreHarvestWood(
         exploreTreeConstants.exploreRootWoodFromScale(inst.scale),
+        inst.x,
+        inst.z,
       );
       if (this.io) {
         this.io.to(this.roomId).emit('root-destroyed', {
@@ -11343,10 +11602,12 @@ class GameRoom {
     };
   }
 
-  _exploreHarvestWood(amount) {
-    const n = Math.max(0, Math.floor(Number(amount) || 0));
-    if (this.exploreResearch?.greaterHarvest) return n * 2;
-    return n;
+  _exploreHarvestWood(amount, x, z) {
+    const base = Math.max(0, Math.floor(Number(amount) || 0));
+    const level = exploreWildernessLevel(x, z);
+    const withBonus = base + exploreTreeConstants.exploreWildernessWoodBonus(level);
+    if (this.exploreResearch?.greaterHarvest) return withBonus * 2;
+    return withBonus;
   }
 
   /**
@@ -11396,7 +11657,8 @@ class GameRoom {
       });
     }
     if (newHealth <= 0) {
-      const stone = exploreTreeConstants.exploreRockStoneFromScale(inst.scale);
+      const stone = exploreTreeConstants.exploreRockStoneFromScale(inst.scale)
+        + exploreTreeConstants.exploreWildernessStoneBonus(exploreWildernessLevel(inst.x, inst.z));
       if (this.io) {
         this.io.to(this.roomId).emit('rock-destroyed', {
           index: idx,
@@ -11509,9 +11771,68 @@ class GameRoom {
     return n;
   }
 
+  _countLiveExploreShrinesOrObelisks() {
+    return this._countLiveExploreBuildingsOfType('shrine')
+      + this._countLiveExploreBuildingsOfType('obelisk');
+  }
+
+  _emitExploreBuildingHp(buildings) {
+    if (!this.io || !Array.isArray(buildings) || buildings.length === 0) return;
+    this.io.to(this.roomId).emit('explore-building-hp', {
+      buildings,
+      timestamp: Date.now(),
+    });
+  }
+
+  /**
+   * Apply stacking cathedral HP bonus/penalty to other live player structures.
+   * @param {number} delta
+   * @param {string | null} excludeId
+   */
+  _applyExploreCathedralHpDelta(delta, excludeId = null) {
+    if (!delta) return;
+    const updates = [];
+    for (const enemy of this.enemies.values()) {
+      if (!enemy || enemy.id === excludeId) continue;
+      if (!exploreBuildings.isPlayerExploreBuildingType(enemy.type)) continue;
+      if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+      const prevMax = enemy.maxHealth ?? 0;
+      const nextMax = Math.max(1, prevMax + delta);
+      enemy.maxHealth = nextMax;
+      if (delta > 0) {
+        enemy.health = (enemy.health ?? 0) + delta;
+      } else {
+        enemy.health = Math.max(0, Math.min(enemy.health ?? 0, nextMax));
+      }
+      updates.push({
+        id: enemy.id,
+        health: enemy.health,
+        maxHealth: enemy.maxHealth,
+      });
+    }
+    this._emitExploreBuildingHp(updates);
+  }
+
+  _rollExploreCathedralOffer() {
+    const usedTypes = new Set();
+    const offer = [];
+    const count = exploreBuildings.EXPLORE_CATHEDRAL_OFFER_COUNT || 4;
+    for (let i = 0; i < count; i += 1) {
+      const pick = this._rollDreamLayerCombinedLegendary(usedTypes);
+      if (!pick) break;
+      offer.push({
+        type: pick.type,
+        label: pick.label,
+        description: dreamLayerItems.getDreamLayerItemDescription(pick.type),
+      });
+    }
+    return offer;
+  }
+
   _removeExploreBuildingInstant(enemy) {
     if (!enemy?.id) return;
     const id = enemy.id;
+    const reverseCathedralHp = this.coopExploreActive && enemy.type === 'cathedral';
     if (this.enemyAI) {
       if (typeof this.enemyAI.clearZombieAsAggroTarget === 'function') {
         this.enemyAI.clearZombieAsAggroTarget(id);
@@ -11522,6 +11843,9 @@ class GameRoom {
       this._pruneEnemyMaps(id);
     }
     this.enemies.delete(id);
+    if (reverseCathedralHp) {
+      this._applyExploreCathedralHpDelta(-exploreBuildings.EXPLORE_CATHEDRAL_HP_BONUS, id);
+    }
     if (this.io) {
       this.io.to(this.roomId).emit('enemy-removed', {
         enemyId: id,
@@ -12005,7 +12329,9 @@ class GameRoom {
 
       const cost = id === 'greater-harvest'
         ? exploreBuildings.EXPLORE_GREATER_HARVEST_FLOW_COST
-        : exploreBuildings.EXPLORE_RESEARCH_FLOW_COST;
+        : id === 'stone-breaker'
+          ? exploreBuildings.EXPLORE_STONE_BREAKER_FLOW_COST
+          : exploreBuildings.EXPLORE_RESEARCH_FLOW_COST;
       if ((player.flow || 0) < cost) {
         return { ok: false, reason: 'not_enough_flow' };
       }
@@ -12117,6 +12443,83 @@ class GameRoom {
     return { ok: true };
   }
 
+  _findNearestLiveCathedral(player, unusedOnly = true) {
+    if (!player?.position) return null;
+    let best = null;
+    let bestDistSq = exploreBuildings.EXPLORE_CATHEDRAL_INTERACT_RADIUS ** 2;
+    const px = player.position.x;
+    const pz = player.position.z;
+    for (const enemy of this.enemies.values()) {
+      if (!enemy || enemy.type !== 'cathedral') continue;
+      if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+      if (enemy.powered === false) continue;
+      if (unusedOnly && enemy.cathedralUsed) continue;
+      const dx = enemy.position.x - px;
+      const dz = enemy.position.z - pz;
+      const distSq = dx * dx + dz * dz;
+      if (distSq <= bestDistSq) {
+        bestDistSq = distSq;
+        best = enemy;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Claim a cathedral legendary. Marks the cathedral used (one item per building).
+   * @param {string} playerId
+   * @param {{ itemType: string }} payload
+   * @returns {{ ok: boolean, reason?: string }}
+   */
+  cathedralClaim(playerId, payload) {
+    if (!this.coopExploreActive || !this.gameStarted || !this.combatArenaActive) {
+      return { ok: false, reason: 'not_explore' };
+    }
+    const player = this.players.get(playerId);
+    if (!player || player.health <= 0) return { ok: false, reason: 'invalid_player' };
+
+    const itemType = typeof payload?.itemType === 'string' ? payload.itemType : '';
+    if (!itemType) return { ok: false, reason: 'invalid_item' };
+
+    const cathedral = this._findNearestLiveCathedral(player, true);
+    if (!cathedral) return { ok: false, reason: 'no_cathedral' };
+    if (cathedral.cathedralUsed) return { ok: false, reason: 'already_used' };
+
+    const offer = Array.isArray(cathedral.cathedralOffer) ? cathedral.cathedralOffer : [];
+    const entry = offer.find((option) => option && option.type === itemType);
+    if (!entry) return { ok: false, reason: 'invalid_item' };
+
+    cathedral.cathedralUsed = true;
+    const item = {
+      id: `cathedral-${cathedral.id}-${itemType}-${Date.now()}`,
+      type: itemType,
+      label: entry.label || dreamLayerItems.getDreamLayerItemLabel(itemType),
+      category: 'boss_drop',
+      rarity: 'legendary',
+      pickedUpAt: Date.now(),
+    };
+    this._registerPlayerDreamLayerItem(playerId, player, itemType);
+    if (this.io) {
+      this.io.to(this.roomId).emit('explore-cathedral-used', {
+        id: cathedral.id,
+        cathedralUsed: true,
+        timestamp: Date.now(),
+      });
+      this.io.to(this.roomId).emit('item-picked-up', {
+        itemId: item.id,
+        playerId,
+        item,
+        timestamp: Date.now(),
+      });
+      this.io.to(playerId).emit('explore-cathedral-claimed', {
+        cathedralId: cathedral.id,
+        itemType,
+        timestamp: Date.now(),
+      });
+    }
+    return { ok: true };
+  }
+
   /**
    * Buy a class talent from a nearby obelisk for gold.
    * @param {string} playerId
@@ -12198,7 +12601,9 @@ class GameRoom {
 
     const bx = barracks.position?.x ?? 0;
     const bz = barracks.position?.z ?? 0;
-    const angle = Math.atan2(bx, bz) + Math.PI;
+    const liveAllies = this._countLiveExplorePurchasedAllies();
+    const baseAngle = Math.atan2(bx, bz) + Math.PI;
+    const angle = baseAngle + liveAllies * ((Math.PI * 2) / 5);
     const spawnX = bx + Math.sin(angle) * 2.4;
     const spawnZ = bz + Math.cos(angle) * 2.4;
     this._exploreAllySeq = (this._exploreAllySeq || 0) + 1;
@@ -12257,6 +12662,10 @@ class GameRoom {
     }
     if (exploreBuildings.exploreBuildingRequiresSpiritLounge(kind)
       && this._countLiveExploreBuildingsOfType('barracks') < 1) {
+      return { ok: false };
+    }
+    if (exploreBuildings.exploreBuildingRequiresShrineOrObelisk(kind)
+      && this._countLiveExploreShrinesOrObelisks() < 1) {
       return { ok: false };
     }
     if (exploreBuildings.isExploreTowerType(kind)
@@ -12331,13 +12740,16 @@ class GameRoom {
     }
 
     const id = `${kind}-${++this._exploreBuildingSeq}-${Date.now().toString(36)}`;
+    const otherCathedrals = this._countLiveExploreBuildingsOfType('cathedral');
+    const hpBonus = otherCathedrals * (exploreBuildings.EXPLORE_CATHEDRAL_HP_BONUS || 0);
+    const maxHp = def.maxHp + hpBonus;
     const building = {
       id,
       type: kind,
       position: { x: px, y: 0, z: pz },
       rotation: 0,
-      health: def.maxHp,
-      maxHealth: def.maxHp,
+      health: maxHp,
+      maxHealth: maxHp,
       isDying: false,
       moveSpeed: 0,
       alliedUnit: true,
@@ -12348,6 +12760,10 @@ class GameRoom {
     };
     if (kind === 'shrine') {
       building.shrineUsed = false;
+    }
+    if (kind === 'cathedral') {
+      building.cathedralUsed = false;
+      building.cathedralOffer = this._rollExploreCathedralOffer();
     }
     if (kind === 'tower') {
       const profile = EXPLORE_TOWER_BOLT_PROFILE;
@@ -12380,6 +12796,9 @@ class GameRoom {
       building.attackArrowSpeed = SIEGE_TOWER_ARROW_SPEED;
     }
     this.enemies.set(id, building);
+    if (kind === 'cathedral') {
+      this._applyExploreCathedralHpDelta(exploreBuildings.EXPLORE_CATHEDRAL_HP_BONUS, id);
+    }
     if (this.io) {
       this.io.to(this.roomId).emit('enemy-spawned', {
         enemy: building,
@@ -12518,6 +12937,12 @@ class GameRoom {
         this.coopWaveQuota = 0;
         this.skeletonKillCount = 0;
         this._spawnDungeonEntrancePack();
+      } else if (this.coopSkyTempleActive) {
+        this.sessionCampTypes = ['sky_temple'];
+        this.currentCoopRoomKind = 'sky_temple';
+        this.coopWaveQuota = 0;
+        this.skeletonKillCount = 0;
+        this._spawnSkyTemplePack();
       } else if (this.coopDefenseActive) {
         this.sessionCampTypes = ['defense'];
         this.currentCoopRoomKind = 'defense';
@@ -14872,11 +15297,11 @@ class GameRoom {
       });
     }
 
-    // Sniper Hunter's Mark detonation — Perfect Shot consumes mark → stagger lightning.
+    // Sniper Hunter's Mark detonation — Perfect Shot or Tempest Rounds consumes mark → stagger lightning.
     if (
       !result.wasKilled &&
       hitMeta &&
-      hitMeta.perfectShot &&
+      (hitMeta.perfectShot || hitMeta.tempestRoundsHit) &&
       damage > 0 &&
       !enemy.isDying &&
       enemy.health > 0 &&
@@ -15040,11 +15465,11 @@ class GameRoom {
           this.enemyAI.clearZombieAsAggroTarget(enemyId);
           this.enemyAI.removeEnemyAggro(enemyId);
         }
-        if (enemy.type === 'allied-tower' && this.coopDefenseActive) {
-          this._onDefenseTowerDestroyed();
-        }
         if (enemy.type === 'fire-pit' && this.coopExploreActive) {
           this._onExploreFirePitDestroyed();
+        }
+        if (enemy.type === 'cathedral' && this.coopExploreActive) {
+          this._applyExploreCathedralHpDelta(-exploreBuildings.EXPLORE_CATHEDRAL_HP_BONUS, enemyId);
         }
         if (
           this.coopExploreActive
@@ -17421,13 +17846,16 @@ class GameRoom {
   spawnGoldDrop(position, amount, enemy = null) {
     if (!position || amount <= 0) return null;
     const dropId = `gold-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const sourceY = Number.isFinite(position.y)
+      ? position.y
+      : (Number.isFinite(enemy?.position?.y) ? enemy.position.y : 0);
     const drop = {
       id: dropId,
       amount: Math.floor(amount),
       pieceCount: Math.min(Math.floor(amount), GOLD_VISUAL_PIECE_CAP),
       position: {
         x: position.x,
-        y: 0.25,
+        y: this.coopDungeonActive ? sourceY + 0.25 : 0.25,
         z: position.z,
       },
       enemyType: enemy?.type || null,

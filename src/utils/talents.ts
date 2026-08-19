@@ -160,7 +160,7 @@ export const BACKSTAB_DOUBLE_STAB_MAX_CHARGES = 2;
 export const BACKSTAB_DOUBLE_STAB_INTERNAL_COOLDOWN_SEC = 0.75;
 
 /** Wind Shear — projectile tuning (local + replicated). */
-export const WIND_SHEAR_BASE_DAMAGE = 36;
+export const WIND_SHEAR_BASE_DAMAGE = 24;
 export const WIND_SHEAR_DAMAGE_PER_STRENGTH = 3;
 export const WIND_SHEAR_MAX_DISTANCE_UNITS = 8;
 /** Psionic Blades — flat proc damage per blade hit + Intellect scaling. */
@@ -1286,6 +1286,13 @@ export const WRATHFUL_SHOTS_PERFECT_CRIT_DAMAGE_MULT_ADD = 0.65;
 /** Wrathful Shots — Tempest Rounds burst arrows. */
 export const WRATHFUL_SHOTS_TEMPEST_CRIT_CHANCE_ADD = 0.2;
 export const WRATHFUL_SHOTS_TEMPEST_CRIT_DAMAGE_MULT_ADD = 0.2;
+/** Sniper + Tempest Rounds — flat bonus per AGILITY when horizontal range > TERMINAL_VELOCITY_MIN_RANGE (10). */
+export const TEMPEST_ROUNDS_LONG_RANGE_DAMAGE_PER_AGILITY = 1;
+
+/** Sniper Tempest Rounds long-range bonus: +1 per AGILITY. Caller must gate on Sniper + Tempest + range. */
+export function getTempestRoundsLongRangeBonusDamage(agility: number): number {
+  return TEMPEST_ROUNDS_LONG_RANGE_DAMAGE_PER_AGILITY * Math.max(0, agility);
+}
 
 /** Dual Coil — left/right offset for the twin Bow LMB spawns and perfect-shot beams (world units, half the pair’s separation is this distance from center). */
 export const DUAL_COIL_LATERAL_OFFSET = 0.16;
@@ -2289,7 +2296,7 @@ export const tempestRoundsTalentDefinition: TalentDefinition = {
   id: TALENT_TEMPEST_ROUNDS,
   name: 'Tempest Rounds',
   description:
-    'Replaces the Bow\'s basic attack with a rapid three round burst attack.',
+    'Replaces the Bow\'s basic attack with a rapid three round burst attack. Sniper: burst hits detonate Hunter\'s Mark like a Perfect Shot, and deal +1 damage per AGILITY when fired from over 10 meters away.',
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 
@@ -4663,6 +4670,28 @@ export function pickRandomClassBoonForWeapon(
     talentLoadout,
   );
   const [id] = pickRandomDistinctFromPool(pool, 1);
+  return id ?? null;
+}
+
+/**
+ * Dungeon start: pick one of the LMB / Q / E / Dash mutex slots (equal chance per available slot),
+ * then one unowned talent from that slot.
+ */
+export function pickRandomMutexRoomBoonForWeapon(
+  weapon: WeaponType,
+  abilityLoadout: AbilityLoadout | null | undefined,
+  talentLoadout?: TalentLoadout | null,
+  rng: () => number = Math.random,
+): TalentId | null {
+  const groups = [
+    ...getOrderedWeaponAbilityRoomBoonMutexGroups(weapon, abilityLoadout),
+    ROOM_BOOM_DASH_BOON_MUTEX_GROUP,
+  ]
+    .map((group) => excludeOwnedTalentsFromBoonPool([...group], talentLoadout))
+    .filter((group) => group.length > 0);
+  if (groups.length === 0) return null;
+  const group = groups[Math.floor(rng() * groups.length)]!;
+  const [id] = pickRandomDistinctFromPool(group, 1, rng);
   return id ?? null;
 }
 

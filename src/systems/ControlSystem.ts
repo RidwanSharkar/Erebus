@@ -185,6 +185,7 @@ import {
   WRATHFUL_SHOTS_PERFECT_CRIT_DAMAGE_MULT_ADD,
   WRATHFUL_SHOTS_TEMPEST_CRIT_CHANCE_ADD,
   WRATHFUL_SHOTS_TEMPEST_CRIT_DAMAGE_MULT_ADD,
+  getTempestRoundsLongRangeBonusDamage,
   resolveTempestBurstTheme,
   CYCLONE_RUSH_CHARGE_COOLDOWN_SEC,
   shouldApplyCycloneRushTalent,
@@ -4719,8 +4720,8 @@ export class ControlSystem extends System {
   }
 
   /**
-   * Sniper Hunter's Mark: Perfect Shot on a marked enemy detonates stagger lightning.
-   * Solo only — coop detonation is server-authored from `perfectShot` hit meta.
+   * Sniper Hunter's Mark: Perfect Shot or Tempest Rounds on a marked enemy detonates stagger lightning.
+   * Solo only — coop detonation is server-authored from `perfectShot` / `tempestRoundsHit` hit meta.
    */
   public trySniperHuntersMarkDetonate(target: Entity): { position: Vector3 } | null {
     if (this.currentWeapon !== WeaponType.BOW || !isSniperBowAspect(this.weaponAspect)) return null;
@@ -8204,6 +8205,29 @@ export class ControlSystem extends System {
       this.abilityLoadout,
     );
     return getTerminalVelocityBonusDamage(agility);
+  }
+
+  /**
+   * Sniper + Tempest Rounds — +1 per AGILITY when horizontal shot-origin→target distance > 10.
+   * Applied to burst arrows in ProjectileSystem before crit (stacks with Wrathful / Tempest crit).
+   */
+  public getTempestRoundsLongRangeBonusAtRange(horizontalDistance: number): number {
+    if (
+      this.currentWeapon !== WeaponType.BOW ||
+      !isSniperBowAspect(this.weaponAspect) ||
+      !this.isBowTempestRoundsActive()
+    ) {
+      return 0;
+    }
+    if (!qualifiesForTerminalVelocityRange(horizontalDistance)) {
+      return 0;
+    }
+    const agility = getEffectiveAgilityWithTalentBonuses(
+      this.allocatedPlayerStats,
+      this.talentLoadout,
+      this.abilityLoadout,
+    );
+    return getTempestRoundsLongRangeBonusDamage(agility);
   }
 
   /** Tempest Rounds: P passive unlock or co-op talent — used for bow crit bonus in DamageCalculator. */

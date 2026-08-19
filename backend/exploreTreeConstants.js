@@ -36,6 +36,10 @@ function exploreTreeWoodFromScale(variant, scale) {
   return Math.round(range[0] + t * (range[1] - range[0]));
 }
 
+function exploreWildernessWoodBonus(level) {
+  return (Math.min(4, Math.max(1, Math.floor(level) || 1)) - 1) * 20;
+}
+
 const EXPLORE_ROOT_MAX_HP = 750;
 const EXPLORE_ROOT_HP_MIN = 375;
 const EXPLORE_ROOT_HP_MAX = 750;
@@ -88,6 +92,10 @@ function exploreRockStoneFromScale(scale) {
   return Math.round(EXPLORE_ROCK_STONE_MIN + t * (EXPLORE_ROCK_STONE_MAX - EXPLORE_ROCK_STONE_MIN));
 }
 
+function exploreWildernessStoneBonus(level) {
+  return (Math.min(4, Math.max(1, Math.floor(level) || 1)) - 1) * 30;
+}
+
 const EXPLORE_SPINE_SCALE_MIN = 0.7;
 const EXPLORE_SPINE_SCALE_RANGE = 1.1;
 const EXPLORE_SPINE_HP_MIN = 500;
@@ -122,6 +130,7 @@ module.exports = {
   exploreTreeMaxHpFromScale,
   exploreTreeCombatRadius,
   exploreTreeWoodFromScale,
+  exploreWildernessWoodBonus,
   EXPLORE_ROOT_MAX_HP,
   EXPLORE_ROOT_MAX_DAMAGE_PER_HIT,
   EXPLORE_ROOT_DAMAGE_RANGE,
@@ -135,6 +144,7 @@ module.exports = {
   exploreRockMaxHpFromScale,
   exploreRockCombatRadius,
   exploreRockStoneFromScale,
+  exploreWildernessStoneBonus,
   EXPLORE_SPINE_HP_MIN,
   EXPLORE_SPINE_HP_MAX,
   EXPLORE_SPINE_DAMAGE_RANGE,

@@ -9,7 +9,8 @@ export type ExploreBuildingKind =
   | 'research-station'
   | 'shrine'
   | 'obelisk'
-  | 'shield-battery';
+  | 'shield-battery'
+  | 'cathedral';
 
 export type ExploreBuildMenuView = 'root' | 'towers';
 
@@ -34,7 +35,7 @@ export const EXPLORE_BUILDING_PLACE_MAX_DIST = 32;
 export const EXPLORE_BUILDING_FIRE_PIT_RANGE = 20;
 
 /** Live explore towers (watch + mage + siege) allowed at once. */
-export const EXPLORE_MAX_TOWERS = 4;
+export const EXPLORE_MAX_TOWERS = 5;
 
 /** Collision / placement disc — slightly tighter than the visual fireplace footprint. */
 export const FIRE_PIT_HULL_RADIUS = 0.85;
@@ -53,11 +54,26 @@ export const OBELISK_HULL_RADIUS = 1.5;
 /** Matches fire-pit collision — small utility structure. */
 export const SHIELD_BATTERY_HULL_RADIUS = FIRE_PIT_HULL_RADIUS;
 
+/** Original Spirit Lounge footprint — 4-unit visual diameter. */
+export const CATHEDRAL_HULL_RADIUS = 2.0;
+
 /** XZ range of a live shield battery's structure heal aura. */
 export const EXPLORE_SHIELD_BATTERY_HEAL_RANGE = 5;
 
 /** HP restored per second per overlapping shield battery. */
 export const EXPLORE_SHIELD_BATTERY_HEAL_PER_SEC = 1;
+
+/** Extra max/current HP granted to other owned buildings per live cathedral. */
+export const EXPLORE_CATHEDRAL_HP_BONUS = 250;
+
+/** Gold granted to each living player per live cathedral. */
+export const EXPLORE_CATHEDRAL_GOLD = 4;
+
+/** Interval between cathedral gold ticks. */
+export const EXPLORE_CATHEDRAL_GOLD_INTERVAL_MS = 5000;
+
+/** Legendary choices shown at an unused cathedral. */
+export const EXPLORE_CATHEDRAL_OFFER_COUNT = 4;
 
 export const EXPLORE_TOWER_CATEGORY_HOTKEY = 'H';
 
@@ -77,7 +93,7 @@ export const EXPLORE_BUILDING_DEFS: Readonly<Record<ExploreBuildingKind, Explore
     hotkey: 'G',
     woodCost: 160,
     maxHp: 500,
-    hullRadius: 2.0,
+    hullRadius: RESEARCH_STATION_HULL_RADIUS,
     enabled: true,
   },
   'watch-tower': {
@@ -150,6 +166,17 @@ export const EXPLORE_BUILDING_DEFS: Readonly<Record<ExploreBuildingKind, Explore
     hullRadius: SHIELD_BATTERY_HULL_RADIUS,
     enabled: true,
   },
+  cathedral: {
+    kind: 'cathedral',
+    label: 'Cathedral',
+    hotkey: 'N',
+    woodCost: 100,
+    stoneCost: 400,
+    flowCost: 15,
+    maxHp: 1000,
+    hullRadius: CATHEDRAL_HULL_RADIUS,
+    enabled: true,
+  },
 });
 
 /** Root build-menu rows that place immediately (Tower is a category, not a kind). */
@@ -160,6 +187,7 @@ export const EXPLORE_BUILDING_ROOT_ORDER: readonly ExploreBuildingKind[] = [
   'shrine',
   'obelisk',
   'shield-battery',
+  'cathedral',
 ];
 
 export const EXPLORE_TOWER_PICK_ORDER: readonly ExploreBuildingKind[] = [
@@ -181,7 +209,8 @@ export function isPlayerExploreBuildingType(type: string | undefined | null): bo
     || type === 'research-station'
     || type === 'shrine'
     || type === 'obelisk'
-    || type === 'shield-battery';
+    || type === 'shield-battery'
+    || type === 'cathedral';
 }
 
 export function isExploreTowerType(type: string | undefined | null): boolean {
@@ -200,11 +229,16 @@ export function exploreBuildingRequiresFirePit(kind: ExploreBuildingKind): boole
     || kind === 'research-station'
     || kind === 'shrine'
     || kind === 'obelisk'
-    || kind === 'shield-battery';
+    || kind === 'shield-battery'
+    || kind === 'cathedral';
 }
 
 export function exploreBuildingRequiresSpiritLounge(kind: ExploreBuildingKind): boolean {
   return kind === 'shrine' || kind === 'obelisk';
+}
+
+export function exploreBuildingRequiresShrineOrObelisk(kind: ExploreBuildingKind): boolean {
+  return kind === 'cathedral';
 }
 
 export function isWithinExploreFirePitRange(
@@ -243,6 +277,17 @@ export const EXPLORE_MEAT_STACK_CAP = 20;
 /** Hunger cap. At this value, starvation damage begins. */
 export const EXPLORE_HUNGER_MAX = 100;
 
+/** Hunger at or below this grants the explore low-hunger max-energy bonus. */
+export const EXPLORE_LOW_HUNGER_MAX = 50;
+
+/** Stacking max-energy granted while exploring at or below EXPLORE_LOW_HUNGER_MAX. */
+export const EXPLORE_LOW_HUNGER_MAX_ENERGY_BONUS = 50;
+
+export function getExploreLowHungerMaxEnergyBonus(hunger: number, exploreActive: boolean): number {
+  if (!exploreActive) return 0;
+  return hunger <= EXPLORE_LOW_HUNGER_MAX ? EXPLORE_LOW_HUNGER_MAX_ENERGY_BONUS : 0;
+}
+
 /** Hunger gained once per this interval while exploring. */
 export const EXPLORE_HUNGER_GAIN_INTERVAL_MS = 5000;
 
@@ -269,6 +314,15 @@ export const EXPLORE_SHRINE_INTERACT_RADIUS = 3.5;
 
 /** Interact radius to open obelisk talent shop UI. */
 export const EXPLORE_OBELISK_INTERACT_RADIUS = 3.5;
+
+/** Interact radius to open cathedral legendary UI. */
+export const EXPLORE_CATHEDRAL_INTERACT_RADIUS = 3.5;
+
+export interface ExploreCathedralOfferEntry {
+  type: string;
+  label: string;
+  description: string;
+}
 
 export type ExploreShrineGiftId = 'inferno' | 'tempest' | 'abyss' | 'plague';
 
@@ -320,11 +374,14 @@ export const EXPLORE_OBELISK_TALENT_GOLD_COST = 500;
 
 export type ExploreResearchUpgradeId = 'stone-breaker' | 'soul-stealer' | 'spirit-lineage' | 'greater-harvest';
 
-/** Flow cost per one-shot research upgrade (Stone Breaker / Soul Stealer). */
+/** Flow cost for Soul Stealer research upgrade. */
 export const EXPLORE_RESEARCH_FLOW_COST = 10;
 
+/** Flow cost for Stone Breaker research upgrade. */
+export const EXPLORE_STONE_BREAKER_FLOW_COST = 5;
+
 /** Flow cost for Greater Harvest (doubles tree/root wood for the run). */
-export const EXPLORE_GREATER_HARVEST_FLOW_COST = 20;
+export const EXPLORE_GREATER_HARVEST_FLOW_COST = 15;
 
 /** Spirit Lineage ranks: 0 (cap 1) through 4 (cap 5). */
 export const EXPLORE_SPIRIT_LINEAGE_MAX_RANK = 4;
@@ -385,6 +442,7 @@ export function normalizeExploreResearch(raw: unknown): ExploreResearchState {
 }
 
 export function getExploreResearchFlowCost(id: ExploreResearchUpgradeId): number {
+  if (id === 'stone-breaker') return EXPLORE_STONE_BREAKER_FLOW_COST;
   if (id === 'greater-harvest') return EXPLORE_GREATER_HARVEST_FLOW_COST;
   return EXPLORE_RESEARCH_FLOW_COST;
 }

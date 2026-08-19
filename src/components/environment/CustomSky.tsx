@@ -794,6 +794,30 @@ export const RANDOM_SKY_PRESETS: readonly CustomSkyPreset[] = [
 
 export const RANDOM_SKY_PRESET_COUNT = RANDOM_SKY_PRESETS.length;
 
+/**
+ * Sky Temple only — random blue shades.
+ * Keep count in sync with `COOP_SKY_TEMPLE_BLUE_SKY_PRESET_COUNT` in backend/coopSkyPresets.js.
+ */
+export const SKY_TEMPLE_BLUE_SKY_PRESETS: readonly CustomSkyPreset[] = [
+  'throneBlue',
+  'trialLightBlue',
+  'blue',
+  'steelBlue',
+  'sapphireNoon',
+  'indigoNight',
+  'stormSlate',
+] as const;
+
+export const SKY_TEMPLE_BLUE_SKY_PRESET_COUNT = SKY_TEMPLE_BLUE_SKY_PRESETS.length;
+
+export function resolveSkyTempleSkyPresetByIndex(index: number): CustomSkyPreset {
+  const n = SKY_TEMPLE_BLUE_SKY_PRESET_COUNT;
+  if (n <= 0) return 'throneBlue';
+  const i = Number.isFinite(index) ? Math.floor(index) : 0;
+  const wrapped = ((i % n) + n) % n;
+  return SKY_TEMPLE_BLUE_SKY_PRESETS[wrapped] ?? 'throneBlue';
+}
+
 export function resolveSkyPresetByIndex(index: number): CustomSkyPreset {
   const n = RANDOM_SKY_PRESET_COUNT;
   if (n <= 0) return 'throneBlue';

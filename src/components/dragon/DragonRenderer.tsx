@@ -23,6 +23,10 @@ import { Movement } from '@/ecs/components/Movement';
 import { Transform } from '@/ecs/components/Transform';
 import { Health } from '@/ecs/components/Health';
 import { Enemy, EnemyType } from '@/ecs/components/Enemy';
+import { DestructibleRock } from '@/ecs/components/DestructibleRock';
+import { DestructibleRoot } from '@/ecs/components/DestructibleRoot';
+import { DestructibleSpine } from '@/ecs/components/DestructibleSpine';
+import { DestructibleTree } from '@/ecs/components/DestructibleTree';
 import { CombatSystem } from '@/systems/CombatSystem';
 import { calculateDamage } from '@/core/DamageCalculator';
 import { ReanimateRef } from '../weapons/Reanimate';
@@ -40,6 +44,7 @@ import {
 } from '@/utils/talents';
 import type { WeaponAspect } from '@/utils/weaponAspects';
 import { isRunebladeDeathdealerAspect } from '@/utils/weaponAspects';
+import type { Entity } from '@/ecs/Entity';
 
 const _chargeDirScratch = new Vector3();
 const _cameraDirScratch = new Vector3();
@@ -97,11 +102,18 @@ function writeDashChargesRef(target: DashChargeStatus[], source: DashChargeStatu
  * `Enemy` component for gameplay; exclude them from Sword/Bow/Runeblade client melee lists so local
  * swing hitboxes / `runeblade-slash-impact` never treat them as targets. Mirrors `userData` set in
  * CoopGameScene when syncing server enemies.
+ *
+ * Explore trees/roots/rocks/spines stay in `queryWeaponHittableEntities` for projectiles, but must
+ * not appear in melee `enemyData` — they already have dedicated `*Targets` / `on*Hit` loops, and
+ * including both paths double-emits server damage + floating numbers.
  */
-function shouldExcludeFromWeaponEnemyData(entity: {
-  userData?: { isCoopAlliedUnit?: boolean; coopServerEnemyType?: string };
-}): boolean {
-  return isCoopPlayerAllyEntity(entity);
+function shouldExcludeFromWeaponEnemyData(entity: Entity): boolean {
+  if (isCoopPlayerAllyEntity(entity)) return true;
+  if (entity.getComponent(DestructibleTree)) return true;
+  if (entity.getComponent(DestructibleRoot)) return true;
+  if (entity.getComponent(DestructibleRock)) return true;
+  if (entity.getComponent(DestructibleSpine)) return true;
+  return false;
 }
 
 interface DragonRendererProps {

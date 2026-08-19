@@ -69,8 +69,8 @@ function BarracksRenderer({
     <group ref={setGroupRef} rotation={[0, rotation, 0]} visible={!isDying || opacity.current > 0.02}>
       <SpiritLounge />
       {!powered && !isDying && (
-        <mesh position={[0, 1.85, 0]}>
-          <cylinderGeometry args={[1.85, 2.05, 3.7, 10]} />
+        <mesh position={[0, 1.45, 0]}>
+          <cylinderGeometry args={[1.55, 1.7, 2.9, 10]} />
           <meshBasicMaterial color="#0b1220" transparent opacity={0.38} depthWrite={false} />
         </mesh>
       )}

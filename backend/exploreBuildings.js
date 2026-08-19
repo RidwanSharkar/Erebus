@@ -2,15 +2,20 @@
 
 const EXPLORE_BUILDING_PLACE_MAX_DIST = 32;
 const EXPLORE_BUILDING_FIRE_PIT_RANGE = 20;
-const EXPLORE_MAX_TOWERS = 4;
+const EXPLORE_MAX_TOWERS = 5;
 const FIRE_PIT_HULL_RADIUS = 0.85;
 const EXPLORE_TOWER_HULL_RADIUS = 1.4;
 const RESEARCH_STATION_HULL_RADIUS = 1.6;
 const SHRINE_HULL_RADIUS = 1.6;
 const OBELISK_HULL_RADIUS = 1.5;
 const SHIELD_BATTERY_HULL_RADIUS = FIRE_PIT_HULL_RADIUS;
+const CATHEDRAL_HULL_RADIUS = 2.0;
 const EXPLORE_SHIELD_BATTERY_HEAL_RANGE = 5;
 const EXPLORE_SHIELD_BATTERY_HEAL_PER_SEC = 1;
+const EXPLORE_CATHEDRAL_HP_BONUS = 250;
+const EXPLORE_CATHEDRAL_GOLD = 4;
+const EXPLORE_CATHEDRAL_GOLD_INTERVAL_MS = 5000;
+const EXPLORE_CATHEDRAL_OFFER_COUNT = 4;
 
 const EXPLORE_BUILDING_DEFS = Object.freeze({
   'fire-pit': Object.freeze({
@@ -28,7 +33,7 @@ const EXPLORE_BUILDING_DEFS = Object.freeze({
     hotkey: 'G',
     woodCost: 160,
     maxHp: 500,
-    hullRadius: 2.0,
+    hullRadius: RESEARCH_STATION_HULL_RADIUS,
     enabled: true,
   }),
   'watch-tower': Object.freeze({
@@ -101,6 +106,17 @@ const EXPLORE_BUILDING_DEFS = Object.freeze({
     hullRadius: SHIELD_BATTERY_HULL_RADIUS,
     enabled: true,
   }),
+  cathedral: Object.freeze({
+    kind: 'cathedral',
+    label: 'Cathedral',
+    hotkey: 'N',
+    woodCost: 100,
+    stoneCost: 400,
+    flowCost: 15,
+    maxHp: 1000,
+    hullRadius: CATHEDRAL_HULL_RADIUS,
+    enabled: true,
+  }),
 });
 
 const EXPLORE_BARRACKS_ALLY_GOLD_COST = 50;
@@ -116,7 +132,8 @@ const EXPLORE_HUNGER_CRITICAL_AFTER_MS = 60000;
 const EXPLORE_HUNGER_CRITICAL_DPS = 10;
 const EXPLORE_RESEARCH_INTERACT_RADIUS = 3.5;
 const EXPLORE_RESEARCH_FLOW_COST = 10;
-const EXPLORE_GREATER_HARVEST_FLOW_COST = 20;
+const EXPLORE_STONE_BREAKER_FLOW_COST = 5;
+const EXPLORE_GREATER_HARVEST_FLOW_COST = 15;
 const EXPLORE_SPIRIT_LINEAGE_MAX_RANK = 4;
 const EXPLORE_SPIRIT_LINEAGE_COSTS = Object.freeze([10, 15, 20, 25]);
 
@@ -133,6 +150,7 @@ function getSpiritLineageNextCost(spiritLineageRank) {
 
 const EXPLORE_SHRINE_INTERACT_RADIUS = 3.5;
 const EXPLORE_OBELISK_INTERACT_RADIUS = 3.5;
+const EXPLORE_CATHEDRAL_INTERACT_RADIUS = 3.5;
 const EXPLORE_OBELISK_TALENT_GOLD_COST = 500;
 
 const EXPLORE_SHRINE_GIFT_IDS = Object.freeze(['inferno', 'tempest', 'abyss', 'plague']);
@@ -199,7 +217,8 @@ function isPlayerExploreBuildingType(type) {
     || type === 'research-station'
     || type === 'shrine'
     || type === 'obelisk'
-    || type === 'shield-battery';
+    || type === 'shield-battery'
+    || type === 'cathedral';
 }
 
 function isExploreTowerType(type) {
@@ -218,11 +237,16 @@ function exploreBuildingRequiresFirePit(kind) {
     || kind === 'research-station'
     || kind === 'shrine'
     || kind === 'obelisk'
-    || kind === 'shield-battery';
+    || kind === 'shield-battery'
+    || kind === 'cathedral';
 }
 
 function exploreBuildingRequiresSpiritLounge(kind) {
   return kind === 'shrine' || kind === 'obelisk';
+}
+
+function exploreBuildingRequiresShrineOrObelisk(kind) {
+  return kind === 'cathedral';
 }
 
 function isExploreShrineGiftId(value) {
@@ -243,8 +267,13 @@ module.exports = {
   SHRINE_HULL_RADIUS,
   OBELISK_HULL_RADIUS,
   SHIELD_BATTERY_HULL_RADIUS,
+  CATHEDRAL_HULL_RADIUS,
   EXPLORE_SHIELD_BATTERY_HEAL_RANGE,
   EXPLORE_SHIELD_BATTERY_HEAL_PER_SEC,
+  EXPLORE_CATHEDRAL_HP_BONUS,
+  EXPLORE_CATHEDRAL_GOLD,
+  EXPLORE_CATHEDRAL_GOLD_INTERVAL_MS,
+  EXPLORE_CATHEDRAL_OFFER_COUNT,
   EXPLORE_BUILDING_DEFS,
   EXPLORE_BARRACKS_ALLY_GOLD_COST,
   EXPLORE_BARRACKS_INTERACT_RADIUS,
@@ -259,11 +288,13 @@ module.exports = {
   EXPLORE_HUNGER_CRITICAL_DPS,
   EXPLORE_RESEARCH_INTERACT_RADIUS,
   EXPLORE_RESEARCH_FLOW_COST,
+  EXPLORE_STONE_BREAKER_FLOW_COST,
   EXPLORE_GREATER_HARVEST_FLOW_COST,
   EXPLORE_SPIRIT_LINEAGE_MAX_RANK,
   EXPLORE_SPIRIT_LINEAGE_COSTS,
   EXPLORE_SHRINE_INTERACT_RADIUS,
   EXPLORE_OBELISK_INTERACT_RADIUS,
+  EXPLORE_CATHEDRAL_INTERACT_RADIUS,
   EXPLORE_OBELISK_TALENT_GOLD_COST,
   getExploreBuildingDef,
   isPlayerExploreBuildingType,
@@ -271,6 +302,7 @@ module.exports = {
   isExploreUniqueReplaceKind,
   exploreBuildingRequiresFirePit,
   exploreBuildingRequiresSpiritLounge,
+  exploreBuildingRequiresShrineOrObelisk,
   getExploreAllyCap,
   getSpiritLineageNextCost,
   isExploreShrineGiftId,

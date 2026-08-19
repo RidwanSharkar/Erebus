@@ -26,8 +26,6 @@ export default function DefenseWaveHud() {
     label = `NEXT WAVE IN ${formatBreakSeconds(coopDefenseBreakEndsAt, now)}s`;
   } else if (coopDefenseWaveState === 'complete') {
     label = 'DEFENSE HELD';
-  } else if (coopDefenseWaveState === 'failed') {
-    label = 'TOWERS FALLEN';
   }
 
   return (

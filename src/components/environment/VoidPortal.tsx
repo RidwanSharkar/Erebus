@@ -21,7 +21,7 @@ export function voidPortalInteractRadius(visualRadius: number = VOID_PORTAL_RADI
   return visualRadius * (VOID_PORTAL_INTERACT_RADIUS / VOID_PORTAL_RADIUS);
 }
 
-export type VoidPortalScheme = 'void' | 'boss' | 'sunken' | 'eternity' | 'finale' | 'dungeon';
+export type VoidPortalScheme = 'void' | 'boss' | 'sunken' | 'eternity' | 'finale' | 'dungeon' | 'sky_temple';
 
 const VOID_PORTAL_SCHEMES: Record<
   VoidPortalScheme,
@@ -61,6 +61,14 @@ const VOID_PORTAL_SCHEMES: Record<
     light: '#22c55e',
     particleDim: [0.0, 0.14, 0.05],
     particleBright: [0.18, 1.0, 0.4],
+  },
+  sky_temple: {
+    energyDim: [0.18, 0.06, 0.0],
+    energyBright: [1.0, 0.45, 0.08],
+    rim: '#f97316',
+    light: '#ea580c',
+    particleDim: [0.2, 0.05, 0.0],
+    particleBright: [1.0, 0.55, 0.12],
   },
   eternity: {
     energyDim: [0.18, 0.06, 0.0],

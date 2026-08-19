@@ -4,7 +4,7 @@ export const DEFENSE_ROOM_SCALE = 1.35;
 export const DEFENSE_TOWER_TRIANGLE_RADIUS = 7;
 export const DEFENSE_TOWER_HULL_RADIUS = 1.4;
 export const DEFENSE_SPAWN_DISTANCE = 12;
-export const DEFENSE_WAVE_COUNT = 20;
+export const DEFENSE_WAVE_COUNT = 24;
 /** Crown world Y: nativeMaxY(8.405) × scale(0.893) + lift(0.286) ≈ 7.8. Keep in sync with `DefenseTower.tsx`. */
 export const DEFENSE_TOWER_MUZZLE_Y = 7.8;
 /** Chest-height impact so shots travel downward from the orb. */

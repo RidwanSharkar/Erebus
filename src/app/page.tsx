@@ -43,7 +43,7 @@ import CoopBossLootPickerModal from '../components/ui/CoopBossLootPickerModal';
 import CoopPetCompanionUpgradeModal from '../components/ui/CoopPetCompanionUpgradeModal';
 import type { PetCompanionUpgradeId } from '@/utils/petCompanionUpgrades';
 import { getPetCompanionUpgradeOptionsForKind } from '@/utils/petCompanionUpgrades';
-import { getExploreAllyCap, isExplorePurchasedAllyType } from '@/utils/exploreBuildings';
+import { getExploreAllyCap, isExplorePurchasedAllyType, type ExploreCathedralOfferEntry } from '@/utils/exploreBuildings';
 import DefeatRetryDialog from '../components/ui/DefeatRetryDialog';
 import {
   applyTalentIdToLoadout,
@@ -67,6 +67,7 @@ import {
   pickPrioritizedRoomBoonOptions,
   pickRandomDistinctFromPool,
   pickRandomClassBoonForWeapon,
+  pickRandomMutexRoomBoonForWeapon,
   TALENT_RAISE_DEAD,
   TALENT_METEOR_STRIKE,
   TALENT_COLDSNAP_ROOM,
@@ -301,6 +302,7 @@ function HomeContent() {
     barracksRecruitAlly,
     researchPurchase,
     shrineClaim,
+    cathedralClaim,
     obeliskBuyTalent,
     firePitHeal,
     registerDeepSanctumRewardClaimedHandler,
@@ -376,6 +378,11 @@ function HomeContent() {
     coopColoredRoomVisitIndex,
     coopBossRoomVisitIndex,
     coopBossThroneArena,
+    coopDefenseMilestoneWave,
+    coopDefenseGrantRoomBoon,
+    coopDefenseGrantClassBoon,
+    coopDefenseFountainActive,
+    coopDefenseFountainUsed,
     lateJoinCombatLoadout,
     reclaimedPlayerState,
     selectedArchetype,
@@ -464,6 +471,12 @@ function HomeContent() {
   const [shrinePanelOpen, setShrinePanelOpen] = useState(false);
   const onShrinePanelOpenChange = useCallback((open: boolean) => {
     setShrinePanelOpen(open);
+  }, []);
+  const [cathedralPanelOpen, setCathedralPanelOpen] = useState(false);
+  const [cathedralOffer, setCathedralOffer] = useState<ExploreCathedralOfferEntry[]>([]);
+  const onCathedralPanelOpenChange = useCallback((open: boolean, offer?: ExploreCathedralOfferEntry[]) => {
+    setCathedralPanelOpen(open);
+    setCathedralOffer(open && offer ? offer : []);
   }, []);
   const [obeliskPanelOpen, setObeliskPanelOpen] = useState(false);
   const onObeliskPanelOpenChange = useCallback((open: boolean) => {
@@ -663,6 +676,8 @@ function HomeContent() {
     () => new Set(),
   );
   const lateJoinLoadoutHandledRef = useRef(false);
+  const dungeonStartTalentsGrantedRef = useRef(false);
+  const defenseMilestoneWavesGrantedRef = useRef<Set<number>>(new Set());
   const roomBoonIntermissionDoneSeqRef = useRef(-1);
   const deepSanctumRewardClaimedSeqRef = useRef(-1);
   /** Runeblade colored-room boon mutex: excludes entire combo / strike / smite slot after one pick (per co-op room session). */
@@ -1328,6 +1343,8 @@ function HomeContent() {
     universalGreenZombieRoomBoonExcludedIdsRef.current.clear();
     roomBoomDashBoonExcludedIdsRef.current.clear();
     lateJoinLoadoutHandledRef.current = false;
+    dungeonStartTalentsGrantedRef.current = false;
+    defenseMilestoneWavesGrantedRef.current.clear();
   }, [currentRoomId]);
 
   /** Late join after first portal: hydrate server-assigned weapon and auto-grant a starting class-boon. */
@@ -1797,6 +1814,39 @@ function HomeContent() {
     campTypes,
   ]);
 
+  const recordRoomBoonMutexExclusions = useCallback((id: TalentId) => {
+    for (const exId of expandBowRoomBoonExclusionsAfterPick(id)) {
+      bowRoomBoonExcludedIdsRef.current.add(exId);
+    }
+    for (const exId of expandRunebladeRoomBoonExclusionsAfterPick(id)) {
+      runebladeRoomBoonExcludedIdsRef.current.add(exId);
+    }
+    for (const exId of expandScytheEntropicExclusionsAfterPick(id)) {
+      scytheEntropicRoomBoonExcludedIdsRef.current.add(exId);
+    }
+    for (const exId of expandScytheTotemExclusionsAfterPick(id)) {
+      scytheEntropicRoomBoonExcludedIdsRef.current.add(exId);
+    }
+    for (const exId of expandScytheCrossentropyExclusionsAfterPick(id)) {
+      scytheEntropicRoomBoonExcludedIdsRef.current.add(exId);
+    }
+    for (const exId of expandSabresBackstabRoomBoonExclusionsAfterPick(id)) {
+      sabresRoomBoonExcludedIdsRef.current.add(exId);
+    }
+    for (const exId of expandSabresSwipesRoomBoonExclusionsAfterPick(id)) {
+      sabresRoomBoonExcludedIdsRef.current.add(exId);
+    }
+    for (const exId of expandSabresFlourishRoomBoonExclusionsAfterPick(id)) {
+      sabresRoomBoonExcludedIdsRef.current.add(exId);
+    }
+    for (const exId of expandUniversalGreenZombieBoonIdsAfterPick(id)) {
+      universalGreenZombieRoomBoonExcludedIdsRef.current.add(exId);
+    }
+    for (const exId of expandRoomBoomDashExclusionsAfterPick(id)) {
+      roomBoomDashBoonExcludedIdsRef.current.add(exId);
+    }
+  }, []);
+
   const handleCoopBoonPick = useCallback(
     (id: TalentId, kind: 'class' | 'room', classPickWeapon?: WeaponType) => {
       const exploreCampId = coopBoon && 'exploreCampId' in coopBoon ? coopBoon.exploreCampId : undefined;
@@ -1820,36 +1870,7 @@ function HomeContent() {
         setAbilityLoadout(abilityLoadout ? { ...abilityLoadout, R: abilityId } : { Q: null, E: null, R: abilityId });
       }
       if (kind === 'room') {
-        for (const exId of expandBowRoomBoonExclusionsAfterPick(id)) {
-          bowRoomBoonExcludedIdsRef.current.add(exId);
-        }
-        for (const exId of expandRunebladeRoomBoonExclusionsAfterPick(id)) {
-          runebladeRoomBoonExcludedIdsRef.current.add(exId);
-        }
-        for (const exId of expandScytheEntropicExclusionsAfterPick(id)) {
-          scytheEntropicRoomBoonExcludedIdsRef.current.add(exId);
-        }
-        for (const exId of expandScytheTotemExclusionsAfterPick(id)) {
-          scytheEntropicRoomBoonExcludedIdsRef.current.add(exId);
-        }
-        for (const exId of expandScytheCrossentropyExclusionsAfterPick(id)) {
-          scytheEntropicRoomBoonExcludedIdsRef.current.add(exId);
-        }
-        for (const exId of expandSabresBackstabRoomBoonExclusionsAfterPick(id)) {
-          sabresRoomBoonExcludedIdsRef.current.add(exId);
-        }
-        for (const exId of expandSabresSwipesRoomBoonExclusionsAfterPick(id)) {
-          sabresRoomBoonExcludedIdsRef.current.add(exId);
-        }
-        for (const exId of expandSabresFlourishRoomBoonExclusionsAfterPick(id)) {
-          sabresRoomBoonExcludedIdsRef.current.add(exId);
-        }
-        for (const exId of expandUniversalGreenZombieBoonIdsAfterPick(id)) {
-          universalGreenZombieRoomBoonExcludedIdsRef.current.add(exId);
-        }
-        for (const exId of expandRoomBoomDashExclusionsAfterPick(id)) {
-          roomBoomDashBoonExcludedIdsRef.current.add(exId);
-        }
+        recordRoomBoonMutexExclusions(id);
         if (exploreCampId) {
           exploreCampClaimedRef.current.add(exploreCampId);
           claimExploreCamp(exploreCampId);
@@ -1887,8 +1908,125 @@ function HomeContent() {
       window.audioSystem?.playUIInterface3Sound?.();
       setCoopBoon(null);
     },
-    [clearCoopClearedRoomColor, coopMainArenaPortalPhase, combatArenaActive, setTalentLoadout, setAbilityLoadout, abilityLoadout, enqueueAnnouncement, announceThroneEnterPortal, coopBoon, claimExploreCamp],
+    [clearCoopClearedRoomColor, coopMainArenaPortalPhase, combatArenaActive, setTalentLoadout, setAbilityLoadout, abilityLoadout, enqueueAnnouncement, announceThroneEnterPortal, coopBoon, claimExploreCamp, recordRoomBoonMutexExclusions],
   );
+
+  /** Dungeon / Sky Temple start: extra class talent + one random LMB/Q/E/Dash room boon instead of an ancestor. */
+  useEffect(() => {
+    const isStartTalentRoom =
+      coopCurrentRoomKind === 'dungeon' || coopCurrentRoomKind === 'sky_temple';
+    if (!isStartTalentRoom) {
+      dungeonStartTalentsGrantedRef.current = false;
+      return;
+    }
+    if (!combatArenaActive || dungeonStartTalentsGrantedRef.current) return;
+    const weapon = selectedWeapons.primary;
+    if (weapon === WeaponType.NONE) return;
+
+    dungeonStartTalentsGrantedRef.current = true;
+    setTalentLoadout((prev) => {
+      const classId = pickRandomClassBoonForWeapon(weapon, prev);
+      let next = classId ? applyTalentIdToLoadout(prev, classId) : prev;
+      const roomId = pickRandomMutexRoomBoonForWeapon(weapon, abilityLoadoutRef.current, next);
+      if (roomId) {
+        next = applyTalentIdToLoadout(next, roomId);
+      }
+      queueMicrotask(() => {
+        if (roomId) recordRoomBoonMutexExclusions(roomId);
+        if (classId) {
+          enqueueAnnouncement('UNLOCKED', REWARD_ANNOUNCEMENT_COLORS.unlocked, `boon-${classId}`);
+        }
+        if (roomId) {
+          enqueueAnnouncement('UNLOCKED', REWARD_ANNOUNCEMENT_COLORS.unlocked, `boon-${roomId}`);
+        }
+        if (classId || roomId) {
+          window.audioSystem?.playUIInterface3Sound?.();
+          window.dispatchEvent(new CustomEvent('coop-talent-loadout-picked', { detail: next }));
+        }
+      });
+      return next;
+    });
+  }, [
+    combatArenaActive,
+    coopCurrentRoomKind,
+    selectedWeapons.primary,
+    setTalentLoadout,
+    enqueueAnnouncement,
+    recordRoomBoonMutexExclusions,
+  ]);
+
+  /** Defense milestones: dungeon-style auto-grant of a room boon every 4 waves and a class boon every 7. */
+  useEffect(() => {
+    if (coopCurrentRoomKind !== 'defense') {
+      defenseMilestoneWavesGrantedRef.current.clear();
+      return;
+    }
+    if (!combatArenaActive) return;
+    if (!coopDefenseGrantRoomBoon && !coopDefenseGrantClassBoon) return;
+    const wave = coopDefenseMilestoneWave;
+    if (wave <= 0 || defenseMilestoneWavesGrantedRef.current.has(wave)) return;
+    const weapon = selectedWeapons.primary;
+    if (weapon === WeaponType.NONE) return;
+
+    defenseMilestoneWavesGrantedRef.current.add(wave);
+    const grantRoom = coopDefenseGrantRoomBoon;
+    const grantClass = coopDefenseGrantClassBoon;
+    setTalentLoadout((prev) => {
+      let next = prev;
+      let classId: TalentId | null = null;
+      let roomId: TalentId | null = null;
+      if (grantClass) {
+        classId = pickRandomClassBoonForWeapon(weapon, next);
+        if (classId) next = applyTalentIdToLoadout(next, classId);
+      }
+      if (grantRoom) {
+        roomId = pickRandomMutexRoomBoonForWeapon(weapon, abilityLoadoutRef.current, next);
+        if (roomId) next = applyTalentIdToLoadout(next, roomId);
+      }
+      queueMicrotask(() => {
+        if (roomId) recordRoomBoonMutexExclusions(roomId);
+        if (classId) {
+          enqueueAnnouncement('UNLOCKED', REWARD_ANNOUNCEMENT_COLORS.unlocked, `boon-${classId}`);
+        }
+        if (roomId) {
+          enqueueAnnouncement('UNLOCKED', REWARD_ANNOUNCEMENT_COLORS.unlocked, `boon-${roomId}`);
+        }
+        if (classId || roomId) {
+          window.audioSystem?.playUIInterface3Sound?.();
+          window.dispatchEvent(new CustomEvent('coop-talent-loadout-picked', { detail: next }));
+        }
+      });
+      return next;
+    });
+  }, [
+    combatArenaActive,
+    coopCurrentRoomKind,
+    coopDefenseGrantClassBoon,
+    coopDefenseGrantRoomBoon,
+    coopDefenseMilestoneWave,
+    selectedWeapons.primary,
+    setTalentLoadout,
+    enqueueAnnouncement,
+    recordRoomBoonMutexExclusions,
+  ]);
+
+  const defenseFountainAnnouncedRef = useRef(false);
+  useEffect(() => {
+    if (coopCurrentRoomKind !== 'defense' || !coopDefenseFountainActive || coopDefenseFountainUsed) {
+      if (!coopDefenseFountainActive) defenseFountainAnnouncedRef.current = false;
+      return;
+    }
+    if (defenseFountainAnnouncedRef.current) return;
+    defenseFountainAnnouncedRef.current = true;
+    const { title, color } = GUIDE_ANNOUNCEMENTS.drinkFountain;
+    enqueueAnnouncement(title, color, `defense-fountain-${coopDefenseMilestoneWave}`);
+  }, [
+    coopCurrentRoomKind,
+    coopDefenseFountainActive,
+    coopDefenseFountainUsed,
+    coopDefenseMilestoneWave,
+    enqueueAnnouncement,
+  ]);
 
   const handleWeaponAspectCycled = useCallback(
     (aspect: WeaponAspect) => {
@@ -2159,16 +2297,20 @@ function HomeContent() {
 
   const [exploreAllyCount, setExploreAllyCount] = useState(0);
   const [hasLiveSpiritLounge, setHasLiveSpiritLounge] = useState(false);
+  const [hasLiveShrineOrObelisk, setHasLiveShrineOrObelisk] = useState(false);
   const refreshExploreAllyAlive = useCallback(() => {
     let count = 0;
     let lounge = false;
+    let shrineOrObelisk = false;
     for (const enemy of enemiesRef.current.values()) {
       if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
       if (enemy.type === 'barracks') lounge = true;
+      if (enemy.type === 'shrine' || enemy.type === 'obelisk') shrineOrObelisk = true;
       if (isExplorePurchasedAllyType(enemy.type)) count += 1;
     }
     setExploreAllyCount(count);
     setHasLiveSpiritLounge(lounge);
+    setHasLiveShrineOrObelisk(shrineOrObelisk);
   }, [enemiesRef]);
 
   // Sync localPurchasedItems from ref — avoids re-rendering on every player map update.
@@ -2482,6 +2624,7 @@ function HomeContent() {
                   onStoneUpdate={handleStoneUpdate}
                   onMeatUpdate={handleMeatUpdate}
                   onHungerUpdate={handleHungerUpdate}
+                  playerHunger={playerHunger}
                   onFateUpdate={handleFateUpdate}
                   onMerchantUIUpdate={setShowMerchantUI}
                   onSceneReady={handleSceneReady}
@@ -2527,6 +2670,7 @@ function HomeContent() {
                   onBarracksRecruitOpenChange={onBarracksRecruitOpenChange}
                   onResearchPanelOpenChange={onResearchPanelOpenChange}
                   onShrinePanelOpenChange={onShrinePanelOpenChange}
+                  onCathedralPanelOpenChange={onCathedralPanelOpenChange}
                   onObeliskPanelOpenChange={onObeliskPanelOpenChange}
                   onFirePitHealOpenChange={onFirePitHealOpenChange}
                   onLocalPlayerDefeated={onLocalPlayerDefeated}
@@ -2620,6 +2764,7 @@ function HomeContent() {
                 buildMenuOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && buildMenuOpen}
                 buildMenuView={buildMenuView}
                 hasLiveSpiritLounge={hasLiveSpiritLounge}
+                hasLiveShrineOrObelisk={hasLiveShrineOrObelisk}
                 barracksRecruitOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && barracksRecruitOpen}
                 playerWood={playerWood}
                 playerFlow={playerFlow}
@@ -2629,6 +2774,9 @@ function HomeContent() {
                 onResearchPurchase={researchPurchase}
                 shrinePanelOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && shrinePanelOpen}
                 onShrineGift={shrineClaim}
+                cathedralPanelOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && cathedralPanelOpen}
+                cathedralOffer={cathedralOffer}
+                onCathedralClaim={cathedralClaim}
                 obeliskPanelOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && obeliskPanelOpen}
                 onObeliskPurchase={obeliskBuyTalent}
                 firePitHealOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && firePitHealOpen}

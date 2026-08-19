@@ -16,7 +16,8 @@ export const DEFENSE_TOWER_HP_BAR_Y = 8.2;
 /** Crown world Y: nativeMaxY(8.405) × scale(0.893) + lift(0.286) ≈ 7.8. Keep in sync with defenseLayout + backend. */
 export const DEFENSE_TOWER_MUZZLE_Y = 7.8;
 
-const TOWER_GLOW_MAT_NAME = 'genericglow_alpha_128';
+/** WoW glow cards are ≤12 tris (Geoset2 = 8, Geoset3 = 4). Body geosets are hundreds. */
+const TOWER_GLOW_MAX_INDEX_COUNT = 36;
 
 useGLTF.preload(TOWER_PATH);
 
@@ -24,17 +25,22 @@ export function preloadDefenseTower(): void {
   useGLTF.preload(TOWER_PATH);
 }
 
-/** Hide WoW glow-card quads — alphaTest alone still leaves a black square after self-illumination. */
+function meshIndexCount(mesh: Mesh): number {
+  return mesh.geometry?.index?.count ?? 0;
+}
+
+function hasGlowMaterial(mesh: Mesh): boolean {
+  const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  return mats.some((mat) => (mat as Material).name?.toLowerCase().includes('glow'));
+}
+
+/** Hide WoW glow-card quads — opaque black-background overlays on the pillar. */
 function configureTowerGlow(root: Group): Group {
   root.traverse((child) => {
     const mesh = child as Mesh;
     if (!mesh.isMesh || !mesh.material) return;
-    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    for (const mat of mats) {
-      const glow = mat as Material & { name?: string };
-      if ((glow.name || '') !== TOWER_GLOW_MAT_NAME) continue;
+    if (hasGlowMaterial(mesh) || meshIndexCount(mesh) <= TOWER_GLOW_MAX_INDEX_COUNT) {
       mesh.visible = false;
-      break;
     }
   });
   return root;

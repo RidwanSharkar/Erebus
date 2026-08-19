@@ -13,6 +13,7 @@ import {
   EXPLORE_TOWER_CATEGORY_HOTKEY,
   EXPLORE_TOWER_PICK_ORDER,
   exploreBuildingRequiresSpiritLounge,
+  exploreBuildingRequiresShrineOrObelisk,
   getExploreBuildingDef,
   type ExploreBuildMenuView,
 } from '@/utils/exploreBuildings';
@@ -24,6 +25,7 @@ interface BuildMenuPanelProps {
   stone?: number;
   view?: ExploreBuildMenuView;
   hasLiveSpiritLounge?: boolean;
+  hasLiveShrineOrObelisk?: boolean;
   widthPercent?: number;
 }
 
@@ -99,6 +101,7 @@ export default function BuildMenuPanel({
   stone = 0,
   view = 'root',
   hasLiveSpiritLounge = false,
+  hasLiveShrineOrObelisk = false,
   widthPercent = DEFAULT_WIDTH_PERCENT,
 }: BuildMenuPanelProps) {
   if (!open) return null;
@@ -172,16 +175,18 @@ export default function BuildMenuPanel({
               const affordable = canAffordBuilding(wood, flow, stone, def);
               const needsLounge = exploreBuildingRequiresSpiritLounge(kind);
               const loungeBlocked = needsLounge && !hasLiveSpiritLounge;
-              const selectable = def.enabled && affordable && !loungeBlocked;
+              const needsShrineOrObelisk = exploreBuildingRequiresShrineOrObelisk(kind);
+              const shrineBlocked = needsShrineOrObelisk && !hasLiveShrineOrObelisk;
+              const selectable = def.enabled && affordable && !loungeBlocked && !shrineBlocked;
               const row = (
                 <MenuRow
                   key={kind}
                   hotkey={def.hotkey}
                   label={def.label}
-                  suffix={!def.enabled ? ' — coming soon' : loungeBlocked ? ' — requires Spirit Lounge' : ''}
+                  suffix={!def.enabled ? ' — coming soon' : loungeBlocked ? ' — requires Spirit Lounge' : shrineBlocked ? ' — requires Shrine or Obelisk' : ''}
                   detail={formatBuildingCost(def)}
                   selectable={selectable}
-                  dimmed={!def.enabled || !affordable || loungeBlocked}
+                  dimmed={!def.enabled || !affordable || loungeBlocked || shrineBlocked}
                 />
               );
               if (kind !== 'barracks') return row;

@@ -20,10 +20,10 @@ export const EXPLORE_CAMP_CHANCE_BY_LEVEL: Readonly<Record<1 | 2 | 3 | 4, number
 });
 
 export const EXPLORE_CAMP_GOLD_BY_LEVEL: Readonly<Record<1 | 2 | 3 | 4, number>> = Object.freeze({
-  1: 100,
-  2: 200,
-  3: 300,
-  4: 400,
+  1: 75,
+  2: 150,
+  3: 250,
+  4: 350,
 });
 
 export const EXPLORE_CAMP_STAT_BY_LEVEL: Readonly<Record<1 | 2 | 3 | 4, number>> = Object.freeze({

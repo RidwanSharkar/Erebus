@@ -33,6 +33,7 @@ function handleEnemyEvents(socket, gameRooms) {
       entanglementBarrage,
       huntersMark,
       perfectShot,
+      tempestRoundsHit,
       rejuvenatingShotEntangle,
       necromancerTotemEntangle,
       rebukeRoom,
@@ -174,6 +175,7 @@ function handleEnemyEvents(socket, gameRooms) {
       if (tempestBurstArcticChill) hitMeta.tempestBurstArcticChill = true;
       if (tempestBurstWyvernZombie) hitMeta.tempestBurstWyvernZombie = true;
       if (perfectShot) hitMeta.perfectShot = true;
+      if (tempestRoundsHit) hitMeta.tempestRoundsHit = true;
     } else if (damageType === 'cloudkill') {
       hitMeta = { damageType: 'cloudkill', cloudkillDamage: true };
     } else if (damageType === 'stagger_break') {
