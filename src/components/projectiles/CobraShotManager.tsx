@@ -13,6 +13,7 @@ import { Enemy } from '@/ecs/components/Enemy';
 import { Health } from '@/ecs/components/Health';
 import { Transform } from '@/ecs/components/Transform';
 import { CombatSystem } from '@/systems/CombatSystem';
+import { applyDungeonChestY } from '@/utils/dungeonLayout';
 import {
   COBRA_SHOT_HIT_DAMAGE,
   COBRA_SHOT_VENOM_DAMAGE_PER_SECOND,
@@ -308,6 +309,7 @@ export default function CobraShotManager({ world }: CobraShotManagerProps) {
 
       const movement = _scratchMovement.copy(projectile.direction).multiplyScalar(PROJECTILE_SPEED);
       projectile.position.add(movement);
+      applyDungeonChestY(projectile.position);
 
       const distanceTraveled = projectile.position.distanceTo(projectile.startPosition);
 

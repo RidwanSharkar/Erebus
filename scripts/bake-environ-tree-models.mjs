@@ -38,7 +38,7 @@ const namesFilter = process.argv
   .filter((arg) => arg !== '--dry-run')
   .map((name) => (name.endsWith('.glb') ? name : `${name}.glb`));
 
-const DEFAULT_TREES = ['deadtree.glb', 'browntree.glb', 'redtree.glb'];
+const DEFAULT_TREES = ['deadtree.glb', 'browntree.glb', 'blueTree.glb', 'forestTree.glb', 'root.glb'];
 const STRIP_SEMANTICS = new Set(['JOINTS_0', 'WEIGHTS_0', 'TEXCOORD_1']);
 const MIN_BBOX_EXTENT = 0.05;
 

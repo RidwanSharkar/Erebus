@@ -8,6 +8,7 @@ import { Transform } from '@/ecs/components/Transform';
 import { calculateDamage } from '@/core/DamageCalculator';
 import { WeaponType } from '@/components/dragon/weapons';
 import { CombatSystem } from '@/systems/CombatSystem';
+import { applyDungeonChestY, getDungeonMeshCollider } from '@/utils/dungeonLayout';
 
 export interface ThrowSpearProjectile {
   id: number;
@@ -108,7 +109,12 @@ export default function ThrowSpearManager({ world }: ThrowSpearManagerProps) {
       if (hitSet.has(enemyId)) return;
 
       // Check distance
-      const distance = projectile.position.distanceTo(transform.position);
+      const distance = getDungeonMeshCollider()
+        ? Math.hypot(
+            projectile.position.x - transform.position.x,
+            projectile.position.z - transform.position.z,
+          )
+        : projectile.position.distanceTo(transform.position);
       const hitRadius = 1.0; // Spear hit radius
 
       if (distance < hitRadius) {
@@ -188,6 +194,7 @@ export default function ThrowSpearManager({ world }: ThrowSpearManagerProps) {
         const distanceFromStart = projectile.position.distanceTo(projectile.startPosition);
         if (distanceFromStart < projectile.maxDistance && !projectile.fadeStartTime) {
           projectile.position.add(_scratchMovement.copy(projectile.direction).multiplyScalar(speed * delta));
+          applyDungeonChestY(projectile.position);
           checkCollisions(projectile, playerEntity);
         } else if (!projectile.fadeStartTime) {
           projectile.isReturning = true;
@@ -205,6 +212,7 @@ export default function ThrowSpearManager({ world }: ThrowSpearManagerProps) {
               _scratchReturnDir.subVectors(playerPosition, projectile.position).normalize(),
             );
             projectile.position.add(_scratchMovement.copy(projectile.direction).multiplyScalar(returnSpeed * delta));
+            applyDungeonChestY(projectile.position);
             checkCollisions(projectile, playerEntity);
           } else if (!projectile.fadeStartTime) {
             projectile.fadeStartTime = currentTime;

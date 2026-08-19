@@ -4,7 +4,7 @@ import { ShaderMaterial, SphereGeometry, Vector3, Color, BackSide } from '@/util
 import type { RoomBorderTheme } from './SimpleBorderEffects';
 
 /** Per-room sky: gradient, sun, and subtle atmosphere so clouds match the combat palette. */
-type SkyThemeUniforms = {
+export type SkyThemeUniforms = {
   zenith: string;
   upperMid: string;
   midHorizon: string;
@@ -849,14 +849,12 @@ function skyUniformsForPreset(preset: CustomSkyPreset): SkyThemeUniforms {
   return SKY_BY_ROOM[preset] ?? SKY_BY_ROOM.red;
 }
 
-function applySkyTheme(material: ShaderMaterial, preset: CustomSkyPreset) {
-  const t = skyUniformsForPreset(preset);
+function applySkyThemeUniforms(material: ShaderMaterial, t: SkyThemeUniforms) {
   material.uniforms.uZenith.value.set(t.zenith);
   material.uniforms.uUpperMid.value.set(t.upperMid);
   material.uniforms.uMidHorizon.value.set(t.midHorizon);
   material.uniforms.uHorizon.value.set(t.horizon);
   material.uniforms.uGround.value.set(t.ground);
-  // Default abyss=ground + underLit=0 → identical legacy look for all non-throne presets.
   material.uniforms.uAbyss.value.set(t.abyss ?? t.ground);
   material.uniforms.uSunColor.value.set(t.sunColor);
   material.uniforms.uSunDir.value.set(...t.sunDir).normalize();
@@ -865,6 +863,10 @@ function applySkyTheme(material: ShaderMaterial, preset: CustomSkyPreset) {
   material.uniforms.uSunHalo2.value.set(t.sunHalo2);
   material.uniforms.uCloudWarmth.value = t.cloudWarmth;
   material.uniforms.uUnderLit.value = t.underLit ?? 0;
+}
+
+function applySkyTheme(material: ShaderMaterial, preset: CustomSkyPreset) {
+  applySkyThemeUniforms(material, skyUniformsForPreset(preset));
 }
 
 const CustomSky: React.FC<{
@@ -878,7 +880,9 @@ const CustomSky: React.FC<{
   skyPresetIndex?: number;
   /** When false, freezes cloud time and skips FBM clouds (combat / static LOD). Defaults to true. */
   animateClouds?: boolean;
-}> = ({ roomTheme = 'red', skyPreset, skyPresetIndex, animateClouds = true }) => {
+  /** When set, overrides preset colors (e.g. explore day-night lerp). */
+  themeUniforms?: SkyThemeUniforms | null;
+}> = ({ roomTheme = 'red', skyPreset, skyPresetIndex, animateClouds = true, themeUniforms = null }) => {
   const effectivePreset: CustomSkyPreset =
     skyPresetIndex != null
       ? resolveSkyPresetByIndex(skyPresetIndex)
@@ -912,8 +916,18 @@ const CustomSky: React.FC<{
   );
 
   useLayoutEffect(() => {
-    applySkyTheme(material, effectivePreset);
-  }, [material, effectivePreset]);
+    if (themeUniforms) {
+      applySkyThemeUniforms(material, themeUniforms);
+    } else {
+      applySkyTheme(material, effectivePreset);
+    }
+  }, [material, effectivePreset, themeUniforms]);
+
+  useFrame(() => {
+    if (themeUniforms) {
+      applySkyThemeUniforms(material, themeUniforms);
+    }
+  });
 
   useLayoutEffect(() => {
     material.uniforms.uEnableClouds.value = animateClouds ? 1 : 0;

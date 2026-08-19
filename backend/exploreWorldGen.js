@@ -1,7 +1,7 @@
 /**
  * Deterministic explore-mode worldgen. Must stay in sync with `src/utils/exploreWorldGen.ts`.
  * Grass blades are not stored — RNG is consumed in the same order so mushroom/rock/tree
- * positions match the client.
+ * (and root/spine) positions match the client.
  */
 
 const EXPLORE_CHUNK_SIZE = 48;
@@ -185,6 +185,55 @@ function generateChunkUncached(seed, cx, cz) {
     mushroomCount++;
   }
 
+  const rootTarget = Math.round(treeTarget * 0.5);
+  const rootScratch = [];
+  let rootCount = 0;
+  for (let i = 0; i < rootTarget * 4 && rootCount < rootTarget; i++) {
+    const x = origin.x + 1.5 + rand() * (EXPLORE_CHUNK_SIZE - 3);
+    const z = origin.z + 1.5 + rand() * (EXPLORE_CHUNK_SIZE - 3);
+    if (
+      rejectNearPacked(rootScratch, rootCount, x, z, 2.2) ||
+      rejectNearPacked(treeScratch, treeCount, x, z, 2.5) ||
+      rejectNearPacked(rockScratch, rockCount, x, z, 2.2) ||
+      rejectNearPacked(mushScratch, mushroomCount, x, z, 1.4)
+    ) {
+      continue;
+    }
+    const scale = 0.85 + rand() * 0.55;
+    const o = rootCount * EXPLORE_DISC_STRIDE;
+    rootScratch[o] = x;
+    rootScratch[o + 1] = z;
+    rootScratch[o + 2] = 0.55 * scale;
+    rootScratch[o + 3] = scale;
+    rootScratch[o + 4] = rand() * Math.PI * 2;
+    rootCount++;
+  }
+
+  const spineTarget = Math.max(0, Math.round(treeTarget / 8));
+  const spineScratch = [];
+  let spineCount = 0;
+  for (let i = 0; i < spineTarget * 4 && spineCount < spineTarget; i++) {
+    const x = origin.x + 2 + rand() * (EXPLORE_CHUNK_SIZE - 4);
+    const z = origin.z + 2 + rand() * (EXPLORE_CHUNK_SIZE - 4);
+    if (
+      rejectNearPacked(spineScratch, spineCount, x, z, 5) ||
+      rejectNearPacked(treeScratch, treeCount, x, z, 3.5) ||
+      rejectNearPacked(rockScratch, rockCount, x, z, 2.5) ||
+      rejectNearPacked(mushScratch, mushroomCount, x, z, 1.6) ||
+      rejectNearPacked(rootScratch, rootCount, x, z, 2.5)
+    ) {
+      continue;
+    }
+    const scale = 0.7 + rand() * 1.1;
+    const o = spineCount * EXPLORE_DISC_STRIDE;
+    spineScratch[o] = x;
+    spineScratch[o + 1] = z;
+    spineScratch[o + 2] = 0.9 * scale;
+    spineScratch[o + 3] = scale;
+    spineScratch[o + 4] = rand() * Math.PI * 2;
+    spineCount++;
+  }
+
   return {
     cx,
     cz,
@@ -194,6 +243,10 @@ function generateChunkUncached(seed, cx, cz) {
     rockCount,
     mushrooms: packDiscs(mushScratch, mushroomCount),
     mushroomCount,
+    roots: packDiscs(rootScratch, rootCount),
+    rootCount,
+    spines: packDiscs(spineScratch, spineCount),
+    spineCount,
   };
 }
 
@@ -229,6 +282,26 @@ function unpackExploreMushroomIndex(index) {
   return { cx, cz, slot };
 }
 
+function packExploreMushroomIndex(cx, cz, slot) {
+  return (
+    ((cx + EXPLORE_CHUNK_COORD_BIAS) * EXPLORE_CHUNK_COORD_SPAN + (cz + EXPLORE_CHUNK_COORD_BIAS))
+    * EXPLORE_MUSHROOM_SLOT_SPAN
+    + (slot & (EXPLORE_MUSHROOM_SLOT_SPAN - 1))
+  );
+}
+
+function exploreTreeVariant(x, z) {
+  let h = (0x7e31 ^ Math.imul(Math.round(x * 4), 374761393) ^ Math.imul(Math.round(z * 4), 668265263)) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) % 4;
+}
+
+function exploreRockVariant(x, z) {
+  let h = (0x51ed ^ Math.imul(Math.round(x * 4), 374761393) ^ Math.imul(Math.round(z * 4), 668265263)) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) & 1;
+}
+
 function mushroomVisualFromScale(scale) {
   return { h: 0.14 + scale * 0.45, cr: 0.7 + scale * 0.9 };
 }
@@ -246,6 +319,84 @@ function getExploreMushroom(seed, packedIndex) {
   return { index: packedIndex, x, z, h: vis.h, cr: vis.cr };
 }
 
+function getExploreTree(seed, packedIndex) {
+  const unpacked = unpackExploreMushroomIndex(packedIndex);
+  if (!unpacked) return null;
+  const chunk = generateChunk(seed, unpacked.cx, unpacked.cz);
+  if (unpacked.slot >= chunk.treeCount) return null;
+  const o = unpacked.slot * EXPLORE_DISC_STRIDE;
+  const x = chunk.trees[o];
+  const z = chunk.trees[o + 1];
+  const radius = chunk.trees[o + 2];
+  const scale = chunk.trees[o + 3];
+  return {
+    index: packedIndex,
+    x,
+    z,
+    radius,
+    scale,
+    variant: exploreTreeVariant(x, z),
+  };
+}
+
+function getExploreRoot(seed, packedIndex) {
+  const unpacked = unpackExploreMushroomIndex(packedIndex);
+  if (!unpacked) return null;
+  const chunk = generateChunk(seed, unpacked.cx, unpacked.cz);
+  if (unpacked.slot >= chunk.rootCount) return null;
+  const o = unpacked.slot * EXPLORE_DISC_STRIDE;
+  const x = chunk.roots[o];
+  const z = chunk.roots[o + 1];
+  const radius = chunk.roots[o + 2];
+  const scale = chunk.roots[o + 3];
+  return {
+    index: packedIndex,
+    x,
+    z,
+    radius,
+    scale,
+  };
+}
+
+function getExploreRock(seed, packedIndex) {
+  const unpacked = unpackExploreMushroomIndex(packedIndex);
+  if (!unpacked) return null;
+  const chunk = generateChunk(seed, unpacked.cx, unpacked.cz);
+  if (unpacked.slot >= chunk.rockCount) return null;
+  const o = unpacked.slot * EXPLORE_DISC_STRIDE;
+  const x = chunk.rocks[o];
+  const z = chunk.rocks[o + 1];
+  const radius = chunk.rocks[o + 2];
+  const scale = chunk.rocks[o + 3];
+  return {
+    index: packedIndex,
+    x,
+    z,
+    radius,
+    scale,
+    variant: exploreRockVariant(x, z),
+  };
+}
+
+function getExploreSpine(seed, packedIndex) {
+  const unpacked = unpackExploreMushroomIndex(packedIndex);
+  if (!unpacked) return null;
+  const chunk = generateChunk(seed, unpacked.cx, unpacked.cz);
+  if (unpacked.slot >= chunk.spineCount) return null;
+  const o = unpacked.slot * EXPLORE_DISC_STRIDE;
+  const x = chunk.spines[o];
+  const z = chunk.spines[o + 1];
+  const radius = chunk.spines[o + 2];
+  const scale = chunk.spines[o + 3];
+  return {
+    index: packedIndex,
+    x,
+    z,
+    radius,
+    scale,
+  };
+}
+
 function discHits(data, count, x, z, pad) {
   for (let i = 0; i < count; i++) {
     const o = i * EXPLORE_DISC_STRIDE;
@@ -257,13 +408,92 @@ function discHits(data, count, x, z, pad) {
   return false;
 }
 
-function isExploreBlocked(seed, x, z, pad = 1.2) {
+function treeDiscHits(chunk, x, z, pad, destroyedTreeHealth) {
+  const data = chunk.trees;
+  for (let i = 0; i < chunk.treeCount; i++) {
+    if (destroyedTreeHealth) {
+      const packed = packExploreMushroomIndex(chunk.cx, chunk.cz, i);
+      const hp = destroyedTreeHealth.get(packed);
+      if (hp !== undefined && hp <= 0) continue;
+    }
+    const o = i * EXPLORE_DISC_STRIDE;
+    const dx = data[o] - x;
+    const dz = data[o + 1] - z;
+    const r = data[o + 2] + pad;
+    if (dx * dx + dz * dz < r * r) return true;
+  }
+  return false;
+}
+
+function rootDiscHits(chunk, x, z, pad, destroyedRootHealth) {
+  const data = chunk.roots;
+  for (let i = 0; i < chunk.rootCount; i++) {
+    if (destroyedRootHealth) {
+      const packed = packExploreMushroomIndex(chunk.cx, chunk.cz, i);
+      const hp = destroyedRootHealth.get(packed);
+      if (hp !== undefined && hp <= 0) continue;
+    }
+    const o = i * EXPLORE_DISC_STRIDE;
+    const dx = data[o] - x;
+    const dz = data[o + 1] - z;
+    const r = data[o + 2] + pad;
+    if (dx * dx + dz * dz < r * r) return true;
+  }
+  return false;
+}
+
+function rockDiscHits(chunk, x, z, pad, destroyedRockHealth) {
+  const data = chunk.rocks;
+  for (let i = 0; i < chunk.rockCount; i++) {
+    if (destroyedRockHealth) {
+      const packed = packExploreMushroomIndex(chunk.cx, chunk.cz, i);
+      const hp = destroyedRockHealth.get(packed);
+      if (hp !== undefined && hp <= 0) continue;
+    }
+    const o = i * EXPLORE_DISC_STRIDE;
+    const dx = data[o] - x;
+    const dz = data[o + 1] - z;
+    const r = data[o + 2] + pad;
+    if (dx * dx + dz * dz < r * r) return true;
+  }
+  return false;
+}
+
+function spineDiscHits(chunk, x, z, pad, destroyedSpineHealth) {
+  const data = chunk.spines;
+  for (let i = 0; i < chunk.spineCount; i++) {
+    if (destroyedSpineHealth) {
+      const packed = packExploreMushroomIndex(chunk.cx, chunk.cz, i);
+      const hp = destroyedSpineHealth.get(packed);
+      if (hp !== undefined && hp <= 0) continue;
+    }
+    const o = i * EXPLORE_DISC_STRIDE;
+    const dx = data[o] - x;
+    const dz = data[o + 1] - z;
+    const r = data[o + 2] + pad;
+    if (dx * dx + dz * dz < r * r) return true;
+  }
+  return false;
+}
+
+function isExploreBlocked(
+  seed,
+  x,
+  z,
+  pad = 1.2,
+  destroyedTreeHealth = null,
+  destroyedRootHealth = null,
+  destroyedRockHealth = null,
+  destroyedSpineHealth = null,
+) {
   const { cx, cz } = worldToChunk(x, z);
   for (let dz = -1; dz <= 1; dz++) {
     for (let dx = -1; dx <= 1; dx++) {
       const chunk = generateChunk(seed, cx + dx, cz + dz);
-      if (discHits(chunk.trees, chunk.treeCount, x, z, pad)) return true;
-      if (discHits(chunk.rocks, chunk.rockCount, x, z, pad)) return true;
+      if (treeDiscHits(chunk, x, z, pad, destroyedTreeHealth)) return true;
+      if (rockDiscHits(chunk, x, z, pad, destroyedRockHealth)) return true;
+      if (rootDiscHits(chunk, x, z, pad, destroyedRootHealth)) return true;
+      if (spineDiscHits(chunk, x, z, pad, destroyedSpineHealth)) return true;
     }
   }
   return false;
@@ -278,8 +508,13 @@ module.exports = {
   EXPLORE_MUSHROOM_SLOT_SPAN,
   generateChunk,
   getExploreMushroom,
+  getExploreTree,
+  getExploreRoot,
+  getExploreRock,
+  getExploreSpine,
   isExploreBlocked,
   unpackExploreMushroomIndex,
+  packExploreMushroomIndex,
   worldToChunk,
   clearExploreWorldGenCache,
 };

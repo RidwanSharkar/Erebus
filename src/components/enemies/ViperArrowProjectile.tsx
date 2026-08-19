@@ -11,6 +11,8 @@ interface ViperArrowProjectileProps {
   targetPosition: Vector3;
   damage: number;
   maxRange?: number;
+  /** Units per second. Watch-tower / viper default is 25. */
+  speed?: number;
   getPlayerPosition: () => Vector3 | null;
   onHitPlayer: () => void;
   onComplete: () => void;
@@ -21,12 +23,14 @@ const HIT_RADIUS = 1.05;
 const _arrowPosScratch = new Vector3();
 /** Must match `VIPER_ARROW_MAX_RANGE` in backend `enemyAI.js` → `telegraphViperAttack`. */
 export const VIPER_ARROW_MAX_RANGE = 18;
+export const VIPER_ARROW_SPEED = SPEED;
 
 export default function ViperArrowProjectile({
   startPosition,
   targetPosition,
   damage: _damage,
   maxRange = VIPER_ARROW_MAX_RANGE,
+  speed = SPEED,
   getPlayerPosition,
   onHitPlayer,
   onComplete,
@@ -49,11 +53,11 @@ export default function ViperArrowProjectile({
     return {
       direction: d,
       totalDist: dist,
-      duration:  dist / SPEED,
+      duration:  dist / speed,
       yaw:   Math.atan2(d.x, d.z),
       pitch: Math.atan2(-d.y, Math.sqrt(d.x * d.x + d.z * d.z)),
     };
-  }, [startPosition, targetPosition, maxRange]);
+  }, [startPosition, targetPosition, maxRange, speed]);
 
   // ─── Materials ─────────────────────────────────────────────────────────────
   // White-hot core → lime outer glow → dark-green trail — all additive so they

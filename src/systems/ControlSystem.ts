@@ -20,6 +20,7 @@ import { ProjectileSystem } from './ProjectileSystem';
 import { AudioSystem } from './AudioSystem';
 import { CombatSystem } from './CombatSystem';
 import { CollisionSystem } from './CollisionSystem';
+import { PhysicsSystem } from './PhysicsSystem';
 import { WeaponSubclass, WeaponType } from '@/components/dragon/weapons';
 import { DeflectBarrier } from '@/components/weapons/DeflectBarrier';
 import { spawnArcticGroundBlizzardAtFromReact } from '@/components/weapons/Blizzard/arcticBlizzardSpawnBridge';
@@ -357,6 +358,7 @@ import {
 } from '@/components/enemies/HuntersMarkManager';
 import { isImmuneToPlayerStunAndFreeze } from '@/utils/enemyStatusImmunity';
 import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
+import { isWeaponHittableEntity } from '@/utils/destructibleEnvironmentTargeting';
 import { triggerGlobalCobraShot } from '@/components/projectiles/CobraShotManager';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 import { triggerGlobalRejuvenatingShot } from '@/components/projectiles/RejuvenatingShotManager';
@@ -417,10 +419,15 @@ export class ControlSystem extends System {
   private readonly cameraRightScratch = new Vector3();
   private readonly cameraForwardScratch = new Vector3();
   private static readonly WORLD_UP = new Vector3(0, 1, 0);
+  private static readonly COMBAT_AIM_DOWN_COMPENSATION = Math.PI / 6;
+  private readonly combatAimRightScratch = new Vector3();
+  private readonly combatAimRotMat = new Matrix4();
   private readonly nearbyEntitiesScratch: Entity[] = [];
   private meleeAttackDirection = new Vector3();
   private meleeQueryToEnemy = new Vector3();
   private meleeQueryToEnemyFlat = new Vector3();
+  /** Extra query radius so large environment colliders aren't culled before the surface-range test. */
+  private static readonly MELEE_COLLIDER_QUERY_PAD = 2.5;
   private backstabPlayerDirection = new Vector3();
   private backstabDirectionToTarget = new Vector3();
 
@@ -1136,6 +1143,20 @@ export class ControlSystem extends System {
     this.inputDisabled = disabled;
   }
 
+  /** When true, LMB is reserved for build placement instead of combat. */
+  private buildPlacementActive = false;
+
+  public setBuildPlacementActive(active: boolean): void {
+    this.buildPlacementActive = active;
+  }
+
+  /** When true, number keys are reserved for the explore build menu (tower 1/2/3). */
+  private buildMenuHotkeysActive = false;
+
+  public setBuildMenuHotkeysActive(active: boolean): void {
+    this.buildMenuHotkeysActive = active;
+  }
+
   public stunPlayer(durationMs: number): void {
     this.playerStunnedUntilMs = Math.max(this.playerStunnedUntilMs, Date.now() + durationMs);
   }
@@ -1151,6 +1172,10 @@ export class ControlSystem extends System {
   /** Read current keyboard state (lowercase key names, same as movement checks). */
   public isKeyPressed(key: string): boolean {
     return this.inputManager.isKeyPressed(key);
+  }
+
+  public isMouseButtonPressed(button: number): boolean {
+    return this.inputManager.isMouseButtonPressed(button);
   }
 
   /**
@@ -1525,6 +1550,10 @@ export class ControlSystem extends System {
   private handleWeaponSwitching(): void {
     // Prevent weapon switching while dead and waiting to respawn
     if (this.isPlayerDead) {
+      return;
+    }
+
+    if (this.buildMenuHotkeysActive) {
       return;
     }
 
@@ -2688,9 +2717,39 @@ export class ControlSystem extends System {
     }
   }
 
+  /**
+   * Camera aim for weapon projectiles.
+   * Mesh-walk (dungeon): horizontal at the character's current elevation.
+   * Flat arenas: keep the 30° downward compensation so shots meet ground-level enemies.
+   */
+  private applyCombatAimDirection(out: Vector3): Vector3 {
+    this.camera.getWorldDirection(out);
+    if (this.world.getSystem(PhysicsSystem)?.hasMeshCollider()) {
+      out.y = 0;
+      if (out.lengthSq() < 1e-8) out.set(0, 0, -1);
+      out.normalize();
+      return out;
+    }
+    out.normalize();
+    this.combatAimRightScratch.crossVectors(out, ControlSystem.WORLD_UP).normalize();
+    if (this.combatAimRightScratch.lengthSq() < 1e-8) return out;
+    this.combatAimRotMat.makeRotationAxis(
+      this.combatAimRightScratch,
+      ControlSystem.COMBAT_AIM_DOWN_COMPENSATION,
+    );
+    out.applyMatrix4(this.combatAimRotMat);
+    out.normalize();
+    return out;
+  }
+
   private handleCombatInput(playerTransform: Transform): void {
     // Prevent combat actions while dead and waiting to respawn
     if (this.isPlayerDead) {
+      return;
+    }
+
+    if (this.buildPlacementActive) {
+      this.leftMouseWasPressedLastFrame = this.inputManager.isMouseButtonPressed(0);
       return;
     }
 
@@ -2792,21 +2851,7 @@ export class ControlSystem extends System {
           // Fire burst attack - use same direction calculation as regular projectiles
           // Get dragon's facing direction (same as camera direction since dragon faces camera)
           const direction = new Vector3();
-          this.camera.getWorldDirection(direction);
-          direction.normalize();
-
-          // Apply downward angle compensation to account for restricted camera bounds
-          const compensationAngle = Math.PI / 6; // 30 degrees downward compensation
-
-          // Create a rotation matrix to apply the downward angle around the camera's right axis
-          const cameraRight = new Vector3();
-          cameraRight.crossVectors(direction, new Vector3(0, 1, 0)).normalize();
-
-          // Apply rotation around the right axis to tilt the direction downward
-          const rotationMatrix = new Matrix4();
-          rotationMatrix.makeRotationAxis(cameraRight, compensationAngle);
-          direction.applyMatrix4(rotationMatrix);
-          direction.normalize();
+          this.applyCombatAimDirection(direction);
 
           this.fireBurstAttack(playerTransform.position, direction);
         }
@@ -3003,23 +3048,8 @@ export class ControlSystem extends System {
     // Get dragon's facing direction (same as camera direction since dragon faces camera)
     // This ensures arrows fire outward from where the dragon is facing
     const direction = new Vector3();
-    this.camera.getWorldDirection(direction);
-    direction.normalize();
-    
-    // Apply downward angle compensation to account for restricted camera bounds
-    // Since camera can't look down much due to bounds, we add a fixed downward angle
-    const compensationAngle = Math.PI / 6; // 30 degrees downward compensation
-    
-    // Create a rotation matrix to apply the downward angle around the camera's right axis
-    const cameraRight = new Vector3();
-    cameraRight.crossVectors(direction, new Vector3(0, 1, 0)).normalize();
-    
-    // Apply rotation around the right axis to tilt the direction downward
-    const rotationMatrix = new Matrix4();
-    rotationMatrix.makeRotationAxis(cameraRight, compensationAngle);
-    direction.applyMatrix4(rotationMatrix);
-    direction.normalize();
-    
+    this.applyCombatAimDirection(direction);
+
     const isPerfectShot = isBowPerfectShotProgress(this.chargeProgress);
     
     // Check if bow is fully charged for special projectile
@@ -3058,18 +3088,7 @@ export class ControlSystem extends System {
 
     // Get dragon's facing direction
     const direction = new Vector3();
-    this.camera.getWorldDirection(direction);
-    direction.normalize();
-
-    // Apply downward angle compensation (same as bow projectiles)
-    const compensationAngle = Math.PI / 6; // 30 degrees downward compensation
-    const cameraRight = new Vector3();
-    cameraRight.crossVectors(direction, new Vector3(0, 1, 0)).normalize();
-
-    const rotationMatrix = new Matrix4();
-    rotationMatrix.makeRotationAxis(cameraRight, compensationAngle);
-    direction.applyMatrix4(rotationMatrix);
-    direction.normalize();
+    this.applyCombatAimDirection(direction);
 
     const spinStatus = this.isCharging ? ' (SPINNING)' : '';
 
@@ -3918,17 +3937,7 @@ export class ControlSystem extends System {
     playerPosition.y += 0.825; // Shoot from chest level like Viper Sting
 
     const direction = new Vector3();
-    this.camera.getWorldDirection(direction);
-    direction.normalize();
-
-    const compensationAngle = Math.PI / 6; // 30 degrees downward compensation
-    const cameraRight = new Vector3();
-    cameraRight.crossVectors(direction, new Vector3(0, 1, 0)).normalize();
-
-    const rotationMatrix = new Matrix4();
-    rotationMatrix.makeRotationAxis(cameraRight, compensationAngle);
-    direction.applyMatrix4(rotationMatrix);
-    direction.normalize();
+    this.applyCombatAimDirection(direction);
 
     const spawnPosition = playerPosition.clone();
     spawnPosition.add(direction.clone().multiplyScalar(1)); // 1 unit forward
@@ -5987,20 +5996,57 @@ export class ControlSystem extends System {
     }
   }
 
+  private flattenMeleeAttackDirection(out: Vector3): Vector3 {
+    this.camera.getWorldDirection(out);
+    out.y = 0;
+    if (out.lengthSq() < 1e-8) {
+      out.set(0, 0, 1);
+    } else {
+      out.normalize();
+    }
+    return out;
+  }
+
+  /**
+   * XZ surface-distance cone (collider radius subtracted) so trees/roots register
+   * melee hits even when the camera is pitched down at a raised combat center.
+   */
+  private isInFlattenedMeleeCone(
+    playerPosition: Vector3,
+    target: Entity,
+    flatAttackDir: Vector3,
+    attackRange: number,
+    halfAngle: number,
+  ): boolean {
+    const targetTransform = target.getComponent(Transform);
+    if (!targetTransform) return false;
+    this.meleeQueryToEnemy.subVectors(targetTransform.position, playerPosition);
+    const collider = target.getComponent(Collider);
+    const radius = collider?.radius ?? 0;
+    const xzDist = Math.hypot(this.meleeQueryToEnemy.x, this.meleeQueryToEnemy.z);
+    if (Math.max(0, xzDist - radius) > attackRange) return false;
+    this.meleeQueryToEnemyFlat.set(this.meleeQueryToEnemy.x, 0, this.meleeQueryToEnemy.z);
+    if (this.meleeQueryToEnemyFlat.lengthSq() < 1e-8) return true;
+    this.meleeQueryToEnemyFlat.normalize();
+    const dot = flatAttackDir.dot(this.meleeQueryToEnemyFlat);
+    const angle = Math.acos(Math.max(-1, Math.min(1, dot)));
+    return angle <= halfAngle;
+  }
+
   private performSpearMeleeDamage(playerTransform: Transform): number {
     const playerPosition = playerTransform.position;
-
-    // Get player facing direction (camera direction)
-    const direction = new Vector3();
-    this.camera.getWorldDirection(direction);
-    direction.normalize();
+    const direction = this.flattenMeleeAttackDirection(this.meleeAttackDirection);
 
     // Spear attack parameters - longer range than melee
     const spearRange = 6.75; // Longer range for spear
     const spearAngle = Math.PI / 2; // 60 degree cone
+    const halfAngle = spearAngle / 2;
 
     // Only consider entities within attack range instead of scanning the whole world
-    const candidates = this.queryNearbyEntities(playerPosition, spearRange);
+    const candidates = this.queryNearbyEntities(
+      playerPosition,
+      spearRange + ControlSystem.MELEE_COLLIDER_QUERY_PAD,
+    );
 
     // Get combat system to apply damage
     const combatSystem = this.world.getSystem(CombatSystem);
@@ -6012,20 +6058,13 @@ export class ControlSystem extends System {
       const enemyTransform = entity.getComponent(Transform);
       const enemyHealth = entity.getComponent(Health);
       if (!enemyTransform || !enemyHealth || entity.id === this.playerEntity?.id) return;
+      if (!this.isInFlattenedMeleeCone(playerPosition, entity, direction, spearRange, halfAngle)) {
+        return;
+      }
 
-      const enemyPosition = enemyTransform.position;
-      const toEnemy = enemyPosition.clone().sub(playerPosition);
-      const distance = toEnemy.length();
+      const distance = enemyTransform.position.distanceTo(playerPosition);
 
-      // Check if enemy is within range
-      if (distance <= spearRange) {
-        // Check if enemy is within attack cone
-        toEnemy.normalize();
-        const angle = direction.angleTo(toEnemy);
-
-        if (angle <= spearAngle / 2) {
-          // Enemy is within attack cone - calculate distance-scaled damage
-          if (combatSystem && this.playerEntity) {
+      if (combatSystem && this.playerEntity) {
             // Scale damage based on distance: 30-60 damage (0 to 6.75 units)
             const minDamage = 30;
             const maxDamage = 60;
@@ -6039,8 +6078,6 @@ export class ControlSystem extends System {
             // Queue damage through combat system (which will route to multiplayer for enemies)
             combatSystem.queueDamage(entity, actualDamage, this.playerEntity, 'melee', this.playerEntity?.userData?.playerId, damageResult.isCritical);
             enemiesHit++;
-          }
-        }
       }
     });
 
@@ -6595,15 +6632,7 @@ export class ControlSystem extends System {
     playerPosition.y += 0.825;
 
     const dir = new Vector3();
-    this.camera.getWorldDirection(dir);
-
-    // Slight downward compensation identical to Fan of Knives so the projectile tracks
-    // enemies at ground level rather than flying over their heads.
-    const compensationAngle = Math.PI / 6;
-    const cameraRight = new Vector3();
-    cameraRight.crossVectors(dir, new Vector3(0, 1, 0)).normalize();
-    const rotationMatrix = new Matrix4().makeRotationAxis(cameraRight, compensationAngle);
-    dir.applyMatrix4(rotationMatrix).normalize();
+    this.applyCombatAimDirection(dir);
 
     const spawnPosition = playerPosition.clone().add(dir.clone().multiplyScalar(1));
 
@@ -6663,9 +6692,14 @@ export class ControlSystem extends System {
     // SABRES DAMAGE
     const attackRange = 4;
     const attackAngle = Math.PI / 2;
+    const halfAngle = attackAngle / 2;
+    const playerPosition = playerTransform.position;
 
     // Only consider entities within attack range instead of scanning the whole world
-    const allEntities = this.queryNearbyEntities(playerTransform.position, attackRange);
+    const allEntities = this.queryNearbyEntities(
+      playerPosition,
+      attackRange + ControlSystem.MELEE_COLLIDER_QUERY_PAD,
+    );
     const potentialTargets = allEntities.filter(entity =>
       entity.hasComponent(Health) &&
       entity.hasComponent(Transform) &&
@@ -6697,10 +6731,7 @@ export class ControlSystem extends System {
       rightSabreDamage += VICEGRIP_SABRE_FLAT_BONUS;
     }
     
-    // Get camera direction for attack direction
-    const attackDirection = new Vector3();
-    this.camera.getWorldDirection(attackDirection);
-    attackDirection.normalize();
+    const attackDirection = this.flattenMeleeAttackDirection(this.meleeAttackDirection);
     
     let hitCount = 0;
     
@@ -6709,20 +6740,9 @@ export class ControlSystem extends System {
       const targetHealth = target.getComponent(Health);
       
       if (!targetTransform || !targetHealth || targetHealth.isDead) continue;
-      
-      // Calculate direction to target
-      const directionToTarget = targetTransform.position.clone().sub(playerTransform.position);
-      const distanceToTarget = directionToTarget.length();
-      
-      // Check if target is within range
-      if (distanceToTarget > attackRange) continue;
-      
-      // Check if target is within attack cone
-      directionToTarget.normalize();
-      const dotProduct = attackDirection.dot(directionToTarget);
-      const angleToTarget = Math.acos(Math.max(-1, Math.min(1, dotProduct)));
-      
-      if (angleToTarget > attackAngle / 2) continue;
+      if (!this.isInFlattenedMeleeCone(playerPosition, target, attackDirection, attackRange, halfAngle)) {
+        continue;
+      }
       
       // Target is within range and cone - apply damage from both sabres
       const combatSystem = this.world.getSystem(CombatSystem);
@@ -7341,7 +7361,7 @@ export class ControlSystem extends System {
     for (const entity of this.queryNearbyEntities(playerPosition, FIRE_AFFINITY_STORM_RADIUS)) {
       if (entity === this.playerEntity) continue;
       if (isCoopPlayerAllyEntity(entity)) continue;
-      if (!entity.getComponent(Enemy)) continue;
+      if (!isWeaponHittableEntity(entity)) continue;
 
       const targetHealth = entity.getComponent(Health);
       const targetTransform = entity.getComponent(Transform);
@@ -8866,6 +8886,23 @@ export class ControlSystem extends System {
     const dashResult = movement.updateDash(currentTime);
 
     if (dashResult.newPosition) {
+      const phys = this.world.getSystem(PhysicsSystem);
+      if (phys?.hasMeshCollider()) {
+        const resolved = phys.resolveMeshDash(
+          transform.position,
+          dashResult.newPosition.x,
+          dashResult.newPosition.z,
+        );
+        transform.position.set(resolved.x, resolved.y, resolved.z);
+        transform.matrixNeedsUpdate = true;
+        movement.velocity.y = 0;
+        movement.isGrounded = true;
+        if (resolved.blocked) {
+          movement.cancelDash();
+        }
+        return;
+      }
+
       const MAX_DASH_BOUNDS = this.playableRadius;
       const { x, z } = dashResult.newPosition;
 
@@ -10010,20 +10047,8 @@ export class ControlSystem extends System {
     const playerPosition = playerTransform.getWorldPosition();
     playerPosition.y += 0.825; // Shoot from chest level
     const direction = new Vector3();
-    this.camera.getWorldDirection(direction);
-    direction.normalize();
-    
-    // Apply same downward angle compensation as other projectiles
-    const compensationAngle = Math.PI / 6; // 30 degrees downward compensation
-    const cameraRight = new Vector3();
-    cameraRight.crossVectors(direction, new Vector3(0, 1, 0)).normalize();
-    
-    // Apply rotation around the right axis to tilt the direction downward
-    const rotationMatrix = new Matrix4();
-    rotationMatrix.makeRotationAxis(cameraRight, compensationAngle);
-    direction.applyMatrix4(rotationMatrix);
-    direction.normalize();
-    
+    this.applyCombatAimDirection(direction);
+
     // Offset spawn position slightly forward to avoid collision with player
     const spawnPosition = playerPosition.clone();
     spawnPosition.add(direction.clone().multiplyScalar(1)); // 1 unit forward
@@ -10093,19 +10118,7 @@ export class ControlSystem extends System {
     playerPosition.y += 0.825; // Shoot from chest level like Cobra Shot
     
     const direction = new Vector3();
-    this.camera.getWorldDirection(direction);
-    direction.normalize();
-    
-    // Apply same downward angle compensation as other projectiles
-    const compensationAngle = Math.PI / 6; // 30 degrees downward compensation
-    const cameraRight = new Vector3();
-    cameraRight.crossVectors(direction, new Vector3(0, 1, 0)).normalize();
-    
-    // Apply rotation around the right axis to tilt the direction downward
-    const rotationMatrix = new Matrix4();
-    rotationMatrix.makeRotationAxis(cameraRight, compensationAngle);
-    direction.applyMatrix4(rotationMatrix);
-    direction.normalize();
+    this.applyCombatAimDirection(direction);
     
     // Offset spawn position slightly forward to avoid collision with player
     const spawnPosition = playerPosition.clone();
@@ -10184,13 +10197,7 @@ export class ControlSystem extends System {
       const playerPosition = playerTransform.getWorldPosition();
       playerPosition.y += 0.825; // Shoot from chest level
       const dir = new Vector3();
-      this.camera.getWorldDirection(dir);
-      const compensationAngle = Math.PI / 6; // 30 degrees — same as projectile system
-      const cameraRight = new Vector3();
-      cameraRight.crossVectors(dir, new Vector3(0, 1, 0)).normalize();
-      const rotationMatrix = new Matrix4().makeRotationAxis(cameraRight, compensationAngle);
-      dir.applyMatrix4(rotationMatrix);
-      dir.normalize();
+      this.applyCombatAimDirection(dir);
       return { playerPosition, direction: dir };
     };
 
@@ -10308,13 +10315,7 @@ export class ControlSystem extends System {
       const playerPosition = playerTransform.getWorldPosition();
       playerPosition.y += 0.825;
       const dir = new Vector3();
-      this.camera.getWorldDirection(dir);
-      const compensationAngle = Math.PI / 6;
-      const cameraRight = new Vector3();
-      cameraRight.crossVectors(dir, new Vector3(0, 1, 0)).normalize();
-      const rotationMatrix = new Matrix4().makeRotationAxis(cameraRight, compensationAngle);
-      dir.applyMatrix4(rotationMatrix);
-      dir.normalize();
+      this.applyCombatAimDirection(dir);
       return { playerPosition, direction: dir };
     };
 
@@ -10852,6 +10853,7 @@ export class ControlSystem extends System {
   }
 
   public switchWeaponBySlot(slot: 1 | 2): void {
+    if (this.buildMenuHotkeysActive) return;
     const currentTime = Date.now() / 1000;
 
     // Prevent rapid weapon switching

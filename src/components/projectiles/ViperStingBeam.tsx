@@ -13,6 +13,8 @@ interface ViperStingBeamProps {
   beamLength?: number;
   /** Glacial Talons co-op boon — deep blue palette (aligned with Arctic Sting perfect shot). */
   glacialTalonsTheme?: boolean;
+  /** Lime/gold palette for siege-tower shots (aligned with viper arrows). */
+  limeTheme?: boolean;
 }
 
 const ViperStingBeam: React.FC<ViperStingBeamProps> = ({ 
@@ -22,6 +24,7 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
   isReturning = false,
   beamLength = REAPING_TALONS_MAX_TRAVEL_DISTANCE,
   glacialTalonsTheme = false,
+  limeTheme = false,
 }) => {
   const lenScale = beamLength / REAPING_TALONS_MAX_TRAVEL_DISTANCE;
   const halfZ = beamLength * 0.5;
@@ -30,15 +33,17 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
   const duration = 200; // Slightly longer than bow powershot
   const fadeStartTime = useRef<number | null>(null);
   
-  // Default: reddish-orange venom beam; Glacial Talons: deep blue (BowPowershot arctic palette).
+  // Default: reddish-orange venom beam; Glacial Talons: deep blue; siege: lime/gold.
   const colors = glacialTalonsTheme
     ? { core: '#0a3d6e', emissive: '#051a38', outer: '#1a6ba3' }
-    : {
-        core: "#ff4400",
-        emissive: "#cc0000",
-        outer: "#ff6600",
-      };
-  const returnAccent = glacialTalonsTheme ? '#4da6ff' : '#ff6600';
+    : limeTheme
+      ? { core: '#ccff00', emissive: '#55dd00', outer: '#aaff44' }
+      : {
+          core: "#ff4400",
+          emissive: "#cc0000",
+          outer: "#ff6600",
+        };
+  const returnAccent = glacialTalonsTheme ? '#4da6ff' : limeTheme ? '#ccff00' : '#ff6600';
 
   // Borrow a pooled light instead of mounting a <pointLight> (avoids lit-shader recompiles).
   const beamLight = useDynamicLight({ color: colors.emissive, distance: 9 * lenScale, decay: 2, priority: 2 });
@@ -50,17 +55,14 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
       fadeStartTime.current = Date.now();
     }
 
-    // Drive the pooled light at the beam mid-point in world space. The light sat at local
-    // [0,0,halfZ] inside a group rotated by atan2(dir.x,dir.z) and parented at `position`,
-    // so world = position + horizontalDir * halfZ.
-    const yaw = Math.atan2(direction.x, direction.z);
+    // Drive the pooled light at the beam mid-point in world space along the full 3D direction.
     const fade = fadeStartTime.current
       ? Math.max(0, 1 - (Date.now() - fadeStartTime.current) / 350)
       : 1;
     beamLight.current?.setPosition(
-      position.x + Math.sin(yaw) * halfZ,
-      position.y,
-      position.z + Math.cos(yaw) * halfZ,
+      position.x + direction.x * halfZ,
+      position.y + direction.y * halfZ,
+      position.z + direction.z * halfZ,
     );
     beamLight.current?.setIntensity(18 * fade);
 
@@ -83,13 +85,8 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
   return (
     <group ref={groupRef} position={position.toArray()}>
       {/* Main beam trail - very thin like firebeam but 1/4 diameter */}
-      <group
-        rotation={[
-          0,
-          Math.atan2(direction.x, direction.z),
-          0
-        ]}
-      >
+      <group rotation={[0, Math.atan2(direction.x, direction.z), 0]}>
+        <group rotation={[Math.atan2(-direction.y, Math.sqrt(direction.x * direction.x + direction.z * direction.z)), 0, 0]}>
         {/* Core beam - ultra thin with venom glow */}
         <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, halfZ]}>
           <cylinderGeometry args={[0.03, 0.03, beamLength, 8]} />
@@ -241,6 +238,7 @@ const ViperStingBeam: React.FC<ViperStingBeamProps> = ({
             </mesh>
           </>
         )}
+        </group>
       </group>
     </group>
   );

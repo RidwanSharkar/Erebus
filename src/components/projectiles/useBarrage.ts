@@ -1,5 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { Vector3, Matrix4 } from '@/utils/three-exports';
+import { applyDungeonChestY } from '@/utils/dungeonLayout';
 
 const BARRAGE_DAMAGE_NUMBER_MERGE_MS = 500;
 const _barrageMovementScratch = new Vector3();
@@ -112,6 +113,7 @@ export function useBarrage({
         // Move projectile
         const speed = 0.45; // Slightly faster than regular arrows
         projectile.position.addScaledVector(projectile.direction, speed);
+        applyDungeonChestY(projectile.position);
 
         // Check for enemy collisions
         for (const enemy of enemyData) {

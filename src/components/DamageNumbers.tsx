@@ -73,6 +73,18 @@ function getOutgoingDamageNumberClass(damageType?: string, isCritical?: boolean)
   if (damageType === 'gold_pickup') {
     return 'text-amber-300 text-sm font-bold tracking-wide drop-shadow-[0_0_6px_rgba(252,211,77,0.55)]';
   }
+  if (damageType === 'wood_pickup') {
+    return 'text-amber-700 text-sm font-bold tracking-wide drop-shadow-[0_0_6px_rgba(180,120,60,0.55)]';
+  }
+  if (damageType === 'stone_pickup') {
+    return 'text-slate-300 text-sm font-bold tracking-wide drop-shadow-[0_0_6px_rgba(148,163,184,0.55)]';
+  }
+  if (damageType === 'meat_pickup') {
+    return 'text-rose-400 text-sm font-bold tracking-wide drop-shadow-[0_0_6px_rgba(244,63,94,0.55)]';
+  }
+  if (damageType === 'hunger') {
+    return 'text-rose-500 text-sm font-bold tracking-wide drop-shadow-[0_0_6px_rgba(244,63,94,0.7)]';
+  }
   if (isHealDamageType(damageType)) {
     return 'text-green-400 text-lg font-extrabold';
   }
@@ -149,6 +161,12 @@ function getOutgoingDamageNumberClass(damageType?: string, isCritical?: boolean)
   }
   if (damageType === 'allied_spider') {
     return 'text-violet-300 text-lg drop-shadow-[0_0_6px_rgba(196,181,253,0.75)]';
+  }
+  if (damageType === 'defense_tower_bolt') {
+    return 'text-emerald-200 text-lg font-bold drop-shadow-[0_0_8px_rgba(52,211,153,0.85)]';
+  }
+  if (damageType === 'watch_tower_arrow' || damageType === 'siege_tower_arrow') {
+    return 'text-lime-200 text-lg font-bold drop-shadow-[0_0_8px_rgba(163,230,53,0.85)]';
   }
   if (damageType === 'hatemail') {
     return 'text-amber-300 text-xl font-extrabold drop-shadow-[0_0_10px_rgba(252,211,77,0.95)]';
@@ -334,11 +352,16 @@ const DamageNumber = memo(function DamageNumber({
             {damageData.isIncomingDamage && '-'}
             {(isHealDamageType(damageData.damageType) ||
               damageData.damageType === 'experience_gain' ||
-              damageData.damageType === 'gold_pickup') &&
+              damageData.damageType === 'gold_pickup' ||
+              damageData.damageType === 'wood_pickup' ||
+              damageData.damageType === 'stone_pickup' ||
+              damageData.damageType === 'meat_pickup') &&
               '+'}
             {damageData.damageType === 'experience_gain' ? (
               <>{Math.round(damageData.damage)} XP</>
             ) : damageData.damageType === 'gold_pickup' ? (
+              <>{Math.round(damageData.damage)}</>
+            ) : damageData.damageType === 'wood_pickup' || damageData.damageType === 'stone_pickup' || damageData.damageType === 'meat_pickup' ? (
               <>{Math.round(damageData.damage)}</>
             ) : isHealDamageType(damageData.damageType) ? (
               Math.round(damageData.damage)

@@ -62,7 +62,7 @@ export const BASE_SCENE_REL_PATHS = new Set([
 ]);
 
 /** Directories under public/models that are static props — skip mesh-strip pipeline. */
-export const SKIP_OPTIMIZE_DIRS = new Set(['items', 'trinket', 'environ']);
+export const SKIP_OPTIMIZE_DIRS = new Set(['items', 'trinket', 'environ', 'maps']);
 
 /**
  * WoW-export folders (and top-level WoW prefixes) that use bone_* skeletons,

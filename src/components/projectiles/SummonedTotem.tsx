@@ -298,7 +298,7 @@ export default function SummonedTotem({
       const liveTarget = findLiveTargetById(slot.targetId);
       if (!liveTarget) continue;
       slot.to.copy(liveTarget.position);
-      slot.to.y = Math.max(slot.to.y, 0.35) + 1.05;
+      slot.to.y += 1.05;
     }
   }, [findLiveTargetById]);
 
@@ -378,7 +378,8 @@ export default function SummonedTotem({
         : baseDamage;
 
     // Use the enemy's current real-time position for damage numbers and effects (not cached target position)
-    const currentWorldImpactPosition = currentEnemy.position.clone().setY(1.5);
+    const currentWorldImpactPosition = currentEnemy.position.clone();
+    currentWorldImpactPosition.y += 1.5;
 
 
 
@@ -458,7 +459,8 @@ export default function SummonedTotem({
         ? Math.floor(baseDamage * 2)
         : baseDamage;
 
-    const currentWorldImpactPosition = currentEnemy.position.clone().setY(1.5);
+    const currentWorldImpactPosition = currentEnemy.position.clone();
+    currentWorldImpactPosition.y += 1.5;
 
     onDamage(
       target.id,
@@ -523,7 +525,7 @@ export default function SummonedTotem({
       if (entangleTarget && entangleTarget.health > 0) {
         constants.lastNecromancerEntangleTime = now;
         const impactPos = entangleTarget.position.clone();
-        impactPos.y = Math.max(impactPos.y, 0.35) + 0.5;
+        impactPos.y += 0.5;
         onDamage(entangleTarget.id, 0, impactPos, false, {
           damageType: 'summon_totem',
           necromancerTotemEntangle: true,
@@ -545,7 +547,7 @@ export default function SummonedTotem({
         groupRef.current.getWorldPosition(from);
         from.y += 0.58;
         const to = closestEnemy.position.clone();
-        to.y = Math.max(to.y, 0.35) + 1.1;
+        to.y += 1.1;
         const id = boltIdRef.current++;
         const lightningSlot = lightningPool.current.find((slot) => !slot.active);
         if (lightningSlot) {
@@ -568,7 +570,7 @@ export default function SummonedTotem({
           groupRef.current.getWorldPosition(from);
           from.y += 0.42;
           const to = closestEnemy.position.clone();
-          to.y = Math.max(to.y, 0.35) + 1.05;
+          to.y += 1.05;
           const id = boltIdRef.current++;
           currentTargetRef.current = closestEnemy;
           isAttackingRef.current = true;

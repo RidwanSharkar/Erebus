@@ -12,6 +12,7 @@ import {
 } from '@/utils/exploreTreeLayout';
 
 export type ExploreTreePlacement = {
+  index: number;
   x: number;
   z: number;
   scale: number;

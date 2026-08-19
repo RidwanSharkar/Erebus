@@ -32,6 +32,14 @@ interface SwordProps {
   /** Co-op: instanced mushroom hit test (server `mushroom-damage`). */
   mushroomTargets?: Array<{ index: number; position: Vector3 }>;
   onMushroomHit?: (index: number, baseDamage: number) => void;
+  treeTargets?: Array<{ index: number; position: Vector3; radius?: number }>;
+  onTreeHit?: (index: number, baseDamage: number) => void;
+  rootTargets?: Array<{ index: number; position: Vector3; radius?: number }>;
+  onRootHit?: (index: number, baseDamage: number) => void;
+  rockTargets?: Array<{ index: number; position: Vector3; radius?: number }>;
+  onRockHit?: (index: number, baseDamage: number) => void;
+  spineTargets?: Array<{ index: number; position: Vector3; radius?: number }>;
+  onSpineHit?: (index: number, baseDamage: number) => void;
   setDamageNumbers?: (callback: (prev: Array<{
     id: number;
     damage: number;
@@ -105,6 +113,14 @@ const SwordComponent = memo(function Sword({
   realTimePositionRef,
   mushroomTargets,
   onMushroomHit,
+  treeTargets,
+  onTreeHit,
+  rootTargets,
+  onRootHit,
+  rockTargets,
+  onRockHit,
+  spineTargets,
+  onSpineHit,
 }: SwordProps) {
   const swordRef = useRef<Group>(null);
   const swingProgress = useRef(0);
@@ -884,7 +900,7 @@ const SwordComponent = memo(function Sword({
   // Function to perform swing damage based on combo step
   const performSwingDamage = (comboStep: 1 | 2 | 3) => {
     if (!playerPosition) return;
-    if (!enemyData.length && !mushroomTargets?.length) return;
+    if (!enemyData.length && !mushroomTargets?.length && !treeTargets?.length && !rootTargets?.length && !rockTargets?.length && !spineTargets?.length) return;
 
     const now = Date.now();
 
@@ -983,6 +999,130 @@ const SwordComponent = memo(function Sword({
         },
         now,
         lastSwingHitTime.current,
+      );
+    }
+
+    if (treeTargets?.length && onTreeHit) {
+      const yaw = playerRotation?.y ?? 0;
+      forEachMushroomHitBySwing(
+        playerPosition,
+        yaw,
+        comboStep,
+        treeTargets,
+        (index) => {
+          onTreeHit(index, baseDamage);
+          if (setDamageNumbers && nextDamageNumberId) {
+            const t = treeTargets.find((target) => target.index === index);
+            if (t) {
+              setDamageNumbers((prev) => [
+                ...prev,
+                {
+                  id: nextDamageNumberId.current++,
+                  damage: baseDamage,
+                  position: t.position.clone(),
+                  isCritical: false,
+                },
+              ]);
+            }
+          }
+        },
+        now,
+        lastSwingHitTime.current,
+        100,
+        'tree',
+      );
+    }
+
+    if (rootTargets?.length && onRootHit) {
+      const yaw = playerRotation?.y ?? 0;
+      forEachMushroomHitBySwing(
+        playerPosition,
+        yaw,
+        comboStep,
+        rootTargets,
+        (index) => {
+          onRootHit(index, baseDamage);
+          if (setDamageNumbers && nextDamageNumberId) {
+            const t = rootTargets.find((target) => target.index === index);
+            if (t) {
+              setDamageNumbers((prev) => [
+                ...prev,
+                {
+                  id: nextDamageNumberId.current++,
+                  damage: baseDamage,
+                  position: t.position.clone(),
+                  isCritical: false,
+                },
+              ]);
+            }
+          }
+        },
+        now,
+        lastSwingHitTime.current,
+        100,
+        'root',
+      );
+    }
+
+    if (rockTargets?.length && onRockHit) {
+      const yaw = playerRotation?.y ?? 0;
+      forEachMushroomHitBySwing(
+        playerPosition,
+        yaw,
+        comboStep,
+        rockTargets,
+        (index) => {
+          onRockHit(index, baseDamage);
+          if (setDamageNumbers && nextDamageNumberId) {
+            const t = rockTargets.find((target) => target.index === index);
+            if (t) {
+              setDamageNumbers((prev) => [
+                ...prev,
+                {
+                  id: nextDamageNumberId.current++,
+                  damage: baseDamage,
+                  position: t.position.clone(),
+                  isCritical: false,
+                },
+              ]);
+            }
+          }
+        },
+        now,
+        lastSwingHitTime.current,
+        100,
+        'rock',
+      );
+    }
+
+    if (spineTargets?.length && onSpineHit) {
+      const yaw = playerRotation?.y ?? 0;
+      forEachMushroomHitBySwing(
+        playerPosition,
+        yaw,
+        comboStep,
+        spineTargets,
+        (index) => {
+          onSpineHit(index, baseDamage);
+          if (setDamageNumbers && nextDamageNumberId) {
+            const t = spineTargets.find((target) => target.index === index);
+            if (t) {
+              setDamageNumbers((prev) => [
+                ...prev,
+                {
+                  id: nextDamageNumberId.current++,
+                  damage: baseDamage,
+                  position: t.position.clone(),
+                  isCritical: false,
+                },
+              ]);
+            }
+          }
+        },
+        now,
+        lastSwingHitTime.current,
+        100,
+        'spine',
       );
     }
   };
@@ -1255,6 +1395,16 @@ const SwordComponent = memo(function Sword({
     prevProps.currentSubclass === nextProps.currentSubclass &&
     prevProps.hasChainLightning === nextProps.hasChainLightning &&
     (prevProps.enemyData?.length ?? 0) === (nextProps.enemyData?.length ?? 0) &&
+    (prevProps.mushroomTargets?.length ?? 0) === (nextProps.mushroomTargets?.length ?? 0) &&
+    (prevProps.treeTargets?.length ?? 0) === (nextProps.treeTargets?.length ?? 0) &&
+    (prevProps.rootTargets?.length ?? 0) === (nextProps.rootTargets?.length ?? 0) &&
+    (prevProps.rockTargets?.length ?? 0) === (nextProps.rockTargets?.length ?? 0) &&
+    (prevProps.spineTargets?.length ?? 0) === (nextProps.spineTargets?.length ?? 0) &&
+    prevProps.onMushroomHit === nextProps.onMushroomHit &&
+    prevProps.onTreeHit === nextProps.onTreeHit &&
+    prevProps.onRootHit === nextProps.onRootHit &&
+    prevProps.onRockHit === nextProps.onRockHit &&
+    prevProps.onSpineHit === nextProps.onSpineHit &&
     (!prevProps.chargeDirectionProp || !nextProps.chargeDirectionProp ||
      prevProps.chargeDirectionProp.equals(nextProps.chargeDirectionProp)) &&
     (!prevProps.playerPosition || !nextProps.playerPosition ||

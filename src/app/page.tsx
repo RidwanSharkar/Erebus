@@ -32,6 +32,7 @@ import DpsMeter from '../components/ui/DpsMeter';
 import LoadingScreen from '../components/ui/LoadingScreen';
 import PortalBlinkTransition from '../components/ui/PortalBlinkTransition';
 import ExploreMinimap from '../components/ui/ExploreMinimap';
+import HungerMeter from '../components/ui/HungerMeter';
 import DefenseWaveHud from '../components/ui/DefenseWaveHud';
 import RoomTitleAnnouncement from '../components/ui/RoomTitleAnnouncement';
 import ControlsTutorialOverlay from '../components/ui/ControlsTutorialOverlay';
@@ -42,6 +43,7 @@ import CoopBossLootPickerModal from '../components/ui/CoopBossLootPickerModal';
 import CoopPetCompanionUpgradeModal from '../components/ui/CoopPetCompanionUpgradeModal';
 import type { PetCompanionUpgradeId } from '@/utils/petCompanionUpgrades';
 import { getPetCompanionUpgradeOptionsForKind } from '@/utils/petCompanionUpgrades';
+import { getExploreAllyCap, isExplorePurchasedAllyType } from '@/utils/exploreBuildings';
 import DefeatRetryDialog from '../components/ui/DefeatRetryDialog';
 import {
   applyTalentIdToLoadout,
@@ -103,6 +105,9 @@ import {
   type ExploreCampPublic,
 } from '../utils/exploreCamps';
 import { getWeaponAspectLabel, defaultWeaponAspect, type WeaponAspect } from '../utils/weaponAspects';
+import {
+  EXPLORE_SHRINE_GIFTS,
+} from '../utils/exploreBuildings';
 
 // Extend Window interface to include audioSystem
 declare global {
@@ -293,7 +298,14 @@ function HomeContent() {
     claimPreBossReward,
     claimDeepSanctumReward,
     claimExploreCamp,
+    barracksRecruitAlly,
+    researchPurchase,
+    shrineClaim,
+    obeliskBuyTalent,
+    firePitHeal,
     registerDeepSanctumRewardClaimedHandler,
+    registerShrineClaimedHandler,
+    registerObeliskPurchaseSuccessHandler,
     chooseSunkenTempleLoot,
     chooseEternityPalaceLoot,
     chooseEternityPetUpgrade,
@@ -368,6 +380,7 @@ function HomeContent() {
     reclaimedPlayerState,
     selectedArchetype,
     selectedWeaponAspect,
+    exploreResearch,
   } = useMultiplayerRoom();
 
   const combatOverlayCallbacksRef = useRef<CombatOverlayCallbacks>(NOOP_COMBAT_OVERLAY_CALLBACKS);
@@ -433,6 +446,32 @@ function HomeContent() {
   const [coopInteractHint, setCoopInteractHint] = useState<string | null>(null);
   const onCoopInteractHintChange = useCallback((hint: string | null) => {
     setCoopInteractHint(hint);
+  }, []);
+  const [buildMenuOpen, setBuildMenuOpen] = useState(false);
+  const [buildMenuView, setBuildMenuView] = useState<'root' | 'towers'>('root');
+  const onBuildMenuChange = useCallback((open: boolean, view: 'root' | 'towers' = 'root') => {
+    setBuildMenuOpen(open);
+    setBuildMenuView(open ? view : 'root');
+  }, []);
+  const [barracksRecruitOpen, setBarracksRecruitOpen] = useState(false);
+  const onBarracksRecruitOpenChange = useCallback((open: boolean) => {
+    setBarracksRecruitOpen(open);
+  }, []);
+  const [researchPanelOpen, setResearchPanelOpen] = useState(false);
+  const onResearchPanelOpenChange = useCallback((open: boolean) => {
+    setResearchPanelOpen(open);
+  }, []);
+  const [shrinePanelOpen, setShrinePanelOpen] = useState(false);
+  const onShrinePanelOpenChange = useCallback((open: boolean) => {
+    setShrinePanelOpen(open);
+  }, []);
+  const [obeliskPanelOpen, setObeliskPanelOpen] = useState(false);
+  const onObeliskPanelOpenChange = useCallback((open: boolean) => {
+    setObeliskPanelOpen(open);
+  }, []);
+  const [firePitHealOpen, setFirePitHealOpen] = useState(false);
+  const onFirePitHealOpenChange = useCallback((open: boolean) => {
+    setFirePitHealOpen(open);
   }, []);
 
   useEffect(() => {
@@ -571,6 +610,11 @@ function HomeContent() {
   const [playerEssence, setPlayerEssence] = useState(50); // Start with 50 essence
   const [playerGold, setPlayerGold] = useState(0);
   const [playerFlow, setPlayerFlow] = useState(0);
+  const [playerWood, setPlayerWood] = useState(0);
+  const [playerStone, setPlayerStone] = useState(0);
+  const [playerMeat, setPlayerMeat] = useState(0);
+  const [playerHunger, setPlayerHunger] = useState(0);
+  const [playerHungerCritical, setPlayerHungerCritical] = useState(false);
   const [playerFate, setPlayerFate] = useState(STARTING_FATE);
   const [showMerchantUI, setShowMerchantUI] = useState(false);
   const [showRulesPanel, setShowRulesPanel] = useState(false);
@@ -608,7 +652,7 @@ function HomeContent() {
   const [throneTalentWeapon, setThroneTalentWeapon] = useState<WeaponType | null>(null);
   type CoopBoonState =
     | { kind: 'class'; options: TalentId[]; weaponForPick: WeaponType; exploreCampId?: string }
-    | { kind: 'room'; options: TalentId[]; exploreCampId?: string; exploreRoomColor?: CoopRoomColor };
+    | { kind: 'room'; options: TalentId[]; exploreCampId?: string; exploreShrineId?: string; exploreRoomColor?: CoopRoomColor };
   const [coopBoon, setCoopBoon] = useState<CoopBoonState | null>(null);
   const [sunkenLootModalOpen, setSunkenLootModalOpen] = useState(false);
   const [eternityLootModalOpen, setEternityLootModalOpen] = useState(false);
@@ -750,6 +794,9 @@ function HomeContent() {
       setPlayerGold(0);
       setPlayerEssence(50);
       setPlayerFlow(0);
+      setPlayerWood(0);
+      setPlayerStone(0);
+      setPlayerMeat(0);
       setPlayerFate(STARTING_FATE);
       setShowMerchantUI(false);
       setDefeatDialogOpen(false);
@@ -796,6 +843,9 @@ function HomeContent() {
     setPlayerGold(0);
     setPlayerEssence(50);
     setPlayerFlow(0);
+    setPlayerWood(0);
+    setPlayerStone(0);
+    setPlayerMeat(0);
     setPlayerFate(STARTING_FATE);
     setShowMerchantUI(false);
     setDefeatDialogOpen(false);
@@ -1750,6 +1800,7 @@ function HomeContent() {
   const handleCoopBoonPick = useCallback(
     (id: TalentId, kind: 'class' | 'room', classPickWeapon?: WeaponType) => {
       const exploreCampId = coopBoon && 'exploreCampId' in coopBoon ? coopBoon.exploreCampId : undefined;
+      const exploreShrineId = coopBoon && 'exploreShrineId' in coopBoon ? coopBoon.exploreShrineId : undefined;
 
       setTalentLoadout((prev) => {
         const next = applyTalentIdToLoadout(prev, id);
@@ -1802,6 +1853,8 @@ function HomeContent() {
         if (exploreCampId) {
           exploreCampClaimedRef.current.add(exploreCampId);
           claimExploreCamp(exploreCampId);
+        } else if (exploreShrineId) {
+          // Shrine was consumed when the gift was chosen.
         } else {
           clearCoopClearedRoomColor();
           setPortalsUnlocked(true);
@@ -1847,6 +1900,57 @@ function HomeContent() {
     },
     [enqueueAnnouncement],
   );
+
+  useEffect(() => {
+    return registerShrineClaimedHandler((payload) => {
+      const gift = EXPLORE_SHRINE_GIFTS.find((entry) => entry.id === payload.gift);
+      const color = gift?.color ?? 'red';
+      const options = rollRoomBoonOptions(
+        color,
+        selectedWeapons.primary,
+        talentLoadout,
+        abilityLoadout,
+        {
+          universalGreen: universalGreenZombieRoomBoonExcludedIdsRef.current,
+          roomBoomDash: roomBoomDashBoonExcludedIdsRef.current,
+          runeblade: runebladeRoomBoonExcludedIdsRef.current,
+          scytheEntropic: scytheEntropicRoomBoonExcludedIdsRef.current,
+          sabres: sabresRoomBoonExcludedIdsRef.current,
+          bow: bowRoomBoonExcludedIdsRef.current,
+        },
+        selectedWeaponAspect,
+      );
+      if (options.length === 0) return;
+      setCoopBoon({
+        kind: 'room',
+        options,
+        exploreShrineId: payload.shrineId,
+        exploreRoomColor: color,
+      });
+    });
+  }, [
+    registerShrineClaimedHandler,
+    selectedWeapons.primary,
+    talentLoadout,
+    abilityLoadout,
+    selectedWeaponAspect,
+  ]);
+
+  useEffect(() => {
+    return registerObeliskPurchaseSuccessHandler((payload) => {
+      if (socket?.id && payload.playerId !== socket.id) return;
+      const id = payload.talentId as TalentId;
+      setTalentLoadout((prev) => {
+        const next = applyTalentIdToLoadout(prev, id);
+        window.dispatchEvent(
+          new CustomEvent('coop-talent-loadout-picked', { detail: next }),
+        );
+        return next;
+      });
+      enqueueAnnouncement('UNLOCKED', REWARD_ANNOUNCEMENT_COLORS.unlocked, `boon-${id}`);
+      window.audioSystem?.playUIInterface3Sound?.();
+    });
+  }, [registerObeliskPurchaseSuccessHandler, socket?.id, setTalentLoadout, enqueueAnnouncement]);
 
   useEffect(() => {
     return registerDeepSanctumRewardClaimedHandler((payload) => {
@@ -2001,6 +2105,30 @@ function HomeContent() {
     setPlayerFlow(flow);
   }, []);
 
+  const handleWoodUpdate = useCallback((wood: number) => {
+    setPlayerWood(wood);
+  }, []);
+
+  const handleStoneUpdate = useCallback((stone: number) => {
+    setPlayerStone(stone);
+  }, []);
+
+  const handleMeatUpdate = useCallback((meat: number) => {
+    setPlayerMeat(meat);
+  }, []);
+
+  const handleHungerUpdate = useCallback((hunger: number, starvingCritical: boolean) => {
+    setPlayerHunger(hunger);
+    setPlayerHungerCritical(starvingCritical);
+  }, []);
+
+  useEffect(() => {
+    if (coopCurrentRoomKind !== 'explore') {
+      setPlayerHunger(0);
+      setPlayerHungerCritical(false);
+    }
+  }, [coopCurrentRoomKind]);
+
   const handleFateUpdate = useCallback((fate: number) => {
     setPlayerFate(fate);
   }, []);
@@ -2011,8 +2139,15 @@ function HomeContent() {
     if (!localPlayer) return;
     if (typeof localPlayer.gold === 'number') setPlayerGold(localPlayer.gold);
     if (typeof localPlayer.flow === 'number') setPlayerFlow(localPlayer.flow);
+    if (typeof localPlayer.wood === 'number') setPlayerWood(localPlayer.wood);
+    if (typeof localPlayer.stone === 'number') setPlayerStone(localPlayer.stone);
+    if (typeof localPlayer.meat === 'number') setPlayerMeat(localPlayer.meat);
+    if (typeof localPlayer.hunger === 'number') {
+      setPlayerHunger(localPlayer.hunger);
+      setPlayerHungerCritical(localPlayer.starvingCritical === true);
+    }
     if (typeof localPlayer.fate === 'number') setPlayerFate(localPlayer.fate);
-  }, [gameStarted, currentRoomId, socket?.id, gameMode, playersRef]);
+  }, [gameStarted, currentRoomId, socket?.id, gameMode, playersRef, coopCurrentRoomKind]);
 
   const refreshCoopBossSpawned = useCallback(() => {
     setCoopBossSpawned(
@@ -2020,6 +2155,20 @@ function HomeContent() {
         (e) => (e.type === 'boss' || e.type === 'boss2' || e.type === 'boss3' || e.type === 'destiny') && !e.isDying,
       ),
     );
+  }, [enemiesRef]);
+
+  const [exploreAllyCount, setExploreAllyCount] = useState(0);
+  const [hasLiveSpiritLounge, setHasLiveSpiritLounge] = useState(false);
+  const refreshExploreAllyAlive = useCallback(() => {
+    let count = 0;
+    let lounge = false;
+    for (const enemy of enemiesRef.current.values()) {
+      if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+      if (enemy.type === 'barracks') lounge = true;
+      if (isExplorePurchasedAllyType(enemy.type)) count += 1;
+    }
+    setExploreAllyCount(count);
+    setHasLiveSpiritLounge(lounge);
   }, [enemiesRef]);
 
   // Sync localPurchasedItems from ref — avoids re-rendering on every player map update.
@@ -2039,15 +2188,39 @@ function HomeContent() {
 
   useEffect(() => {
     if (!socket) return;
-    const onEnemyRosterChange = () => refreshCoopBossSpawned();
+    const onEnemyRosterChange = () => {
+      refreshCoopBossSpawned();
+      refreshExploreAllyAlive();
+    };
     socket.on('enemy-spawned', onEnemyRosterChange);
     socket.on('enemy-removed', onEnemyRosterChange);
     refreshCoopBossSpawned();
+    refreshExploreAllyAlive();
     return () => {
       socket.off('enemy-spawned', onEnemyRosterChange);
       socket.off('enemy-removed', onEnemyRosterChange);
     };
-  }, [socket, currentRoomId, refreshCoopBossSpawned]);
+  }, [socket, currentRoomId, refreshCoopBossSpawned, refreshExploreAllyAlive]);
+
+  // Announce fire-pit night survival stat grant
+  useEffect(() => {
+    if (!socket) return;
+    const onDaySurvived = (data: { statPoints?: number; wildernessLevel?: number }) => {
+      const pts = Math.max(0, Math.floor(Number(data?.statPoints) || 0));
+      if (pts > 0) {
+        window.audioSystem?.playUIInterface3Sound?.();
+        enqueueAnnouncement(
+          `+${pts} STAT POINTS`,
+          REWARD_ANNOUNCEMENT_COLORS.stat,
+          `explore-day-survived-${Date.now()}`,
+        );
+      }
+    };
+    socket.on('explore-day-survived', onDaySurvived);
+    return () => {
+      socket.off('explore-day-survived', onDaySurvived);
+    };
+  }, [socket, enqueueAnnouncement]);
 
   // Initialize audio system for UI sounds
   useEffect(() => {
@@ -2305,6 +2478,10 @@ function HomeContent() {
                   onEssenceUpdate={handleEssenceUpdate}
                   onGoldUpdate={handleGoldUpdate}
                   onFlowUpdate={handleFlowUpdate}
+                  onWoodUpdate={handleWoodUpdate}
+                  onStoneUpdate={handleStoneUpdate}
+                  onMeatUpdate={handleMeatUpdate}
+                  onHungerUpdate={handleHungerUpdate}
                   onFateUpdate={handleFateUpdate}
                   onMerchantUIUpdate={setShowMerchantUI}
                   onSceneReady={handleSceneReady}
@@ -2346,6 +2523,12 @@ function HomeContent() {
                   onSunkenSentinelInteract={handleSunkenSentinelInteract}
                   onEternityPalaceArchitectInteract={handleEternityPalaceArchitectInteract}
                   onInteractHintChange={onCoopInteractHintChange}
+                  onBuildMenuChange={onBuildMenuChange}
+                  onBarracksRecruitOpenChange={onBarracksRecruitOpenChange}
+                  onResearchPanelOpenChange={onResearchPanelOpenChange}
+                  onShrinePanelOpenChange={onShrinePanelOpenChange}
+                  onObeliskPanelOpenChange={onObeliskPanelOpenChange}
+                  onFirePitHealOpenChange={onFirePitHealOpenChange}
                   onLocalPlayerDefeated={onLocalPlayerDefeated}
                   onLocalPlayerRevived={onLocalPlayerRevived}
                   extraDashChargePurchased={merchantPurchaseState.dashChargePurchased}
@@ -2377,6 +2560,10 @@ function HomeContent() {
                   gold={playerGold}
                   flow={playerFlow}
                   fate={playerFate}
+                  wood={playerWood}
+                  stone={playerStone}
+                  showWood={coopCurrentRoomKind === 'explore'}
+                  showStone={coopCurrentRoomKind === 'explore'}
                 />
               )}
               {gameMode === 'pvp' && (
@@ -2430,6 +2617,29 @@ function HomeContent() {
                 purchasedItems={localPurchasedItems}
                 talentLoadout={talentLoadout}
                 interactHint={gameMode === 'coop' ? coopInteractHint : null}
+                buildMenuOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && buildMenuOpen}
+                buildMenuView={buildMenuView}
+                hasLiveSpiritLounge={hasLiveSpiritLounge}
+                barracksRecruitOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && barracksRecruitOpen}
+                playerWood={playerWood}
+                playerFlow={playerFlow}
+                playerGold={playerGold}
+                researchPanelOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && researchPanelOpen}
+                exploreResearch={exploreResearch}
+                onResearchPurchase={researchPurchase}
+                shrinePanelOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && shrinePanelOpen}
+                onShrineGift={shrineClaim}
+                obeliskPanelOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && obeliskPanelOpen}
+                onObeliskPurchase={obeliskBuyTalent}
+                firePitHealOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && firePitHealOpen}
+                playerMeat={playerMeat}
+                playerHunger={playerHunger}
+                playerAtFullHp={gameState.playerHealth >= gameState.maxHealth}
+                onFirePitHeal={firePitHeal}
+                playerStone={playerStone}
+                exploreAllyCount={exploreAllyCount}
+                exploreAllyCap={getExploreAllyCap(exploreResearch.spiritLineage)}
+                onBarracksRecruit={barracksRecruitAlly}
                 gameMode={gameMode}
                 selectedArchetype={selectedArchetype}
                 weaponAspect={selectedWeaponAspect}
@@ -2451,7 +2661,12 @@ function HomeContent() {
                 totalDamage={dpsSnapshot.totalDamage}
                 onClear={handleClearDpsData}
               />
-              {gameMode === 'coop' && coopCurrentRoomKind === 'explore' && <ExploreMinimap />}
+              {gameMode === 'coop' && coopCurrentRoomKind === 'explore' && (
+                <div className="flex flex-col items-start gap-1.5">
+                  <ExploreMinimap />
+                  <HungerMeter hunger={playerHunger} starvingCritical={playerHungerCritical} />
+                </div>
+              )}
               {gameMode === 'coop' && coopCurrentRoomKind === 'defense' && <DefenseWaveHud />}
               {(gameMode === 'pvp' || gameMode === 'coop') && (
                 <>
@@ -2466,7 +2681,7 @@ function HomeContent() {
                     playerLevel={playerLevel}
                     selectedArchetype={selectedArchetype}
                   />
-                  <InventoryPanel inventory={inventory} />
+                  <InventoryPanel inventory={inventory} meat={playerMeat} />
                 </>
               )}
             </div>

@@ -4,7 +4,8 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { AdditiveBlending, BackSide, Group, MathUtils, MeshBasicMaterial, SphereGeometry, TorusGeometry, Vector3 } from '@/utils/three-exports';
 import CustomSky from './CustomSky';
 import ThroneCenterSeal, { THRONE_CENTER_SEAL_RADIUS } from './ThroneCenterSeal';
-import DefenseCenterPlatform, { DEFENSE_PLATFORM_RADIUS } from './DefenseCenterPlatform';
+import DefenseArenaMap from './DefenseArenaMap';
+import DefenseCenterPlatform from './DefenseCenterPlatform';
 import ThroneOuterFloor from './ThroneOuterFloor';
 import SanctumIncinerationRuneDisc, {
   sanctumRuneDiscScaleForBandInner,
@@ -144,26 +145,35 @@ export const THRONE_PORTAL_POSITIONS: ReadonlyArray<{ readonly x: number; readon
 export const THRONE_VOID_PORTAL_POSITION = Object.freeze({ x: 0, y: 0, z: -11.5 });
 export const THRONE_VOID_PORTAL_RADIUS = 2.025;
 
-/** Side-portal X offset so red / blue sit clear of the larger purple center void. */
-export const THRONE_SIDE_VOID_PORTAL_SPACING_X = 7.75;
-export const THRONE_SIDE_VOID_PORTAL_Z = -9.0;
-export const THRONE_SIDE_VOID_PORTAL_RADIUS = 1.325;
+/** Side-portal X offset so red / blue wrap the purple center void on the same rim band. */
+export const THRONE_SIDE_VOID_PORTAL_SPACING_X = 5.4;
+export const THRONE_SIDE_VOID_PORTAL_Z = -10.16;
+export const THRONE_EXPLORE_PORTAL_RADIUS = 1.58;
+export const THRONE_DEFENSE_PORTAL_RADIUS = 1.325;
+export const THRONE_DUNGEON_PORTAL_RADIUS = 1.12;
 
-/** Red explore-mode void portal — inward of the south rim, west of the purple center void. */
+/** Red explore-mode void portal — west of the purple center void. */
 export const THRONE_EXPLORE_PORTAL_POSITION = Object.freeze({
   x: -THRONE_SIDE_VOID_PORTAL_SPACING_X,
   y: 0,
   z: THRONE_SIDE_VOID_PORTAL_Z,
 });
 
-/** Blue defense-mode void portal — inward of the south rim, east of the purple center void. */
+/** Blue defense-mode void portal — east of the purple center void. */
 export const THRONE_DEFENSE_PORTAL_POSITION = Object.freeze({
   x: THRONE_SIDE_VOID_PORTAL_SPACING_X,
   y: 0,
   z: THRONE_SIDE_VOID_PORTAL_Z,
 });
 
-/** Defense arena: same throne shell, scaled up. Keep in sync with backend `DEFENSE_ROOM_SCALE`. */
+/** Green dungeon-mode void portal — immediately east of the blue defense portal. */
+export const THRONE_DUNGEON_PORTAL_POSITION = Object.freeze({
+  x: 8.25,
+  y: 0,
+  z: -8.0,
+});
+
+/** Defense playable circle (platform group scale). Keep in sync with backend `DEFENSE_ROOM_SCALE`. */
 export const DEFENSE_ROOM_SCALE = 1.35;
 export const DEFENSE_ROOM_RADIUS = COOP_THRONE_ROOM_RADIUS * DEFENSE_ROOM_SCALE;
 
@@ -1407,7 +1417,7 @@ interface ThroneRoomProps {
   /**
    * `prep`: full staging room (pillars, pedestals, weapons, south-rim portals).
    * `bossArena`: same shell only — used for co-op boss fight + post-boss portals (`CoopMainArenaPortals`).
-   * `defense`: scaled prep shell without pedestals / portals — defense-mode arena.
+   * `defense`: Orgrimmar colosseum + center platform (no grass / fireplace).
    */
   layout?: 'prep' | 'bossArena' | 'defense';
   /**
@@ -1469,119 +1479,129 @@ function ThroneRoom({
   const prepGrassPalette = resolveGrassPresetByIndex(grassPresetIndex);
 
   return (
-    <group name="throne-room" scale={isDefense ? DEFENSE_ROOM_SCALE : 1}>
-      {usePurpleBossArenaShell ? (
-        <CustomSky skyPresetIndex={skyPresetIndex} roomTheme="red" animateClouds={false} />
-      ) : (
-        <CustomSky skyPresetIndex={skyPresetIndex} skyPreset="throneBlue" />
-      )}
-      {!combatActive && <ThroneSkyRayDecor />}
-   
+    <>
+      {isDefense && <DefenseArenaMap />}
+      <group name="throne-room" scale={isDefense ? DEFENSE_ROOM_SCALE : 1}>
+        {usePurpleBossArenaShell ? (
+          <CustomSky skyPresetIndex={skyPresetIndex} roomTheme="red" animateClouds={false} />
+        ) : (
+          <CustomSky skyPresetIndex={skyPresetIndex} skyPreset="throneBlue" />
+        )}
+        {!combatActive && !isDefense && <ThroneSkyRayDecor />}
 
-      {/* Celestial cloud sea + floating-island shell — prep only 
-      {isPrep && (
-        <>
-          <CloudSeaOcean animateClouds />
-          <ThroneIslandUnderside />
-          <ThroneRimMistfall animateClouds />
-          <ThroneVoidMotes animateClouds />
-        </>
-      )}  (bossArena keeps red sky). */}
+        {/* Celestial cloud sea + floating-island shell — prep only
+        {isPrep && (
+          <>
+            <CloudSeaOcean animateClouds />
+            <ThroneIslandUnderside />
+            <ThroneRimMistfall animateClouds />
+            <ThroneVoidMotes animateClouds />
+          </>
+        )}  (bossArena keeps red sky). */}
 
-      <group position={THRONE_GRASS_POSITION}>
-        <StylizedGrass
-          fieldShape="disc"
-          radius={THRONE_GRASS_OUTER_RADIUS}
-          excludeInnerRadius={
-            usePurpleBossArenaShell
-              ? 0
-              : isDefense
-                ? DEFENSE_PLATFORM_RADIUS
-                : THRONE_CENTER_SEAL_RADIUS
-          }
-          count={
-            isDefense
-              ? Math.round(THRONE_GRASS_COUNT * DEFENSE_ROOM_SCALE ** 2)
-              : THRONE_GRASS_COUNT
-          }
-          roomTheme={usePurpleBossArenaShell ? undefined : 'green'}
-          grassPalette={usePurpleBossArenaShell ? 'purple' : prepGrassPalette}
-          bladeHeight={0.42}
-          windStrength={combatActive ? 0 : 0.22}
-          densityScale={isDefense ? 1 : combatActive ? 0.5 : 1}
-        />
-        <ThroneNatureProps />
-        {/* <ThroneTurretProps /> */}
-      </group>
-      <SanctumIncinerationRuneDisc
-        scale={THRONE_RUNE_DISC_SCALE}
-        innerSpinScale={THRONE_RUNE_DISC_SPIN_SCALE}
-        outerSpinScale={THRONE_RUNE_DISC_SPIN_SCALE}
-        position={THRONE_RUNE_DISC_POSITION}
-      />
-      {isPrep && <ThroneCenterSeal />}
-      {isDefense && <DefenseCenterPlatform />}
-      <ThroneFireplaceDecor />
-
-      {isPrep && (
-        <>
-          {THRONE_PILLAR_DEFS.map((def, i) => {
-            const pillarWeapon = THRONE_PILLAR_WEAPONS[i]!;
-            return (
-              <group key={`throne-pillar-${i}`}>
-                <Pillar position={def.position} orbColorHex={def.orbColorHex} />
-                <ThronePedestalAura
-                  position={def.position}
-                  weapon={pillarWeapon}
-                  equippedWeapon={equippedWeapon}
-                  weaponAspect={resolvePedestalWeaponAspect(
-                    pillarWeapon,
-                    weaponAspectByWeapon,
-                  )}
-                />
-              </group>
-            );
-          })}
-          {playerPositionRef ? (
-            <ThronePrepSelectionPedestals
-              playerPositionRef={playerPositionRef}
-              equippedWeapon={equippedWeapon}
-              selectedArchetype={selectedArchetype}
-              weaponAspectByWeapon={weaponAspectByWeapon}
-              showcaseTick={showcaseTick}
+        {!isDefense && (
+          <>
+            <group position={THRONE_GRASS_POSITION}>
+              <StylizedGrass
+                fieldShape="disc"
+                radius={THRONE_GRASS_OUTER_RADIUS}
+                excludeInnerRadius={
+                  usePurpleBossArenaShell
+                    ? 0
+                    : THRONE_CENTER_SEAL_RADIUS
+                }
+                count={THRONE_GRASS_COUNT}
+                roomTheme={usePurpleBossArenaShell ? undefined : 'green'}
+                grassPalette={usePurpleBossArenaShell ? 'purple' : prepGrassPalette}
+                bladeHeight={0.42}
+                windStrength={combatActive ? 0 : 0.22}
+                densityScale={combatActive ? 0.5 : 1}
+              />
+              <ThroneNatureProps />
+              {/* <ThroneTurretProps /> */}
+            </group>
+            <SanctumIncinerationRuneDisc
+              scale={THRONE_RUNE_DISC_SCALE}
+              innerSpinScale={THRONE_RUNE_DISC_SPIN_SCALE}
+              outerSpinScale={THRONE_RUNE_DISC_SPIN_SCALE}
+              position={THRONE_RUNE_DISC_POSITION}
             />
-          ) : null}
-          <VoidPortal
-            position={[THRONE_VOID_PORTAL_POSITION.x, 0.005, THRONE_VOID_PORTAL_POSITION.z]}
-            open={voidPortalOpenProgress}
-            visible={voidPortalOpen || voidPortalOpenProgress > 0.01}
-            effectHeightOffset={0.3}
-            radius={THRONE_VOID_PORTAL_RADIUS}
-          />
-          <VoidPortal
-            position={[THRONE_EXPLORE_PORTAL_POSITION.x, 0.005, THRONE_EXPLORE_PORTAL_POSITION.z]}
-            scheme="boss"
-            open={voidPortalOpenProgress}
-            visible={voidPortalOpen || voidPortalOpenProgress > 0.01}
-            effectHeightOffset={0.3}
-            radius={THRONE_SIDE_VOID_PORTAL_RADIUS}
-            particleCount={10}
-            particleStartHeightMax={1.1}
-          />
-          <VoidPortal
-            position={[THRONE_DEFENSE_PORTAL_POSITION.x, 0.005, THRONE_DEFENSE_PORTAL_POSITION.z]}
-            scheme="sunken"
-            open={voidPortalOpenProgress}
-            visible={voidPortalOpen || voidPortalOpenProgress > 0.01}
-            effectHeightOffset={0.3}
-            radius={THRONE_SIDE_VOID_PORTAL_RADIUS}
-            particleCount={10}
-            particleStartHeightMax={1.1}
-          />
-          {/* // <ThroneCenterDecor /> */}
-        </>
-      )}
-    </group>
+          </>
+        )}
+        {isPrep && <ThroneCenterSeal />}
+        {isDefense && <DefenseCenterPlatform />}
+        {!isDefense && <ThroneFireplaceDecor />}
+
+        {isPrep && (
+          <>
+            {THRONE_PILLAR_DEFS.map((def, i) => {
+              const pillarWeapon = THRONE_PILLAR_WEAPONS[i]!;
+              return (
+                <group key={`throne-pillar-${i}`}>
+                  <Pillar position={def.position} orbColorHex={def.orbColorHex} />
+                  <ThronePedestalAura
+                    position={def.position}
+                    weapon={pillarWeapon}
+                    equippedWeapon={equippedWeapon}
+                    weaponAspect={resolvePedestalWeaponAspect(
+                      pillarWeapon,
+                      weaponAspectByWeapon,
+                    )}
+                  />
+                </group>
+              );
+            })}
+            {playerPositionRef ? (
+              <ThronePrepSelectionPedestals
+                playerPositionRef={playerPositionRef}
+                equippedWeapon={equippedWeapon}
+                selectedArchetype={selectedArchetype}
+                weaponAspectByWeapon={weaponAspectByWeapon}
+                showcaseTick={showcaseTick}
+              />
+            ) : null}
+            <VoidPortal
+              position={[THRONE_VOID_PORTAL_POSITION.x, 0.005, THRONE_VOID_PORTAL_POSITION.z]}
+              open={voidPortalOpenProgress}
+              visible={voidPortalOpen || voidPortalOpenProgress > 0.01}
+              effectHeightOffset={0.3}
+              radius={THRONE_VOID_PORTAL_RADIUS}
+            />
+            <VoidPortal
+              position={[THRONE_EXPLORE_PORTAL_POSITION.x, 0.005, THRONE_EXPLORE_PORTAL_POSITION.z]}
+              scheme="boss"
+              open={voidPortalOpenProgress}
+              visible={voidPortalOpen || voidPortalOpenProgress > 0.01}
+              effectHeightOffset={0.3}
+              radius={THRONE_EXPLORE_PORTAL_RADIUS}
+              particleCount={10}
+              particleStartHeightMax={1.1}
+            />
+            <VoidPortal
+              position={[THRONE_DEFENSE_PORTAL_POSITION.x, 0.005, THRONE_DEFENSE_PORTAL_POSITION.z]}
+              scheme="sunken"
+              open={voidPortalOpenProgress}
+              visible={voidPortalOpen || voidPortalOpenProgress > 0.01}
+              effectHeightOffset={0.3}
+              radius={THRONE_DEFENSE_PORTAL_RADIUS}
+              particleCount={10}
+              particleStartHeightMax={1.1}
+            />
+            <VoidPortal
+              position={[THRONE_DUNGEON_PORTAL_POSITION.x, 0.005, THRONE_DUNGEON_PORTAL_POSITION.z]}
+              scheme="dungeon"
+              open={voidPortalOpenProgress}
+              visible={voidPortalOpen || voidPortalOpenProgress > 0.01}
+              effectHeightOffset={0.3}
+              radius={THRONE_DUNGEON_PORTAL_RADIUS}
+              particleCount={10}
+              particleStartHeightMax={1.1}
+            />
+            {/* // <ThroneCenterDecor /> */}
+          </>
+        )}
+      </group>
+    </>
   );
 }
 

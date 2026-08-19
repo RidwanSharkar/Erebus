@@ -145,6 +145,14 @@ interface DragonUnitProps {
   }>;
   mushroomTargets?: Array<{ index: number; position: Vector3 }>;
   onMushroomHit?: (index: number, baseDamage: number) => void;
+  treeTargets?: Array<{ index: number; position: Vector3; radius?: number }>;
+  onTreeHit?: (index: number, baseDamage: number) => void;
+  rootTargets?: Array<{ index: number; position: Vector3; radius?: number }>;
+  onRootHit?: (index: number, baseDamage: number) => void;
+  rockTargets?: Array<{ index: number; position: Vector3; radius?: number }>;
+  onRockHit?: (index: number, baseDamage: number) => void;
+  spineTargets?: Array<{ index: number; position: Vector3; radius?: number }>;
+  onSpineHit?: (index: number, baseDamage: number) => void;
   onHit?: (
     targetId: string,
     damage: number,
@@ -302,6 +310,14 @@ export default function DragonUnit({
   enemyData = [],
   mushroomTargets,
   onMushroomHit,
+  treeTargets,
+  onTreeHit,
+  rootTargets,
+  onRootHit,
+  rockTargets,
+  onRockHit,
+  spineTargets,
+  onSpineHit,
   onHit = () => {},
   setDamageNumbers = () => {},
   nextDamageNumberId = { current: 0 },
@@ -631,6 +647,14 @@ export default function DragonUnit({
           realTimePositionRef={realTimePositionRef}
           mushroomTargets={mushroomTargets}
           onMushroomHit={onMushroomHit}
+          treeTargets={treeTargets}
+          onTreeHit={onTreeHit}
+          rootTargets={rootTargets}
+          onRootHit={onRootHit}
+          rockTargets={rockTargets}
+          onRockHit={onRockHit}
+          spineTargets={spineTargets}
+          onSpineHit={onSpineHit}
         />
       );
     } else if (currentWeapon === WeaponType.SABRES) {
@@ -716,6 +740,14 @@ export default function DragonUnit({
           getBlizzardParticleSpawnMultiplier={getRunebladeBlizzardParticleSpawnMultiplier}
           mushroomTargets={mushroomTargets}
           onMushroomHit={onMushroomHit}
+          treeTargets={treeTargets}
+          onTreeHit={onTreeHit}
+          rootTargets={rootTargets}
+          onRootHit={onRootHit}
+          rockTargets={rockTargets}
+          onRockHit={onRockHit}
+          spineTargets={spineTargets}
+          onSpineHit={onSpineHit}
         />
       );
     } else if (currentWeapon === WeaponType.SPEAR) {

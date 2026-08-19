@@ -37,6 +37,12 @@ interface ThroneCenterSealProps {
   radius?: number;
   /** Radians per second around Y. Omit for a static seal. */
   rotateSpeed?: number;
+  /** Multiplies the texture map (`material.color`). */
+  tintColor?: string;
+  /** Self-illumination tint. */
+  emissiveColor?: string;
+  /** Glow strength. Defaults to 0 (unlit). */
+  emissiveIntensity?: number;
 }
 
 function ThroneCenterSeal({
@@ -44,6 +50,9 @@ function ThroneCenterSeal({
   position = DEFAULT_POSITION,
   radius = THRONE_CENTER_SEAL_RADIUS,
   rotateSpeed,
+  tintColor = '#ffffff',
+  emissiveColor = '#000000',
+  emissiveIntensity = 0,
 }: ThroneCenterSealProps) {
   const groupRef = useRef<Group>(null);
   const texture = useLoader(TextureLoader, texturePath);
@@ -61,9 +70,11 @@ function ThroneCenterSeal({
     () =>
       new MeshLambertMaterial({
         map: texture,
-        color: '#ffffff',
+        color: tintColor,
+        emissive: emissiveColor,
+        emissiveIntensity,
       }),
-    [texture],
+    [texture, tintColor, emissiveColor, emissiveIntensity],
   );
 
   useEffect(

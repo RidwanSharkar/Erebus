@@ -86,6 +86,7 @@ const ROOM_TITLE_COLORS = {
   fae: '#f9a8d4',
   explore: '#ef4444',
   defense: '#3b82f6',
+  dungeon: '#22c55e',
 } as const;
 
 const COLORED_HALL_BASE: Record<'red' | 'blue' | 'green' | 'purple', string> = {
@@ -202,6 +203,14 @@ export function buildRoomTitleAnnouncement(
       title: 'THRONE DEFENSE',
       color: ROOM_TITLE_COLORS.defense,
       glowColor: '#3b82f6',
+    };
+  }
+
+  if (kind === 'dungeon') {
+    return {
+      title: 'THE NEXUS',
+      color: ROOM_TITLE_COLORS.dungeon,
+      glowColor: '#22c55e',
     };
   }
 

@@ -72,6 +72,10 @@ import type { ImpactEffectEvent } from '@/utils/ImpactEffectManager';
 import { Projectile } from '@/ecs/components/Projectile';
 import { Pillar } from '@/ecs/components/Pillar';
 import { DestructibleMushroom } from '@/ecs/components/DestructibleMushroom';
+import { DestructibleTree } from '@/ecs/components/DestructibleTree';
+import { DestructibleRoot } from '@/ecs/components/DestructibleRoot';
+import { DestructibleRock } from '@/ecs/components/DestructibleRock';
+import { DestructibleSpine } from '@/ecs/components/DestructibleSpine';
 import { WeaponType } from '@/components/dragon/weapons';
 import { addGlobalEntangledEnemy } from '@/components/weapons/EntangleManager';
 import { addGlobalVenomousEnemy } from '@/components/projectiles/VenomEffectManager';
@@ -270,6 +274,10 @@ export class CombatSystem extends System {
   private onPillarDamageCallback?: (pillarId: string, damage: number, sourcePlayerId?: string) => void;
 
   private onMushroomDamageCallback?: (index: number, damage: number, sourcePlayerId: string | undefined, damageType?: string) => void;
+  private onTreeDamageCallback?: (index: number, damage: number, sourcePlayerId: string | undefined, damageType?: string) => void;
+  private onRootDamageCallback?: (index: number, damage: number, sourcePlayerId: string | undefined, damageType?: string) => void;
+  private onRockDamageCallback?: (index: number, damage: number, sourcePlayerId: string | undefined, damageType?: string) => void;
+  private onSpineDamageCallback?: (index: number, damage: number, sourcePlayerId: string | undefined, damageType?: string) => void;
 
   // Log throttling to reduce spam
   private lastDamageLogTime = 0;
@@ -785,6 +793,30 @@ export class CombatSystem extends System {
     callback: (index: number, damage: number, sourcePlayerId: string | undefined, damageType?: string) => void,
   ): void {
     this.onMushroomDamageCallback = callback;
+  }
+
+  public setTreeDamageCallback(
+    callback: (index: number, damage: number, sourcePlayerId: string | undefined, damageType?: string) => void,
+  ): void {
+    this.onTreeDamageCallback = callback;
+  }
+
+  public setRootDamageCallback(
+    callback: (index: number, damage: number, sourcePlayerId: string | undefined, damageType?: string) => void,
+  ): void {
+    this.onRootDamageCallback = callback;
+  }
+
+  public setRockDamageCallback(
+    callback: (index: number, damage: number, sourcePlayerId: string | undefined, damageType?: string) => void,
+  ): void {
+    this.onRockDamageCallback = callback;
+  }
+
+  public setSpineDamageCallback(
+    callback: (index: number, damage: number, sourcePlayerId: string | undefined, damageType?: string) => void,
+  ): void {
+    this.onSpineDamageCallback = callback;
   }
 
   public setCoopMode(isCoop: boolean): void {
@@ -1464,6 +1496,150 @@ export class CombatSystem extends System {
 
       this.onMushroomDamageCallback(
         destructibleMushroom.mushroomIndex,
+        actualDamage,
+        finalSourcePlayerId,
+        damageType,
+      );
+
+      this.maybeTriggerFrostpath(damageType, source, target);
+      this.maybeTriggerSolarRecharge(damageType, source, target);
+      this.maybeTriggerArcticShards(damageType, source, target);
+
+      return;
+    }
+
+    const destructibleTree = target.getComponent(DestructibleTree);
+    if (destructibleTree && !health.isDead && this.onTreeDamageCallback) {
+      let damageResult: DamageResult;
+      if (damageEvent.isCritical !== undefined) {
+        damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
+      } else {
+        const critOpts = this.getCritCalcOptsForQueuedDamage(damageType, damageEvent, source);
+        damageResult = calculateDamage(baseDamage, currentWeapon, critOpts);
+      }
+      const actualDamage = damageResult.damage;
+      this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
+
+      let finalSourcePlayerId = sourcePlayerId;
+      if (!finalSourcePlayerId && source) {
+        const projectileComponent = source.getComponent(Projectile);
+        if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
+          finalSourcePlayerId = (projectileComponent as any).sourcePlayerId;
+        } else if (source.userData?.playerId) {
+          finalSourcePlayerId = source.userData.playerId;
+        }
+      }
+
+      this.onTreeDamageCallback(
+        destructibleTree.treeIndex,
+        actualDamage,
+        finalSourcePlayerId,
+        damageType,
+      );
+
+      this.maybeTriggerFrostpath(damageType, source, target);
+      this.maybeTriggerSolarRecharge(damageType, source, target);
+      this.maybeTriggerArcticShards(damageType, source, target);
+
+      return;
+    }
+
+    const destructibleRoot = target.getComponent(DestructibleRoot);
+    if (destructibleRoot && !health.isDead && this.onRootDamageCallback) {
+      let damageResult: DamageResult;
+      if (damageEvent.isCritical !== undefined) {
+        damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
+      } else {
+        const critOpts = this.getCritCalcOptsForQueuedDamage(damageType, damageEvent, source);
+        damageResult = calculateDamage(baseDamage, currentWeapon, critOpts);
+      }
+      const actualDamage = damageResult.damage;
+      this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
+
+      let finalSourcePlayerId = sourcePlayerId;
+      if (!finalSourcePlayerId && source) {
+        const projectileComponent = source.getComponent(Projectile);
+        if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
+          finalSourcePlayerId = (projectileComponent as any).sourcePlayerId;
+        } else if (source.userData?.playerId) {
+          finalSourcePlayerId = source.userData.playerId;
+        }
+      }
+
+      this.onRootDamageCallback(
+        destructibleRoot.rootIndex,
+        actualDamage,
+        finalSourcePlayerId,
+        damageType,
+      );
+
+      this.maybeTriggerFrostpath(damageType, source, target);
+      this.maybeTriggerSolarRecharge(damageType, source, target);
+      this.maybeTriggerArcticShards(damageType, source, target);
+
+      return;
+    }
+
+    const destructibleRock = target.getComponent(DestructibleRock);
+    if (destructibleRock && !health.isDead && this.onRockDamageCallback) {
+      let damageResult: DamageResult;
+      if (damageEvent.isCritical !== undefined) {
+        damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
+      } else {
+        const critOpts = this.getCritCalcOptsForQueuedDamage(damageType, damageEvent, source);
+        damageResult = calculateDamage(baseDamage, currentWeapon, critOpts);
+      }
+      const actualDamage = damageResult.damage;
+      this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
+
+      let finalSourcePlayerId = sourcePlayerId;
+      if (!finalSourcePlayerId && source) {
+        const projectileComponent = source.getComponent(Projectile);
+        if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
+          finalSourcePlayerId = (projectileComponent as any).sourcePlayerId;
+        } else if (source.userData?.playerId) {
+          finalSourcePlayerId = source.userData.playerId;
+        }
+      }
+
+      this.onRockDamageCallback(
+        destructibleRock.rockIndex,
+        actualDamage,
+        finalSourcePlayerId,
+        damageType,
+      );
+
+      this.maybeTriggerFrostpath(damageType, source, target);
+      this.maybeTriggerSolarRecharge(damageType, source, target);
+      this.maybeTriggerArcticShards(damageType, source, target);
+
+      return;
+    }
+
+    const destructibleSpine = target.getComponent(DestructibleSpine);
+    if (destructibleSpine && !health.isDead && this.onSpineDamageCallback) {
+      let damageResult: DamageResult;
+      if (damageEvent.isCritical !== undefined) {
+        damageResult = { damage: baseDamage, isCritical: damageEvent.isCritical };
+      } else {
+        const critOpts = this.getCritCalcOptsForQueuedDamage(damageType, damageEvent, source);
+        damageResult = calculateDamage(baseDamage, currentWeapon, critOpts);
+      }
+      const actualDamage = damageResult.damage;
+      this.maybeRecordRunebladeLmbSfx(damageType, damageResult);
+
+      let finalSourcePlayerId = sourcePlayerId;
+      if (!finalSourcePlayerId && source) {
+        const projectileComponent = source.getComponent(Projectile);
+        if (projectileComponent && (projectileComponent as any).sourcePlayerId) {
+          finalSourcePlayerId = (projectileComponent as any).sourcePlayerId;
+        } else if (source.userData?.playerId) {
+          finalSourcePlayerId = source.userData.playerId;
+        }
+      }
+
+      this.onSpineDamageCallback(
+        destructibleSpine.spineIndex,
         actualDamage,
         finalSourcePlayerId,
         damageType,

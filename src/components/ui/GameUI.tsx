@@ -4,9 +4,10 @@ import HotkeyPanel from './HotkeyPanel';
 import ClassTalentPanel from './ClassTalentPanel';
 import { SkillPointData, AbilityUnlock } from '@/utils/SkillPointSystem';
 import { AbilityLoadout } from '@/utils/weaponAbilities';
-import type { TalentLoadout } from '@/utils/talents';
+import type { TalentId, TalentLoadout } from '@/utils/talents';
 import { isSelectableArchetype, type Archetype } from '@/utils/archetypes';
 import type { CoopAllyKind } from '@/utils/coopAllyTargeting';
+import { EMPTY_EXPLORE_RESEARCH, type ExploreBuildMenuView, type ExploreFirePitHealAction, type ExploreResearchState, type ExploreResearchUpgradeId, type ExploreShrineGiftId } from '@/utils/exploreBuildings';
 import type { FaeBeastCompanionKind } from '@/utils/faeBeastCompanion';
 import {
   isBeastmasterBowAspect,
@@ -15,6 +16,12 @@ import {
 import ArchetypeBadge from './ArchetypeBadge';
 import CompanionBadge from './CompanionBadge';
 import InteractHintPanel from './InteractHintPanel';
+import BuildMenuPanel from './BuildMenuPanel';
+import BarracksRecruitPanel from './BarracksRecruitPanel';
+import ResearchStationPanel from './ResearchStationPanel';
+import ShrineGiftPanel from './ShrineGiftPanel';
+import ObeliskShopPanel from './ObeliskShopPanel';
+import FirePitHealPanel from './FirePitHealPanel';
 
 interface GameUIProps {
   currentWeapon: WeaponType;
@@ -30,6 +37,29 @@ interface GameUIProps {
   purchasedItems?: string[];
   talentLoadout?: TalentLoadout | null;
   interactHint?: string | null;
+  buildMenuOpen?: boolean;
+  buildMenuView?: ExploreBuildMenuView;
+  hasLiveSpiritLounge?: boolean;
+  barracksRecruitOpen?: boolean;
+  playerWood?: number;
+  playerFlow?: number;
+  playerGold?: number;
+  playerStone?: number;
+  researchPanelOpen?: boolean;
+  exploreResearch?: ExploreResearchState;
+  onResearchPurchase?: (id: ExploreResearchUpgradeId) => void;
+  shrinePanelOpen?: boolean;
+  onShrineGift?: (id: ExploreShrineGiftId) => void;
+  obeliskPanelOpen?: boolean;
+  onObeliskPurchase?: (id: TalentId) => void;
+  firePitHealOpen?: boolean;
+  playerMeat?: number;
+  playerHunger?: number;
+  playerAtFullHp?: boolean;
+  onFirePitHeal?: (action: ExploreFirePitHealAction) => void;
+  exploreAllyCount?: number;
+  exploreAllyCap?: number;
+  onBarracksRecruit?: (kind: CoopAllyKind) => void;
   gameMode?: 'menu' | 'singleplayer' | 'multiplayer' | 'pvp' | 'coop';
   selectedArchetype?: Archetype;
   /** Current throne weapon aspect (Beastmaster bow unlocks the tiger badge). */
@@ -55,6 +85,29 @@ export default function GameUI({
   purchasedItems = [],
   talentLoadout,
   interactHint = null,
+  buildMenuOpen = false,
+  buildMenuView = 'root',
+  hasLiveSpiritLounge = false,
+  barracksRecruitOpen = false,
+  playerWood = 0,
+  playerFlow = 0,
+  playerGold = 0,
+  playerStone = 0,
+  researchPanelOpen = false,
+  exploreResearch = EMPTY_EXPLORE_RESEARCH,
+  onResearchPurchase,
+  shrinePanelOpen = false,
+  onShrineGift,
+  obeliskPanelOpen = false,
+  onObeliskPurchase,
+  firePitHealOpen = false,
+  playerMeat = 0,
+  playerHunger = 0,
+  playerAtFullHp = false,
+  onFirePitHeal,
+  exploreAllyCount = 0,
+  exploreAllyCap = 1,
+  onBarracksRecruit,
   gameMode,
   selectedArchetype,
   weaponAspect = null,
@@ -129,7 +182,40 @@ export default function GameUI({
         data-block-game-input
       >
         <div className="pointer-events-auto inline-flex w-max flex-col items-stretch gap-2">
-          <InteractHintPanel hint={interactHint} />
+          <BuildMenuPanel open={buildMenuOpen} view={buildMenuView} wood={playerWood} flow={playerFlow} stone={playerStone} hasLiveSpiritLounge={hasLiveSpiritLounge} />
+          <BarracksRecruitPanel
+            open={barracksRecruitOpen && !buildMenuOpen && !researchPanelOpen && !shrinePanelOpen && !obeliskPanelOpen && !firePitHealOpen}
+            gold={playerGold}
+            allyCount={exploreAllyCount}
+            allyCap={exploreAllyCap}
+            onRecruit={(kind) => onBarracksRecruit?.(kind)}
+          />
+          <ResearchStationPanel
+            open={researchPanelOpen && !buildMenuOpen && !barracksRecruitOpen && !shrinePanelOpen && !obeliskPanelOpen && !firePitHealOpen}
+            flow={playerFlow}
+            research={exploreResearch}
+            onPurchase={(id) => onResearchPurchase?.(id)}
+          />
+          <ShrineGiftPanel
+            open={shrinePanelOpen && !buildMenuOpen && !barracksRecruitOpen && !researchPanelOpen && !obeliskPanelOpen && !firePitHealOpen}
+            onSelect={(id) => onShrineGift?.(id)}
+          />
+          <ObeliskShopPanel
+            open={obeliskPanelOpen && !buildMenuOpen && !barracksRecruitOpen && !researchPanelOpen && !shrinePanelOpen && !firePitHealOpen}
+            gold={playerGold}
+            currentWeapon={currentWeapon}
+            talentLoadout={talentLoadout ?? null}
+            onPurchase={(id) => onObeliskPurchase?.(id)}
+          />
+          <FirePitHealPanel
+            open={firePitHealOpen && !buildMenuOpen && !barracksRecruitOpen && !researchPanelOpen && !shrinePanelOpen && !obeliskPanelOpen}
+            meat={playerMeat}
+            hunger={playerHunger}
+            playerAtFullHp={playerAtFullHp}
+            allyCount={exploreAllyCount}
+            onHeal={(action) => onFirePitHeal?.(action)}
+          />
+          <InteractHintPanel hint={buildMenuOpen || barracksRecruitOpen || researchPanelOpen || shrinePanelOpen || obeliskPanelOpen || firePitHealOpen ? null : interactHint} />
           <HotkeyPanel
           embedded
           currentWeapon={currentWeapon}

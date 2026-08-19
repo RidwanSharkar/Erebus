@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 interface CurrencySlot {
-  id: 'gold' | 'flow' | 'fate';
+  id: 'gold' | 'flow' | 'wood' | 'stone' | 'fate';
   label: string;
   icon: string;
   value: number;
@@ -14,6 +14,12 @@ interface CurrencyPanelProps {
   gold: number;
   flow: number;
   fate: number;
+  wood?: number;
+  stone?: number;
+  /** When true, the third slot shows Wood instead of Fate. */
+  showWood?: boolean;
+  /** When true (explore), show Stone after Wood. */
+  showStone?: boolean;
 }
 
 const PANEL_STYLE: React.CSSProperties = {
@@ -101,7 +107,15 @@ function CurrencySlotDisplay({
   );
 }
 
-export default function CurrencyPanel({ gold, flow, fate }: CurrencyPanelProps) {
+export default function CurrencyPanel({
+  gold,
+  flow,
+  fate,
+  wood = 0,
+  stone = 0,
+  showWood = false,
+  showStone = false,
+}: CurrencyPanelProps) {
   const [tooltip, setTooltip] = useState<{ title: string; x: number; y: number } | null>(null);
   const tooltipTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -126,7 +140,14 @@ export default function CurrencyPanel({ gold, flow, fate }: CurrencyPanelProps) 
   const slots: CurrencySlot[] = [
     { id: 'gold', label: 'GOLD', icon: '/icons/gold-coin.svg', value: gold, pulseEvent: 'gold-pocket-collected' },
     { id: 'flow', label: 'FLOW', icon: '/icons/flow.svg', value: flow, pulseEvent: 'flow-collected' },
-    { id: 'fate', label: 'FATE', icon: '/icons/fate.svg', value: fate },
+    ...(showWood
+      ? [
+          { id: 'wood' as const, label: 'WOOD', icon: '/icons/wood.svg', value: wood, pulseEvent: 'wood-collected' },
+          ...(showStone
+            ? [{ id: 'stone' as const, label: 'STONE', icon: '/icons/stone.svg', value: stone, pulseEvent: 'stone-collected' }]
+            : []),
+        ]
+      : [{ id: 'fate' as const, label: 'FATE', icon: '/icons/fate.svg', value: fate }]),
   ];
 
   return (

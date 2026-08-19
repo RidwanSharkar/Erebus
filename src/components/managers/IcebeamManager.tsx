@@ -1,8 +1,9 @@
 import { useRef, useCallback, useEffect, useMemo } from 'react';
 import { Vector3, Group } from '@/utils/three-exports';
 import { World } from '@/ecs/World';
-import { Enemy as EnemyComponent } from '@/ecs/components/Enemy';
+import { queryWeaponHittableEntities } from '@/utils/destructibleEnvironmentTargeting';
 import { Transform } from '@/ecs/components/Transform';
+import { Health } from '@/ecs/components/Health';
 import { CombatSystem } from '@/systems/CombatSystem';
 import Icebeam from '@/components/weapons/Icebeam';
 import { ICEBEAM_MAX_HOLD_SEC } from '@/utils/icebeamConstants';
@@ -95,18 +96,18 @@ export default function IcebeamManager({
     position.y += 1;
     const direction = new Vector3(0, 0, 1).applyQuaternion(playerRef.current.quaternion);
 
-    // Get all enemies from the world
-    const entities = world.queryEntities([EnemyComponent, Transform]);
+    // Get all hittable targets (enemies + explore trees)
+    const entities = queryWeaponHittableEntities(world);
 
     // Get combat system for damage dealing
     const combatSystem = world.getSystem(CombatSystem);
     if (!combatSystem) return;
 
     entities.forEach(entity => {
-      const enemy = entity.getComponent(EnemyComponent);
+      const health = entity.getComponent(Health);
       const transform = entity.getComponent(Transform);
       
-      if (!enemy || !transform || enemy.isDead) {
+      if (!health || !transform || health.isDead) {
         return;
       }
       

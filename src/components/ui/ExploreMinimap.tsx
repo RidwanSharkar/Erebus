@@ -1,18 +1,25 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useMultiplayerRoom } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions, useMultiplayerRoom } from '@/contexts/MultiplayerContext';
 import {
   EXPLORE_FOG_CELLS,
   exploreFog,
 } from '@/utils/exploreFogOfWar';
 import { EXPLORE_CHUNK_SIZE, chunkKey, exploreWildernessLevel } from '@/utils/exploreWorldGen';
+import { isPlayerExploreBuildingType } from '@/utils/exploreBuildings';
 
 const SIZE = 180;
 const WORLD_VIEW = 90;
+const HALF_VIEW = WORLD_VIEW * 0.5;
 const REVEAL_R = 0x1f;
 const REVEAL_G = 0x3d;
 const REVEAL_B = 0x1c;
+const BUILDING_GREEN = '#22c55e';
+const ALLY_YELLOW = '#eab308';
+const HOSTILE_RED = '#ef4444';
+const PLAYER_WHITE = '#f8fafc';
+const FIRE_PIP_MARGIN = 10;
 
 type ChunkBake = { canvas: HTMLCanvasElement; revealed: number };
 
@@ -42,13 +49,90 @@ function bakeChunk(grid: Uint8Array, dest?: HTMLCanvasElement): HTMLCanvasElemen
   return canvas;
 }
 
+function worldToMinimap(wx: number, wz: number, viewerX: number, viewerZ: number, scale: number) {
+  return {
+    px: SIZE * 0.5 + (wx - viewerX) * scale,
+    py: SIZE * 0.5 + (wz - viewerZ) * scale,
+  };
+}
+
+function drawBuildingIcon(ctx: CanvasRenderingContext2D, type: string, px: number, py: number) {
+  ctx.fillStyle = BUILDING_GREEN;
+  if (type === 'barracks') {
+    ctx.fillRect(px - 3.2, py - 3.2, 6.4, 6.4);
+    return;
+  }
+  if (type === 'research-station') {
+    ctx.beginPath();
+    ctx.moveTo(px, py - 4.2);
+    ctx.lineTo(px + 3.4, py);
+    ctx.lineTo(px, py + 4.2);
+    ctx.lineTo(px - 3.4, py);
+    ctx.closePath();
+    ctx.fill();
+    return;
+  }
+  if (type === 'shrine') {
+    ctx.beginPath();
+    ctx.moveTo(px, py - 4.0);
+    ctx.lineTo(px + 3.6, py);
+    ctx.lineTo(px, py + 4.0);
+    ctx.lineTo(px - 3.6, py);
+    ctx.closePath();
+    ctx.fill();
+    return;
+  }
+  if (type === 'obelisk') {
+    ctx.fillRect(px - 1.6, py - 4.4, 3.2, 8.8);
+    return;
+  }
+  if (type === 'shield-battery') {
+    ctx.fillRect(px - 1.1, py - 3.0, 2.2, 6.0);
+    ctx.fillRect(px - 3.0, py - 1.1, 6.0, 2.2);
+    return;
+  }
+  if (type === 'tower' || type === 'watch-tower' || type === 'siege-tower') {
+    ctx.beginPath();
+    ctx.moveTo(px, py - 4.2);
+    ctx.lineTo(px + 3.4, py + 3.2);
+    ctx.lineTo(px - 3.4, py + 3.2);
+    ctx.closePath();
+    ctx.fill();
+    return;
+  }
+  ctx.beginPath();
+  ctx.arc(px, py, 3.1, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawFirePitEdgePip(ctx: CanvasRenderingContext2D, dx: number, dz: number) {
+  const angle = Math.atan2(dz, dx);
+  const r = SIZE * 0.5 - FIRE_PIP_MARGIN;
+  const edgeX = SIZE * 0.5 + Math.cos(angle) * r;
+  const edgeY = SIZE * 0.5 + Math.sin(angle) * r;
+  ctx.save();
+  ctx.translate(edgeX, edgeY);
+  ctx.rotate(angle);
+  ctx.fillStyle = BUILDING_GREEN;
+  ctx.beginPath();
+  ctx.moveTo(6, 0);
+  ctx.lineTo(-4, 4.2);
+  ctx.lineTo(-4, -4.2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 export default function ExploreMinimap() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { enemies, players, currentRoomId } = useMultiplayerRoom();
+  const { socket } = useMultiplayerActions();
   const enemiesRef = useRef(enemies);
   enemiesRef.current = enemies;
   const playersRef = useRef(players);
   playersRef.current = players;
+  const localIdRef = useRef<string | null>(socket?.id ?? null);
+  localIdRef.current = socket?.id ?? null;
   const bakeCacheRef = useRef(new Map<string, ChunkBake>());
   const [wildernessLevel, setWildernessLevel] = useState(1);
   const wildernessLevelRef = useRef(1);
@@ -109,44 +193,73 @@ export default function ExploreMinimap() {
         }
       }
 
-      ctx.fillStyle = '#ef4444';
+      let nearestFireDx = 0;
+      let nearestFireDz = 0;
+      let nearestFireD2 = Infinity;
+      let nearestFireOnMap = false;
+
       for (const enemy of enemiesRef.current.values()) {
-        if (enemy.isDying) continue;
+        if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
         const ex = enemy.position?.x ?? 0;
         const ez = enemy.position?.z ?? 0;
+        if (enemy.type === 'fire-pit') {
+          const fdx = ex - viewer.x;
+          const fdz = ez - viewer.z;
+          const fd2 = fdx * fdx + fdz * fdz;
+          if (fd2 < nearestFireD2) {
+            nearestFireD2 = fd2;
+            nearestFireDx = fdx;
+            nearestFireDz = fdz;
+            nearestFireOnMap = Math.abs(fdx) <= HALF_VIEW && Math.abs(fdz) <= HALF_VIEW;
+          }
+        }
+        if (isPlayerExploreBuildingType(enemy.type)) {
+          const { px, py } = worldToMinimap(ex, ez, viewer.x, viewer.z, scale);
+          drawBuildingIcon(ctx, enemy.type, px, py);
+          continue;
+        }
+        if (enemy.alliedUnit === true && enemy.isStructure !== true) {
+          const { px, py } = worldToMinimap(ex, ez, viewer.x, viewer.z, scale);
+          ctx.fillStyle = ALLY_YELLOW;
+          ctx.beginPath();
+          ctx.arc(px, py, 2.6, 0, Math.PI * 2);
+          ctx.fill();
+          continue;
+        }
         if (!exploreFog.isEnemyVisible(ex, ez, viewer.x, viewer.z)) continue;
-        const px = SIZE * 0.5 + (ex - viewer.x) * scale;
-        const py = SIZE * 0.5 + (ez - viewer.z) * scale;
+        const { px, py } = worldToMinimap(ex, ez, viewer.x, viewer.z, scale);
+        ctx.fillStyle = HOSTILE_RED;
         ctx.beginPath();
         ctx.arc(px, py, 2.4, 0, Math.PI * 2);
         ctx.fill();
       }
 
-      let yaw = viewer.yaw;
-      let best = Infinity;
+      const localId = localIdRef.current;
+      ctx.fillStyle = ALLY_YELLOW;
       for (const pl of playersRef.current.values()) {
+        if (localId && pl.id === localId) continue;
         const dx = (pl.position?.x ?? 0) - viewer.x;
         const dz = (pl.position?.z ?? 0) - viewer.z;
-        const d2 = dx * dx + dz * dz;
-        if (d2 < best) {
-          best = d2;
-          yaw = pl.rotation?.y ?? yaw;
-        }
+        if (dx * dx + dz * dz < 0.16) continue;
+        const { px, py } = worldToMinimap(pl.position?.x ?? 0, pl.position?.z ?? 0, viewer.x, viewer.z, scale);
+        ctx.beginPath();
+        ctx.arc(px, py, 2.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      if (nearestFireD2 < Infinity && !nearestFireOnMap) {
+        drawFirePitEdgePip(ctx, nearestFireDx, nearestFireDz);
       }
 
       const p = SIZE * 0.5;
-      ctx.save();
-      ctx.translate(p, p);
-      ctx.rotate(yaw);
-      ctx.fillStyle = '#f8fafc';
       ctx.beginPath();
-      ctx.moveTo(0, -7);
-      ctx.lineTo(5, 6);
-      ctx.lineTo(0, 3);
-      ctx.lineTo(-5, 6);
-      ctx.closePath();
+      ctx.arc(p, p, 5.1, 0, Math.PI * 2);
+      ctx.fillStyle = '#0a0a0a';
       ctx.fill();
-      ctx.restore();
+      ctx.beginPath();
+      ctx.arc(p, p, 4.1, 0, Math.PI * 2);
+      ctx.fillStyle = PLAYER_WHITE;
+      ctx.fill();
 
       ctx.strokeStyle = 'rgba(248,250,252,0.25)';
       ctx.lineWidth = 1;

@@ -16,6 +16,7 @@ import SpellChargeFlare from './SpellChargeFlare';
 import { registerKnightAnimationHandlers } from '@/utils/knightAnimationDispatch';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { applyDungeonFeetY } from '@/utils/dungeonLayout';
 import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
@@ -333,6 +334,8 @@ function KnightRenderer({
     }) => {
       const startPos = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
       const endPos = new Vector3(data.endPosition.x, data.endPosition.y, data.endPosition.z);
+      applyDungeonFeetY(startPos);
+      applyDungeonFeetY(endPos);
       const duration = data.durationMs ?? DASH_DURATION;
 
       if (dashTimer.current) clearTimeout(dashTimer.current);
@@ -388,6 +391,7 @@ function KnightRenderer({
 
       if (data.position && groupRef.current) {
         const chargePos = new Vector3(data.position.x, data.position.y, data.position.z);
+        applyDungeonFeetY(chargePos);
         targetPosition.current.copy(chargePos);
         groupRef.current.position.copy(chargePos);
         groupRef.current.rotation.y = data.rotation;
@@ -406,6 +410,8 @@ function KnightRenderer({
     }) => {
       const startPos = new Vector3(data.startPosition.x, data.startPosition.y, data.startPosition.z);
       const endPos = new Vector3(data.endPosition.x, data.endPosition.y, data.endPosition.z);
+      applyDungeonFeetY(startPos);
+      applyDungeonFeetY(endPos);
       const duration = data.durationMs ?? SPIN_DURATION;
 
       if (dashTimer.current) clearTimeout(dashTimer.current);
@@ -581,6 +587,7 @@ function KnightRenderer({
       // Smoothly move the rendered position toward the server-authoritative target.
       group.position.lerp(targetPosition.current, Math.min(1, delta * (isDashingRef.current ? DASH_LERP_SPEED : LERP_SPEED)));
     }
+    applyDungeonFeetY(group.position);
 
     // Lerp rotation with shortest-arc wrapping so the knight never spins the long way.
     let deltaAngle = targetRotation.current - group.rotation.y;

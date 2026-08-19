@@ -450,6 +450,33 @@ export interface GoldCollectMoteState {
   duration: number;
 }
 
+export interface WoodCollectMoteBatchState {
+  batchId: string;
+  motes: Array<{
+    startPosition: Vector3;
+    startTime: number;
+    duration: number;
+  }>;
+}
+
+export interface StoneCollectMoteBatchState {
+  batchId: string;
+  motes: Array<{
+    startPosition: Vector3;
+    startTime: number;
+    duration: number;
+  }>;
+}
+
+export interface MeatCollectMoteBatchState {
+  batchId: string;
+  motes: Array<{
+    startPosition: Vector3;
+    startTime: number;
+    duration: number;
+  }>;
+}
+
 export interface DreamShardState {
   id: string;
   startPosition: Vector3;

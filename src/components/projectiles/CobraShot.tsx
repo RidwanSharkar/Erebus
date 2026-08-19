@@ -114,8 +114,8 @@ const CobraShotProjectileVisual: React.FC<{ projectile: CobraShotProjectile }> =
   useFrame(() => {
     if (!groupRef.current) return;
 
-    // Update position but keep it at ground level (Y=0)
-    groupRef.current.position.set(projectile.position.x, 0, projectile.position.z);
+    // Update position; follow projectile Y so elevated dungeon floors stay visible.
+    groupRef.current.position.set(projectile.position.x, projectile.position.y, projectile.position.z);
 
     // Calculate rotation based on direction (only Y rotation to stay parallel to ground)
     const lookDirection = _lookDirScratch.copy(projectile.direction).normalize();
@@ -124,8 +124,8 @@ const CobraShotProjectileVisual: React.FC<{ projectile: CobraShotProjectile }> =
     // Apply rotation - keep X and Z rotation at 0 to stay parallel to ground
     groupRef.current.rotation.set(0, rotationY, 0);
 
-    // Drive the pooled light at the projectile's world position (group sits at Y=0).
-    projectileLight.current?.setPosition(projectile.position.x, 0, projectile.position.z);
+    // Drive the pooled light at the projectile's world position.
+    projectileLight.current?.setPosition(projectile.position.x, projectile.position.y, projectile.position.z);
     projectileLight.current?.setIntensity(2 * projectile.opacity);
 
     // Base opacity × per-instance (1 - index/N) restores original trailOpacity formula.

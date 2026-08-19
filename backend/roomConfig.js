@@ -2,7 +2,7 @@
 const MAX_PLAYERS_PER_ROOM = 3;
 
 /** How long an emptied room stays reserved under its code before being destroyed. */
-const EMPTY_ROOM_GRACE_MS = 90000;
+const EMPTY_ROOM_GRACE_MS = 10000;
 
 /** Canonical empty-code fallback — mirrors client `DEFAULT_ROOM_ID`. */
 const DEFAULT_ROOM_ID = 'DEFAULT';

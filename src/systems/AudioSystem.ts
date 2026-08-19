@@ -244,6 +244,12 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'ui_fountain', file: 'ui/fountain.mp3' },
   { id: 'ui_void', file: 'ui/void.mp3' },
   { id: 'ui_warcrack', file: 'ui/WARCRACK.mp3' },
+  { id: 'ui_tree_damage', file: 'ui/treeDamage.mp3' },
+  { id: 'ui_tree_damage_2', file: 'ui/treeDamage2.mp3' },
+  { id: 'ui_tree_falling', file: 'ui/treeFalling.mp3' },
+  { id: 'ui_rock_damage', file: 'ui/ROCKDAMAGE1.mp3' },
+  { id: 'ui_rock_damage_2', file: 'ui/ROCKDAMAGE2.mp3' },
+  { id: 'ui_rock_destroy', file: 'ui/ROCKDESTROY.mp3' },
 ];
 
 const STARTUP_SOUND_IDS = new Set([
@@ -410,6 +416,12 @@ export class AudioSystem extends System {
   private shieldRegenLoopInstance: number | null = null;
   private shieldRegenShouldPlay = false;
   private soundLastPlayedAt = new Map<string, number>();
+  /** Per-prop throttle for explore tree/root chop SFX (500ms). */
+  private treeDamageLastPlayedAt = new Map<string, number>();
+  /** Per-prop throttle for explore rock/spine hit SFX (500ms). */
+  private rockDamageLastPlayedAt = new Map<string, number>();
+  /** Per-prop toggle so rock/spine hits alternate ROCKDAMAGE1 / ROCKDAMAGE2. */
+  private rockDamageNextVariant = new Map<string, 1 | 2>();
   /** Active looped gameplay SFX instances — one per soundId (stop-before-play). */
   private loopingSfxInstances = new Map<string, number>();
   /** Cycles scythe hit-confirm SFX across scythe_impact1/2/3. */
@@ -1511,6 +1523,44 @@ export class AudioSystem extends System {
 
   public playAcidSound(position: Vector3) {
     return this.playWeaponSoundWithCooldown('ui_acid', position, { volume: 0.75 }, AudioSystem.MULTI_TARGET_STATUS_COOLDOWN_MS);
+  }
+
+  /** Explore tree/root hit — once per 0.5s per prop; cracked variant below 33% HP. */
+  public playTreeDamageSound(
+    position: Vector3,
+    healthRatio: number,
+    treeIndex: number | string,
+  ) {
+    const now = Date.now();
+    const key = String(treeIndex);
+    const last = this.treeDamageLastPlayedAt.get(key) ?? 0;
+    if (now - last < AudioSystem.MULTI_TARGET_STATUS_COOLDOWN_MS) return null;
+    this.treeDamageLastPlayedAt.set(key, now);
+    const soundId = healthRatio < 0.33 ? 'ui_tree_damage_2' : 'ui_tree_damage';
+    return this.playWeaponSound(soundId, position, { volume: 1.165 });
+  }
+
+  /** Explore tree/root death — no throttle. */
+  public playTreeFallingSound(position: Vector3) {
+    return this.playWeaponSound('ui_tree_falling', position, { volume: 1.475 });
+  }
+
+  /** Explore rock/spine hit — once per 0.5s per prop; alternates ROCKDAMAGE1/2. */
+  public playRockDamageSound(position: Vector3, propKey: number | string) {
+    const now = Date.now();
+    const key = String(propKey);
+    const last = this.rockDamageLastPlayedAt.get(key) ?? 0;
+    if (now - last < AudioSystem.MULTI_TARGET_STATUS_COOLDOWN_MS) return null;
+    this.rockDamageLastPlayedAt.set(key, now);
+    const variant = this.rockDamageNextVariant.get(key) ?? 1;
+    this.rockDamageNextVariant.set(key, variant === 1 ? 2 : 1);
+    const soundId = variant === 1 ? 'ui_rock_damage' : 'ui_rock_damage_2';
+    return this.playWeaponSound(soundId, position, { volume: 0.975 });
+  }
+
+  /** Explore rock/spine death — no throttle. */
+  public playRockDestroySound(position: Vector3) {
+    return this.playWeaponSound('ui_rock_destroy', position, { volume: 1.25 });
   }
 
   public playLesserHealSound(position?: Vector3) {

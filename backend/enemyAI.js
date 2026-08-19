@@ -1,5 +1,6 @@
 const { WALL_SEGMENTS } = require('./wallData');
 const { rotationYTowardEntry, FAE_REALM_HEX_RADIUS } = require('./coopArenaLayout');
+const exploreBuildings = require('./exploreBuildings');
 const {
   getMeleeProfile,
   getMeleeHalfArcRad,
@@ -154,6 +155,11 @@ const TITAN_PATROL_REACH = 0.5;
 const TITAN_PATROL_WAYPOINT_COUNT = 8;
 const TITAN_PATROL_RADIUS_FRAC = 0.65;
 const DEFENSE_ROOM_RADIUS = 15 * 1.35;
+/** Keep in sync with `src/utils/dungeonLayout.ts` (scale 0.65, lifesizeLAIR). */
+const DUNGEON_PLAYABLE_MIN_X = -41.09;
+const DUNGEON_PLAYABLE_MAX_X = 142.22;
+const DUNGEON_PLAYABLE_MIN_Z = -186.18;
+const DUNGEON_PLAYABLE_MAX_Z = 16.95;
 const TITAN_EXPLORE_PATROL_RADIUS = 26;
 const TITAN_BLADESTORM_HEALTH_PCT = 0.4;
 const TITAN_BLADESTORM_POWERUP_MS = 1500;
@@ -602,6 +608,10 @@ const ALLIED_KNIGHT_ATTACK_COOLDOWN_MS = 1250;
 const ALLIED_KNIGHT_MOVE_SPEED = 3.0;
 const ALLIED_KNIGHT_ATTACK_RANGE = 2.6;
 const ALLIED_KNIGHT_FOLLOW_DISTANCE = 3.0;
+/** Explore Spirit Lounge defenders idle around the fire pit (fallback: barracks). */
+const EXPLORE_BASE_DEFENDER_IDLE_RADIUS = 4.5;
+/** Explore defenders drop chase past this distance from the camp. */
+const EXPLORE_BASE_DEFENDER_LEASH_RADIUS = 16;
 const ALLIED_KNIGHT_PROTECTIVE_THREAT_TTL_MS = 15000;
 const ALLIED_TRAP_THREAT_TTL_MS = 15000;
 const ALLIED_KNIGHT_PROTECTIVE_THREAT_DECAY_PER_SEC = 0.85;
@@ -1544,6 +1554,12 @@ class EnemyAI {
   /** Clamp enemy XZ to the active arena footprint (circle for colored rooms, hex for stat/trial/merchant). */
   clampToArenaXZ(x, z) {
     if (this.room?.coopExploreActive) return { x, z };
+    if (this.room?.coopDungeonActive) {
+      return {
+        x: Math.max(DUNGEON_PLAYABLE_MIN_X, Math.min(DUNGEON_PLAYABLE_MAX_X, x)),
+        z: Math.max(DUNGEON_PLAYABLE_MIN_Z, Math.min(DUNGEON_PLAYABLE_MAX_Z, z)),
+      };
+    }
     if (this.room?.coopDefenseActive) {
       return clampToCircleXZ(x, z, DEFENSE_ROOM_RADIUS - 0.5);
     }
@@ -2204,8 +2220,12 @@ class EnemyAI {
       return;
     }
 
-    if (enemy.type === 'allied-tower') {
+    if (enemy.type === 'allied-tower' || exploreBuildings.isExploreTowerType(enemy.type)) {
       this.updateDefenseTowerAI(enemy);
+      return;
+    }
+
+    if (exploreBuildings.isPlayerExploreBuildingType(enemy.type)) {
       return;
     }
 
@@ -2999,7 +3019,10 @@ class EnemyAI {
 
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(knight.position, tpos);
-    if (!aggroData.isAggroed && distance <= aggroRadius && losOk) {
+    // Entrance-pack: don't aggro while player is still on the upper descent ramp.
+    const playerAboveFloor =
+      knight._dungeonEntrancePack && tpos && (tpos.y ?? 0) > knight.position.y + 4;
+    if (!aggroData.isAggroed && distance <= aggroRadius && losOk && !playerAboveFloor) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
@@ -10092,7 +10115,21 @@ class EnemyAI {
       case 'allied-knight':
         return 0.85;
       case 'allied-tower':
+      case 'tower':
+      case 'watch-tower':
+      case 'siege-tower':
         return 1.4;
+      case 'fire-pit':
+      case 'shield-battery':
+        return 0.85;
+      case 'barracks':
+        return 2.0;
+      case 'research-station':
+        return 1.6;
+      case 'shrine':
+        return 1.6;
+      case 'obelisk':
+        return 1.5;
       case 'allied-demon':
         return 0.85;
       case 'allied-tiger':
@@ -10556,7 +10593,16 @@ class EnemyAI {
       case 'nemesis': return 2.5;
       case 'valkyrie': return VALKYRIE_WALK_SPEED;
       case 'player-zombie': return 2.0;
-      case 'allied-tower': return 0;
+      case 'allied-tower':
+      case 'tower':
+      case 'watch-tower':
+      case 'siege-tower': return 0;
+      case 'fire-pit':
+      case 'barracks':
+      case 'research-station':
+      case 'shrine':
+      case 'obelisk':
+      case 'shield-battery': return 0;
       default: return 2.0;
     }
   }
@@ -11214,6 +11260,7 @@ class EnemyAI {
         || ally.type === 'allied-serpent'
         || ally.type === 'allied-spider'
         || ally.type === 'allied-tower'
+        || exploreBuildings.isPlayerExploreBuildingType(ally.type)
       );
   }
 
@@ -11266,6 +11313,62 @@ class EnemyAI {
         chart.delete(enemyId);
       }
     });
+  }
+
+  _isExploreBaseDefender(ally) {
+    if (!ally?.exploreBarracksPurchased || !this.room?.coopExploreActive) return false;
+    return ally.type === 'allied-knight'
+      || ally.type === 'allied-phantom'
+      || ally.type === 'allied-enchantress';
+  }
+
+  _getExploreBaseAnchor(ally) {
+    if (!this.room?.enemies) return null;
+    const ax = ally?.position?.x ?? 0;
+    const az = ally?.position?.z ?? 0;
+    let bestPit = null;
+    let bestPitDist = Infinity;
+    let bestLounge = null;
+    let bestLoungeDist = Infinity;
+    for (const enemy of this.room.enemies.values()) {
+      if (!enemy || enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+      const dx = (enemy.position?.x ?? 0) - ax;
+      const dz = (enemy.position?.z ?? 0) - az;
+      const distSq = dx * dx + dz * dz;
+      if (enemy.type === 'fire-pit') {
+        if (distSq < bestPitDist) {
+          bestPitDist = distSq;
+          bestPit = enemy.position;
+        }
+      } else if (enemy.type === 'barracks') {
+        if (distSq < bestLoungeDist) {
+          bestLoungeDist = distSq;
+          bestLounge = enemy.position;
+        }
+      }
+    }
+    const pos = bestPit || bestLounge;
+    if (!pos) return null;
+    return { x: pos.x, y: pos.y ?? 0, z: pos.z };
+  }
+
+  _isWithinExploreBaseLeash(ally, position) {
+    const home = this._getExploreBaseAnchor(ally);
+    if (!home || !position) return true;
+    const dx = (position.x ?? 0) - home.x;
+    const dz = (position.z ?? 0) - home.z;
+    return dx * dx + dz * dz <= EXPLORE_BASE_DEFENDER_LEASH_RADIUS * EXPLORE_BASE_DEFENDER_LEASH_RADIUS;
+  }
+
+  _followExploreBase(ally) {
+    const home = this._getExploreBaseAnchor(ally);
+    if (!home) return false;
+    const d = this.calculateDistance(ally.position, home);
+    if (d > EXPLORE_BASE_DEFENDER_IDLE_RADIUS) {
+      this.moveEnemyTowardsTarget(ally, { position: home });
+      return true;
+    }
+    return false;
   }
 
   findAlliedKnightTarget(ally) {
@@ -11514,7 +11617,17 @@ class EnemyAI {
 
     const target = this.findAlliedKnightTarget(ally);
     const closestPlayer = this.findClosestPlayer(ally, players);
+    if (this._isExploreBaseDefender(ally) && target && !this._isWithinExploreBaseLeash(ally, target.position)) {
+      ally.alliedTargetEnemyId = null;
+      ally.combatInitiated = false;
+      this._followExploreBase(ally);
+      return;
+    }
     if (!target) {
+      if (this._isExploreBaseDefender(ally)) {
+        this._followExploreBase(ally);
+        return;
+      }
       if (closestPlayer) {
         const d = this.calculateDistance(ally.position, closestPlayer.position);
         if (d > ALLIED_KNIGHT_FOLLOW_DISTANCE) {
@@ -11778,7 +11891,15 @@ class EnemyAI {
 
     const target = this.findAlliedPhantomTarget(ally);
     const closestPlayer = this.findClosestPlayer(ally, players);
+    if (this._isExploreBaseDefender(ally) && target && !this._isWithinExploreBaseLeash(ally, target.position)) {
+      this._followExploreBase(ally);
+      return;
+    }
     if (!target) {
+      if (this._isExploreBaseDefender(ally)) {
+        this._followExploreBase(ally);
+        return;
+      }
       if (closestPlayer) {
         const d = this.calculateDistance(ally.position, closestPlayer.position);
         if (d > ALLIED_KNIGHT_FOLLOW_DISTANCE) {
@@ -12257,10 +12378,12 @@ class EnemyAI {
   updateAlliedBeastEntering(beast, players, config) {
     const owner = this.findAlliedBeastOwner(beast, players);
     if (!owner) return;
-    const slot = beast.companionSlot === 'fae' ? 'fae' : 'beastmaster';
-    const meetPos = this.room?.getCompanionFollowPosition?.(owner, slot)
+    const slot = beast.companionSlot === 'fae' ? 'fae'
+      : (beast.companionSlot === 'explore' ? 'explore' : 'beastmaster');
+    const idx = beast.exploreCompanionIndex ?? 0;
+    const meetPos = this.room?.getCompanionFollowPosition?.(owner, slot, idx)
       ?? { x: (owner.position?.x ?? 0) + (slot === 'fae' ? 2.2 : -2.2), y: 0, z: (owner.position?.z ?? 0) - 1.5 };
-    const meet = { id: `meet-${owner.id}-${slot}`, position: meetPos };
+    const meet = { id: `meet-${owner.id}-${slot}-${idx}`, position: meetPos };
     beast.tigerLocomotion = 'walk';
     beast.moveSpeed = config.walkSpeed;
     const d = this.calculateDistance(beast.position, meet.position);
@@ -12277,8 +12400,10 @@ class EnemyAI {
   _getCompanionFollowAnchor(beast, owner) {
     const slot = beast.companionSlot === 'fae'
       ? 'fae'
-      : (beast.companionSlot === 'fae_pack' ? 'fae_pack' : 'beastmaster');
-    const followPos = this.room?.getCompanionFollowPosition?.(owner, slot)
+      : (beast.companionSlot === 'fae_pack' ? 'fae_pack'
+        : (beast.companionSlot === 'explore' ? 'explore' : 'beastmaster'));
+    const idx = beast.exploreCompanionIndex ?? 0;
+    const followPos = this.room?.getCompanionFollowPosition?.(owner, slot, idx)
       ?? {
         x: (owner.position?.x ?? 0) + (slot === 'fae' ? 2.2 : (slot === 'fae_pack' ? 0 : -2.2)),
         y: 0,
@@ -12286,7 +12411,7 @@ class EnemyAI {
       };
     return {
       followPos,
-      followTarget: { id: `follow-${owner.id}-${slot}`, position: followPos },
+      followTarget: { id: `follow-${owner.id}-${slot}-${idx}`, position: followPos },
     };
   }
 
@@ -12792,12 +12917,19 @@ class EnemyAI {
     const earthShockReady = now - lastEarthShock >= earthShockCooldown;
     const vinesReady = now - lastVines >= ALLIED_ENCHANTRESS_GRASPING_VINES_COOLDOWN_MS;
 
-    const vineTargets = vinesReady
+    const vineTargetsRaw = vinesReady
       ? this.findAlliedEnchantressHostilesInRange(ally, ALLIED_ENCHANTRESS_GRASPING_VINES_RANGE)
       : [];
-    const shockTargets = earthShockReady
+    const shockTargetsRaw = earthShockReady
       ? this.findAlliedEnchantressHostilesInRange(ally, ALLIED_ENCHANTRESS_ATTACK_RANGE)
       : [];
+    const defendBase = this._isExploreBaseDefender(ally);
+    const vineTargets = defendBase
+      ? vineTargetsRaw.filter((enemy) => this._isWithinExploreBaseLeash(ally, enemy.position))
+      : vineTargetsRaw;
+    const shockTargets = defendBase
+      ? shockTargetsRaw.filter((enemy) => this._isWithinExploreBaseLeash(ally, enemy.position))
+      : shockTargetsRaw;
 
     if (vinesReady && vineTargets.length > 0 && ownerPlayerId) {
       this.enchantressGraspingVinesCooldown.set(ally.id, now);
@@ -12811,6 +12943,10 @@ class EnemyAI {
       return;
     }
 
+    if (this._isExploreBaseDefender(ally)) {
+      this._followExploreBase(ally);
+      return;
+    }
     if (closestPlayer) {
       const d = this.calculateDistance(ally.position, closestPlayer.position);
       if (d > ALLIED_KNIGHT_FOLLOW_DISTANCE) {
@@ -13170,6 +13306,7 @@ class EnemyAI {
 
   updateDefenseTowerAI(tower) {
     if (!this.room || tower.isDying || (tower.health ?? 0) <= 0) return;
+    if (exploreBuildings.isExploreTowerType(tower.type) && tower.powered === false) return;
     const now = Date.now();
     if ((tower.attackReadyAt || 0) > now) return;
 
@@ -13188,6 +13325,7 @@ class EnemyAI {
       this._queueMove(tower.id, tower.position, tower.rotation);
     }
 
+    const attackKind = tower.attackKind || 'bolt';
     const muzzleY = tower.attackMuzzleY || 7.8;
     const impactY = tower.attackImpactY || 1.0;
     const targetId = best.id;
@@ -13197,11 +13335,20 @@ class EnemyAI {
       y: impactY,
       z: best.position?.z ?? tz,
     };
-    const impactDelayMs = tower.attackImpactDelayMs || 280;
+    let impactDelayMs = tower.attackImpactDelayMs || 280;
+    if (attackKind === 'arrow') {
+      const dist = Math.hypot(
+        (impact.x - origin.x),
+        (impact.y - origin.y),
+        (impact.z - origin.z),
+      );
+      const speed = tower.attackArrowSpeed || 25;
+      impactDelayMs = Math.max(80, Math.round((dist / speed) * 1000));
+    }
     if (this.io) {
       this.io.to(this.roomId).emit('defense-tower-attack', {
         towerId: tower.id,
-        kind: 'bolt',
+        kind: attackKind,
         targetId,
         origin,
         impact,
@@ -13215,7 +13362,9 @@ class EnemyAI {
       if (!liveTower || liveTower.isDying || (liveTower.health ?? 0) <= 0) return;
       this.room.damageEnemy(targetId, damage, null, null, {
         sourceAlliedUnitId: liveTower.id,
-        damageType: 'defense_tower_bolt',
+        damageType: tower.type === 'siege-tower'
+          ? 'siege_tower_arrow'
+          : attackKind === 'arrow' ? 'watch_tower_arrow' : 'defense_tower_bolt',
       });
     }, impactDelayMs);
   }
@@ -14320,6 +14469,7 @@ class EnemyAI {
    * any castle wall segment, false if at least one wall intersects the segment.
    */
   hasLineOfSight(posA, posB) {
+    if (this.room?.coopDungeonActive || this.room?.coopExploreActive) return true;
     if (!this.navGrid) this.navGrid = this._buildNavGrid();
     return this._hasLineOfSightGrid(posA, posB);
   }
@@ -14332,6 +14482,10 @@ class EnemyAI {
    * called every frame.
    */
   resolveEnemyWallCollisions(x, z) {
+    if (this.room?.coopDungeonActive) {
+      return this.clampToArenaXZ(x, z);
+    }
+
     const ENEMY_RADIUS = 0.5;
     let rx = x;
     let rz = z;
@@ -14370,8 +14524,11 @@ class EnemyAI {
 
   calculateDistance(pos1, pos2) {
     const dx = pos1.x - pos2.x;
-    const dy = pos1.y - pos2.y;
     const dz = pos1.z - pos2.z;
+    if (this.room?.coopDungeonActive) {
+      return Math.hypot(dx, dz);
+    }
+    const dy = (pos1.y ?? 0) - (pos2.y ?? 0);
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
   }
 
@@ -16621,7 +16778,10 @@ class EnemyAI {
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
     const losOk = this.hasLineOfSight(wyvern.position, tpos);
 
-    if (!aggroData.isAggroed && distance <= aggroRadius && losOk) {
+    // Entrance-pack: don't aggro while player is still on the upper descent ramp.
+    const playerAboveFloor =
+      wyvern._dungeonEntrancePack && tpos && (tpos.y ?? 0) > wyvern.position.y + 4;
+    if (!aggroData.isAggroed && distance <= aggroRadius && losOk && !playerAboveFloor) {
       aggroData.isAggroed = true;
       this.emitBeastAggroSfx(wyvern);
     } else if (aggroData.isAggroed && distance > leashRadius) {
@@ -20582,6 +20742,28 @@ class EnemyAI {
     return players.length === 1;
   }
 
+  _findNearestPlayerStructure(moverEnemy, maxRadius = 15) {
+    if (!moverEnemy?.position || !this.room?.enemies) return null;
+    maxRadius = this.resolveAggroRadius(maxRadius);
+    let best = null;
+    let bestDistSq = maxRadius * maxRadius;
+    const ox = moverEnemy.position.x;
+    const oz = moverEnemy.position.z;
+    for (const enemy of this.room.enemies.values()) {
+      if (!enemy?.isStructure || !enemy?.alliedUnit) continue;
+      if (!exploreBuildings.isPlayerExploreBuildingType(enemy.type)) continue;
+      if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+      const dx = enemy.position.x - ox;
+      const dz = enemy.position.z - oz;
+      const distSq = dx * dx + dz * dz;
+      if (distSq >= bestDistSq) continue;
+      if (!this.hasLineOfSight(moverEnemy.position, enemy.position)) continue;
+      bestDistSq = distSq;
+      best = enemy;
+    }
+    return best;
+  }
+
   /** Clear trap/zombie focus so a fresh room starts player-targeted until threat is earned. */
   clearNonPlayerAggroTargets() {
     this.enemyAggro.forEach((data) => {
@@ -20841,6 +21023,12 @@ class EnemyAI {
     const isCombatAllyFocus = this._isPlayerCombatAlly(targetedAlly)
       && !targetedAlly.isDying
       && targetedAlly.health > 0;
+    const isStructureBuildingFocus = !!targetedAlly
+      && targetedAlly.isStructure === true
+      && targetedAlly.alliedUnit === true
+      && exploreBuildings.isPlayerExploreBuildingType(targetedAlly.type)
+      && !targetedAlly.isDying
+      && targetedAlly.health > 0;
 
     if (
       moverEnemy.deliriumGhoul
@@ -20865,7 +21053,7 @@ class EnemyAI {
 
     const preferPlayerOverAlly =
       aggroData.directPlayerDamageAggroed
-      || (!isCombatAllyFocus && this._shouldPreferPlayerOverAlly(moverEnemy, players));
+      || (!isCombatAllyFocus && !isStructureBuildingFocus && this._shouldPreferPlayerOverAlly(moverEnemy, players));
 
     if (aggroData.targetStructure && !preferPlayerOverAlly) {
       const structure = this.room?.deliriumStructure;
@@ -20901,6 +21089,14 @@ class EnemyAI {
         return { kind: 'zombie', zombie: z };
       }
       aggroData.targetZombieId = null;
+    }
+
+    if (!zid && !preferPlayerOverAlly) {
+      const building = this._findNearestPlayerStructure(moverEnemy);
+      if (building) {
+        aggroData.targetZombieId = building.id;
+        return { kind: 'zombie', zombie: building };
+      }
     }
 
     let targetPlayer = aggroData.targetPlayerId

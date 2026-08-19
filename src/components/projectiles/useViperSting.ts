@@ -14,6 +14,7 @@ import {
   GIANTKILLER_MAX_HP_DAMAGE_FRAC_BOSS,
 } from '@/utils/talents';
 import { spawnArcticGroundBlizzardAtFromReact } from '@/components/weapons/Blizzard/arcticBlizzardSpawnBridge';
+import { applyDungeonChestY } from '@/utils/dungeonLayout';
 import type { ViperExplosionTarget } from './viperExplosionTargets';
 
 /** Reaping Talons base hit damage (forward / return). Keep in sync with PVP manager. */
@@ -292,6 +293,7 @@ export function useViperSting({
 
           if (distanceTraveled < projectile.maxDistance && !projectile.fadeStartTime) {
             projectile.position.addScaledVector(projectile.direction, PROJECTILE_SPEED);
+            applyDungeonChestY(projectile.position);
 
             for (const enemy of enemyData) {
               if (enemy.isDying || enemy.health <= 0) continue;
@@ -408,6 +410,7 @@ export function useViperSting({
           if (distanceToTarget > 1.5 && !projectile.fadeStartTime) {
             projectile.direction.copy(_viperReturnDir.subVectors(returnTargetPosition, projectile.position).normalize());
             projectile.position.addScaledVector(projectile.direction, PROJECTILE_RETURN_SPEED);
+            applyDungeonChestY(projectile.position);
 
             for (const enemy of enemyData) {
               if (enemy.isDying || enemy.health <= 0) continue;

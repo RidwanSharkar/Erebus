@@ -16,7 +16,7 @@ export function preloadDefenseCenterPlatform(): void {
 function DefenseCenterPlatform() {
   return (
     <Suspense fallback={null}>
-      <ThroneCenterSeal />
+
     </Suspense>
   );
 }

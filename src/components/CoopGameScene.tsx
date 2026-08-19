@@ -52,6 +52,9 @@ import Boss3NovaDiscs, { type Boss3NovaBurst } from './enemies/Boss3NovaDiscs';
 import TitanStompShockwave, { type TitanStompShockwaveBurst } from './enemies/TitanStompShockwave';
 import TitanCannonAbility from './enemies/TitanCannonAbility';
 import GoldPileDropEffect from './enemies/GoldPileDropEffect';
+import WoodPileDropEffect from './environment/WoodPileDropEffect';
+import StonePileDropEffect from './environment/StonePileDropEffect';
+import MeatPileDropEffect from './environment/MeatPileDropEffect';
 import GoldCollectMoteEffect from './enemies/GoldCollectMoteEffect';
 import BowShotImpact from './weapons/BowShotImpact';
 import EntropicBoltImpact from './weapons/EntropicBoltImpact';
@@ -127,7 +130,7 @@ import type {
   WeaverLightningState,
 } from './coop/coopVfxLayerTypes';
 import { applyPlayerMove, getPlayerLivePosition, getPlayerLiveRotation } from '@/utils/playerLiveTransform';
-import { exploreFog } from '@/utils/exploreFogOfWar';
+import { EXPLORE_PLAYER_VIEW_RADIUS, exploreFog } from '@/utils/exploreFogOfWar';
 import { setExploreObstacleListener } from '@/utils/exploreObstacles';
 import {
   EXPLORE_CAMP_INTERACT_RADIUS,
@@ -135,8 +138,44 @@ import {
   type ExploreCampPublic,
 } from '@/utils/exploreCamps';
 import { setExploreMushroomListener } from '@/utils/exploreMushrooms';
+import { setExploreTreeListener } from '@/utils/exploreTrees';
+import { setExploreRootListener } from '@/utils/exploreRoots';
+import { setExploreRockListener, type ExploreRockInstance } from '@/utils/exploreRocks';
+import { setExploreSpineListener, type ExploreSpineInstance } from '@/utils/exploreSpines';
+import type { ExploreTreeInstance } from '@/utils/exploreTreeLayout';
+import type { ExploreRootInstance } from '@/utils/exploreGroundPropLayout';
+import BuildPlacementGhost from '@/components/environment/BuildPlacementGhost';
+import {
+  EXPLORE_BUILDING_DEFS,
+  EXPLORE_BUILDING_ROOT_ORDER,
+  EXPLORE_TOWER_CATEGORY_HOTKEY,
+  EXPLORE_TOWER_PICK_ORDER,
+  EXPLORE_BARRACKS_INTERACT_RADIUS,
+  EXPLORE_FIRE_PIT_INTERACT_RADIUS,
+  EXPLORE_FIRE_PIT_HEAL_MEAT_COST,
+  EXPLORE_MEAT_STACK_CAP,
+  EXPLORE_RESEARCH_INTERACT_RADIUS,
+  EXPLORE_RESEARCH_UPGRADES,
+  EXPLORE_SHRINE_INTERACT_RADIUS,
+  EXPLORE_OBELISK_INTERACT_RADIUS,
+  EXPLORE_SHRINE_GIFTS,
+  FIRE_PIT_HULL_RADIUS,
+  EXPLORE_TOWER_HULL_RADIUS,
+  RESEARCH_STATION_HULL_RADIUS,
+  SHRINE_HULL_RADIUS,
+  OBELISK_HULL_RADIUS,
+  EXPLORE_OBELISK_TALENT_GOLD_COST,
+  exploreBuildingRequiresSpiritLounge,
+  isExploreTowerType,
+  isPlayerExploreBuildingType,
+  type ExploreBuildingKind,
+} from '@/utils/exploreBuildings';
+import type { ExploreBuildingPlacementRules, ExploreObstacleDisc } from '@/utils/exploreBuildingPlacement';
 import { getExploreMushroom } from '@/utils/exploreWorldGen';
-import { useMultiplayerActions, useMultiplayerRoom, Player, EnemyDamageMeta, type Enemy as ServerEnemy, type GoldDrop, type PlayerMovementDirection, type BroadcastPlayerAttackAnimationData } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions, useMultiplayerRoom, Player, EnemyDamageMeta, type Enemy as ServerEnemy, type GoldDrop, type WoodDrop, type StoneDrop, type MeatDrop, type PlayerMovementDirection, type BroadcastPlayerAttackAnimationData } from '@/contexts/MultiplayerContext';
+import { ALLY_CHOICE_CARDS } from '@/utils/coopAllyChoice';
+import type { CoopAllyKind } from '@/utils/coopAllyTargeting';
+import { RULEBOOK_CLASS_TALENTS, type CoopRulebookWeapon } from '@/data/rulebookContent';
 import {
   findNearestSelectableAllyCandidate,
   getAllyRecruitHintLabel,
@@ -189,6 +228,7 @@ import {
   shouldApplyArcticStingTalent,
   shouldApplyHighCaliberTalent,
   getStaggerProcBaseDamage,
+  getEnabledTalentIds,
   getArcticBlizzardDamagePerTickFromStats,
   getArcticBlizzardHitRadius,
   getRunebladeBlizzardStormHitRadius,
@@ -344,6 +384,10 @@ import { Transform } from '@/ecs/components/Transform';
 import { Movement } from '@/ecs/components/Movement';
 import { Health } from '@/ecs/components/Health';
 import { DestructibleMushroom } from '@/ecs/components/DestructibleMushroom';
+import { DestructibleTree } from '@/ecs/components/DestructibleTree';
+import { DestructibleRoot } from '@/ecs/components/DestructibleRoot';
+import { DestructibleRock } from '@/ecs/components/DestructibleRock';
+import { DestructibleSpine } from '@/ecs/components/DestructibleSpine';
 import { Shield } from '@/ecs/components/Shield';
 import { Energy } from '@/ecs/components/Energy';
 import { Enemy, EnemyType, capFreezeMsForEnemy } from '@/ecs/components/Enemy';
@@ -436,10 +480,13 @@ import ThroneRoom, {
   THRONE_PORTAL_POSITION,
   THRONE_PORTAL_POSITIONS,
   THRONE_EXPLORE_PORTAL_POSITION,
+  THRONE_EXPLORE_PORTAL_RADIUS,
   THRONE_VOID_PORTAL_POSITION,
   THRONE_VOID_PORTAL_RADIUS,
   THRONE_DEFENSE_PORTAL_POSITION,
-  THRONE_SIDE_VOID_PORTAL_RADIUS,
+  THRONE_DEFENSE_PORTAL_RADIUS,
+  THRONE_DUNGEON_PORTAL_POSITION,
+  THRONE_DUNGEON_PORTAL_RADIUS,
   DEFENSE_ROOM_RADIUS,
   MAIN_COMBAT_CHOICE_PORTAL_POSITIONS,
   CASTLE_ROOM_CHOICE_PORTAL_POSITIONS,
@@ -492,9 +539,32 @@ import { HEALING_FOUNTAIN_INTERACT_RADIUS } from '@/components/environment/Heali
 import { EDEN_FINALE_DAISY_INTERACT_RADIUS } from '@/components/environment/EdenFinaleDaisy';
 import { COOP_MAIN_ENTRY_Z, rotationYTowardArenaCenter } from '@/utils/coopArenaLayout';
 import { getDefenseTowerObstacles } from '@/utils/defenseLayout';
+import {
+  DUNGEON_CAMERA_FAR,
+  DUNGEON_FOG_COLOR,
+  DUNGEON_FOG_DENSITY,
+  DUNGEON_PLAYABLE_AABB,
+  DUNGEON_SPAWN,
+  resolveDungeonPlayerCenterY,
+  subscribeDungeonMeshCollider,
+} from '@/utils/dungeonLayout';
 import { KNIGHT_FROST_FREEZE_MS, KNIGHT_SMITE_RADIUS_BASE } from '@/utils/knightCoopAbilitiesConstants';
 import { MUSHROOM_COUNT, buildMushroomInstances, getMushroomColliderCenter, type MushroomInstance } from '@/utils/mushroomLayout';
 import { MUSHROOM_MAX_HP } from '@/utils/mushroomConstants';
+import {
+  EXPLORE_TREE_COMBAT_CENTER_Y,
+  EXPLORE_ROOT_COMBAT_CENTER_Y,
+  EXPLORE_ROCK_COMBAT_CENTER_Y,
+  EXPLORE_SPINE_COMBAT_CENTER_Y,
+  exploreTreeCombatRadius,
+  exploreTreeMaxHpFromScale,
+  exploreRootCombatRadius,
+  exploreRootMaxHpFromScale,
+  exploreRockCombatRadius,
+  exploreRockMaxHpFromScale,
+  exploreSpineCombatRadius,
+  exploreSpineMaxHpFromScale,
+} from '@/utils/exploreTreeConstants';
 import MushroomEruptionVfx from '@/components/environment/MushroomEruptionVfx';
 
 /** Default main combat entry Z (ring centered here; matches server `teleportAllPlayersToCombatSpawn`). */
@@ -1288,7 +1358,29 @@ function preloadEnemyModelsForTypes(types: Iterable<string>): void {
           void import('./enemies/AlliedHealerModel').then(mod => mod.preloadAlliedHealerModels());
           break;
         case 'allied-tower':
+        case 'tower':
           void import('./environment/DefenseTower').then(mod => mod.preloadDefenseTower());
+          break;
+        case 'watch-tower':
+          void import('./environment/WatchTower').then(mod => mod.preloadWatchTower());
+          break;
+        case 'siege-tower':
+          void import('./environment/SiegeTower').then(mod => mod.preloadSiegeTower());
+          break;
+        case 'barracks':
+          void import('./environment/SpiritLounge').then(mod => mod.preloadSpiritLounge());
+          break;
+        case 'research-station':
+          void import('./environment/ResearchStation').then(mod => mod.preloadResearchStation());
+          break;
+        case 'shrine':
+          void import('./environment/Shrine').then(mod => mod.preloadShrine());
+          break;
+        case 'obelisk':
+          void import('./environment/Obelisk').then(mod => mod.preloadObelisk());
+          break;
+        case 'shield-battery':
+          void import('./environment/ShieldBattery').then(mod => mod.preloadShieldBattery());
           break;
         case 'allied-demon':
         case 'ghoul':
@@ -1540,6 +1632,10 @@ interface CoopGameSceneProps {
   onEssenceUpdate?: (essence: number) => void;
   onGoldUpdate?: (gold: number) => void;
   onFlowUpdate?: (flow: number) => void;
+  onWoodUpdate?: (wood: number) => void;
+  onStoneUpdate?: (stone: number) => void;
+  onMeatUpdate?: (meat: number) => void;
+  onHungerUpdate?: (hunger: number, starvingCritical: boolean) => void;
   onFateUpdate?: (fate: number) => void;
   onMerchantUIUpdate?: (isVisible: boolean) => void;
   onSceneReady?: () => void;
@@ -1582,6 +1678,18 @@ interface CoopGameSceneProps {
   extraDashChargePurchased?: boolean;
   /** Proximity hint above the HUD health bar ("Press 'x' to interact"). */
   onInteractHintChange?: (hint: string | null) => void;
+  /** Explore build menu open state (B key). */
+  onBuildMenuChange?: (open: boolean, view?: 'root' | 'towers') => void;
+  /** Explore barracks recruit panel visibility. */
+  onBarracksRecruitOpenChange?: (open: boolean) => void;
+  /** Explore research station panel visibility. */
+  onResearchPanelOpenChange?: (open: boolean) => void;
+  /** Explore shrine gift panel visibility. */
+  onShrinePanelOpenChange?: (open: boolean) => void;
+  /** Explore obelisk shop panel visibility. */
+  onObeliskPanelOpenChange?: (open: boolean) => void;
+  /** Explore fire-pit cook panel visibility. */
+  onFirePitHealOpenChange?: (open: boolean) => void;
   /** Local player died — e.g. show defeat UI. */
   onLocalPlayerDefeated?: () => void;
   /** Local player respawned/revived — e.g. hide defeat UI. */
@@ -1938,6 +2046,10 @@ export function CoopGameScene({
   onEssenceUpdate,
   onGoldUpdate,
   onFlowUpdate,
+  onWoodUpdate,
+  onStoneUpdate,
+  onMeatUpdate,
+  onHungerUpdate,
   onFateUpdate,
   onMerchantUIUpdate,
   onSceneReady,
@@ -1961,6 +2073,12 @@ export function CoopGameScene({
   onEternityPalaceArchitectInteract,
   extraDashChargePurchased = false,
   onInteractHintChange,
+  onBuildMenuChange,
+  onBarracksRecruitOpenChange,
+  onResearchPanelOpenChange,
+  onShrinePanelOpenChange,
+  onObeliskPanelOpenChange,
+  onFirePitHealOpenChange,
   onLocalPlayerDefeated,
   onLocalPlayerRevived,
 }: CoopGameSceneProps = {}) {
@@ -1997,6 +2115,16 @@ export function CoopGameScene({
     damageEnemy, // New function for enemy damage with source player tracking
     subscribeEnemyDamage,
     damageMushroom,
+    damageTree,
+    damageRoot,
+    damageRock,
+    damageSpine,
+    placeBuilding,
+    barracksRecruitAlly,
+    researchPurchase,
+    shrineClaim,
+    obeliskBuyTalent,
+    firePitHeal,
     detonateWyvernConcentratedVenom,
     triggerTyrantsCloakStrike,
     triggerDeathdealerStaggerProc,
@@ -2011,10 +2139,17 @@ export function CoopGameScene({
     setAbilityLoadout,
     pickupItem,
     pickupGoldDrop,
+    pickupWoodDrop,
+    pickupStoneDrop,
+    pickupMeatDrop,
     registerMerchantPurchaseSuccessHandler,
     registerMerchantNpcGreetHandler,
     registerPlayerGoldChangedHandler,
     registerPlayerFlowChangedHandler,
+    registerPlayerWoodChangedHandler,
+    registerPlayerStoneChangedHandler,
+    registerPlayerMeatChangedHandler,
+    registerPlayerHungerChangedHandler,
     registerPlayerFateChangedHandler,
     purchaseMerchantItem,
     purchaseMerchantHeal,
@@ -2041,10 +2176,18 @@ export function CoopGameScene({
     isInRoom,
     currentRoomId,
     mushroomState,
+    treeState,
+    rootState,
+    rockState,
+    spineState,
+    exploreResearch,
     isChatOpen,
     talentLoadout,
     droppedItems,
     goldDrops,
+    woodDrops,
+    stoneDrops,
+    meatDrops,
     inventory,
     campTypes,
     thronePortalOffer,
@@ -2228,6 +2371,7 @@ export function CoopGameScene({
   const isFaeRealm = coopCurrentRoomKind === 'fae_realm';
   const isExplore = coopCurrentRoomKind === 'explore';
   const isDefense = coopCurrentRoomKind === 'defense';
+  const isDungeon = coopCurrentRoomKind === 'dungeon';
   const isErebusGate = coopCurrentRoomKind === 'erebus_gate';
   const isIntroCastleRoom = coopCurrentRoomKind === 'intro';
   const hexArenaVariant =
@@ -2243,6 +2387,7 @@ export function CoopGameScene({
 
   const coopArenaClampBounds = useMemo(() => {
     if (isExplore) return null;
+    if (isDungeon) return null;
     if (isDefense) return DEFENSE_ROOM_RADIUS;
     if (inThroneRoom || inBossThroneArena) return COOP_THRONE_ROOM_RADIUS;
     if (isFaeRealm) return FAE_REALM_HEX_RADIUS;
@@ -2252,9 +2397,9 @@ export function CoopGameScene({
     if (isCastleRoom) return CASTLE_ROOM_BOUNDS;
     if (isHexCombatArena) return HEX_ARENA_RADIUS;
     return MAIN_ARENA_HEX_RADIUS;
-  }, [inThroneRoom, inBossThroneArena, isCastleRoom, isFaeRealm, isExplore, isDefense, isEternityPalace, isSunkenTemple, isErebusGate, isHexCombatArena]);
+  }, [inThroneRoom, inBossThroneArena, isCastleRoom, isFaeRealm, isExplore, isDefense, isDungeon, isEternityPalace, isSunkenTemple, isErebusGate, isHexCombatArena]);
 
-  const dimThroneLikeLighting = inThroneRoom || inBossThroneArena || isDefense;
+  const dimThroneLikeLighting = inThroneRoom || inBossThroneArena || isDefense || isDungeon;
 
   const isColoredCoopRoom =
     coopCurrentRoomKind === 'blue'
@@ -2269,20 +2414,49 @@ export function CoopGameScene({
     && !isEternityPalace
     && !isErebusGate
     && !isDefense
+    && !isDungeon
     && !isColoredCoopRoom;
 
   const [exploreMushrooms, setExploreMushrooms] = useState<MushroomInstance[]>([]);
+  const [exploreTrees, setExploreTrees] = useState<ExploreTreeInstance[]>([]);
+  const [exploreRoots, setExploreRoots] = useState<ExploreRootInstance[]>([]);
+  const [exploreRocks, setExploreRocks] = useState<ExploreRockInstance[]>([]);
+  const [exploreSpines, setExploreSpines] = useState<ExploreSpineInstance[]>([]);
   useEffect(() => {
     if (!isExplore) {
       setExploreMushroomListener(null);
+      setExploreTreeListener(null);
+      setExploreRootListener(null);
+      setExploreRockListener(null);
+      setExploreSpineListener(null);
       setExploreMushrooms([]);
+      setExploreTrees([]);
+      setExploreRoots([]);
+      setExploreRocks([]);
+      setExploreSpines([]);
       return;
     }
     setExploreMushroomListener((instances) => {
       setExploreMushrooms([...instances]);
     });
+    setExploreTreeListener((instances) => {
+      setExploreTrees([...instances]);
+    });
+    setExploreRootListener((instances) => {
+      setExploreRoots([...instances]);
+    });
+    setExploreRockListener((instances) => {
+      setExploreRocks([...instances]);
+    });
+    setExploreSpineListener((instances) => {
+      setExploreSpines([...instances]);
+    });
     return () => {
       setExploreMushroomListener(null);
+      setExploreTreeListener(null);
+      setExploreRootListener(null);
+      setExploreRockListener(null);
+      setExploreSpineListener(null);
     };
   }, [isExplore]);
 
@@ -2308,6 +2482,74 @@ export function CoopGameScene({
     return s;
   }, [isExplore, mushroomState, effectiveMushroomHealth]);
 
+  const treeHiddenIndices = useMemo(() => {
+    const s = new Set<number>();
+    if (!isExplore) return s;
+    const eh = treeState?.exploreHealth;
+    if (eh) {
+      for (const [k, h] of Object.entries(eh)) {
+        if (h <= 0) s.add(Number(k));
+      }
+    }
+    return s;
+  }, [isExplore, treeState]);
+
+  const rootHiddenIndices = useMemo(() => {
+    const s = new Set<number>();
+    if (!isExplore) return s;
+    const eh = rootState?.exploreHealth;
+    if (eh) {
+      for (const [k, h] of Object.entries(eh)) {
+        if (h <= 0) s.add(Number(k));
+      }
+    }
+    return s;
+  }, [isExplore, rootState]);
+
+  const rockHiddenIndices = useMemo(() => {
+    const s = new Set<number>();
+    if (!isExplore) return s;
+    const eh = rockState?.exploreHealth;
+    if (eh) {
+      for (const [k, h] of Object.entries(eh)) {
+        if (h <= 0) s.add(Number(k));
+      }
+    }
+    return s;
+  }, [isExplore, rockState]);
+
+  const spineHiddenIndices = useMemo(() => {
+    const s = new Set<number>();
+    if (!isExplore) return s;
+    const eh = spineState?.exploreHealth;
+    if (eh) {
+      for (const [k, h] of Object.entries(eh)) {
+        if (h <= 0) s.add(Number(k));
+      }
+    }
+    return s;
+  }, [isExplore, spineState]);
+
+  const destroyedTreeHealthMap = useMemo(() => {
+    const map = new Map<number, number>();
+    const eh = treeState?.exploreHealth;
+    if (!eh) return map;
+    for (const [k, h] of Object.entries(eh)) {
+      map.set(Number(k), h);
+    }
+    return map;
+  }, [treeState?.exploreHealth]);
+
+  const destroyedRootHealthMap = useMemo(() => {
+    const map = new Map<number, number>();
+    const eh = rootState?.exploreHealth;
+    if (!eh) return map;
+    for (const [k, h] of Object.entries(eh)) {
+      map.set(Number(k), h);
+    }
+    return map;
+  }, [rootState?.exploreHealth]);
+
   const mushroomTargetsForMelee = useMemo(() => {
     const out: Array<{ index: number; position: Vector3 }> = [];
     if (isExplore) {
@@ -2328,6 +2570,66 @@ export function CoopGameScene({
     }
     return out;
   }, [isExplore, exploreMushrooms, mushroomState, effectiveMushroomHealth]);
+
+  const treeTargetsForMelee = useMemo(() => {
+    const out: Array<{ index: number; position: Vector3; radius: number }> = [];
+    if (!isExplore) return out;
+    for (const inst of exploreTrees) {
+      const hp = treeState?.exploreHealth?.[inst.index];
+      if (hp !== undefined && hp <= 0) continue;
+      out.push({
+        index: inst.index,
+        position: new Vector3(inst.x, EXPLORE_TREE_COMBAT_CENTER_Y, inst.z),
+        radius: exploreTreeCombatRadius(inst.scale),
+      });
+    }
+    return out;
+  }, [isExplore, exploreTrees, treeState]);
+
+  const rootTargetsForMelee = useMemo(() => {
+    const out: Array<{ index: number; position: Vector3; radius: number }> = [];
+    if (!isExplore) return out;
+    for (const inst of exploreRoots) {
+      const hp = rootState?.exploreHealth?.[inst.index];
+      if (hp !== undefined && hp <= 0) continue;
+      out.push({
+        index: inst.index,
+        position: new Vector3(inst.x, EXPLORE_ROOT_COMBAT_CENTER_Y, inst.z),
+        radius: exploreRootCombatRadius(inst.scale),
+      });
+    }
+    return out;
+  }, [isExplore, exploreRoots, rootState]);
+
+  const rockTargetsForMelee = useMemo(() => {
+    const out: Array<{ index: number; position: Vector3; radius: number }> = [];
+    if (!isExplore || !exploreResearch.stoneBreaker) return out;
+    for (const inst of exploreRocks) {
+      const hp = rockState?.exploreHealth?.[inst.index];
+      if (hp !== undefined && hp <= 0) continue;
+      out.push({
+        index: inst.index,
+        position: new Vector3(inst.x, EXPLORE_ROCK_COMBAT_CENTER_Y, inst.z),
+        radius: exploreRockCombatRadius(inst.radius),
+      });
+    }
+    return out;
+  }, [isExplore, exploreResearch.stoneBreaker, exploreRocks, rockState]);
+
+  const spineTargetsForMelee = useMemo(() => {
+    const out: Array<{ index: number; position: Vector3; radius: number }> = [];
+    if (!isExplore || !exploreResearch.soulStealer) return out;
+    for (const inst of exploreSpines) {
+      const hp = spineState?.exploreHealth?.[inst.index];
+      if (hp !== undefined && hp <= 0) continue;
+      out.push({
+        index: inst.index,
+        position: new Vector3(inst.x, EXPLORE_SPINE_COMBAT_CENTER_Y, inst.z),
+        radius: exploreSpineCombatRadius(inst.radius),
+      });
+    }
+    return out;
+  }, [isExplore, exploreResearch.soulStealer, exploreSpines, spineState]);
 
   const prevMushroomHealthRef = useRef<number[] | null>(null);
     // Reset the health snapshot whenever we enter a new combat room so the diff
@@ -2396,6 +2698,34 @@ export function CoopGameScene({
       damageMushroom(index, baseDamage, socket?.id);
     },
     [damageMushroom, socket?.id],
+  );
+
+  const onTreeMeleeHit = useCallback(
+    (index: number, baseDamage: number) => {
+      damageTree(index, baseDamage, socket?.id);
+    },
+    [damageTree, socket?.id],
+  );
+
+  const onRootMeleeHit = useCallback(
+    (index: number, baseDamage: number) => {
+      damageRoot(index, baseDamage, socket?.id);
+    },
+    [damageRoot, socket?.id],
+  );
+
+  const onRockMeleeHit = useCallback(
+    (index: number, baseDamage: number) => {
+      damageRock(index, baseDamage, socket?.id);
+    },
+    [damageRock, socket?.id],
+  );
+
+  const onSpineMeleeHit = useCallback(
+    (index: number, baseDamage: number) => {
+      damageSpine(index, baseDamage, socket?.id);
+    },
+    [damageSpine, socket?.id],
   );
 
   // Debug multiplayer state
@@ -2525,6 +2855,9 @@ export function CoopGameScene({
   const portalFallFallStartMsRef = useRef(0);
   /** Y position captured when portal-fall transitions from rise to fall. */
   const portalFallStartYRef = useRef(VOID_PORTAL_FALL_SPAWN_Y);
+  const applyDungeonGroundSnapRef = useRef<
+    (x: number, z: number, rotation?: { x: number; y: number; z: number } | null) => boolean
+  >(() => false);
 
   useEffect(() => {
     const playWhenReady = (play: () => void) => {
@@ -2695,6 +3028,8 @@ export function CoopGameScene({
   /** Horizontal XZ cull radius for coop enemy React trees (~45 units). */
   const isExploreRef = useRef(false);
   isExploreRef.current = isExplore;
+  const isDungeonRef = useRef(false);
+  isDungeonRef.current = isDungeon;
   const isCoopEnemyVisibleForRender = useCallback(
     (enemyX: number, enemyZ: number) => {
       if (playerEntityRef.current === null) return true;
@@ -2703,6 +3038,8 @@ export function CoopGameScene({
       if (isExploreRef.current) {
         return exploreFog.isEnemyVisible(enemyX, enemyZ, playerPos.x, playerPos.z);
       }
+      // Dungeon corridor is longer than the default 45u arena cull; pack sits ~80u from spawn.
+      if (isDungeonRef.current) return true;
       const dx = enemyX - playerPos.x;
       const dz = enemyZ - playerPos.z;
       return dx * dx + dz * dz <= 45 * 45;
@@ -2773,12 +3110,73 @@ export function CoopGameScene({
   pickupItemRef.current = pickupItem;
   const pickupGoldDropRef = useRef(pickupGoldDrop);
   pickupGoldDropRef.current = pickupGoldDrop;
+  const woodDropsRef = useRef(woodDrops);
+  woodDropsRef.current = woodDrops;
+  const pickupWoodDropRef = useRef(pickupWoodDrop);
+  pickupWoodDropRef.current = pickupWoodDrop;
+  const stoneDropsRef = useRef(stoneDrops);
+  stoneDropsRef.current = stoneDrops;
+  const pickupStoneDropRef = useRef(pickupStoneDrop);
+  pickupStoneDropRef.current = pickupStoneDrop;
+  const meatDropsRef = useRef(meatDrops);
+  meatDropsRef.current = meatDrops;
+  const pickupMeatDropRef = useRef(pickupMeatDrop);
+  pickupMeatDropRef.current = pickupMeatDrop;
   /** Prevents spamming `pickup-gold-drop` each frame while waiting for server ack / expiry. */
   const pendingGoldAutoPickupRef = useRef(new Set<string>());
+  /** Prevents spamming `pickup-wood-drop` each frame while waiting for server ack. */
+  const pendingWoodAutoPickupRef = useRef(new Set<string>());
+  /** Prevents spamming `pickup-stone-drop` each frame while waiting for server ack. */
+  const pendingStoneAutoPickupRef = useRef(new Set<string>());
+  /** Prevents spamming `pickup-meat-drop` each frame while waiting for server ack. */
+  const pendingMeatAutoPickupRef = useRef(new Set<string>());
   /** Prevents spamming `pickup-item` for rune amulets while waiting for server ack / expiry. */
   const pendingRuneAutoPickupRef = useRef(new Set<string>());
   const onInteractHintChangeRef = useRef(onInteractHintChange);
   onInteractHintChangeRef.current = onInteractHintChange;
+  const onBuildMenuChangeRef = useRef(onBuildMenuChange);
+  onBuildMenuChangeRef.current = onBuildMenuChange;
+  const buildModeRef = useRef<'idle' | 'menu' | 'tower-pick' | 'placing'>('idle');
+  const buildKeyPrevRef = useRef(false);
+  const buildEscKeyPrevRef = useRef(false);
+  const buildFKeyPrevRef = useRef(false);
+  const buildPlacementPosRef = useRef({ x: 0, z: 0, valid: false });
+  const buildLeftMousePrevRef = useRef(false);
+  const buildHotkeyPrevRef = useRef<Record<string, boolean>>({});
+  const placeBuildingRef = useRef(placeBuilding);
+  placeBuildingRef.current = placeBuilding;
+  const barracksRecruitAllyRef = useRef(barracksRecruitAlly);
+  barracksRecruitAllyRef.current = barracksRecruitAlly;
+  const researchPurchaseRef = useRef(researchPurchase);
+  researchPurchaseRef.current = researchPurchase;
+  const shrineClaimRef = useRef(shrineClaim);
+  shrineClaimRef.current = shrineClaim;
+  const obeliskBuyTalentRef = useRef(obeliskBuyTalent);
+  obeliskBuyTalentRef.current = obeliskBuyTalent;
+  const firePitHealRef = useRef(firePitHeal);
+  firePitHealRef.current = firePitHeal;
+  const onBarracksRecruitOpenChangeRef = useRef(onBarracksRecruitOpenChange);
+  onBarracksRecruitOpenChangeRef.current = onBarracksRecruitOpenChange;
+  const onResearchPanelOpenChangeRef = useRef(onResearchPanelOpenChange);
+  onResearchPanelOpenChangeRef.current = onResearchPanelOpenChange;
+  const onShrinePanelOpenChangeRef = useRef(onShrinePanelOpenChange);
+  onShrinePanelOpenChangeRef.current = onShrinePanelOpenChange;
+  const onObeliskPanelOpenChangeRef = useRef(onObeliskPanelOpenChange);
+  onObeliskPanelOpenChangeRef.current = onObeliskPanelOpenChange;
+  const onFirePitHealOpenChangeRef = useRef(onFirePitHealOpenChange);
+  onFirePitHealOpenChangeRef.current = onFirePitHealOpenChange;
+  const nearBarracksRef = useRef(false);
+  const nearResearchRef = useRef(false);
+  const nearShrineRef = useRef(false);
+  const nearObeliskRef = useRef(false);
+  const nearFirePitRef = useRef(false);
+  const [buildPlacementActive, setBuildPlacementActive] = useState(false);
+  const [buildPlacementKind, setBuildPlacementKind] = useState<ExploreBuildingKind>('fire-pit');
+  const buildPlacementKindRef = useRef<ExploreBuildingKind>('fire-pit');
+  buildPlacementKindRef.current = buildPlacementKind;
+  const exploreChunkDiscsRef = useRef<Array<{ x: number; z: number; radius: number }>>([]);
+  const buildPlacementExtraDiscsRef = useRef<ExploreObstacleDisc[]>([]);
+  const buildPlacementRulesRef = useRef<ExploreBuildingPlacementRules>({ firePits: [], liveTowerCount: 0, hasLiveSpiritLounge: false });
   const lastInteractHintRef = useRef<string | null>(null);
   const initialWeaponsForEngineRef = useRef(
     selectedWeapons ?? { primary: WeaponType.NONE, secondary: WeaponType.NONE },
@@ -2882,9 +3280,16 @@ export function CoopGameScene({
   }, [gameStarted, engineReady, enemyTypesKey, coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq]);
 
   useEffect(() => {
+    if (!isDungeon) return;
+    void import('@/components/environment/DungeonNexusMap').then((mod) => {
+      mod.preloadDungeonNexusMap();
+    });
+  }, [isDungeon]);
+
+  useEffect(() => {
     if (!isDefense) return;
-    void import('@/components/environment/ThroneFireplaceDecor').then((mod) => {
-      mod.preloadThroneFireplaceDecor();
+    void import('@/components/environment/DefenseArenaMap').then((mod) => {
+      mod.preloadDefenseArenaMap();
     });
     void import('@/components/environment/DefenseCenterPlatform').then((mod) => {
       mod.preloadDefenseCenterPlatform();
@@ -2892,17 +3297,36 @@ export function CoopGameScene({
     void import('./environment/DefenseTower').then((mod) => {
       mod.preloadDefenseTower();
     });
-    void import('@/components/environment/ThroneStatueDecor').then((mod) => {
-      mod.preloadThroneStatueDecor();
-    });
-    void import('@/components/environment/ThronePerimeterPylonDecor').then((mod) => {
-      mod.preloadThronePerimeterPylonDecor();
-    });
   }, [isDefense]);
+
+  useEffect(() => {
+    if (!isExplore) return;
+    void import('./environment/DefenseTower').then((mod) => {
+      mod.preloadDefenseTower();
+    });
+    void import('./environment/WatchTower').then((mod) => {
+      mod.preloadWatchTower();
+    });
+    void import('./environment/SiegeTower').then((mod) => {
+      mod.preloadSiegeTower();
+    });
+    void import('./environment/SpiritLounge').then((mod) => {
+      mod.preloadSpiritLounge();
+    });
+    void import('./environment/ResearchStation').then((mod) => {
+      mod.preloadResearchStation();
+    });
+    void import('./environment/ShieldBattery').then((mod) => {
+      mod.preloadShieldBattery();
+    });
+  }, [isExplore]);
 
   useEffect(() => {
     if (inThroneRoom) {
       portalUseSentRef.current = false;
+      void import('@/components/environment/DungeonNexusMap').then((mod) => {
+        mod.preloadDungeonNexusMap();
+      });
       void import('@/components/environment/ThroneStatueDecor').then((mod) => {
         mod.preloadThroneStatueDecor();
       });
@@ -2923,9 +3347,6 @@ export function CoopGameScene({
     if (!isFaeRealm) return;
     void import('@/components/environment/FaeRealmDecor').then((mod) => {
       mod.preloadFaeRealmDecor();
-    });
-    void import('@/components/environment/FaeRealmSkyDome').then((mod) => {
-      mod.preloadFaeRealmSkyDome();
     });
     void import('@/components/environment/ThronePerimeterPylonDecor').then((mod) => {
       mod.preloadThronePerimeterPylonDecor();
@@ -3001,13 +3422,29 @@ export function CoopGameScene({
 
   // Layout: apply before paint so physics boundary mode matches the active arena shell.
   useLayoutEffect(() => {
-    if (!engineRef.current || !gameStarted) return;
+    if (!gameStarted) return;
+    if (!engineRef.current) {
+      if (isExplore) {
+        scene.fog = new FogExp2(SKY_INDIGO_NIGHT.horizon, 0.045);
+        if (camera instanceof PerspectiveCamera) {
+          camera.far = 600;
+          camera.updateProjectionMatrix();
+        }
+      } else if (isDungeon) {
+        scene.fog = new FogExp2(DUNGEON_FOG_COLOR, DUNGEON_FOG_DENSITY);
+        if (camera instanceof PerspectiveCamera) {
+          camera.far = DUNGEON_CAMERA_FAR;
+          camera.updateProjectionMatrix();
+        }
+      }
+      return;
+    }
     const world = engineRef.current.getWorld();
     const phys = world.getSystem(PhysicsSystem);
     const r =
       inThroneRoom || inBossThroneArena
         ? COOP_THRONE_ROOM_RADIUS + 2
-        : isExplore
+        : isExplore || isDungeon
           ? 9999
         : isDefense
           ? DEFENSE_ROOM_RADIUS + 2
@@ -3024,8 +3461,8 @@ export function CoopGameScene({
           : isHexCombatArena
             ? HEX_ARENA_RADIUS
             : MAIN_ARENA_HEX_RADIUS;
-    const mainCoopRoom = !inThroneRoom && !inBossThroneArena && !isHexCombatArena && !isCastleRoom && !isSunkenTemple && !isErebusGate && !isFaeRealm && !isEternityPalace && !isExplore && !isDefense;
-    const boundaryMode = isExplore
+    const mainCoopRoom = !inThroneRoom && !inBossThroneArena && !isHexCombatArena && !isCastleRoom && !isSunkenTemple && !isErebusGate && !isFaeRealm && !isEternityPalace && !isExplore && !isDefense && !isDungeon;
+    const boundaryMode = isExplore || isDungeon
       ? 'none'
       : isCastleRoom || isSunkenTemple || isErebusGate
         ? 'circle'
@@ -3046,30 +3483,36 @@ export function CoopGameScene({
     controlSystemRef.current?.setArenaBoundaryMode?.(boundaryMode);
     controlSystemRef.current?.setThroneChargePillars(throneObstacles);
     controlSystemRef.current?.setChargeCornerMountains(null);
-    world.getSystem(ProjectileSystem)?.setOriginCullRadius(isExplore ? null : DEFAULT_PROJECTILE_ORIGIN_CULL_RADIUS);
+    world.getSystem(ProjectileSystem)?.setOriginCullRadius(isExplore || isDungeon ? null : DEFAULT_PROJECTILE_ORIGIN_CULL_RADIUS);
+    const roomFog = isExplore
+      ? new FogExp2(SKY_INDIGO_NIGHT.horizon, 0.045)
+      : isDungeon
+        ? new FogExp2(DUNGEON_FOG_COLOR, DUNGEON_FOG_DENSITY)
+        : null;
     const render = world.getSystem(RenderSystem);
-    if (isExplore) {
-      render?.setFog(new FogExp2(SKY_INDIGO_NIGHT.horizon, 0.045));
-      if (camera instanceof PerspectiveCamera) {
-        camera.far = 600;
-        camera.updateProjectionMatrix();
-      }
+    if (render) {
+      render.setFog(roomFog);
     } else {
-      render?.setFog(null);
-      if (camera instanceof PerspectiveCamera) {
-        camera.far = 1000;
-        camera.updateProjectionMatrix();
-      }
+      scene.fog = roomFog;
+    }
+    if (camera instanceof PerspectiveCamera) {
+      camera.far = isExplore ? 600 : isDungeon ? DUNGEON_CAMERA_FAR : 1000;
+      camera.updateProjectionMatrix();
     }
     return () => {
       world.getSystem(ProjectileSystem)?.setOriginCullRadius(DEFAULT_PROJECTILE_ORIGIN_CULL_RADIUS);
-      render?.setFog(null);
+      const renderNow = world.getSystem(RenderSystem);
+      if (renderNow) {
+        renderNow.setFog(null);
+      } else if (scene.fog === roomFog) {
+        scene.fog = null;
+      }
       if (camera instanceof PerspectiveCamera) {
         camera.far = 1000;
         camera.updateProjectionMatrix();
       }
     };
-  }, [inThroneRoom, inBossThroneArena, isHexCombatArena, isCastleRoom, isFaeRealm, isExplore, isDefense, isEternityPalace, isSunkenTemple, isErebusGate, gameStarted, engineReady, camera]);
+  }, [inThroneRoom, inBossThroneArena, isHexCombatArena, isCastleRoom, isFaeRealm, isExplore, isDefense, isDungeon, isEternityPalace, isSunkenTemple, isErebusGate, gameStarted, engineReady, camera, scene, playerEntity]);
 
   const exploreCampsRef = useRef(exploreCamps);
   exploreCampsRef.current = exploreCamps;
@@ -3086,6 +3529,34 @@ export function CoopGameScene({
         controlSystemRef.current?.setStreamedObstacles(null);
       };
     }
+    if (isDungeon) {
+      const phys = engineRef.current?.getWorld().getSystem(PhysicsSystem);
+      phys?.setPlayableAabb(DUNGEON_PLAYABLE_AABB);
+      const unsub = subscribeDungeonMeshCollider((collider) => {
+        engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setMeshCollider(collider);
+        if (!collider || playerEntityRef.current === null || !socket?.id) return;
+        const ent = engineRef.current?.getWorld().getEntity(playerEntityRef.current);
+        const tr = ent?.getComponent(Transform);
+        if (!tr) return;
+        const movement = ent?.getComponent(Movement);
+        const groundY = resolveDungeonPlayerCenterY(tr.position.x, tr.position.z);
+        const needsSnap =
+          tr.position.y > groundY + 0.35
+          || movement?.isPortalFalling
+          || voidPortalFallActiveRef.current
+          || (movement != null && !movement.isGrounded && tr.position.y > groundY + 0.15);
+        if (needsSnap) {
+          const me = contextPlayersRef.current.get(socket.id);
+          applyDungeonGroundSnapRef.current(tr.position.x, tr.position.z, me?.rotation);
+        }
+      });
+      return () => {
+        unsub();
+        const p = engineRef.current?.getWorld().getSystem(PhysicsSystem);
+        p?.setMeshCollider(null);
+        p?.setPlayableAabb(null);
+      };
+    }
     if (!isExplore) {
       setExploreObstacleListener(null);
       engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(null);
@@ -3093,7 +3564,7 @@ export function CoopGameScene({
       return;
     }
 
-    const chunkDiscsRef = { current: [] as Array<{ x: number; z: number; radius: number }> };
+    const chunkDiscsRef = exploreChunkDiscsRef;
     const applyMerged = () => {
       const campDiscs: Array<{ x: number; z: number; radius: number }> = [];
       for (const camp of exploreCampsRef.current) {
@@ -3102,9 +3573,26 @@ export function CoopGameScene({
         if (radius <= 0) continue;
         campDiscs.push({ x: camp.x, z: camp.z, radius });
       }
-      const merged = campDiscs.length > 0
-        ? [...chunkDiscsRef.current, ...campDiscs]
-        : chunkDiscsRef.current;
+      const buildingDiscs: ExploreObstacleDisc[] = [];
+      const firePits: Array<{ x: number; z: number }> = [];
+      let liveTowerCount = 0;
+      let hasLiveSpiritLounge = false;
+      for (const enemy of enemiesRef.current.values()) {
+        if (!isPlayerExploreBuildingType(enemy.type)) continue;
+        if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+        const radius = typeof enemy.hullRadius === 'number' ? enemy.hullRadius : FIRE_PIT_HULL_RADIUS;
+        buildingDiscs.push({ x: enemy.position.x, z: enemy.position.z, radius, kind: enemy.type });
+        if (enemy.type === 'fire-pit') firePits.push({ x: enemy.position.x, z: enemy.position.z });
+        if (enemy.type === 'barracks') hasLiveSpiritLounge = true;
+        if (isExploreTowerType(enemy.type)) liveTowerCount += 1;
+      }
+      const merged = [
+        ...chunkDiscsRef.current,
+        ...campDiscs,
+        ...buildingDiscs,
+      ];
+      buildPlacementExtraDiscsRef.current = merged;
+      buildPlacementRulesRef.current = { firePits, liveTowerCount, hasLiveSpiritLounge };
       engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(merged);
       controlSystemRef.current?.setStreamedObstacles(merged);
     };
@@ -3117,10 +3605,20 @@ export function CoopGameScene({
 
     return () => {
       setExploreObstacleListener(null);
+      exploreChunkDiscsRef.current = [];
       engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(null);
       controlSystemRef.current?.setStreamedObstacles(null);
     };
-  }, [isExplore, isDefense, engineReady, exploreCamps]);
+  }, [isExplore, isDefense, isDungeon, engineReady, exploreCamps, enemies]);
+
+  useEffect(() => {
+    if (isExplore) return;
+    buildModeRef.current = 'idle';
+    setBuildPlacementActive(false);
+    controlSystemRef.current?.setBuildPlacementActive(false);
+    controlSystemRef.current?.setBuildMenuHotkeysActive(false);
+    onBuildMenuChangeRef.current?.(false);
+  }, [isExplore]);
 
   const prevInThroneRef = useRef(inThroneRoom);
   // Place the local player at their server throne spawn ONCE per throne entry, then let the
@@ -3146,6 +3644,122 @@ export function CoopGameScene({
     cameraSystemRef.current?.snapToTarget();
     throneSpawnAppliedRef.current = true;
   }, [inThroneRoom, gameStarted, engineReady, socket?.id, players]);
+
+  /** Snap the local hero onto explore wilderness ground and keep the floor-follower ref aligned. */
+  const applyExploreLateJoinGroundSnap = useCallback((
+    x: number,
+    z: number,
+    rotation?: { x: number; y: number; z: number } | null,
+  ) => {
+    if (!engineRef.current || playerEntityRef.current === null || !socket?.id) return false;
+    const y = PORTAL_FALL_GROUND_Y;
+    const ent = engineRef.current.getWorld().getEntity(playerEntityRef.current);
+    const tr = ent?.getComponent(Transform);
+    if (tr) {
+      tr.setPosition(x, y, z);
+    }
+    const movement = ent?.getComponent(Movement);
+    if (movement) {
+      movement.haltLocomotion();
+      movement.isGrounded = true;
+      movement.isPortalFalling = false;
+      movement.portalFallPhase = 'rise';
+      movement.portalFallProgress = 0;
+    }
+    voidPortalFallActiveRef.current = false;
+    pendingPortalSnapRef.current = false;
+    realTimePlayerPositionRef.current.set(x, y, z);
+    const rot = rotation ?? { x: 0, y: 0, z: 0 };
+    applyPlayerMove(playersTransformsRef, contextPlayersRef, {
+      playerId: socket.id,
+      position: { x, y, z },
+      rotation: rot,
+      movementDirection: { x: 0, y: 0, z: 0 },
+    });
+    resetLocalPositionEmitThrottleRef.current({ x, y, z }, rot);
+    cameraSystemRef.current?.snapToTarget();
+    exploreFog.markExplored(x, z, EXPLORE_PLAYER_VIEW_RADIUS);
+    return true;
+  }, [socket?.id, playersTransformsRef, contextPlayersRef]);
+
+  /** Snap the local hero onto dungeon mesh ground when the lair collider becomes available. */
+  const applyDungeonGroundSnap = useCallback((
+    x: number,
+    z: number,
+    rotation?: { x: number; y: number; z: number } | null,
+  ) => {
+    if (!engineRef.current || playerEntityRef.current === null || !socket?.id) return false;
+    const y = resolveDungeonPlayerCenterY(x, z);
+    const ent = engineRef.current.getWorld().getEntity(playerEntityRef.current);
+    const tr = ent?.getComponent(Transform);
+    if (tr) {
+      tr.setPosition(x, y, z);
+    }
+    const movement = ent?.getComponent(Movement);
+    if (movement) {
+      movement.haltLocomotion();
+      movement.isGrounded = true;
+      movement.isPortalFalling = false;
+      movement.portalFallPhase = 'rise';
+      movement.portalFallProgress = 0;
+      movement.velocity.y = 0;
+    }
+    voidPortalFallActiveRef.current = false;
+    pendingPortalSnapRef.current = false;
+    realTimePlayerPositionRef.current.set(x, y, z);
+    const rot = rotation ?? { x: 0, y: 0, z: 0 };
+    applyPlayerMove(playersTransformsRef, contextPlayersRef, {
+      playerId: socket.id,
+      position: { x, y, z },
+      rotation: rot,
+      movementDirection: { x: 0, y: 0, z: 0 },
+    });
+    resetLocalPositionEmitThrottleRef.current({ x, y, z }, rot);
+    cameraSystemRef.current?.snapToTarget();
+    return true;
+  }, [socket?.id, playersTransformsRef, contextPlayersRef, pendingPortalSnapRef]);
+
+  applyDungeonGroundSnapRef.current = applyDungeonGroundSnap;
+
+  /** Late join into an active explore session: snap to the server wilderness position on the ground. */
+  const exploreLateJoinSpawnAppliedRef = useRef(false);
+  if (isExplore && !exploreLateJoinSpawnAppliedRef.current && socket?.id) {
+    const seedPos = players.get(socket.id)?.position ?? contextPlayersRef.current.get(socket.id)?.position;
+    const sx = seedPos?.x;
+    const sz = seedPos?.z;
+    if (typeof sx === 'number' && typeof sz === 'number' && Number.isFinite(sx) && Number.isFinite(sz)) {
+      realTimePlayerPositionRef.current.set(sx, PORTAL_FALL_GROUND_Y, sz);
+    }
+  }
+  useLayoutEffect(() => {
+    if (!isExplore) {
+      exploreLateJoinSpawnAppliedRef.current = false;
+      return;
+    }
+    const me = socket?.id
+      ? (players.get(socket.id) ?? contextPlayersRef.current.get(socket.id))
+      : undefined;
+    const x = me?.position?.x;
+    const z = me?.position?.z;
+    if (!exploreLateJoinSpawnAppliedRef.current
+      && typeof x === 'number'
+      && typeof z === 'number'
+      && Number.isFinite(x)
+      && Number.isFinite(z)) {
+      realTimePlayerPositionRef.current.set(x, PORTAL_FALL_GROUND_Y, z);
+    }
+    if (exploreLateJoinSpawnAppliedRef.current) return;
+    // Party portal enter uses the combat-enter path. Late join never starts that overlay.
+    if (coopTransitionOverlayRef.current) {
+      exploreLateJoinSpawnAppliedRef.current = true;
+      return;
+    }
+    if (!engineRef.current || !engineReady || !gameStarted || !socket?.id) return;
+    if (playerEntityRef.current === null) return;
+    if (typeof x !== 'number' || typeof z !== 'number' || !Number.isFinite(x) || !Number.isFinite(z)) return;
+    if (!applyExploreLateJoinGroundSnap(x, z, me?.rotation)) return;
+    exploreLateJoinSpawnAppliedRef.current = true;
+  }, [isExplore, gameStarted, engineReady, socket?.id, players, playerEntity, applyExploreLateJoinGroundSnap, contextPlayersRef]);
 
   useEffect(() => {
     if (prevInThroneRef.current && !inThroneRoom) {
@@ -3190,22 +3804,49 @@ export function CoopGameScene({
     if (!combatEnterChanged && !intermissionChanged) return;
 
     if (combatEnterChanged) {
-      pendingPortalSnapRef.current = true;
+      const exploreLateJoinGround =
+        isExplore && !coopTransitionOverlayRef.current;
+      const dungeonGroundSnap = isDungeon;
 
+      if (!exploreLateJoinGround && !dungeonGroundSnap) {
+        pendingPortalSnapRef.current = true;
+      }
+
+      const me = players.get(socket.id) ?? contextPlayersRef.current.get(socket.id);
+      const exploreServerPos =
+        isExplore
+        && me?.position
+        && Number.isFinite(me.position.x)
+        && Number.isFinite(me.position.z)
+          ? { x: me.position.x, y: PORTAL_FALL_GROUND_Y, z: me.position.z }
+          : null;
+      const dungeonServerPos =
+        isDungeon
+        && me?.position
+        && Number.isFinite(me.position.x)
+        && Number.isFinite(me.position.z)
+          ? {
+              x: me.position.x,
+              y: resolveDungeonPlayerCenterY(me.position.x, me.position.z),
+              z: me.position.z,
+            }
+          : null;
       const refPlayer = contextPlayersRef.current.get(socket.id);
       const hasLiveTransform = playersTransformsRef.current.has(socket.id);
       const ent = engineRef.current.getWorld().getEntity(playerEntityRef.current);
       const tr = ent?.getComponent(Transform);
-      const livePos = (refPlayer || hasLiveTransform)
-        ? getPlayerLivePosition(
-            socket.id,
-            playersTransformsRef,
-            refPlayer?.position,
-          )
-        : tr
-          ? { x: tr.position.x, y: tr.position.y, z: tr.position.z }
-          : { x: 0, y: PORTAL_FALL_GROUND_Y, z: 0 };
-      const liveRot = getPlayerLiveRotation(
+      const livePos = exploreServerPos
+        ?? dungeonServerPos
+        ?? ((refPlayer || hasLiveTransform)
+          ? getPlayerLivePosition(
+              socket.id,
+              playersTransformsRef,
+              refPlayer?.position,
+            )
+          : tr
+            ? { x: tr.position.x, y: tr.position.y, z: tr.position.z }
+            : { x: DUNGEON_SPAWN.x, y: DUNGEON_SPAWN.y, z: DUNGEON_SPAWN.z });
+      const liveRot = me?.rotation ?? getPlayerLiveRotation(
         socket.id,
         playersTransformsRef,
         refPlayer?.rotation,
@@ -3215,7 +3856,11 @@ export function CoopGameScene({
       const c = coopArenaClampBounds == null
         ? { x: livePos.x, z: livePos.z }
         : clampToMainArenaXZ(livePos.x, livePos.z, coopArenaClampBounds);
-      const spawnY = tabHidden ? PORTAL_FALL_GROUND_Y : VOID_PORTAL_FALL_SPAWN_Y;
+      const spawnY = exploreLateJoinGround || tabHidden
+        ? PORTAL_FALL_GROUND_Y
+        : dungeonGroundSnap
+          ? resolveDungeonPlayerCenterY(c.x, c.z)
+          : VOID_PORTAL_FALL_SPAWN_Y;
       const snappedPos = {
         x: c.x,
         y: spawnY,
@@ -3228,12 +3873,15 @@ export function CoopGameScene({
       const movement = ent?.getComponent(Movement);
       if (movement) {
         movement.haltLocomotion();
-        if (tabHidden) {
+        if (tabHidden || exploreLateJoinGround || dungeonGroundSnap) {
           movement.isGrounded = true;
           movement.isPortalFalling = false;
           movement.portalFallPhase = 'rise';
           movement.portalFallProgress = 0;
           voidPortalFallActiveRef.current = false;
+          if (exploreLateJoinGround || dungeonGroundSnap) {
+            pendingPortalSnapRef.current = false;
+          }
         } else {
           movement.isGrounded = false;
           voidPortalFallActiveRef.current = true;
@@ -3248,22 +3896,27 @@ export function CoopGameScene({
       });
       resetLocalPositionEmitThrottleRef.current(snappedPos, snappedRot);
       cameraSystemRef.current?.snapToTarget();
+      if (exploreLateJoinGround) {
+        exploreFog.markExplored(snappedPos.x, snappedPos.z, EXPLORE_PLAYER_VIEW_RADIUS);
+      }
 
       lastAppliedCombatEnterSeqRef.current = coopCombatArenaEnterSeq;
     }
     if (intermissionChanged) {
       lastAppliedIntermissionSeqRef.current = coopMainArenaIntermissionSeq;
     }
-  }, [coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, gameStarted, engineReady, socket?.id, coopArenaClampBounds, contextPlayersRef, playersTransformsRef, pendingPortalSnapRef]);
+  }, [coopCombatArenaEnterSeq, coopMainArenaIntermissionSeq, gameStarted, engineReady, socket?.id, coopArenaClampBounds, contextPlayersRef, playersTransformsRef, pendingPortalSnapRef, isExplore, isDungeon, playerEntity, players]);
 
   /**
    * Local hero rotation follows the camera. Default orbit (theta=0) puts the camera on the "wrong" side
    * of the entry ring, so the character looks back toward the rim. Orbit 180° behind the facing-into-arena
    * yaw on each combat segment enter (teleport) so the first frame match server-facing remotes.
+   * Explore has no arena center — skip this yaw so reclaim/late join does not spin toward origin.
    */
   useEffect(() => {
     if (!engineRef.current || !gameStarted || !engineReady) return;
     if (coopCombatArenaEnterSeq === 0) return;
+    if (isExplore) return;
     if (playerEntityRef.current === null || !socket?.id) return;
     if (!cameraSystemRef.current) return;
     const livePos = getPlayerLivePosition(
@@ -3278,7 +3931,7 @@ export function CoopGameScene({
     const phi = cameraSystemRef.current.getVerticalAngle();
     cameraSystemRef.current.setAngles(faceY + Math.PI, phi);
     cameraSystemRef.current.snapToTarget();
-  }, [coopCombatArenaEnterSeq, gameStarted, engineReady, socket?.id, coopArenaClampBounds, contextPlayersRef, playersTransformsRef]);
+  }, [coopCombatArenaEnterSeq, gameStarted, engineReady, socket?.id, coopArenaClampBounds, contextPlayersRef, playersTransformsRef, isExplore]);
 
   // PVP Kill Counter - tracks kills for all players
   const [playerKills, setPlayerKills] = useState<Map<string, number>>(new Map());
@@ -3613,6 +4266,10 @@ export function CoopGameScene({
   /** One-shot ECS death-freeze per enemy (co-op death VFX window). */
   const coopEnemyDeathFrozenRef = useRef<Set<string>>(new Set());
   const mushroomEntityByIndexRef = useRef<Map<number, number>>(new Map());
+  const treeEntityByIndexRef = useRef<Map<number, number>>(new Map());
+  const rootEntityByIndexRef = useRef<Map<number, number>>(new Map());
+  const rockEntityByIndexRef = useRef<Map<number, number>>(new Map());
+  const spineEntityByIndexRef = useRef<Map<number, number>>(new Map());
 
   // Track stealth states for players
   const playerStealthStates = useRef<Map<string, boolean>>(new Map());
@@ -5988,6 +6645,59 @@ export function CoopGameScene({
   }, [ownedItemTypes]);
 
   useEffect(() => {
+    const onSpineFlowReward = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        position?: { x: number; y: number; z: number };
+        flow?: number;
+        index?: number;
+      }>).detail;
+      const pos = detail?.position;
+      const flow = Math.max(0, Math.floor(detail?.flow ?? 0));
+      if (!pos || flow <= 0) return;
+
+      const playerPos = realTimePlayerPositionRef.current;
+      const start = new Vector3(pos.x, (pos.y ?? 0) + 0.85, pos.z);
+      const baseBurstDir = new Vector3(start.x - playerPos.x, 0, start.z - playerPos.z);
+      if (baseBurstDir.lengthSq() < 0.04) {
+        const angle = Math.random() * Math.PI * 2;
+        baseBurstDir.set(Math.cos(angle), 0, Math.sin(angle));
+      }
+      baseBurstDir.normalize();
+
+      const yAxis = new Vector3(0, 1, 0);
+      const stamp = Date.now();
+      const index = detail.index ?? 0;
+      for (let i = 0; i < flow; i++) {
+        const angle = flow === 1
+          ? (Math.random() - 0.5) * 0.6
+          : (i / flow) * Math.PI * 2 + (Math.random() - 0.5) * 0.4;
+        const burstDir = baseBurstDir.clone().applyAxisAngle(yAxis, angle);
+        burstDir.y = 0.4;
+        burstDir.normalize();
+
+        const offset = flow > 1
+          ? new Vector3(
+              Math.cos(angle) * 0.25,
+              (Math.random() - 0.5) * 0.15,
+              Math.sin(angle) * 0.25,
+            )
+          : new Vector3();
+
+        environmentVfxLayerRef.current?.addDreamShard({
+          id: `spine-flow-shard-${index}-${stamp}-${i}`,
+          startPosition: start.clone().add(offset),
+          initialDirection: burstDir,
+        });
+      }
+    };
+
+    window.addEventListener('explore-spine-flow-reward', onSpineFlowReward);
+    return () => {
+      window.removeEventListener('explore-spine-flow-reward', onSpineFlowReward);
+    };
+  }, []);
+
+  useEffect(() => {
     const triggerKaiser = (target: Entity, _sourcePlayerId?: string) => {
       if (!hasOwnedItem(ownedItemTypes, EXODIA_HELM)) return;
       const nowSec = Date.now() / 1000;
@@ -8163,16 +8873,17 @@ export function CoopGameScene({
 
       // If we are the target, apply damage to our player
       if (data.targetPlayerId === socket?.id && playerEntity && socket?.id) {
-        if (blockLocalDamageDuringCoopPortal()) {
+        // Check if player is already in death state - if so, ignore damage
+        const deathState = playerDeathStates.get(socket.id);
+        if (deathState?.isDead) {
+          return;
+        }
+
+        if (data.damageType !== 'hunger' && blockLocalDamageDuringCoopPortal()) {
           const healthForPortal = playerEntity.getComponent(Health);
           if (healthForPortal) {
             reconcileLivingServerHealth(healthForPortal, data);
           }
-          return;
-        }
-        // Check if player is already in death state - if so, ignore damage
-        const deathState = playerDeathStates.get(socket.id);
-        if (deathState?.isDead) {
           return;
         }
         const health = playerEntity.getComponent(Health);
@@ -8181,7 +8892,38 @@ export function CoopGameScene({
           // Track if player was alive before damage
           const wasAlive = !health.isDead;
 
-          if (data.persephoneTriggered) {
+          if (data.damageType === 'hunger') {
+            const applied =
+              typeof data.damage === 'number'
+                ? data.damage
+                : Math.max(0, health.currentHealth - (typeof data.newHealth === 'number' ? data.newHealth : health.currentHealth));
+            if (typeof data.newHealth === 'number') {
+              health.currentHealth = Math.max(0, data.newHealth);
+            } else {
+              health.currentHealth = Math.max(0, health.currentHealth - applied);
+            }
+            if (health.currentHealth <= 0) {
+              health.isDead = true;
+            }
+            lastEmittedNetworkHealthRef.current = {
+              health: health.currentHealth,
+              maxHealth: health.maxHealth,
+            };
+
+            const transform = playerEntity.getComponent(Transform);
+            const damageNumberManager = engineRef.current?.getWorld().getSystem(CombatSystem)?.getDamageNumberManager();
+            if (transform && damageNumberManager && applied > 0) {
+              const pos = transform.position.clone();
+              pos.y -= 0.5;
+              damageNumberManager.addDamageNumber(applied, false, pos, 'hunger', true);
+            }
+
+            if (wasAlive && health.isDead) {
+              targetActuallyDied = true;
+              handlePlayerDeath(socket.id, data.sourcePlayerId);
+            }
+            return;
+          } else if (data.persephoneTriggered) {
             const savedHp = typeof data.newHealth === 'number'
               ? data.newHealth
               : Math.floor(health.maxHealth * 0.9);
@@ -10697,6 +11439,34 @@ export function CoopGameScene({
       }
     };
 
+    const handlePlayerWoodChanged = (data: { playerId: string; wood: number }) => {
+      if (data.playerId === socket?.id && onWoodUpdate) {
+        onWoodUpdate(data.wood);
+      }
+    };
+
+    const handlePlayerStoneChanged = (data: { playerId: string; stone: number }) => {
+      if (data.playerId === socket?.id && onStoneUpdate) {
+        onStoneUpdate(data.stone);
+      }
+    };
+
+    const handlePlayerMeatChanged = (data: { playerId: string; meat: number }) => {
+      if (data.playerId === socket?.id && onMeatUpdate) {
+        onMeatUpdate(data.meat);
+      }
+    };
+
+    const handlePlayerHungerChanged = (data: {
+      playerId: string;
+      hunger: number;
+      starvingCritical?: boolean;
+    }) => {
+      if (data.playerId === socket?.id && onHungerUpdate) {
+        onHungerUpdate(data.hunger, data.starvingCritical === true);
+      }
+    };
+
     const handlePlayerFateChanged = (data: { playerId: string; fate: number }) => {
       if (data.playerId === socket?.id && onFateUpdate) {
         onFateUpdate(data.fate);
@@ -10705,7 +11475,7 @@ export function CoopGameScene({
 
     const enqueueLocalPickupFloatingNumber = (
       amount: number,
-      damageType: 'experience_gain' | 'gold_pickup',
+      damageType: 'experience_gain' | 'gold_pickup' | 'wood_pickup' | 'stone_pickup' | 'meat_pickup',
     ) => {
       if (!engineRef.current || playerEntityRef.current === null) return;
       const world = engineRef.current.getWorld();
@@ -10766,6 +11536,123 @@ export function CoopGameScene({
         });
       }
       environmentVfxLayerRef.current?.addGoldCollectMotes(nextMotes);
+    };
+
+    const handleWoodPickedUp = (data: {
+      dropId: string;
+      pickerPlayerId?: string;
+      drop?: WoodDrop;
+      amount?: number;
+    }) => {
+      pendingWoodAutoPickupRef.current.delete(data.dropId);
+      if (!socket?.id || data.pickerPlayerId !== socket.id) return;
+      const gained = data.amount ?? data.drop?.amount ?? 0;
+      if (gained <= 0) return;
+
+      enqueueLocalPickupFloatingNumber(gained, 'wood_pickup');
+
+      const dropPos = data.drop?.position;
+      if (!dropPos) return;
+
+      const moteCount = Math.max(1, Math.min(20, gained));
+      const startTime = Date.now();
+      const center = new Vector3(dropPos.x, dropPos.y + 0.2, dropPos.z);
+      const motes = [];
+      for (let i = 0; i < moteCount; i += 1) {
+        const a = (i / moteCount) * Math.PI * 2;
+        const r = 0.18 + Math.random() * 0.22;
+        motes.push({
+          startPosition: new Vector3(
+            center.x + Math.cos(a) * r,
+            center.y + Math.random() * 0.2,
+            center.z + Math.sin(a) * r,
+          ),
+          startTime: startTime + i * 16,
+          duration: 400 + i * 10,
+        });
+      }
+      environmentVfxLayerRef.current?.addWoodCollectBatch({
+        batchId: `wood-batch-${data.dropId}-${startTime}`,
+        motes,
+      });
+    };
+
+    const handleStonePickedUp = (data: {
+      dropId: string;
+      pickerPlayerId?: string;
+      drop?: StoneDrop;
+      amount?: number;
+    }) => {
+      pendingStoneAutoPickupRef.current.delete(data.dropId);
+      if (!socket?.id || data.pickerPlayerId !== socket.id) return;
+      const gained = data.amount ?? data.drop?.amount ?? 0;
+      if (gained <= 0) return;
+
+      enqueueLocalPickupFloatingNumber(gained, 'stone_pickup');
+
+      const dropPos = data.drop?.position;
+      if (!dropPos) return;
+
+      const moteCount = Math.max(1, Math.min(20, gained));
+      const startTime = Date.now();
+      const center = new Vector3(dropPos.x, dropPos.y + 0.2, dropPos.z);
+      const motes = [];
+      for (let i = 0; i < moteCount; i += 1) {
+        const a = (i / moteCount) * Math.PI * 2;
+        const r = 0.18 + Math.random() * 0.22;
+        motes.push({
+          startPosition: new Vector3(
+            center.x + Math.cos(a) * r,
+            center.y + Math.random() * 0.2,
+            center.z + Math.sin(a) * r,
+          ),
+          startTime: startTime + i * 16,
+          duration: 400 + i * 10,
+        });
+      }
+      environmentVfxLayerRef.current?.addStoneCollectBatch({
+        batchId: `stone-batch-${data.dropId}-${startTime}`,
+        motes,
+      });
+    };
+
+    const handleMeatPickedUp = (data: {
+      dropId: string;
+      pickerPlayerId?: string;
+      drop?: MeatDrop;
+      amount?: number;
+    }) => {
+      pendingMeatAutoPickupRef.current.delete(data.dropId);
+      if (!socket?.id || data.pickerPlayerId !== socket.id) return;
+      const gained = data.amount ?? data.drop?.amount ?? 0;
+      if (gained <= 0) return;
+
+      enqueueLocalPickupFloatingNumber(gained, 'meat_pickup');
+
+      const dropPos = data.drop?.position;
+      if (!dropPos) return;
+
+      const moteCount = Math.max(1, Math.min(10, gained));
+      const startTime = Date.now();
+      const center = new Vector3(dropPos.x, dropPos.y + 0.2, dropPos.z);
+      const motes = [];
+      for (let i = 0; i < moteCount; i += 1) {
+        const a = (i / moteCount) * Math.PI * 2;
+        const r = 0.16 + Math.random() * 0.2;
+        motes.push({
+          startPosition: new Vector3(
+            center.x + Math.cos(a) * r,
+            center.y + Math.random() * 0.2,
+            center.z + Math.sin(a) * r,
+          ),
+          startTime: startTime + i * 16,
+          duration: 400 + i * 10,
+        });
+      }
+      environmentVfxLayerRef.current?.addMeatCollectBatch({
+        batchId: `meat-batch-${data.dropId}-${startTime}`,
+        motes,
+      });
     };
 
     const handleGoldExpired = (data: { dropId?: string }) => {
@@ -12098,9 +12985,16 @@ export function CoopGameScene({
     socket.on('player-essence-changed', handlePlayerEssenceChanged);
     const unregisterGoldHandler = registerPlayerGoldChangedHandler(handlePlayerGoldChanged);
     const unregisterFlowHandler = registerPlayerFlowChangedHandler(handlePlayerFlowChanged);
+    const unregisterWoodHandler = registerPlayerWoodChangedHandler(handlePlayerWoodChanged);
+    const unregisterStoneHandler = registerPlayerStoneChangedHandler(handlePlayerStoneChanged);
+    const unregisterMeatHandler = registerPlayerMeatChangedHandler(handlePlayerMeatChanged);
+    const unregisterHungerHandler = registerPlayerHungerChangedHandler(handlePlayerHungerChanged);
     const unregisterFateHandler = registerPlayerFateChangedHandler(handlePlayerFateChanged);
     socket.on('gold-picked-up', handleGoldPickedUp);
     socket.on('gold-expired', handleGoldExpired);
+    socket.on('wood-picked-up', handleWoodPickedUp);
+    socket.on('stone-picked-up', handleStonePickedUp);
+    socket.on('meat-picked-up', handleMeatPickedUp);
     socket.on('item-picked-up', handleItemPickedUpForVfx);
     socket.on('item-expired', handleItemExpired);
     socket.on('player-animation-state', handlePlayerAnimationState);
@@ -13312,9 +14206,16 @@ export function CoopGameScene({
       socket.off('player-essence-changed', handlePlayerEssenceChanged);
       unregisterGoldHandler();
       unregisterFlowHandler();
+      unregisterWoodHandler();
+      unregisterStoneHandler();
+      unregisterMeatHandler();
+      unregisterHungerHandler();
       unregisterFateHandler();
       socket.off('gold-picked-up', handleGoldPickedUp);
       socket.off('gold-expired', handleGoldExpired);
+      socket.off('wood-picked-up', handleWoodPickedUp);
+      socket.off('stone-picked-up', handleStonePickedUp);
+      socket.off('meat-picked-up', handleMeatPickedUp);
       socket.off('item-picked-up', handleItemPickedUpForVfx);
       socket.off('item-expired', handleItemExpired);
       socket.off('player-animation-state', handlePlayerAnimationState);
@@ -13513,6 +14414,10 @@ export function CoopGameScene({
     coopServerEnemyLiving,
     onGoldUpdate,
     onFlowUpdate,
+    onWoodUpdate,
+    onStoneUpdate,
+    onMeatUpdate,
+    onHungerUpdate,
     onFateUpdate,
     spawnTitansGripStunLightning,
     stopJudgmentCorruptionSound,
@@ -13634,7 +14539,13 @@ export function CoopGameScene({
         : serverEnemy.type === 'destiny' ? 1.8
         : serverEnemy.type === 'boss-skeleton' ? 1.2
         : serverEnemy.type === 'allied-healer' || serverEnemy.type === 'greed' || serverEnemy.type === 'allied-enchantress' ? 0.75
-        : serverEnemy.type === 'allied-tower' ? 1.4
+        : serverEnemy.type === 'allied-tower' || isExploreTowerType(serverEnemy.type) ? EXPLORE_TOWER_HULL_RADIUS
+        : serverEnemy.type === 'fire-pit' ? FIRE_PIT_HULL_RADIUS
+        : serverEnemy.type === 'barracks' ? EXPLORE_BUILDING_DEFS.barracks.hullRadius
+        : serverEnemy.type === 'research-station' ? RESEARCH_STATION_HULL_RADIUS
+        : serverEnemy.type === 'shrine' ? SHRINE_HULL_RADIUS
+        : serverEnemy.type === 'obelisk' ? OBELISK_HULL_RADIUS
+        : serverEnemy.type === 'shield-battery' ? FIRE_PIT_HULL_RADIUS
         : serverEnemy.type === 'allied-knight' ? 0.85
         : serverEnemy.type === 'allied-huntress' ? 0.75
         : serverEnemy.type === 'allied-phantom' ? 0.75
@@ -13763,6 +14674,7 @@ export function CoopGameScene({
       || isErebusGate
       || isColoredCoopRoom
       || isDefense
+      || isDungeon
     ) {
       clearAllMushrooms();
       return;
@@ -13810,7 +14722,351 @@ export function CoopGameScene({
       if (isEternityPalace && !isInsideHexArenaXZ(inst.x, inst.z, ETERNITY_PALACE_HEX_RADIUS, 0.5)) continue;
       spawnOrSyncMushroom(inst, healthArr[i]);
     }
-  }, [gameStarted, engineReady, gameMode, inThroneRoom, inBossThroneArena, isCastleRoom, isFaeRealm, isEternityPalace, isSunkenTemple, isErebusGate, isColoredCoopRoom, isDefense, isExplore, exploreMushrooms, mushroomState, effectiveMushroomHealth]);
+  }, [gameStarted, engineReady, gameMode, inThroneRoom, inBossThroneArena, isCastleRoom, isFaeRealm, isEternityPalace, isSunkenTemple, isErebusGate, isColoredCoopRoom, isDefense, isDungeon, isExplore, exploreMushrooms, mushroomState, effectiveMushroomHealth]);
+
+  // Explore: destructible trees (server HP; ECS for projectiles)
+  useEffect(() => {
+    if (!engineRef.current || !gameStarted || !engineReady || gameMode !== 'coop') return;
+
+    const world = engineRef.current.getWorld();
+    const clearAllTrees = () => {
+      treeEntityByIndexRef.current.forEach((eid) => {
+        if (world.getEntity(eid)) world.destroyEntity(eid);
+      });
+      treeEntityByIndexRef.current.clear();
+    };
+
+    if (!isExplore) {
+      clearAllTrees();
+      return;
+    }
+
+    const spawnOrSyncTree = (inst: ExploreTreeInstance, hp: number) => {
+      if (hp <= 0) return;
+      const y = EXPLORE_TREE_COMBAT_CENTER_Y;
+      const maxHp = exploreTreeMaxHpFromScale(inst.scale);
+      const combatRadius = exploreTreeCombatRadius(inst.scale);
+      if (treeEntityByIndexRef.current.has(inst.index)) {
+        const eid = treeEntityByIndexRef.current.get(inst.index)!;
+        const ent = world.getEntity(eid);
+        if (ent) {
+          const h = ent.getComponent(Health);
+          if (h) {
+            h.currentHealth = hp;
+            h.maxHealth = maxHp;
+            h.isDead = false;
+          }
+          const t = ent.getComponent(Transform);
+          if (t) t.setPosition(inst.x, y, inst.z);
+          const c = ent.getComponent(Collider);
+          if (c) {
+            c.radius = combatRadius;
+            c.boundsNeedUpdate = true;
+          }
+        }
+        return;
+      }
+
+      const entity = world.createEntity();
+      const transform = world.createComponent(Transform);
+      transform.setPosition(inst.x, y, inst.z);
+      entity.addComponent(transform);
+
+      const health = new Health(maxHp);
+      health.currentHealth = hp;
+      health.invulnerabilityDuration = 0;
+      health.invulnerabilityTimer = 0;
+      health.isInvulnerable = false;
+      entity.addComponent(health);
+
+      const collider = world.createComponent(Collider);
+      collider.type = ColliderType.SPHERE;
+      collider.radius = combatRadius;
+      collider.layer = CollisionLayer.ENEMY;
+      collider.isTrigger = true;
+      collider.setMask(CollisionLayer.PROJECTILE);
+      collider.setOffset(0, 0, 0);
+      entity.addComponent(collider);
+
+      const dt = new DestructibleTree(inst.index);
+      entity.addComponent(dt);
+      entity.userData = { ...entity.userData, treeIndex: inst.index };
+      world.notifyEntityAdded(entity);
+      treeEntityByIndexRef.current.set(inst.index, entity.id);
+    };
+
+    const live = new Set(exploreTrees.map((t) => t.index));
+    for (const [idx, eid] of Array.from(treeEntityByIndexRef.current.entries())) {
+      const hp = treeState?.exploreHealth?.[idx];
+      if (!live.has(idx) || (hp !== undefined && hp <= 0)) {
+        if (world.getEntity(eid)) world.destroyEntity(eid);
+        treeEntityByIndexRef.current.delete(idx);
+      }
+    }
+    for (const inst of exploreTrees) {
+      const hp = treeState?.exploreHealth?.[inst.index];
+      if (hp !== undefined && hp <= 0) continue;
+      spawnOrSyncTree(inst, hp === undefined ? exploreTreeMaxHpFromScale(inst.scale) : hp);
+    }
+  }, [gameStarted, engineReady, gameMode, isExplore, exploreTrees, treeState]);
+
+  // Explore: destructible roots (server HP; ECS for projectiles + sabre melee)
+  useEffect(() => {
+    if (!engineRef.current || !gameStarted || !engineReady || gameMode !== 'coop') return;
+
+    const world = engineRef.current.getWorld();
+    const clearAllRoots = () => {
+      rootEntityByIndexRef.current.forEach((eid) => {
+        if (world.getEntity(eid)) world.destroyEntity(eid);
+      });
+      rootEntityByIndexRef.current.clear();
+    };
+
+    if (!isExplore) {
+      clearAllRoots();
+      return;
+    }
+
+    const spawnOrSyncRoot = (inst: ExploreRootInstance, hp: number) => {
+      if (hp <= 0) return;
+      const y = EXPLORE_ROOT_COMBAT_CENTER_Y;
+      const maxHp = exploreRootMaxHpFromScale(inst.scale);
+      const combatRadius = exploreRootCombatRadius(inst.scale);
+      if (rootEntityByIndexRef.current.has(inst.index)) {
+        const eid = rootEntityByIndexRef.current.get(inst.index)!;
+        const ent = world.getEntity(eid);
+        if (ent) {
+          const h = ent.getComponent(Health);
+          if (h) {
+            h.currentHealth = hp;
+            h.maxHealth = maxHp;
+            h.isDead = false;
+          }
+          const t = ent.getComponent(Transform);
+          if (t) t.setPosition(inst.x, y, inst.z);
+          const c = ent.getComponent(Collider);
+          if (c) {
+            c.radius = combatRadius;
+            c.boundsNeedUpdate = true;
+          }
+        }
+        return;
+      }
+
+      const entity = world.createEntity();
+      const transform = world.createComponent(Transform);
+      transform.setPosition(inst.x, y, inst.z);
+      entity.addComponent(transform);
+
+      const health = new Health(maxHp);
+      health.currentHealth = hp;
+      health.invulnerabilityDuration = 0;
+      health.invulnerabilityTimer = 0;
+      health.isInvulnerable = false;
+      entity.addComponent(health);
+
+      const collider = world.createComponent(Collider);
+      collider.type = ColliderType.SPHERE;
+      collider.radius = combatRadius;
+      collider.layer = CollisionLayer.ENEMY;
+      collider.isTrigger = true;
+      collider.setMask(CollisionLayer.PROJECTILE);
+      collider.setOffset(0, 0, 0);
+      entity.addComponent(collider);
+
+      const dr = new DestructibleRoot(inst.index);
+      entity.addComponent(dr);
+      entity.userData = { ...entity.userData, rootIndex: inst.index };
+      world.notifyEntityAdded(entity);
+      rootEntityByIndexRef.current.set(inst.index, entity.id);
+    };
+
+    const live = new Set(exploreRoots.map((r) => r.index));
+    for (const [idx, eid] of Array.from(rootEntityByIndexRef.current.entries())) {
+      const hp = rootState?.exploreHealth?.[idx];
+      if (!live.has(idx) || (hp !== undefined && hp <= 0)) {
+        if (world.getEntity(eid)) world.destroyEntity(eid);
+        rootEntityByIndexRef.current.delete(idx);
+      }
+    }
+    for (const inst of exploreRoots) {
+      const hp = rootState?.exploreHealth?.[inst.index];
+      if (hp !== undefined && hp <= 0) continue;
+      spawnOrSyncRoot(inst, hp === undefined ? exploreRootMaxHpFromScale(inst.scale) : hp);
+    }
+  }, [gameStarted, engineReady, gameMode, isExplore, exploreRoots, rootState]);
+
+  // Explore: destructible rocks (server HP; ECS only after Stone Breaker)
+  useEffect(() => {
+    if (!engineRef.current || !gameStarted || !engineReady || gameMode !== 'coop') return;
+
+    const world = engineRef.current.getWorld();
+    const clearAllRocks = () => {
+      rockEntityByIndexRef.current.forEach((eid) => {
+        if (world.getEntity(eid)) world.destroyEntity(eid);
+      });
+      rockEntityByIndexRef.current.clear();
+    };
+
+    if (!isExplore || !exploreResearch.stoneBreaker) {
+      clearAllRocks();
+      return;
+    }
+
+    const spawnOrSyncRock = (inst: ExploreRockInstance, hp: number) => {
+      if (hp <= 0) return;
+      const y = EXPLORE_ROCK_COMBAT_CENTER_Y;
+      const maxHp = exploreRockMaxHpFromScale(inst.scale);
+      const combatRadius = exploreRockCombatRadius(inst.radius);
+      if (rockEntityByIndexRef.current.has(inst.index)) {
+        const eid = rockEntityByIndexRef.current.get(inst.index)!;
+        const ent = world.getEntity(eid);
+        if (ent) {
+          const h = ent.getComponent(Health);
+          if (h) {
+            h.currentHealth = hp;
+            h.maxHealth = maxHp;
+            h.isDead = false;
+          }
+          const t = ent.getComponent(Transform);
+          if (t) t.setPosition(inst.x, y, inst.z);
+          const c = ent.getComponent(Collider);
+          if (c) {
+            c.radius = combatRadius;
+            c.boundsNeedUpdate = true;
+          }
+        }
+        return;
+      }
+
+      const entity = world.createEntity();
+      const transform = world.createComponent(Transform);
+      transform.setPosition(inst.x, y, inst.z);
+      entity.addComponent(transform);
+
+      const health = new Health(maxHp);
+      health.currentHealth = hp;
+      health.invulnerabilityDuration = 0;
+      health.invulnerabilityTimer = 0;
+      health.isInvulnerable = false;
+      entity.addComponent(health);
+
+      const collider = world.createComponent(Collider);
+      collider.type = ColliderType.SPHERE;
+      collider.radius = combatRadius;
+      collider.layer = CollisionLayer.ENEMY;
+      collider.isTrigger = true;
+      collider.setMask(CollisionLayer.PROJECTILE);
+      collider.setOffset(0, 0, 0);
+      entity.addComponent(collider);
+
+      const dr = new DestructibleRock(inst.index);
+      entity.addComponent(dr);
+      entity.userData = { ...entity.userData, rockIndex: inst.index };
+      world.notifyEntityAdded(entity);
+      rockEntityByIndexRef.current.set(inst.index, entity.id);
+    };
+
+    const live = new Set(exploreRocks.map((r) => r.index));
+    for (const [idx, eid] of Array.from(rockEntityByIndexRef.current.entries())) {
+      const hp = rockState?.exploreHealth?.[idx];
+      if (!live.has(idx) || (hp !== undefined && hp <= 0)) {
+        if (world.getEntity(eid)) world.destroyEntity(eid);
+        rockEntityByIndexRef.current.delete(idx);
+      }
+    }
+    for (const inst of exploreRocks) {
+      const hp = rockState?.exploreHealth?.[inst.index];
+      if (hp !== undefined && hp <= 0) continue;
+      spawnOrSyncRock(inst, hp === undefined ? exploreRockMaxHpFromScale(inst.scale) : hp);
+    }
+  }, [gameStarted, engineReady, gameMode, isExplore, exploreRocks, rockState, exploreResearch.stoneBreaker]);
+
+  // Explore: destructible spines (server HP; ECS only after Soul Stealer)
+  useEffect(() => {
+    if (!engineRef.current || !gameStarted || !engineReady || gameMode !== 'coop') return;
+
+    const world = engineRef.current.getWorld();
+    const clearAllSpines = () => {
+      spineEntityByIndexRef.current.forEach((eid) => {
+        if (world.getEntity(eid)) world.destroyEntity(eid);
+      });
+      spineEntityByIndexRef.current.clear();
+    };
+
+    if (!isExplore || !exploreResearch.soulStealer) {
+      clearAllSpines();
+      return;
+    }
+
+    const spawnOrSyncSpine = (inst: ExploreSpineInstance, hp: number) => {
+      if (hp <= 0) return;
+      const y = EXPLORE_SPINE_COMBAT_CENTER_Y;
+      const maxHp = exploreSpineMaxHpFromScale(inst.scale);
+      const combatRadius = exploreSpineCombatRadius(inst.radius);
+      if (spineEntityByIndexRef.current.has(inst.index)) {
+        const eid = spineEntityByIndexRef.current.get(inst.index)!;
+        const ent = world.getEntity(eid);
+        if (ent) {
+          const h = ent.getComponent(Health);
+          if (h) {
+            h.currentHealth = hp;
+            h.maxHealth = maxHp;
+            h.isDead = false;
+          }
+          const t = ent.getComponent(Transform);
+          if (t) t.setPosition(inst.x, y, inst.z);
+          const c = ent.getComponent(Collider);
+          if (c) {
+            c.radius = combatRadius;
+            c.boundsNeedUpdate = true;
+          }
+        }
+        return;
+      }
+
+      const entity = world.createEntity();
+      const transform = world.createComponent(Transform);
+      transform.setPosition(inst.x, y, inst.z);
+      entity.addComponent(transform);
+
+      const health = new Health(maxHp);
+      health.currentHealth = hp;
+      health.invulnerabilityDuration = 0;
+      health.invulnerabilityTimer = 0;
+      health.isInvulnerable = false;
+      entity.addComponent(health);
+
+      const collider = world.createComponent(Collider);
+      collider.type = ColliderType.SPHERE;
+      collider.radius = combatRadius;
+      collider.layer = CollisionLayer.ENEMY;
+      collider.isTrigger = true;
+      collider.setMask(CollisionLayer.PROJECTILE);
+      collider.setOffset(0, 0, 0);
+      entity.addComponent(collider);
+
+      const ds = new DestructibleSpine(inst.index);
+      entity.addComponent(ds);
+      entity.userData = { ...entity.userData, spineIndex: inst.index };
+      world.notifyEntityAdded(entity);
+      spineEntityByIndexRef.current.set(inst.index, entity.id);
+    };
+
+    const live = new Set(exploreSpines.map((s) => s.index));
+    for (const [idx, eid] of Array.from(spineEntityByIndexRef.current.entries())) {
+      const hp = spineState?.exploreHealth?.[idx];
+      if (!live.has(idx) || (hp !== undefined && hp <= 0)) {
+        if (world.getEntity(eid)) world.destroyEntity(eid);
+        spineEntityByIndexRef.current.delete(idx);
+      }
+    }
+    for (const inst of exploreSpines) {
+      const hp = spineState?.exploreHealth?.[inst.index];
+      if (hp !== undefined && hp <= 0) continue;
+      spawnOrSyncSpine(inst, hp === undefined ? exploreSpineMaxHpFromScale(inst.scale) : hp);
+    }
+  }, [gameStarted, engineReady, gameMode, isExplore, exploreSpines, spineState, exploreResearch.soulStealer]);
 
   // Sync server players with local ECS entities — create/destroy only (positions via useFrame + playersTransformsRef).
   useEffect(() => {
@@ -14619,6 +15875,201 @@ export function CoopGameScene({
     }
 
     if (engineRef.current && engineRef.current.isEngineRunning() && gameStarted) {
+      // Explore build mode (B menu, F place fire pit, Escape cancel)
+      if (
+        isExplore
+        && gameMode === 'coop'
+        && controlSystemRef.current
+        && !isChatOpenRef.current
+        && !throneAbilityModalOpenRef.current
+        && !uiBlocksGameInputRef.current
+      ) {
+        const cs = controlSystemRef.current;
+        const bDown = cs.isKeyPressed('b');
+        const bEdge = bDown && !buildKeyPrevRef.current;
+        const escDown = cs.isKeyPressed('escape');
+        const escEdge = escDown && !buildEscKeyPrevRef.current;
+        const localWood = playersRef.current.get(socket?.id || '')?.wood ?? 0;
+        const localFlow = playersRef.current.get(socket?.id || '')?.flow ?? 0;
+        const localStone = playersRef.current.get(socket?.id || '')?.stone ?? 0;
+
+        const closeBuildMenu = () => {
+          buildModeRef.current = 'idle';
+          cs.setBuildPlacementActive(false);
+          cs.setBuildMenuHotkeysActive(false);
+          setBuildPlacementActive(false);
+          onBuildMenuChangeRef.current?.(false);
+        };
+
+        const enterPlacing = (kind: ExploreBuildingKind) => {
+          buildModeRef.current = 'placing';
+          setBuildPlacementKind(kind);
+          cs.setBuildPlacementActive(true);
+          cs.setBuildMenuHotkeysActive(false);
+          setBuildPlacementActive(true);
+          onBuildMenuChangeRef.current?.(false);
+        };
+
+        if (bEdge) {
+          if (buildModeRef.current === 'placing' || buildModeRef.current === 'menu' || buildModeRef.current === 'tower-pick') {
+            closeBuildMenu();
+          } else {
+            buildModeRef.current = 'menu';
+            cs.setBuildMenuHotkeysActive(true);
+            onBuildMenuChangeRef.current?.(true, 'root');
+          }
+        }
+
+        if (escEdge && buildModeRef.current !== 'idle') {
+          if (buildModeRef.current === 'tower-pick') {
+            buildModeRef.current = 'menu';
+            onBuildMenuChangeRef.current?.(true, 'root');
+          } else {
+            closeBuildMenu();
+          }
+        }
+
+        if (buildModeRef.current === 'menu') {
+          const towerKey = EXPLORE_TOWER_CATEGORY_HOTKEY.toLowerCase();
+          const towerDown = cs.isKeyPressed(towerKey);
+          const towerPrev = buildHotkeyPrevRef.current[towerKey] ?? false;
+          const towerEdge = towerDown && !towerPrev;
+          buildHotkeyPrevRef.current[towerKey] = towerDown;
+          if (towerEdge) {
+            buildModeRef.current = 'tower-pick';
+            cs.setBuildMenuHotkeysActive(true);
+            onBuildMenuChangeRef.current?.(true, 'towers');
+          }
+          for (const kind of EXPLORE_BUILDING_ROOT_ORDER) {
+            const def = EXPLORE_BUILDING_DEFS[kind];
+            const key = def.hotkey.toLowerCase();
+            const keyDown = cs.isKeyPressed(key);
+            const prev = buildHotkeyPrevRef.current[key] ?? false;
+            const keyEdge = keyDown && !prev;
+            buildHotkeyPrevRef.current[key] = keyDown;
+            if (keyEdge && def.enabled && localWood >= def.woodCost && localFlow >= (def.flowCost ?? 0) && localStone >= (def.stoneCost ?? 0)) {
+              if (exploreBuildingRequiresSpiritLounge(kind) && !buildPlacementRulesRef.current.hasLiveSpiritLounge) {
+                continue;
+              }
+              enterPlacing(kind);
+              break;
+            }
+          }
+        } else if (buildModeRef.current === 'tower-pick') {
+          for (const kind of EXPLORE_TOWER_PICK_ORDER) {
+            const def = EXPLORE_BUILDING_DEFS[kind];
+            const key = def.hotkey.toLowerCase();
+            const keyDown = cs.isKeyPressed(key);
+            const prev = buildHotkeyPrevRef.current[key] ?? false;
+            const keyEdge = keyDown && !prev;
+            buildHotkeyPrevRef.current[key] = keyDown;
+            if (keyEdge && def.enabled && localWood >= def.woodCost && localFlow >= (def.flowCost ?? 0) && localStone >= (def.stoneCost ?? 0)) {
+              enterPlacing(kind);
+              break;
+            }
+          }
+        } else {
+          buildHotkeyPrevRef.current = {};
+        }
+
+        if (buildModeRef.current === 'placing') {
+          const leftDown = cs.isMouseButtonPressed(0);
+          const leftEdge = leftDown && !buildLeftMousePrevRef.current;
+          if (leftEdge) {
+            const pos = buildPlacementPosRef.current;
+            if (pos.valid) {
+              placeBuildingRef.current(buildPlacementKindRef.current, pos.x, pos.z);
+              closeBuildMenu();
+            }
+          }
+          buildLeftMousePrevRef.current = leftDown;
+        } else {
+          buildLeftMousePrevRef.current = cs.isMouseButtonPressed(0);
+        }
+
+        if (nearBarracksRef.current && buildModeRef.current === 'idle') {
+          for (let i = 0; i < ALLY_CHOICE_CARDS.length; i += 1) {
+            const digit = String(i + 1);
+            const digitDown = cs.isKeyPressed(digit);
+            const prev = buildHotkeyPrevRef.current[`ally-${digit}`] ?? false;
+            const digitEdge = digitDown && !prev;
+            buildHotkeyPrevRef.current[`ally-${digit}`] = digitDown;
+            if (digitEdge) {
+              barracksRecruitAllyRef.current(ALLY_CHOICE_CARDS[i]!.kind);
+              break;
+            }
+          }
+        } else if (nearShrineRef.current && buildModeRef.current === 'idle') {
+          for (const gift of EXPLORE_SHRINE_GIFTS) {
+            const digit = gift.hotkey;
+            const digitDown = cs.isKeyPressed(digit);
+            const prev = buildHotkeyPrevRef.current[`shrine-${digit}`] ?? false;
+            const digitEdge = digitDown && !prev;
+            buildHotkeyPrevRef.current[`shrine-${digit}`] = digitDown;
+            if (digitEdge) {
+              shrineClaimRef.current(gift.id);
+              break;
+            }
+          }
+        } else if (nearObeliskRef.current && buildModeRef.current === 'idle') {
+          const weapon = selectedWeaponsRef.current?.primary;
+          const catalog = weapon === WeaponType.RUNEBLADE
+            || weapon === WeaponType.SABRES
+            || weapon === WeaponType.BOW
+            || weapon === WeaponType.SCYTHE
+            ? RULEBOOK_CLASS_TALENTS[weapon as CoopRulebookWeapon]
+            : [];
+          const owned = new Set(getEnabledTalentIds(talentLoadoutRef.current));
+          const localGold = playersRef.current.get(socket?.id || '')?.gold ?? 0;
+          const maxHotkeys = Math.min(9, catalog.length);
+          for (let i = 0; i < maxHotkeys; i += 1) {
+            const digit = String(i + 1);
+            const digitDown = cs.isKeyPressed(digit);
+            const prev = buildHotkeyPrevRef.current[`obelisk-${digit}`] ?? false;
+            const digitEdge = digitDown && !prev;
+            buildHotkeyPrevRef.current[`obelisk-${digit}`] = digitDown;
+            if (!digitEdge) continue;
+            const entry = catalog[i];
+            if (!entry || owned.has(entry.id) || localGold < EXPLORE_OBELISK_TALENT_GOLD_COST) break;
+            obeliskBuyTalentRef.current(entry.id);
+            break;
+          }
+        } else if (nearResearchRef.current && buildModeRef.current === 'idle') {
+          for (const upgrade of EXPLORE_RESEARCH_UPGRADES) {
+            const digit = upgrade.hotkey;
+            const digitDown = cs.isKeyPressed(digit);
+            const prev = buildHotkeyPrevRef.current[`research-${digit}`] ?? false;
+            const digitEdge = digitDown && !prev;
+            buildHotkeyPrevRef.current[`research-${digit}`] = digitDown;
+            if (digitEdge) {
+              researchPurchaseRef.current(upgrade.id);
+              break;
+            }
+          }
+        } else if (nearFirePitRef.current && buildModeRef.current === 'idle') {
+          const localMeat = contextPlayersRef.current.get(socket?.id || '')?.meat ?? 0;
+          const firePitActions = ['self', 'allies'] as const;
+          for (let i = 0; i < firePitActions.length; i += 1) {
+            const digit = String(i + 1);
+            const digitDown = cs.isKeyPressed(digit);
+            const prev = buildHotkeyPrevRef.current[`firepit-${digit}`] ?? false;
+            const digitEdge = digitDown && !prev;
+            buildHotkeyPrevRef.current[`firepit-${digit}`] = digitDown;
+            if (digitEdge && localMeat >= EXPLORE_FIRE_PIT_HEAL_MEAT_COST) {
+              firePitHealRef.current(firePitActions[i]!);
+              break;
+            }
+          }
+        }
+
+        buildKeyPrevRef.current = bDown;
+        buildEscKeyPrevRef.current = escDown;
+      } else {
+        buildKeyPrevRef.current = false;
+        buildEscKeyPrevRef.current = false;
+        buildHotkeyPrevRef.current = {};
+      }
+
       if (inThroneRoom && playerEntity && controlSystemRef.current && !isChatOpen) {
         const cs = controlSystemRef.current;
         const transform = playerEntity.getComponent(Transform);
@@ -14732,7 +16183,9 @@ export function CoopGameScene({
 
               const offer = thronePortalOfferRef.current;
               const rVoid2 = voidPortalInteractRadius(THRONE_VOID_PORTAL_RADIUS) ** 2;
-              const rSide2 = voidPortalInteractRadius(THRONE_SIDE_VOID_PORTAL_RADIUS) ** 2;
+              const rExplore2 = voidPortalInteractRadius(THRONE_EXPLORE_PORTAL_RADIUS) ** 2;
+              const rDefense2 = voidPortalInteractRadius(THRONE_DEFENSE_PORTAL_RADIUS) ** 2;
+              const rDungeon2 = voidPortalInteractRadius(THRONE_DUNGEON_PORTAL_RADIUS) ** 2;
               const rPortal = VOID_PORTAL_INTERACT_RADIUS;
               const rPortal2 = rPortal * rPortal;
               if (
@@ -14744,14 +16197,20 @@ export function CoopGameScene({
                 const edx = px - THRONE_EXPLORE_PORTAL_POSITION.x;
                 const edz = pz - THRONE_EXPLORE_PORTAL_POSITION.z;
                 const ed2 = edx * edx + edz * edz;
-                if (ed2 < rSide2) {
+                if (ed2 < rExplore2) {
                   candidates.push({ kind: 'portal', d2: ed2, chosen: 'explore' });
                 }
                 const ddx = px - THRONE_DEFENSE_PORTAL_POSITION.x;
                 const ddz = pz - THRONE_DEFENSE_PORTAL_POSITION.z;
                 const dd2 = ddx * ddx + ddz * ddz;
-                if (dd2 < rSide2) {
+                if (dd2 < rDefense2) {
                   candidates.push({ kind: 'portal', d2: dd2, chosen: 'defense' });
+                }
+                const gdx = px - THRONE_DUNGEON_PORTAL_POSITION.x;
+                const gdz = pz - THRONE_DUNGEON_PORTAL_POSITION.z;
+                const gd2 = gdx * gdx + gdz * gdz;
+                if (gd2 < rDungeon2) {
+                  candidates.push({ kind: 'portal', d2: gd2, chosen: 'dungeon' });
                 }
               }
               if (
@@ -15546,6 +17005,116 @@ export function CoopGameScene({
         }
       }
 
+      // Explore: ground wood autocollect when in range
+      if (
+        isExploreRef.current &&
+        gameMode === 'coop' &&
+        playerEntity &&
+        socket?.id &&
+        !isChatOpenRef.current &&
+        !throneAbilityModalOpenRef.current
+      ) {
+        const transformWood = playerEntity.getComponent(Transform);
+        if (transformWood) {
+          const px = transformWood.position.x;
+          const pz = transformWood.position.z;
+          const rPick = COOP_GROUND_ITEM_PICKUP_RADIUS;
+          const rPick2 = rPick * rPick;
+          let nearestWood: { id: string; d2: number } | null = null;
+          woodDropsRef.current.forEach((drop) => {
+            const dx = px - drop.position.x;
+            const dz = pz - drop.position.z;
+            const d2 = dx * dx + dz * dz;
+            if (d2 <= rPick2 && (!nearestWood || d2 < nearestWood.d2)) {
+              nearestWood = { id: drop.id, d2 };
+            }
+          });
+          const _woodFound = nearestWood as { id: string; d2: number } | null;
+          if (
+            _woodFound &&
+            !pendingWoodAutoPickupRef.current.has(_woodFound.id)
+          ) {
+            pendingWoodAutoPickupRef.current.add(_woodFound.id);
+            pickupWoodDropRef.current(_woodFound.id);
+          }
+        }
+      }
+
+      // Explore: ground stone autocollect when in range
+      if (
+        isExploreRef.current &&
+        gameMode === 'coop' &&
+        playerEntity &&
+        socket?.id &&
+        !isChatOpenRef.current &&
+        !throneAbilityModalOpenRef.current
+      ) {
+        const transformStone = playerEntity.getComponent(Transform);
+        if (transformStone) {
+          const px = transformStone.position.x;
+          const pz = transformStone.position.z;
+          const rPick = COOP_GROUND_ITEM_PICKUP_RADIUS;
+          const rPick2 = rPick * rPick;
+          let nearestStone: { id: string; d2: number } | null = null;
+          stoneDropsRef.current.forEach((drop) => {
+            const dx = px - drop.position.x;
+            const dz = pz - drop.position.z;
+            const d2 = dx * dx + dz * dz;
+            if (d2 <= rPick2 && (!nearestStone || d2 < nearestStone.d2)) {
+              nearestStone = { id: drop.id, d2 };
+            }
+          });
+          const _stoneFound = nearestStone as { id: string; d2: number } | null;
+          if (
+            _stoneFound &&
+            !pendingStoneAutoPickupRef.current.has(_stoneFound.id)
+          ) {
+            pendingStoneAutoPickupRef.current.add(_stoneFound.id);
+          pickupStoneDropRef.current(_stoneFound.id);
+          }
+        }
+      }
+
+      // Explore: ground meat autocollect when in range
+      if (
+        isExploreRef.current &&
+        gameMode === 'coop' &&
+        playerEntity &&
+        socket?.id &&
+        !isChatOpenRef.current &&
+        !throneAbilityModalOpenRef.current
+      ) {
+        const localMeat = contextPlayersRef.current.get(socket.id)?.meat ?? 0;
+        if (localMeat >= EXPLORE_MEAT_STACK_CAP) {
+          pendingMeatAutoPickupRef.current.clear();
+        } else {
+          const transformMeat = playerEntity.getComponent(Transform);
+          if (transformMeat) {
+            const px = transformMeat.position.x;
+            const pz = transformMeat.position.z;
+            const rPick = COOP_GROUND_ITEM_PICKUP_RADIUS;
+            const rPick2 = rPick * rPick;
+            let nearestMeat: { id: string; d2: number } | null = null;
+            meatDropsRef.current.forEach((drop) => {
+              const dx = px - drop.position.x;
+              const dz = pz - drop.position.z;
+              const d2 = dx * dx + dz * dz;
+              if (d2 <= rPick2 && (!nearestMeat || d2 < nearestMeat.d2)) {
+                nearestMeat = { id: drop.id, d2 };
+              }
+            });
+            const _meatFound = nearestMeat as { id: string; d2: number } | null;
+            if (
+              _meatFound &&
+              !pendingMeatAutoPickupRef.current.has(_meatFound.id)
+            ) {
+              pendingMeatAutoPickupRef.current.add(_meatFound.id);
+              pickupMeatDropRef.current(_meatFound.id);
+            }
+          }
+        }
+      }
+
       // Update FPS counter
       updateFPSCounter(engineRef.current.getCurrentFPS());
 
@@ -15957,7 +17526,7 @@ export function CoopGameScene({
 
       // Co-op: one-line proximity hint above HUD health bar
       const hi = onInteractHintChangeRef.current;
-      if (hi && playerEntity && gameMode === 'coop') {
+      if (hi && playerEntity && gameMode === 'coop' && buildModeRef.current === 'idle') {
         if (throneAbilityModalOpenRef.current || isChatOpenRef.current) {
           if (lastInteractHintRef.current !== null) {
             lastInteractHintRef.current = null;
@@ -16011,7 +17580,9 @@ export function CoopGameScene({
               const talentInRangeH = COOP_DEV_LOCALHOST_FEATURES && td2 <= rAb2;
               const offerH = thronePortalOfferRef.current;
               const rVoid2H = voidPortalInteractRadius(THRONE_VOID_PORTAL_RADIUS) ** 2;
-              const rSide2H = voidPortalInteractRadius(THRONE_SIDE_VOID_PORTAL_RADIUS) ** 2;
+              const rExplore2H = voidPortalInteractRadius(THRONE_EXPLORE_PORTAL_RADIUS) ** 2;
+              const rDefense2H = voidPortalInteractRadius(THRONE_DEFENSE_PORTAL_RADIUS) ** 2;
+              const rDungeon2H = voidPortalInteractRadius(THRONE_DUNGEON_PORTAL_RADIUS) ** 2;
               const rPortal2H = VOID_PORTAL_INTERACT_RADIUS * VOID_PORTAL_INTERACT_RADIUS;
               let portalCloseH = false;
               const curArchetypeHint = selectedArchetypeRef.current;
@@ -16027,10 +17598,13 @@ export function CoopGameScene({
                 const vdz = pz - THRONE_VOID_PORTAL_POSITION.z;
                 const ddx = px - THRONE_DEFENSE_PORTAL_POSITION.x;
                 const ddz = pz - THRONE_DEFENSE_PORTAL_POSITION.z;
+                const gdx = px - THRONE_DUNGEON_PORTAL_POSITION.x;
+                const gdz = pz - THRONE_DUNGEON_PORTAL_POSITION.z;
                 portalCloseH =
                   vdx * vdx + vdz * vdz < rVoid2H
-                  || edx * edx + edz * edz < rSide2H
-                  || ddx * ddx + ddz * ddz < rSide2H;
+                  || edx * edx + edz * edz < rExplore2H
+                  || ddx * ddx + ddz * ddz < rDefense2H
+                  || gdx * gdx + gdz * gdz < rDungeon2H;
               } else if (
                 !portalUseSentRef.current &&
                 curHint !== undefined &&
@@ -16320,20 +17894,114 @@ export function CoopGameScene({
                 }
               } else if (isExploreRef.current) {
                 const localId = socket?.id ?? null;
-                const r2 = EXPLORE_CAMP_INTERACT_RADIUS * EXPLORE_CAMP_INTERACT_RADIUS;
-                let nearCamp = false;
-                for (const camp of exploreCampsRef.current) {
-                  if (!camp.cleared) continue;
-                  if (localId && camp.claimedBy.includes(localId)) continue;
-                  const dx = px - camp.x;
-                  const dz = pz - camp.z;
-                  if (dx * dx + dz * dz <= r2) {
-                    nearCamp = true;
-                    break;
+                const barracksR2 = EXPLORE_BARRACKS_INTERACT_RADIUS * EXPLORE_BARRACKS_INTERACT_RADIUS;
+                const researchR2 = EXPLORE_RESEARCH_INTERACT_RADIUS * EXPLORE_RESEARCH_INTERACT_RADIUS;
+                const shrineR2 = EXPLORE_SHRINE_INTERACT_RADIUS * EXPLORE_SHRINE_INTERACT_RADIUS;
+                const obeliskR2 = EXPLORE_OBELISK_INTERACT_RADIUS * EXPLORE_OBELISK_INTERACT_RADIUS;
+                const firePitR2 = EXPLORE_FIRE_PIT_INTERACT_RADIUS * EXPLORE_FIRE_PIT_INTERACT_RADIUS;
+                type NearInteract = { kind: 'barracks' | 'research' | 'shrine' | 'obelisk' | 'fire-pit'; distSq: number };
+                let bestInteract: NearInteract | null = null;
+                let nearUnpowered = false;
+                for (const enemy of enemiesRef.current.values()) {
+                  if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+                  const dx = px - enemy.position.x;
+                  const dz = pz - enemy.position.z;
+                  const distSq = dx * dx + dz * dz;
+                  if (enemy.type === 'barracks') {
+                    if (distSq > barracksR2) continue;
+                    if (enemy.powered === false) {
+                      nearUnpowered = true;
+                      continue;
+                    }
+                    if (!bestInteract || distSq < bestInteract.distSq) {
+                      bestInteract = { kind: 'barracks', distSq };
+                    }
+                    continue;
+                  }
+                  if (enemy.type === 'research-station') {
+                    if (distSq > researchR2) continue;
+                    if (enemy.powered === false) {
+                      nearUnpowered = true;
+                      continue;
+                    }
+                    if (!bestInteract || distSq < bestInteract.distSq) {
+                      bestInteract = { kind: 'research', distSq };
+                    }
+                    continue;
+                  }
+                  if (enemy.type === 'shrine') {
+                    if (distSq > shrineR2) continue;
+                    if (enemy.powered === false) {
+                      nearUnpowered = true;
+                      continue;
+                    }
+                    if (enemy.shrineUsed) continue;
+                    if (!bestInteract || distSq < bestInteract.distSq) {
+                      bestInteract = { kind: 'shrine', distSq };
+                    }
+                    continue;
+                  }
+                  if (enemy.type === 'obelisk') {
+                    if (distSq > obeliskR2) continue;
+                    if (enemy.powered === false) {
+                      nearUnpowered = true;
+                      continue;
+                    }
+                    if (!bestInteract || distSq < bestInteract.distSq) {
+                      bestInteract = { kind: 'obelisk', distSq };
+                    }
+                    continue;
+                  }
+                  if (enemy.type === 'fire-pit') {
+                    if (distSq > firePitR2) continue;
+                    if (!bestInteract || distSq < bestInteract.distSq) {
+                      bestInteract = { kind: 'fire-pit', distSq };
+                    }
                   }
                 }
-                if (nearCamp) {
-                  nextHint = COOP_INTERACT_HINT_TEXT;
+                const nearBarracks = bestInteract?.kind === 'barracks';
+                const nearResearch = bestInteract?.kind === 'research';
+                const nearShrine = bestInteract?.kind === 'shrine';
+                const nearObelisk = bestInteract?.kind === 'obelisk';
+                const nearFirePit = bestInteract?.kind === 'fire-pit';
+                nearBarracksRef.current = nearBarracks;
+                nearResearchRef.current = nearResearch;
+                nearShrineRef.current = nearShrine;
+                nearObeliskRef.current = nearObelisk;
+                nearFirePitRef.current = nearFirePit;
+                onBarracksRecruitOpenChangeRef.current?.(nearBarracks);
+                onResearchPanelOpenChangeRef.current?.(nearResearch);
+                onShrinePanelOpenChangeRef.current?.(nearShrine);
+                onObeliskPanelOpenChangeRef.current?.(nearObelisk);
+                onFirePitHealOpenChangeRef.current?.(nearFirePit);
+                if (nearBarracks) {
+                  nextHint = 'Recruit an ancestor — press 1–5 or use the panel';
+                } else if (nearShrine) {
+                  nextHint = 'Choose a shrine gift — press 1–4 or use the panel';
+                } else if (nearObelisk) {
+                  nextHint = 'Buy a class talent — press 1–9 or use the panel';
+                } else if (nearResearch) {
+                  nextHint = 'Research upgrades — press 1–4 or use the panel';
+                } else if (nearFirePit) {
+                  nextHint = 'Cook at the fire — press 1–2 or use the panel';
+                } else if (nearUnpowered) {
+                  nextHint = 'Needs a nearby fire pit';
+                } else {
+                  const r2 = EXPLORE_CAMP_INTERACT_RADIUS * EXPLORE_CAMP_INTERACT_RADIUS;
+                  let nearCamp = false;
+                  for (const camp of exploreCampsRef.current) {
+                    if (!camp.cleared) continue;
+                    if (localId && camp.claimedBy.includes(localId)) continue;
+                    const dx = px - camp.x;
+                    const dz = pz - camp.z;
+                    if (dx * dx + dz * dz <= r2) {
+                      nearCamp = true;
+                      break;
+                    }
+                  }
+                  if (nearCamp) {
+                    nextHint = COOP_INTERACT_HINT_TEXT;
+                  }
                 }
               } else if (
                 coopCurrentRoomKindRef.current === 'deep_sanctum' &&
@@ -16469,10 +18137,14 @@ export function CoopGameScene({
     // Store in ref for access from JSX
     damagePlayerCallbackRef.current = damagePlayerWithMapping;
 
-    const localPlayerForSpawn = players.get(socket?.id || '');
+    const exploreNow = isExploreRef.current;
+    const localPlayerForSpawn =
+      players.get(socket?.id || '') ?? contextPlayersRef.current.get(socket?.id || '');
     const spawnX = localPlayerForSpawn?.position.x ?? 0;
-    const spawnZ = localPlayerForSpawn?.position.z ?? COOP_MAIN_DEFAULT_SPAWN_Z;
+    const spawnZ = localPlayerForSpawn?.position.z ?? (exploreNow ? 0 : COOP_MAIN_DEFAULT_SPAWN_Z);
+    const spawnY = exploreNow ? PORTAL_FALL_GROUND_Y : 0.5;
     const initialThroneMap = gameMode === 'coop' && !combatArenaActive;
+    realTimePlayerPositionRef.current.set(spawnX, spawnY, spawnZ);
 
     const { player, controlSystem } = setupCoopGame(
       engineRef.current,
@@ -16484,8 +18156,20 @@ export function CoopGameScene({
       initialWeaponsForEngineRef.current,
       skillPointData,
       cameraSystemRef,
-      { initialSpawn: { x: spawnX, y: 0.5, z: spawnZ }, initialThroneMap },
+      { initialSpawn: { x: spawnX, y: spawnY, z: spawnZ }, initialThroneMap },
     );
+
+    realTimePlayerPositionRef.current.set(spawnX, spawnY, spawnZ);
+    if (exploreNow) {
+      const exploreFog3 = new FogExp2(SKY_INDIGO_NIGHT.horizon, 0.045);
+      engineRef.current.getWorld().getSystem(RenderSystem)?.setFog(exploreFog3);
+      scene.fog = exploreFog3;
+      if (camera instanceof PerspectiveCamera) {
+        camera.far = 600;
+        camera.updateProjectionMatrix();
+      }
+      exploreFog.markExplored(spawnX, spawnZ, EXPLORE_PLAYER_VIEW_RADIUS);
+    }
 
     // Set control system reference for damage calculations (needed for weapon passives)
     setControlSystem(controlSystem);
@@ -17152,7 +18836,23 @@ export function CoopGameScene({
       if (coopTransitionOverlayRef.current) return;
       damageMushroom(index, damage, sourcePlayerId ?? socket?.id);
     });
-  }, [damageEnemy, damageMushroom, engineReady, socket?.id]);
+    combatSystem.setTreeDamageCallback((index, damage, sourcePlayerId) => {
+      if (coopTransitionOverlayRef.current) return;
+      damageTree(index, damage, sourcePlayerId ?? socket?.id);
+    });
+    combatSystem.setRootDamageCallback((index, damage, sourcePlayerId) => {
+      if (coopTransitionOverlayRef.current) return;
+      damageRoot(index, damage, sourcePlayerId ?? socket?.id);
+    });
+    combatSystem.setRockDamageCallback((index, damage, sourcePlayerId) => {
+      if (coopTransitionOverlayRef.current) return;
+      damageRock(index, damage, sourcePlayerId ?? socket?.id);
+    });
+    combatSystem.setSpineDamageCallback((index, damage, sourcePlayerId) => {
+      if (coopTransitionOverlayRef.current) return;
+      damageSpine(index, damage, sourcePlayerId ?? socket?.id);
+    });
+  }, [damageEnemy, damageMushroom, damageTree, damageRoot, damageRock, damageSpine, engineReady, socket?.id]);
 
   // Keep ECS weapon selection / level in sync when React state changes (e.g. throne room X-to-swap).
   useEffect(() => {
@@ -17272,7 +18972,7 @@ export function CoopGameScene({
         <>
           {/* Drifting cloud mist — camera-relative overlay; thinned while enemies are active */}
           <DriftingMist
-            enabled={!isCastleRoom}
+            enabled={!isCastleRoom && !isDungeon && !isDefense}
             combatActive={combatArenaActive && enemies.size > 0}
           />
           {inThroneRoom ? (
@@ -17345,6 +19045,10 @@ export function CoopGameScene({
               enemiesCount={enemies.size}
               pedestalBoonReady={pedestalBoonReady}
               mushroomHiddenIndices={mushroomHiddenIndices}
+              treeHiddenIndices={treeHiddenIndices}
+              rootHiddenIndices={rootHiddenIndices}
+              rockHiddenIndices={rockHiddenIndices}
+              spineHiddenIndices={spineHiddenIndices}
               coopIntroPortalOpen={coopIntroPortalOpen}
               coopIntroFountainPhase={coopIntroFountainPhase}
               coopIntroFountainUsed={coopIntroFountainUsed}
@@ -17378,8 +19082,24 @@ export function CoopGameScene({
               dreamLayerInventory={dreamLayerInventory}
               dreamLayerPurchaseState={dreamLayerPurchaseState}
               skyPresetIndex={coopSkyPresetIndex}
+              coopExploreSeed={coopExploreSeed}
               onEdenFinaleDaisyInteract={() => {
                 window.location.reload();
+              }}
+            />
+          )}
+
+          {isExplore && buildPlacementActive && (
+            <BuildPlacementGhost
+              active={buildPlacementActive}
+              kind={buildPlacementKind}
+              seed={coopExploreSeed || 1}
+              extraDiscsRef={buildPlacementExtraDiscsRef}
+              rulesRef={buildPlacementRulesRef}
+              destroyedTreeHealth={destroyedTreeHealthMap}
+              destroyedRootHealth={destroyedRootHealthMap}
+              onPositionChange={(x, z, valid) => {
+                buildPlacementPosRef.current = { x, z, valid };
               }}
             />
           )}
@@ -17570,6 +19290,14 @@ export function CoopGameScene({
           getRunebladeBlizzardParticleSpawnMultiplier={getRunebladeBlizzardParticleMultiplier}
           mushroomTargets={mushroomsEnabled ? mushroomTargetsForMelee : []}
           onMushroomHit={mushroomsEnabled ? onMushroomMeleeHit : undefined}
+          treeTargets={isExplore ? treeTargetsForMelee : []}
+          onTreeHit={isExplore ? onTreeMeleeHit : undefined}
+          rootTargets={isExplore ? rootTargetsForMelee : []}
+          onRootHit={isExplore ? onRootMeleeHit : undefined}
+          rockTargets={isExplore ? rockTargetsForMelee : []}
+          onRockHit={isExplore ? onRockMeleeHit : undefined}
+          spineTargets={isExplore ? spineTargetsForMelee : []}
+          onSpineHit={isExplore ? onSpineMeleeHit : undefined}
           onWraithStrikeSlashImpactQueueReady={handleWraithStrikeSlashImpactQueueReady}
           combatSystem={engineRef.current?.getWorld().getSystem(require('@/systems/CombatSystem').CombatSystem)}
           onHeal={(amount: number) => {
@@ -18262,6 +19990,35 @@ export function CoopGameScene({
               drop={drop}
               playerPositionRef={realTimePlayerPositionRef}
               onPickup={pickupGoldDrop}
+              pickupRadius={COOP_GROUND_ITEM_PICKUP_RADIUS}
+            />
+          ))}
+
+          {/* WOOD world piles (explore) */}
+          {isExplore && Array.from(woodDrops.values()).map((drop) => (
+            <WoodPileDropEffect
+              key={drop.id}
+              drop={drop}
+              playerPositionRef={realTimePlayerPositionRef}
+              onPickup={pickupWoodDrop}
+              pickupRadius={COOP_GROUND_ITEM_PICKUP_RADIUS}
+            />
+          ))}
+          {isExplore && Array.from(stoneDrops.values()).map((drop) => (
+            <StonePileDropEffect
+              key={drop.id}
+              drop={drop}
+              playerPositionRef={realTimePlayerPositionRef}
+              onPickup={pickupStoneDrop}
+              pickupRadius={COOP_GROUND_ITEM_PICKUP_RADIUS}
+            />
+          ))}
+          {isExplore && Array.from(meatDrops.values()).map((drop) => (
+            <MeatPileDropEffect
+              key={drop.id}
+              drop={drop}
+              playerPositionRef={realTimePlayerPositionRef}
+              onPickup={pickupMeatDrop}
               pickupRadius={COOP_GROUND_ITEM_PICKUP_RADIUS}
             />
           ))}        </>

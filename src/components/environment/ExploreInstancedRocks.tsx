@@ -11,6 +11,7 @@ import {
 } from '@/utils/throneNaturePropLayout';
 
 export type ExploreRockPlacement = {
+  index?: number;
   x: number;
   z: number;
   scale: number;
@@ -47,6 +48,19 @@ function extractMeshSources(scene: Object3D): { geometry: BufferGeometry; materi
   return out;
 }
 
+/** Unscaled Y lift so the baked mesh bottom sits at 0 after instance scale. */
+function bakedGroundLift(sources: { geometry: BufferGeometry }[]): number {
+  let minY = Infinity;
+  for (const src of sources) {
+    const geo = src.geometry;
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    const box = geo.boundingBox;
+    if (!box) continue;
+    minY = Math.min(minY, box.min.y);
+  }
+  return Number.isFinite(minY) ? -minY : 0;
+}
+
 function RockVariantBatch({
   url,
   meta,
@@ -58,6 +72,7 @@ function RockVariantBatch({
 }) {
   const { scene } = useGLTF(url);
   const sources = useMemo(() => extractMeshSources(scene), [scene]);
+  const groundLift = useMemo(() => bakedGroundLift(sources), [sources]);
   const meshRefs = useRef<(InstancedMesh | null)[]>([]);
 
   useLayoutEffect(() => {
@@ -72,7 +87,7 @@ function RockVariantBatch({
           const s = meta.defaultScale * p.scale * EXPLORE_ROCK_VISUAL_SCALE;
           _q.setFromAxisAngle(UP, p.rotY);
           _s.set(s, s, s);
-          _p.set(p.x, meta.groundY * s, p.z);
+          _p.set(p.x, groundLift * s, p.z);
           _mat.compose(_p, _q, _s);
           mesh.setMatrixAt(i, _mat);
         }
@@ -91,7 +106,7 @@ function RockVariantBatch({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [placements, meta, sources.length]);
+  }, [placements, meta, sources.length, groundLift]);
 
   if (sources.length === 0) return null;
   const capacity = ROCK_POOL;
@@ -99,7 +114,7 @@ function RockVariantBatch({
   return (
     <group>
       {sources.map((src, i) => (
-        <instancedMesh position={[0, -1.85, 0]}
+        <instancedMesh
           key={`${url}-${i}`}
           ref={(mesh) => {
             meshRefs.current[i] = mesh;

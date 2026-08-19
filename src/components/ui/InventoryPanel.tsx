@@ -18,6 +18,7 @@ import { BOSS_RELIC_ICON_PATHS } from '@/utils/bossRelicItems';
 
 interface InventoryPanelProps {
   inventory?: InventoryItem[];
+  meat?: number;
 }
 
 const MAX_SLOTS = 7;
@@ -57,6 +58,7 @@ interface SlotItem {
   borderColor: string;
   tooltipTitle: string;
   tooltipLines: string[];
+  quantity?: number;
 }
 
 function getBossItemIcon(type: string): { icon: string; iconIsImage: boolean } {
@@ -114,7 +116,7 @@ function getClampedTooltipStyle(anchorX: number, anchorY: number): React.CSSProp
   return { left, top: anchorY - 8, transform, width: TOOLTIP_WIDTH };
 }
 
-export default function InventoryPanel({ inventory = [] }: InventoryPanelProps) {
+export default function InventoryPanel({ inventory = [], meat = 0 }: InventoryPanelProps) {
   const [tooltip, setTooltip] = useState<{
     title: string;
     lines: string[];
@@ -125,7 +127,21 @@ export default function InventoryPanel({ inventory = [] }: InventoryPanelProps) 
 
   const bossDrops = inventory.filter((i) => i.category === 'boss_drop');
   const wards = inventory.filter((i) => i.category === 'ward');
-  const slotItems: SlotItem[] = bossDropsToSlots(bossDrops);
+  const meatCount = Math.max(0, Math.floor(meat));
+  const slotItems: SlotItem[] = [];
+  if (meatCount > 0) {
+    slotItems.push({
+      id: 'raw-meat',
+      icon: '/icons/meat.svg',
+      iconIsImage: true,
+      label: 'Raw Meat',
+      borderColor: '#e11d48',
+      tooltipTitle: 'Raw Meat',
+      tooltipLines: ['Cook at a fire pit to heal and satiate hunger. Stacks to 20.'],
+      quantity: meatCount,
+    });
+  }
+  slotItems.push(...bossDropsToSlots(bossDrops));
 
   const slots: Array<SlotItem | 'empty'> = [];
   for (let i = 0; i < MAX_SLOTS; i++) {
@@ -216,7 +232,7 @@ export default function InventoryPanel({ inventory = [] }: InventoryPanelProps) 
                 onMouseLeave={hideTooltip}
               >
                 <div
-                  className="w-full h-full flex items-center justify-center text-lg"
+                  className="relative w-full h-full flex items-center justify-center text-lg"
                   style={{
                     background: `linear-gradient(145deg, ${slot.borderColor}18 0%, rgba(0,0,0,0.6) 100%)`,
                     border: `1px solid ${slot.borderColor}55`,
@@ -228,6 +244,17 @@ export default function InventoryPanel({ inventory = [] }: InventoryPanelProps) 
                     <img src={slot.icon} alt="" className="h-7 w-7 object-contain" aria-hidden />
                   ) : (
                     slot.icon
+                  )}
+                  {slot.quantity != null && slot.quantity > 0 && (
+                    <span
+                      className="absolute bottom-0 right-0.5 text-[10px] font-bold tabular-nums leading-none"
+                      style={{
+                        color: 'rgba(255, 220, 220, 0.95)',
+                        textShadow: '0 1px 3px rgba(0,0,0,0.9)',
+                      }}
+                    >
+                      {slot.quantity}
+                    </span>
                   )}
                 </div>
               </div>

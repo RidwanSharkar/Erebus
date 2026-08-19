@@ -10,6 +10,7 @@ import SunkenTempleRoom from '@/components/environment/SunkenTempleRoom';
 import EternityPalaceRoom from '@/components/environment/EternityPalaceRoom';
 import FaeRealmRoom from '@/components/environment/FaeRealmRoom';
 import ExploreRoom from '@/components/environment/ExploreRoom';
+import DungeonNexusMap from '@/components/environment/DungeonNexusMap';
 import ThroneRoom from '@/components/environment/ThroneRoom';
 import SpecialMapCenterDecor from '@/components/environment/SpecialMapCenterDecor';
 import { CoopMainArenaPortals } from '@/components/environment/CoopMainArenaPortals';
@@ -75,6 +76,10 @@ type CoopEnvironmentSceneLayerProps = {
   enemiesCount: number;
   pedestalBoonReady: boolean;
   mushroomHiddenIndices: ReadonlySet<number>;
+  treeHiddenIndices: ReadonlySet<number>;
+  rootHiddenIndices: ReadonlySet<number>;
+  rockHiddenIndices: ReadonlySet<number>;
+  spineHiddenIndices: ReadonlySet<number>;
   coopIntroPortalOpen: boolean;
   coopIntroFountainPhase: boolean;
   coopIntroFountainUsed: boolean;
@@ -109,6 +114,8 @@ type CoopEnvironmentSceneLayerProps = {
   dreamLayerPurchaseState: DreamLayerPurchaseState;
   /** Server-authoritative random CustomSky preset index. */
   skyPresetIndex: number;
+  /** Explore worldgen seed — used as a stable environment key (not enterSeq). */
+  coopExploreSeed?: number;
   onEdenFinaleDaisyInteract?: () => void;
 };
 
@@ -138,6 +145,10 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
   enemiesCount,
   pedestalBoonReady,
   mushroomHiddenIndices,
+  treeHiddenIndices,
+  rootHiddenIndices,
+  rockHiddenIndices,
+  spineHiddenIndices,
   coopIntroPortalOpen,
   coopIntroFountainPhase,
   coopIntroFountainUsed,
@@ -171,6 +182,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
   dreamLayerInventory,
   dreamLayerPurchaseState,
   skyPresetIndex,
+  coopExploreSeed = 0,
   onEdenFinaleDaisyInteract,
 }: CoopEnvironmentSceneLayerProps) {
   void isIntroCastleRoom;
@@ -189,6 +201,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
   const isFaeRealm = coopCurrentRoomKind === 'fae_realm';
   const isExplore = coopCurrentRoomKind === 'explore';
   const isDefense = coopCurrentRoomKind === 'defense';
+  const isDungeon = coopCurrentRoomKind === 'dungeon';
   const isDeepSanctum = coopCurrentRoomKind === 'deep_sanctum';
   const isEdenRoom = coopCurrentRoomKind === 'eden';
   const isEdenFinaleRoom = coopCurrentRoomKind === 'eden_finale';
@@ -254,7 +267,9 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           combatActive={combatArenaActive && enemiesCount > 0}
         />
       )}
-      {isDefense ? (
+      {isDungeon ? (
+        <DungeonNexusMap key={`coop-dungeon-env-${coopCombatArenaEnterSeq}`} />
+      ) : isDefense ? (
         <ThroneRoom
           key={`coop-defense-env-${coopCombatArenaEnterSeq}`}
           layout="defense"
@@ -263,16 +278,21 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
         />
       ) : isExplore ? (
         <ExploreRoom
-          key={`coop-explore-env-${coopCombatArenaEnterSeq}`}
+          key={`coop-explore-env-${coopExploreSeed || 1}`}
           playerPositionRef={realTimePlayerPositionRef}
           combatActive={combatArenaActive && enemiesCount > 0}
           mushroomHiddenIndices={mushroomHiddenIndices}
+          treeHiddenIndices={treeHiddenIndices}
+          rootHiddenIndices={rootHiddenIndices}
+          rockHiddenIndices={rockHiddenIndices}
+          spineHiddenIndices={spineHiddenIndices}
         />
       ) : isFaeRealm ? (
         <FaeRealmRoom
           key={`coop-fae-env-${coopCombatArenaEnterSeq}`}
           combatActive={combatArenaActive && enemiesCount > 0}
           hiddenIndices={mushroomHiddenIndices}
+          skyPresetIndex={skyPresetIndex}
         />
       ) : isCastleRoom ? (
         <CastleRoom
@@ -458,7 +478,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           />
         </group>
       )}
-      {combatArenaActive && coopMainArenaPortalPhase && !isCastleRoom && !isSunkenTemple && !isEternityPalace && !isSurpriseRoom && !isExplore && !isDefense && (
+      {combatArenaActive && coopMainArenaPortalPhase && !isCastleRoom && !isSunkenTemple && !isEternityPalace && !isSurpriseRoom && !isExplore && !isDefense && !isDungeon && (
         <CoopMainArenaPortals
           thronePortalOffer={thronePortalOffer}
           phase={coopMainArenaPortalPhase}
@@ -468,7 +488,7 @@ const CoopEnvironmentSceneLayer = memo(function CoopEnvironmentSceneLayer({
           playerPositionRef={realTimePlayerPositionRef}
         />
       )}
-      {combatArenaActive && !isCastleRoom && !isSunkenTemple && !isEternityPalace && coopCurrentRoomKind !== 'merchant' && coopCurrentRoomKind !== 'dream_layer' && coopCurrentRoomKind !== 'fae_realm' && coopCurrentRoomKind !== 'explore' && coopCurrentRoomKind !== 'defense' && coopCurrentRoomKind !== 'eden_finale' && !isSurpriseRoom && (
+      {combatArenaActive && !isCastleRoom && !isSunkenTemple && !isEternityPalace && coopCurrentRoomKind !== 'merchant' && coopCurrentRoomKind !== 'dream_layer' && coopCurrentRoomKind !== 'fae_realm' && coopCurrentRoomKind !== 'explore' && coopCurrentRoomKind !== 'defense' && coopCurrentRoomKind !== 'dungeon' && coopCurrentRoomKind !== 'eden_finale' && !isSurpriseRoom && (
         <CombatArenaPedestal
           campType={((k) => (k === 'red' ? 'purple' : k))(
             normalizeCoopPortalKind(coopClearedRoomKind ?? coopCurrentRoomKind ?? campTypes[0]),

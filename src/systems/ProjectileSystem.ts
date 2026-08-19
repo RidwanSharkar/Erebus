@@ -11,6 +11,11 @@ import { Enemy } from '@/ecs/components/Enemy';
 import { World } from '@/ecs/World';
 import { ObjectPool } from '@/utils/ObjectPool';
 import { CollisionSystem } from '@/systems/CollisionSystem';
+import { isWeaponHittableEntity } from '@/utils/destructibleEnvironmentTargeting';
+import {
+  getDungeonMeshCollider,
+  snapToDungeonChestY,
+} from '@/utils/dungeonLayout';
 
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import {
@@ -203,6 +208,10 @@ export class ProjectileSystem extends System {
 
   private queryHittableAlongSegment(from: Vector3, to: Vector3, padding = 3): Entity[] {
     this.tempVector.copy(from).add(to).multiplyScalar(0.5);
+    if (getDungeonMeshCollider()) {
+      const halfXZ = Math.hypot(from.x - to.x, from.z - to.z) * 0.5;
+      return this.queryHittableNearPoint(this.tempVector, halfXZ + padding + 2, true);
+    }
     const halfLen = from.distanceTo(to) * 0.5;
     return this.queryHittableNearPoint(this.tempVector, halfLen + padding, true);
   }
@@ -274,11 +283,14 @@ export class ProjectileSystem extends System {
   ): void {
     const castTimeMs = Date.now() + castDelayMs;
     const startPosition = this.createCrossentropyMeteorStartPosition(impactPosition);
-    const travelDistance = startPosition.distanceTo(new Vector3(impactPosition.x, -3, impactPosition.z));
+    const groundY = this.resolveDungeonImpactGroundY(impactPosition);
+    const travelDistance = startPosition.distanceTo(new Vector3(impactPosition.x, groundY, impactPosition.z));
     const travelTimeMs = (travelDistance / CROSSENTROPY_METEOR_SPEED) * 1000;
+    const groundedImpact = impactPosition.clone();
+    groundedImpact.y = groundY;
     this.pendingCrossentropyMeteorImpacts.push({
       impactAtMs: castTimeMs + CROSSENTROPY_METEOR_WARNING_MS + travelTimeMs,
-      impactPosition: impactPosition.clone(),
+      impactPosition: groundedImpact,
       damage: CROSSENTROPY_METEOR_DAMAGE,
       radius: CROSSENTROPY_METEOR_AOE_RADIUS,
       ownerEntityId: projectile.owner,
@@ -291,7 +303,7 @@ export class ProjectileSystem extends System {
         : {}),
     });
     this.world.emitEvent('crossentropyMeteorCast', {
-      targetPosition: impactPosition.clone(),
+      targetPosition: groundedImpact.clone(),
       timestamp: castTimeMs,
       damage: CROSSENTROPY_METEOR_DAMAGE,
       startPosition: startPosition.clone(),
@@ -338,7 +350,7 @@ export class ProjectileSystem extends System {
       for (const target of potentialTargets) {
         if (target.id === meteor.ownerEntityId) continue;
         if (target.userData?.isCoopAllyPlayer || target.userData?.isPlayer === true) continue;
-        if (!target.getComponent(Enemy)) continue;
+        if (!isWeaponHittableEntity(target)) continue;
         const targetTransform = target.getComponent(Transform);
         const targetHealth = target.getComponent(Health);
         if (!targetTransform || !targetHealth || targetHealth.isDead) continue;
@@ -422,13 +434,16 @@ export class ProjectileSystem extends System {
       const castDelayMs = i * CLOUDKILL_ARROW_DELAY_MS;
       const castTimeMs = castBaseMs + castDelayMs;
       const startPosition = this.createCloudkillStartPosition(impactPosition);
+      const groundY = this.resolveDungeonImpactGroundY(impactPosition);
       const travelDistance = startPosition.distanceTo(
-        new Vector3(impactPosition.x, -3, impactPosition.z),
+        new Vector3(impactPosition.x, groundY, impactPosition.z),
       );
       const travelTimeMs = (travelDistance / CLOUDKILL_ARROW_SPEED) * 1000;
+      const groundedImpact = impactPosition.clone();
+      groundedImpact.y = groundY;
       this.pendingCloudkillImpacts.push({
         impactAtMs: castTimeMs + CLOUDKILL_WARNING_MS + travelTimeMs,
-        impactPosition: impactPosition.clone(),
+        impactPosition: groundedImpact,
         damage: CLOUDKILL_DAMAGE,
         radius: CLOUDKILL_AOE_RADIUS,
         ownerEntityId: projectile.owner,
@@ -436,7 +451,7 @@ export class ProjectileSystem extends System {
       });
       this.world.emitEvent('cloudkillCast', {
         castId: `cloudkill-${castTimeMs}-${i}`,
-        targetPosition: impactPosition.clone(),
+        targetPosition: groundedImpact.clone(),
         timestamp: castTimeMs,
         delayMs: castDelayMs,
         startPosition: startPosition.clone(),
@@ -475,7 +490,7 @@ export class ProjectileSystem extends System {
       for (const target of potentialTargets) {
         if (target.id === impact.ownerEntityId) continue;
         if (target.userData?.isCoopAllyPlayer || target.userData?.isPlayer === true) continue;
-        if (!target.getComponent(Enemy)) continue;
+        if (!isWeaponHittableEntity(target)) continue;
         const targetTransform = target.getComponent(Transform);
         const targetHealth = target.getComponent(Health);
         if (!targetTransform || !targetHealth || targetHealth.isDead) continue;
@@ -507,7 +522,42 @@ export class ProjectileSystem extends System {
 
     // Update position
     transform.translate(this.tempVector.x, this.tempVector.y, this.tempVector.z);
+    if (getDungeonMeshCollider()) {
+      transform.position.y = snapToDungeonChestY(
+        transform.position.x,
+        transform.position.z,
+        transform.position.y,
+      );
+    }
     transform.matrixNeedsUpdate = true;
+  }
+
+  private resolveDungeonImpactGroundY(impactPosition: Vector3): number {
+    if (!getDungeonMeshCollider()) return -3;
+    return snapToDungeonChestY(impactPosition.x, impactPosition.z, impactPosition.y, 0, 40);
+  }
+
+  private segmentIntersectsCircleXZ(
+    start: Vector3,
+    end: Vector3,
+    cx: number,
+    cz: number,
+    radiusSquared: number,
+  ): boolean {
+    const segmentX = end.x - start.x;
+    const segmentZ = end.z - start.z;
+    const segmentLengthSquared = segmentX * segmentX + segmentZ * segmentZ;
+    const dx0 = cx - start.x;
+    const dz0 = cz - start.z;
+    if (segmentLengthSquared === 0) {
+      return dx0 * dx0 + dz0 * dz0 <= radiusSquared;
+    }
+    const t = Math.max(0, Math.min(1, (dx0 * segmentX + dz0 * segmentZ) / segmentLengthSquared));
+    const closestX = start.x + segmentX * t;
+    const closestZ = start.z + segmentZ * t;
+    const dx = cx - closestX;
+    const dz = cz - closestZ;
+    return dx * dx + dz * dz <= radiusSquared;
   }
 
   private segmentIntersectsSphere(
@@ -747,11 +797,27 @@ export class ProjectileSystem extends System {
 
       // Use squared distance for performance (avoid sqrt)
       const collisionRadiusSquared = (projectileRadius + targetRadius) ** 2;
-      
-      if (
-        projectilePos.distanceToSquared(targetPos) <= collisionRadiusSquared ||
-        this.segmentIntersectsSphere(previousProjectilePos, projectilePos, targetPos, collisionRadiusSquared)
-      ) {
+      const meshWalk = getDungeonMeshCollider() != null;
+      const dx = projectilePos.x - targetPos.x;
+      const dz = projectilePos.z - targetPos.z;
+      const hit = meshWalk
+        ? dx * dx + dz * dz <= collisionRadiusSquared ||
+          this.segmentIntersectsCircleXZ(
+            previousProjectilePos,
+            projectilePos,
+            targetPos.x,
+            targetPos.z,
+            collisionRadiusSquared,
+          )
+        : projectilePos.distanceToSquared(targetPos) <= collisionRadiusSquared ||
+          this.segmentIntersectsSphere(
+            previousProjectilePos,
+            projectilePos,
+            targetPos,
+            collisionRadiusSquared,
+          );
+
+      if (hit) {
         this.handleHit(projectileEntity, target, projectile, targetHealth);
         
         // If not piercing, destroy projectile
@@ -827,7 +893,7 @@ export class ProjectileSystem extends System {
             const impactTransform = target.getComponent(Transform);
             if (impactTransform) {
               const impactPos = impactTransform.getWorldPosition();
-              impactPos.y = Math.max(1.5, impactPos.y);
+              impactPos.y += 1.5;
               this.scheduleCloudkillVolley(projectile, impactPos);
             }
           }
@@ -973,7 +1039,7 @@ export class ProjectileSystem extends System {
         const glacialTransform = target.getComponent(Transform);
         if (glacialTransform) {
           const gp = glacialTransform.getWorldPosition().clone();
-          gp.y = Math.max(1.5, gp.y);
+          gp.y += 1.5;
           const cs = (window as any).controlSystemRef?.current;
           cs?.applyGlacialStormOnCrossentropyHit?.(gp);
         }
@@ -994,7 +1060,7 @@ export class ProjectileSystem extends System {
           const meteorTargetTransform = target.getComponent(Transform);
           if (meteorTargetTransform) {
             const impactPos = meteorTargetTransform.getWorldPosition();
-            impactPos.y = Math.max(1.5, impactPos.y);
+            impactPos.y += 1.5;
             const meteorCount = rollCrossentropyMeteorStrikeCount();
             for (let i = 0; i < meteorCount; i++) {
               this.scheduleCrossentropyMeteorImpact(projectile, impactPos, i * CROSSENTROPY_METEOR_STAGGER_MS);
@@ -1072,7 +1138,7 @@ export class ProjectileSystem extends System {
         const hitTransform = target.getComponent(Transform);
         if (hitTransform) {
           const soulPos = hitTransform.position.clone();
-          soulPos.y = Math.max(1.5, soulPos.y);
+          soulPos.y += 1.5;
           this.world.emitEvent('hauntedSoulEffect', { position: soulPos });
         }
       }
@@ -1086,9 +1152,8 @@ export class ProjectileSystem extends System {
         if (projectileTransform && targetTransform) {
           // Use the target's position for the explosion center (where the bolt hit)
           const explosionPosition = targetTransform.position.clone();
-          // Ensure explosion is visible by setting it at a consistent height
-          // Boss entities have colliders centered at y=1, so position explosion at y=1.5 for visibility
-          explosionPosition.y = Math.max(1.5, explosionPosition.y);
+          // Chest height relative to feet (arena y=0 → 1.5; dungeon RallyArea stays on the cave floor).
+          explosionPosition.y += 1.5;
 
           // Emit explosion event for CrossentropyBolt
           const theme = crossentropyThemeFromProjectile(projectile);
@@ -1183,7 +1248,7 @@ export class ProjectileSystem extends System {
       return;
     }
 
-    if (pos.y < -10) {
+    if (pos.y < -10 && !getDungeonMeshCollider()) {
       this.projectilesToDestroy.push(entity.id);
     }
   }
@@ -1340,7 +1405,7 @@ export class ProjectileSystem extends System {
     if (!struckTf) return 'aborted';
 
     const anchor = struckTf.getWorldPosition().clone();
-    anchor.y = Math.max(1.5, anchor.y);
+    anchor.y += 1.5;
 
     const pick = this.findNearestFragmentationTarget(anchor, [struckTarget.id]);
     if (!pick) return 'no_candidates';
@@ -1422,7 +1487,7 @@ export class ProjectileSystem extends System {
     if (!struckTf) return 'aborted';
 
     const anchor = struckTf.getWorldPosition().clone();
-    anchor.y = Math.max(1.5, anchor.y);
+    anchor.y += 1.5;
 
     const pick = this.findNearestFragmentationTarget(anchor, projectile.hitTargets);
     if (!pick) return 'no_candidates';

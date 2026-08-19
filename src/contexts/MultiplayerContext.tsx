@@ -26,10 +26,12 @@ import {
   isExploreCampKind,
   type ExploreCampPublic,
 } from '@/utils/exploreCamps';
+import type { ExploreBuildingKind, ExploreFirePitHealAction, ExploreResearchState, ExploreResearchUpgradeId, ExploreShrineGiftId } from '@/utils/exploreBuildings';
+import { EMPTY_EXPLORE_RESEARCH, normalizeExploreResearch } from '@/utils/exploreBuildings';
 
 import { patchEnemyRef, patchPlayerRef } from '@/utils/multiplayerRefPatch';
 import { MUSHROOM_COUNT, buildMushroomInstances, getMushroomColliderCenter } from '@/utils/mushroomLayout';
-import { exploreFog } from '@/utils/exploreFogOfWar';
+import { exploreFog, type ExploreFogChunkDTO } from '@/utils/exploreFogOfWar';
 import { clearKnightBlock } from '@/utils/knightBlockState';
 import { installWebGlDiagnostics, recordMultiplayerDisconnect } from '@/utils/webglDiagnostics';
 import { getBackendUrl } from '@/utils/backendUrl';
@@ -55,7 +57,7 @@ import {
 import { cancelKnightStyleMiss, playKnightStyleHit } from '@/utils/knightStyleMeleeSound';
 import { playVengefulSpiritHitSound } from '@/utils/beastAudioSounds';
 
-export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'merchant' | 'boss' | 'intro' | 'deep_sanctum' | 'sunken_temple' | 'eternity_palace' | 'eden' | 'false_eden' | 'delirium_gate' | 'erebus_gate' | 'dream_layer' | 'fae_realm' | 'eden_finale' | 'explore' | 'defense';
+export type CoopRoomKind = 'red' | 'blue' | 'green' | 'purple' | 'stat' | 'trial' | 'merchant' | 'boss' | 'intro' | 'deep_sanctum' | 'sunken_temple' | 'eternity_palace' | 'eden' | 'false_eden' | 'delirium_gate' | 'erebus_gate' | 'dream_layer' | 'fae_realm' | 'eden_finale' | 'explore' | 'defense' | 'dungeon';
 export type CoopDefenseWaveState = 'idle' | 'active' | 'break' | 'complete' | 'failed';
 export type DeliriumStructureState = {
   hp: number;
@@ -127,6 +129,11 @@ export interface Player {
   essence?: number;
   gold?: number;
   flow?: number;
+  wood?: number;
+  stone?: number;
+  meat?: number;
+  hunger?: number;
+  starvingCritical?: boolean;
   fate?: number;
   // Purchased items
   purchasedItems?: string[];
@@ -282,6 +289,14 @@ export interface Enemy {
   bladestormStartTime?: number;
   /** Alternate Boss1 encounter: elite knight (Death Grasp pull-immune). */
   isBoss1EliteKnight?: boolean;
+  /** Player-built explore structures (fire pit, barracks, towers, research station). */
+  isStructure?: boolean;
+  hullRadius?: number;
+  builtByPlayerId?: string;
+  /** Explore barracks/tower: false when no live fire pit is within range. */
+  powered?: boolean;
+  /** Explore shrine: true after its one gift has been claimed. */
+  shrineUsed?: boolean;
 }
 
 export interface ConfirmedEnemyDamageEvent {
@@ -400,6 +415,16 @@ export interface DeepSanctumRewardClaimedPayload {
   timestamp?: number;
 }
 
+export interface ExploreShrineClaimedPayload {
+  shrineId: string;
+  gift: ExploreShrineGiftId;
+}
+
+export interface ExploreObeliskPurchasedPayload {
+  playerId: string;
+  talentId: string;
+}
+
 export type BossSlainLabel = 'hate' | 'knights' | 'envy' | 'fear' | 'destiny' | 'trinity';
 
 export interface BossDefeatedPayload {
@@ -425,6 +450,33 @@ export interface GoldDrop {
   position: { x: number; y: number; z: number };
   enemyType?: string | null;
   soulType?: string | null;
+  droppedAt: number;
+}
+
+export interface WoodDrop {
+  id: string;
+  amount: number;
+  pieceCount: number;
+  position: { x: number; y: number; z: number };
+  treeIndex?: number | null;
+  droppedAt: number;
+}
+
+export interface StoneDrop {
+  id: string;
+  amount: number;
+  pieceCount: number;
+  position: { x: number; y: number; z: number };
+  rockIndex?: number | null;
+  droppedAt: number;
+}
+
+export interface MeatDrop {
+  id: string;
+  amount: number;
+  pieceCount: number;
+  position: { x: number; y: number; z: number };
+  enemyType?: string | null;
   droppedAt: number;
 }
 
@@ -614,11 +666,17 @@ interface MultiplayerContextType {
   coopExploreSeed: number;
   /** Server-authored explore reward camps (gold / stat / talent / boss). */
   exploreCamps: ExploreCampPublic[];
+  /** Fire-pit day-night cycle (explore camp). */
+  exploreDayNightActive: boolean;
+  exploreDayNightStartedAt: number;
+  exploreDayNightFireId: string | null;
   /** Defense mode: throne-shell holdout with allied towers. */
   coopDefenseActive: boolean;
   coopDefenseWave: number;
   coopDefenseWaveState: CoopDefenseWaveState;
   coopDefenseBreakEndsAt: number;
+  /** Dungeon mode: walkable nexus interior sandbox. */
+  coopDungeonActive: boolean;
   /** Co-op sunken temple: one-time 4-room sequence after Boss 1. */
   coopSunkenActive: boolean;
   coopSunkenRoomIndex: number;
@@ -758,6 +816,7 @@ interface MultiplayerContextType {
   claimPreBossReward: () => void;
   claimDeepSanctumReward: () => void;
   claimExploreCamp: (campId: string) => void;
+  emitExploreFogUpdate: (chunks: ExploreFogChunkDTO[]) => void;
   finishPreBossMerchant: () => void;
   
   // Player actions
@@ -808,6 +867,21 @@ interface MultiplayerContextType {
   /** Co-op: ring mushroom HP (server sync). Explore packed-index HP lives in `exploreHealth`. */
   mushroomState: { health: number[]; maxHealth: number; exploreHealth?: Record<number, number> } | null;
   damageMushroom: (index: number, damage: number, sourcePlayerId?: string) => void;
+  treeState: { maxHealth: number; exploreHealth: Record<number, number> } | null;
+  damageTree: (index: number, damage: number, sourcePlayerId?: string) => void;
+  rootState: { maxHealth: number; exploreHealth: Record<number, number> } | null;
+  damageRoot: (index: number, damage: number, sourcePlayerId?: string) => void;
+  rockState: { maxHealth: number; exploreHealth: Record<number, number> } | null;
+  damageRock: (index: number, damage: number, sourcePlayerId?: string) => void;
+  spineState: { maxHealth: number; exploreHealth: Record<number, number> } | null;
+  damageSpine: (index: number, damage: number, sourcePlayerId?: string) => void;
+  exploreResearch: ExploreResearchState;
+  placeBuilding: (kind: ExploreBuildingKind, x: number, z: number) => void;
+  barracksRecruitAlly: (kind: CoopAllyKind) => void;
+  researchPurchase: (id: ExploreResearchUpgradeId) => void;
+  shrineClaim: (gift: ExploreShrineGiftId) => void;
+  obeliskBuyTalent: (talentId: string) => void;
+  firePitHeal: (action: ExploreFirePitHealAction) => void;
 
   // Experience system actions
   updatePlayerExperience: (playerId: string, experience: number) => void;
@@ -852,6 +926,9 @@ interface MultiplayerContextType {
   // Item drop & inventory
   droppedItems: Map<string, DroppedItem>;
   goldDrops: Map<string, GoldDrop>;
+  woodDrops: Map<string, WoodDrop>;
+  stoneDrops: Map<string, StoneDrop>;
+  meatDrops: Map<string, MeatDrop>;
   inventory: InventoryItem[];
   merchantInventory: MerchantStockItem[];
   merchantPurchaseState: MerchantPurchaseState;
@@ -863,6 +940,12 @@ interface MultiplayerContextType {
   registerDeepSanctumRewardClaimedHandler: (
     handler: (payload: DeepSanctumRewardClaimedPayload) => void,
   ) => () => void;
+  registerShrineClaimedHandler: (
+    handler: (payload: ExploreShrineClaimedPayload) => void,
+  ) => () => void;
+  registerObeliskPurchaseSuccessHandler: (
+    handler: (payload: ExploreObeliskPurchasedPayload) => void,
+  ) => () => void;
   registerMerchantNpcGreetHandler: (
     handler: (payload: { kind: string }) => void,
   ) => () => void;
@@ -871,6 +954,18 @@ interface MultiplayerContextType {
   ) => () => void;
   registerPlayerFlowChangedHandler: (
     handler: (payload: { playerId: string; flow: number }) => void,
+  ) => () => void;
+  registerPlayerWoodChangedHandler: (
+    handler: (payload: { playerId: string; wood: number }) => void,
+  ) => () => void;
+  registerPlayerStoneChangedHandler: (
+    handler: (payload: { playerId: string; stone: number }) => void,
+  ) => () => void;
+  registerPlayerMeatChangedHandler: (
+    handler: (payload: { playerId: string; meat: number }) => void,
+  ) => () => void;
+  registerPlayerHungerChangedHandler: (
+    handler: (payload: { playerId: string; hunger: number; starvingCritical?: boolean }) => void,
   ) => () => void;
   registerPlayerFateChangedHandler: (
     handler: (payload: { playerId: string; fate: number }) => void,
@@ -886,6 +981,9 @@ interface MultiplayerContextType {
   ) => () => void;
   pickupItem: (itemId: string) => void;
   pickupGoldDrop: (dropId: string) => void;
+  pickupWoodDrop: (dropId: string) => void;
+  pickupStoneDrop: (dropId: string) => void;
+  pickupMeatDrop: (dropId: string) => void;
 
   // Merchant purchase actions
   purchaseItem: (itemId: string, cost: number, currency: 'essence' | 'gold') => boolean;
@@ -929,6 +1027,7 @@ export type MultiplayerActionsContextType = Pick<
   | 'claimPreBossReward'
   | 'claimDeepSanctumReward'
   | 'claimExploreCamp'
+  | 'emitExploreFogUpdate'
   | 'finishPreBossMerchant'
   | 'updatePlayerPosition'
   | 'updatePlayerWeapon'
@@ -954,6 +1053,16 @@ export type MultiplayerActionsContextType = Pick<
   | 'triggerDeathdealerStaggerProc'
   | 'applyStatusEffect'
   | 'damageMushroom'
+  | 'damageTree'
+  | 'damageRoot'
+  | 'damageRock'
+  | 'damageSpine'
+  | 'placeBuilding'
+  | 'barracksRecruitAlly'
+  | 'researchPurchase'
+  | 'shrineClaim'
+  | 'obeliskBuyTalent'
+  | 'firePitHeal'
   | 'updatePlayerExperience'
   | 'updatePlayerLevel'
   | 'updatePlayerEssence'
@@ -981,15 +1090,24 @@ export type MultiplayerActionsContextType = Pick<
   | 'purchaseDreamLayerHeal'
   | 'registerMerchantPurchaseSuccessHandler'
   | 'registerDeepSanctumRewardClaimedHandler'
+  | 'registerShrineClaimedHandler'
+  | 'registerObeliskPurchaseSuccessHandler'
   | 'registerMerchantNpcGreetHandler'
   | 'registerPlayerGoldChangedHandler'
   | 'registerPlayerFlowChangedHandler'
+  | 'registerPlayerWoodChangedHandler'
+  | 'registerPlayerStoneChangedHandler'
+  | 'registerPlayerMeatChangedHandler'
+  | 'registerPlayerHungerChangedHandler'
   | 'registerPlayerFateChangedHandler'
   | 'registerBossDefeatedHandler'
   | 'registerBossItemPickupHandler'
   | 'registerRunePickupHandler'
   | 'pickupItem'
   | 'pickupGoldDrop'
+  | 'pickupWoodDrop'
+  | 'pickupStoneDrop'
+  | 'pickupMeatDrop'
   | 'sendChatMessage'
   | 'openChat'
   | 'closeChat'
@@ -1046,7 +1164,7 @@ interface MultiplayerProviderProps {
 }
 
 const VALID_CAMP_KEYS = new Set(['red', 'blue', 'green', 'purple']);
-const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'trial', 'merchant', 'boss', 'intro', 'deep_sanctum', 'sunken_temple', 'eternity_palace', 'eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer', 'fae_realm', 'eden_finale', 'explore', 'defense']);
+const VALID_COOP_ROOM_KINDS = new Set(['red', 'blue', 'green', 'purple', 'stat', 'trial', 'merchant', 'boss', 'intro', 'deep_sanctum', 'sunken_temple', 'eternity_palace', 'eden', 'false_eden', 'delirium_gate', 'erebus_gate', 'dream_layer', 'fae_realm', 'eden_finale', 'explore', 'defense', 'dungeon']);
 const VALID_COOP_TERRAIN_THEMES = new Set(['purple', 'blue', 'green']);
 
 function normalizeThronePortalLayout(v: unknown): 'rim' | 'center' {
@@ -1267,6 +1385,10 @@ export interface ReclaimedPlayerState {
   essence?: number;
   gold?: number;
   flow?: number;
+  wood?: number;
+  stone?: number;
+  meat?: number;
+  hunger?: number;
   fate?: number;
   health?: number;
   maxHealth?: number;
@@ -1295,6 +1417,11 @@ type CoopSessionSnapshotPayload = {
   coopGrassPresetIndex?: unknown;
   merchantInventory?: unknown;
   mushroomState?: { health?: number[]; maxHealth?: number; exploreHealth?: Record<number, number> };
+  treeState?: { maxHealth?: number; exploreHealth?: Record<number, number> };
+  rootState?: { maxHealth?: number; exploreHealth?: Record<number, number> };
+  rockState?: { maxHealth?: number; exploreHealth?: Record<number, number> };
+  spineState?: { maxHealth?: number; exploreHealth?: Record<number, number> };
+  exploreResearch?: ExploreResearchState;
   coopIntroPending?: boolean;
   coopIntroActive?: boolean;
   coopIntroRoomIndex?: number;
@@ -1312,10 +1439,15 @@ type CoopSessionSnapshotPayload = {
   coopExploreActive?: boolean;
   coopExploreSeed?: number;
   exploreCamps?: ExploreCampPublic[];
+  exploreFogChunks?: ExploreFogChunkDTO[];
+  exploreDayNightActive?: boolean;
+  exploreDayNightStartedAt?: number;
+  exploreDayNightFireId?: string | null;
   coopDefenseActive?: boolean;
   coopDefenseWave?: number;
   coopDefenseWaveState?: string;
   coopDefenseBreakEndsAt?: number;
+  coopDungeonActive?: boolean;
   coopSunkenActive?: boolean;
   coopSunkenRoomIndex?: number;
   coopSunkenPortalOpen?: boolean;
@@ -1392,6 +1524,19 @@ type CoopSnapshotSetters = {
   setMushroomState: React.Dispatch<
     React.SetStateAction<{ health: number[]; maxHealth: number; exploreHealth?: Record<number, number> } | null>
   >;
+  setTreeState: React.Dispatch<
+    React.SetStateAction<{ maxHealth: number; exploreHealth: Record<number, number> } | null>
+  >;
+  setRootState: React.Dispatch<
+    React.SetStateAction<{ maxHealth: number; exploreHealth: Record<number, number> } | null>
+  >;
+  setRockState: React.Dispatch<
+    React.SetStateAction<{ maxHealth: number; exploreHealth: Record<number, number> } | null>
+  >;
+  setSpineState: React.Dispatch<
+    React.SetStateAction<{ maxHealth: number; exploreHealth: Record<number, number> } | null>
+  >;
+  setExploreResearch: React.Dispatch<React.SetStateAction<ExploreResearchState>>;
   setCoopIntroPending: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopIntroActive: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopIntroRoomIndex: React.Dispatch<React.SetStateAction<number>>;
@@ -1409,10 +1554,14 @@ type CoopSnapshotSetters = {
   setCoopExploreActive: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopExploreSeed: React.Dispatch<React.SetStateAction<number>>;
   setExploreCamps: React.Dispatch<React.SetStateAction<ExploreCampPublic[]>>;
+  setExploreDayNightActive: React.Dispatch<React.SetStateAction<boolean>>;
+  setExploreDayNightStartedAt: React.Dispatch<React.SetStateAction<number>>;
+  setExploreDayNightFireId: React.Dispatch<React.SetStateAction<string | null>>;
   setCoopDefenseActive: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopDefenseWave: React.Dispatch<React.SetStateAction<number>>;
   setCoopDefenseWaveState: React.Dispatch<React.SetStateAction<CoopDefenseWaveState>>;
   setCoopDefenseBreakEndsAt: React.Dispatch<React.SetStateAction<number>>;
+  setCoopDungeonActive: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopSunkenActive: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopSunkenRoomIndex: React.Dispatch<React.SetStateAction<number>>;
   setCoopSunkenPortalOpen: React.Dispatch<React.SetStateAction<boolean>>;
@@ -1562,7 +1711,18 @@ function applyExploreSnapshot(
   data: CoopSessionSnapshotPayload | null | undefined,
   setters: Pick<
     CoopSnapshotSetters,
-    'setCoopExploreActive' | 'setCoopExploreSeed' | 'setExploreCamps' | 'setMushroomState'
+    | 'setCoopExploreActive'
+    | 'setCoopExploreSeed'
+    | 'setExploreCamps'
+    | 'setMushroomState'
+    | 'setTreeState'
+    | 'setRootState'
+    | 'setRockState'
+    | 'setSpineState'
+    | 'setExploreResearch'
+    | 'setExploreDayNightActive'
+    | 'setExploreDayNightStartedAt'
+    | 'setExploreDayNightFireId'
   >,
 ) {
   if (!data) return;
@@ -1575,6 +1735,64 @@ function applyExploreSnapshot(
     setters.setExploreCamps(normalizeExploreCamps(data.exploreCamps));
   } else if ('coopExploreActive' in data && !data.coopExploreActive) {
     setters.setExploreCamps([]);
+  }
+  if ('coopExploreActive' in data && !data.coopExploreActive) {
+    exploreFog.reset();
+    setters.setExploreDayNightActive(false);
+    setters.setExploreDayNightStartedAt(0);
+    setters.setExploreDayNightFireId(null);
+  } else {
+    if ('exploreDayNightActive' in data) {
+      setters.setExploreDayNightActive(!!data.exploreDayNightActive);
+    }
+    if ('exploreDayNightStartedAt' in data) {
+      const at = Number(data.exploreDayNightStartedAt);
+      setters.setExploreDayNightStartedAt(Number.isFinite(at) ? at : 0);
+    }
+    if ('exploreDayNightFireId' in data) {
+      const fireId = data.exploreDayNightFireId;
+      setters.setExploreDayNightFireId(typeof fireId === 'string' ? fireId : null);
+    }
+    if ('exploreFogChunks' in data) {
+      exploreFog.hydrate(data.exploreFogChunks, { replace: true });
+    }
+  }
+  if (data.treeState && typeof data.treeState === 'object') {
+    setters.setTreeState({
+      maxHealth: data.treeState.maxHealth ?? 150,
+      exploreHealth: data.treeState.exploreHealth ?? {},
+    });
+  } else if ('coopExploreActive' in data && !data.coopExploreActive) {
+    setters.setTreeState(null);
+  }
+  if (data.rootState && typeof data.rootState === 'object') {
+    setters.setRootState({
+      maxHealth: data.rootState.maxHealth ?? 750,
+      exploreHealth: data.rootState.exploreHealth ?? {},
+    });
+  } else if ('coopExploreActive' in data && !data.coopExploreActive) {
+    setters.setRootState(null);
+  }
+  if (data.rockState && typeof data.rockState === 'object') {
+    setters.setRockState({
+      maxHealth: data.rockState.maxHealth ?? 3000,
+      exploreHealth: data.rockState.exploreHealth ?? {},
+    });
+  } else if ('coopExploreActive' in data && !data.coopExploreActive) {
+    setters.setRockState(null);
+  }
+  if (data.spineState && typeof data.spineState === 'object') {
+    setters.setSpineState({
+      maxHealth: data.spineState.maxHealth ?? 1000,
+      exploreHealth: data.spineState.exploreHealth ?? {},
+    });
+  } else if ('coopExploreActive' in data && !data.coopExploreActive) {
+    setters.setSpineState(null);
+  }
+  if (data.exploreResearch && typeof data.exploreResearch === 'object') {
+    setters.setExploreResearch(normalizeExploreResearch(data.exploreResearch));
+  } else if ('coopExploreActive' in data && !data.coopExploreActive) {
+    setters.setExploreResearch(EMPTY_EXPLORE_RESEARCH);
   }
 }
 
@@ -1604,6 +1822,14 @@ function applyDefenseSnapshot(
     const at = Number(data.coopDefenseBreakEndsAt);
     setters.setCoopDefenseBreakEndsAt(Number.isFinite(at) ? at : 0);
   }
+}
+
+function applyDungeonSnapshot(
+  data: CoopSessionSnapshotPayload | null | undefined,
+  setters: Pick<CoopSnapshotSetters, 'setCoopDungeonActive'>,
+) {
+  if (!data) return;
+  if ('coopDungeonActive' in data) setters.setCoopDungeonActive(!!data.coopDungeonActive);
 }
 
 function parseCoopSunkenLootOffer(raw: unknown): DreamLayerStockItem[] {
@@ -1810,6 +2036,7 @@ type FreshCoopClientProgressSetters = {
   setCoopExploreActive: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopExploreSeed: React.Dispatch<React.SetStateAction<number>>;
   setExploreCamps: React.Dispatch<React.SetStateAction<ExploreCampPublic[]>>;
+  setCoopDungeonActive: React.Dispatch<React.SetStateAction<boolean>>;
   setCoopTransitionOverlay: React.Dispatch<React.SetStateAction<boolean>>;
   coopTransitionOverlayRef: React.MutableRefObject<boolean>;
   coopPendingPortalSnapRef: React.MutableRefObject<boolean>;
@@ -1862,6 +2089,7 @@ function applyFreshCoopClientProgress(setters: FreshCoopClientProgressSetters) {
   setters.setCoopExploreActive(false);
   setters.setCoopExploreSeed(0);
   setters.setExploreCamps([]);
+  setters.setCoopDungeonActive(false);
   setters.setCoopTransitionOverlay(false);
   setters.coopTransitionOverlayRef.current = false;
   setters.coopPendingPortalSnapRef.current = false;
@@ -1972,17 +2200,20 @@ function applyCoopSessionSnapshot(
       backfillTalentPurchasedThisVisit: false,
     });
   }
-  if (data?.mushroomState?.health && Array.isArray(data.mushroomState.health)) {
+  const mushroomHealth = data?.mushroomState?.health;
+  const exploreHealth = data?.mushroomState?.exploreHealth;
+  if (Array.isArray(mushroomHealth) || (exploreHealth && typeof exploreHealth === 'object')) {
     setters.setMushroomState({
-      health: [...data.mushroomState.health],
-      maxHealth: data.mushroomState.maxHealth ?? 10,
-      exploreHealth: data.mushroomState.exploreHealth ?? {},
+      health: Array.isArray(mushroomHealth) ? [...mushroomHealth] : [],
+      maxHealth: data.mushroomState?.maxHealth ?? 10,
+      exploreHealth: exploreHealth ?? {},
     });
   }
   applyIntroSnapshot(data, setters);
   applyFaeRealmSnapshot(data, setters);
   applyExploreSnapshot(data, setters);
   applyDefenseSnapshot(data, setters);
+  applyDungeonSnapshot(data, setters);
   applySunkenSnapshot(data, setters);
   applyEternitySnapshot(data, setters);
   applyDeepSanctumSnapshot(data, setters);
@@ -2127,10 +2358,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopExploreActive, setCoopExploreActive] = useState(false);
   const [coopExploreSeed, setCoopExploreSeed] = useState(0);
   const [exploreCamps, setExploreCamps] = useState<ExploreCampPublic[]>([]);
+  const [exploreDayNightActive, setExploreDayNightActive] = useState(false);
+  const [exploreDayNightStartedAt, setExploreDayNightStartedAt] = useState(0);
+  const [exploreDayNightFireId, setExploreDayNightFireId] = useState<string | null>(null);
   const [coopDefenseActive, setCoopDefenseActive] = useState(false);
   const [coopDefenseWave, setCoopDefenseWave] = useState(0);
   const [coopDefenseWaveState, setCoopDefenseWaveState] = useState<CoopDefenseWaveState>('idle');
   const [coopDefenseBreakEndsAt, setCoopDefenseBreakEndsAt] = useState(0);
+  const [coopDungeonActive, setCoopDungeonActive] = useState(false);
   const [coopSunkenActive, setCoopSunkenActive] = useState(false);
   const [coopSunkenRoomIndex, setCoopSunkenRoomIndex] = useState(0);
   const [coopSunkenPortalOpen, setCoopSunkenPortalOpen] = useState(false);
@@ -2178,6 +2413,23 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     maxHealth: number;
     exploreHealth?: Record<number, number>;
   } | null>(null);
+  const [treeState, setTreeState] = useState<{
+    maxHealth: number;
+    exploreHealth: Record<number, number>;
+  } | null>(null);
+  const [rootState, setRootState] = useState<{
+    maxHealth: number;
+    exploreHealth: Record<number, number>;
+  } | null>(null);
+  const [rockState, setRockState] = useState<{
+    maxHealth: number;
+    exploreHealth: Record<number, number>;
+  } | null>(null);
+  const [spineState, setSpineState] = useState<{
+    maxHealth: number;
+    exploreHealth: Record<number, number>;
+  } | null>(null);
+  const [exploreResearch, setExploreResearch] = useState<ExploreResearchState>(EMPTY_EXPLORE_RESEARCH);
   const [currentPreview, setCurrentPreview] = useState<RoomPreview | null>(null);
   const [selectedWeapons, setSelectedWeaponsState] = useState<{
     primary: WeaponType;
@@ -2201,6 +2453,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   // Item drop & inventory state
   const [droppedItems, setDroppedItems] = useState<Map<string, DroppedItem>>(new Map());
   const [goldDrops, setGoldDrops] = useState<Map<string, GoldDrop>>(new Map());
+  const [woodDrops, setWoodDrops] = useState<Map<string, WoodDrop>>(new Map());
+  const [stoneDrops, setStoneDrops] = useState<Map<string, StoneDrop>>(new Map());
+  const [meatDrops, setMeatDrops] = useState<Map<string, MeatDrop>>(new Map());
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const inventoryRef = useRef<InventoryItem[]>([]);
   inventoryRef.current = inventory;
@@ -2230,6 +2485,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const deepSanctumRewardClaimedHandlersRef = useRef<
     Set<(payload: DeepSanctumRewardClaimedPayload) => void>
   >(new Set());
+  const shrineClaimedHandlersRef = useRef<
+    Set<(payload: ExploreShrineClaimedPayload) => void>
+  >(new Set());
+  const obeliskPurchaseSuccessHandlersRef = useRef<
+    Set<(payload: ExploreObeliskPurchasedPayload) => void>
+  >(new Set());
   const merchantNpcGreetHandlersRef = useRef<
     Set<(payload: { kind: string }) => void>
   >(new Set());
@@ -2238,6 +2499,18 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   >(new Set());
   const playerFlowChangedHandlersRef = useRef<
     Set<(payload: { playerId: string; flow: number }) => void>
+  >(new Set());
+  const playerWoodChangedHandlersRef = useRef<
+    Set<(payload: { playerId: string; wood: number }) => void>
+  >(new Set());
+  const playerStoneChangedHandlersRef = useRef<
+    Set<(payload: { playerId: string; stone: number }) => void>
+  >(new Set());
+  const playerMeatChangedHandlersRef = useRef<
+    Set<(payload: { playerId: string; meat: number }) => void>
+  >(new Set());
+  const playerHungerChangedHandlersRef = useRef<
+    Set<(payload: { playerId: string; hunger: number; starvingCritical?: boolean }) => void>
   >(new Set());
   const playerFateChangedHandlersRef = useRef<
     Set<(payload: { playerId: string; fate: number }) => void>
@@ -2397,6 +2670,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setSkeletonKillRequired(8);
       setDroppedItems(new Map());
       setGoldDrops(new Map());
+      setWoodDrops(new Map());
+      setStoneDrops(new Map());
       setInventory([]);
       setMerchantInventory([]);
       setDreamLayerInventory([]);
@@ -2453,6 +2728,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setMerchantInventory,
       setMerchantPurchaseState,
       setMushroomState,
+      setTreeState,
+      setRootState,
+      setRockState,
+      setSpineState,
+      setExploreResearch,
       setCoopIntroPending,
       setCoopIntroActive,
       setCoopIntroRoomIndex,
@@ -2470,10 +2750,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopExploreActive,
       setCoopExploreSeed,
       setExploreCamps,
+      setExploreDayNightActive,
+      setExploreDayNightStartedAt,
+      setExploreDayNightFireId,
       setCoopDefenseActive,
       setCoopDefenseWave,
       setCoopDefenseWaveState,
       setCoopDefenseBreakEndsAt,
+      setCoopDungeonActive,
       setCoopSunkenActive,
       setCoopSunkenRoomIndex,
       setCoopSunkenPortalOpen,
@@ -2527,6 +2811,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopExploreActive,
       setCoopExploreSeed,
       setExploreCamps,
+      setCoopDungeonActive,
       setCoopTransitionOverlay,
       coopTransitionOverlayRef,
       coopPendingPortalSnapRef,
@@ -2580,6 +2865,42 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         }
       }
       setGoldDrops(initialGoldDrops);
+
+      const initialWoodDrops = new Map<string, WoodDrop>();
+      if (Array.isArray((data as { woodDrops?: WoodDrop[] }).woodDrops)) {
+        for (const drop of (data as { woodDrops: WoodDrop[] }).woodDrops) {
+          if (drop?.id) {
+            initialWoodDrops.set(drop.id, drop);
+          }
+        }
+      }
+      setWoodDrops(initialWoodDrops);
+
+      const initialStoneDrops = new Map<string, StoneDrop>();
+      if (Array.isArray((data as { stoneDrops?: StoneDrop[] }).stoneDrops)) {
+        for (const drop of (data as { stoneDrops: StoneDrop[] }).stoneDrops) {
+          if (drop?.id) {
+            initialStoneDrops.set(drop.id, drop);
+          }
+        }
+      }
+      setStoneDrops(initialStoneDrops);
+
+      const initialMeatDrops = new Map<string, MeatDrop>();
+      if (Array.isArray((data as { meatDrops?: MeatDrop[] }).meatDrops)) {
+        for (const drop of (data as { meatDrops: MeatDrop[] }).meatDrops) {
+          if (drop?.id) {
+            initialMeatDrops.set(drop.id, drop);
+          }
+        }
+      }
+      setMeatDrops(initialMeatDrops);
+
+      if ((data as { exploreResearch?: ExploreResearchState }).exploreResearch) {
+        const research = (data as { exploreResearch: ExploreResearchState }).exploreResearch;
+        setExploreResearch(normalizeExploreResearch(research));
+      }
+
       setCampTypes(campArchetypeFromRoomPayload(data));
 
       const reclaimedState = (data as { reclaimedPlayerState?: ReclaimedPlayerState | null }).reclaimedPlayerState;
@@ -2680,8 +3001,24 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
 
       const rejoinTransitionId = (data as { coopCombatTransitionId?: number | null }).coopCombatTransitionId;
       const parsedRejoinTransition = rejoinTransitionId != null ? Number(rejoinTransitionId) : NaN;
-      if (Number.isFinite(parsedRejoinTransition)) {
+      const hasActiveTransition = Number.isFinite(parsedRejoinTransition);
+      if (hasActiveTransition) {
         syncCoopCombatTransitionId(parsedRejoinTransition);
+      }
+
+      const isExploreJoin =
+        !!data.gameStarted
+        && !!(data as { coopExploreActive?: boolean }).coopExploreActive
+        && !!data.combatArenaActive
+        && normalizeCoopRoomKind((data as { coopCurrentRoomKind?: unknown }).coopCurrentRoomKind) === 'explore';
+
+      // Explore reclaim / late join must not bump enterSeq (that remounts the
+      // follower ground + chunk streamer) and must not start the portal overlay.
+      if (isExploreJoin) {
+        coopTransitionOverlayRef.current = false;
+        coopPendingPortalSnapRef.current = false;
+        setCoopTransitionOverlay(false);
+      } else if (hasActiveTransition) {
         coopTransitionOverlayRef.current = true;
         coopPendingPortalSnapRef.current = true;
         setCoopTransitionOverlay(true);
@@ -2844,6 +3181,65 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     });
 
+    addEventHandler('explore-building-power', (data: {
+      buildings?: Array<{ id?: string; powered?: boolean }>;
+    }) => {
+      const list = data?.buildings;
+      if (!Array.isArray(list) || list.length === 0) return;
+      for (const entry of list) {
+        if (typeof entry?.id !== 'string') continue;
+        patchEnemyRef(enemiesRef, entry.id, { powered: entry.powered === true });
+      }
+      setEnemies((prev) => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const entry of list) {
+          if (typeof entry?.id !== 'string') continue;
+          const existing = next.get(entry.id);
+          if (!existing) continue;
+          const powered = entry.powered === true;
+          if (existing.powered === powered) continue;
+          next.set(entry.id, { ...existing, powered });
+          changed = true;
+        }
+        return changed ? next : prev;
+      });
+    });
+
+    addEventHandler('explore-shrine-used', (data: { id?: string; shrineUsed?: boolean }) => {
+      if (typeof data?.id !== 'string') return;
+      const shrineUsed = data.shrineUsed === true;
+      patchEnemyRef(enemiesRef, data.id, { shrineUsed });
+      setEnemies((prev) => {
+        const existing = prev.get(data.id!);
+        if (!existing || existing.shrineUsed === shrineUsed) return prev;
+        const next = new Map(prev);
+        next.set(data.id!, { ...existing, shrineUsed });
+        return next;
+      });
+    });
+
+    addEventHandler('explore-shrine-claimed', (data: { shrineId?: string; gift?: string }) => {
+      if (typeof data?.shrineId !== 'string') return;
+      if (data.gift !== 'inferno' && data.gift !== 'tempest' && data.gift !== 'abyss' && data.gift !== 'plague') {
+        return;
+      }
+      const payload: ExploreShrineClaimedPayload = {
+        shrineId: data.shrineId,
+        gift: data.gift,
+      };
+      shrineClaimedHandlersRef.current.forEach((handler) => handler(payload));
+    });
+
+    addEventHandler('explore-obelisk-purchased', (data: { playerId?: string; talentId?: string }) => {
+      if (typeof data?.playerId !== 'string' || typeof data?.talentId !== 'string') return;
+      const payload: ExploreObeliskPurchasedPayload = {
+        playerId: data.playerId,
+        talentId: data.talentId,
+      };
+      obeliskPurchaseSuccessHandlersRef.current.forEach((handler) => handler(payload));
+    });
+
     addEventHandler('titan-bladestorm-start', (data: {
       titanId: string;
       startTime: number;
@@ -2930,6 +3326,224 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     });
 
+    addEventHandler('tree-damaged', (data: {
+      index: number;
+      newHealth: number;
+      maxHealth: number;
+      damage?: number;
+      position?: { x: number; y: number; z: number };
+    }) => {
+      setTreeState((prev) => {
+        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
+        exploreHealth[data.index] = data.newHealth;
+        return {
+          maxHealth: data.maxHealth ?? prev?.maxHealth ?? 150,
+          exploreHealth,
+        };
+      });
+
+      if (typeof data.damage === 'number' && data.damage > 0) {
+        const mgr = (window as any).damageNumberManager;
+        if (mgr?.addDamageNumber && data.position) {
+          const pos = new Vector3(data.position.x, (data.position.y ?? 1.2) + 1.0, data.position.z);
+          mgr.addDamageNumber(data.damage, false, pos, 'mushroom');
+        }
+      }
+
+      if (data.newHealth > 0 && data.position) {
+        const maxHp = data.maxHealth > 0 ? data.maxHealth : 1;
+        const ratio = data.newHealth / maxHp;
+        const pos = new Vector3(data.position.x, data.position.y ?? 1.2, data.position.z);
+        (window as any).audioSystem?.playTreeDamageSound?.(pos, ratio, data.index);
+      }
+    });
+
+    addEventHandler('tree-destroyed', (data: {
+      index: number;
+      position?: { x: number; y: number; z: number };
+    }) => {
+      setTreeState((prev) => {
+        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
+        exploreHealth[data.index] = 0;
+        return {
+          maxHealth: prev?.maxHealth ?? 150,
+          exploreHealth,
+        };
+      });
+
+      if (data.position) {
+        const pos = new Vector3(data.position.x, data.position.y ?? 1.2, data.position.z);
+        (window as any).audioSystem?.playTreeFallingSound?.(pos);
+      }
+    });
+
+    addEventHandler('root-damaged', (data: {
+      index: number;
+      newHealth: number;
+      maxHealth: number;
+      damage?: number;
+      position?: { x: number; y: number; z: number };
+    }) => {
+      setRootState((prev) => {
+        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
+        exploreHealth[data.index] = data.newHealth;
+        return {
+          maxHealth: data.maxHealth ?? prev?.maxHealth ?? 750,
+          exploreHealth,
+        };
+      });
+
+      if (typeof data.damage === 'number' && data.damage > 0) {
+        const mgr = (window as any).damageNumberManager;
+        if (mgr?.addDamageNumber && data.position) {
+          const pos = new Vector3(data.position.x, (data.position.y ?? 0.8) + 1.0, data.position.z);
+          mgr.addDamageNumber(data.damage, false, pos, 'mushroom');
+        }
+      }
+
+      if (data.newHealth > 0 && data.position) {
+        const maxHp = data.maxHealth > 0 ? data.maxHealth : 1;
+        const ratio = data.newHealth / maxHp;
+        const pos = new Vector3(data.position.x, data.position.y ?? 0.8, data.position.z);
+        (window as any).audioSystem?.playTreeDamageSound?.(pos, ratio, `root:${data.index}`);
+      }
+    });
+
+    addEventHandler('root-destroyed', (data: {
+      index: number;
+      position?: { x: number; y: number; z: number };
+    }) => {
+      setRootState((prev) => {
+        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
+        exploreHealth[data.index] = 0;
+        return {
+          maxHealth: prev?.maxHealth ?? 750,
+          exploreHealth,
+        };
+      });
+
+      if (data.position) {
+        const pos = new Vector3(data.position.x, data.position.y ?? 0.8, data.position.z);
+        (window as any).audioSystem?.playTreeFallingSound?.(pos);
+      }
+    });
+
+    addEventHandler('rock-damaged', (data: {
+      index: number;
+      newHealth: number;
+      maxHealth: number;
+      damage?: number;
+      position?: { x: number; y: number; z: number };
+    }) => {
+      setRockState((prev) => {
+        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
+        exploreHealth[data.index] = data.newHealth;
+        return {
+          maxHealth: data.maxHealth ?? prev?.maxHealth ?? 3000,
+          exploreHealth,
+        };
+      });
+
+      if (typeof data.damage === 'number' && data.damage > 0) {
+        const mgr = (window as any).damageNumberManager;
+        if (mgr?.addDamageNumber && data.position) {
+          const pos = new Vector3(data.position.x, (data.position.y ?? 0.85) + 1.0, data.position.z);
+          mgr.addDamageNumber(data.damage, false, pos, 'mushroom');
+        }
+      }
+
+      if (data.newHealth > 0 && data.position) {
+        const pos = new Vector3(data.position.x, data.position.y ?? 0.85, data.position.z);
+        (window as any).audioSystem?.playRockDamageSound?.(pos, `rock:${data.index}`);
+      }
+    });
+
+    addEventHandler('rock-destroyed', (data: {
+      index: number;
+      position?: { x: number; y: number; z: number };
+    }) => {
+      setRockState((prev) => {
+        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
+        exploreHealth[data.index] = 0;
+        return {
+          maxHealth: prev?.maxHealth ?? 3000,
+          exploreHealth,
+        };
+      });
+
+      if (data.position) {
+        const pos = new Vector3(data.position.x, data.position.y ?? 0.85, data.position.z);
+        (window as any).audioSystem?.playRockDestroySound?.(pos);
+      }
+    });
+
+    addEventHandler('spine-damaged', (data: {
+      index: number;
+      newHealth: number;
+      maxHealth: number;
+      damage?: number;
+      position?: { x: number; y: number; z: number };
+    }) => {
+      setSpineState((prev) => {
+        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
+        exploreHealth[data.index] = data.newHealth;
+        return {
+          maxHealth: data.maxHealth ?? prev?.maxHealth ?? 1000,
+          exploreHealth,
+        };
+      });
+
+      if (typeof data.damage === 'number' && data.damage > 0) {
+        const mgr = (window as any).damageNumberManager;
+        if (mgr?.addDamageNumber && data.position) {
+          const pos = new Vector3(data.position.x, (data.position.y ?? 1.6) + 1.0, data.position.z);
+          mgr.addDamageNumber(data.damage, false, pos, 'mushroom');
+        }
+      }
+
+      if (data.newHealth > 0 && data.position) {
+        const pos = new Vector3(data.position.x, data.position.y ?? 1.6, data.position.z);
+        (window as any).audioSystem?.playRockDamageSound?.(pos, `spine:${data.index}`);
+      }
+    });
+
+    addEventHandler('spine-destroyed', (data: {
+      index: number;
+      position?: { x: number; y: number; z: number };
+      flow?: number;
+    }) => {
+      setSpineState((prev) => {
+        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
+        exploreHealth[data.index] = 0;
+        return {
+          maxHealth: prev?.maxHealth ?? 1000,
+          exploreHealth,
+        };
+      });
+
+      if (data.position) {
+        const pos = new Vector3(data.position.x, data.position.y ?? 1.6, data.position.z);
+        (window as any).audioSystem?.playRockDestroySound?.(pos);
+      }
+
+      if (data.position && typeof data.flow === 'number' && data.flow > 0) {
+        window.dispatchEvent(new CustomEvent('explore-spine-flow-reward', {
+          detail: {
+            position: data.position,
+            flow: data.flow,
+            index: data.index,
+          },
+        }));
+      }
+    });
+
+    addEventHandler('explore-research-changed', (data: {
+      research?: ExploreResearchState;
+    }) => {
+      if (!data?.research) return;
+      setExploreResearch(normalizeExploreResearch(data.research));
+    });
+
     addEventHandler('enemy-damaged', (data) => {
       const isThroneDummy = String(data.enemyId || '').startsWith('throne-training-dummy');
       /** Do not stack floating DoT text on lethal / zero-HP snapshots (death uses other VFX/sounds). */
@@ -2965,6 +3579,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           data.damageType === 'prime_materia' ||
           data.damageType === 'incineration' ||
           data.damageType === 'archmage_flame_pillar' ||
+          data.damageType === 'defense_tower_bolt' ||
+          data.damageType === 'watch_tower_arrow' ||
+          data.damageType === 'siege_tower_arrow' ||
           (data.damageType === 'crossentropy' && data.crossentropyMeteorDamage === true) ||
           (data.damageType === 'cloudkill' && data.cloudkillDamage === true)) &&
         typeof data.damage === 'number' &&
@@ -3017,6 +3634,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
                   ? 'incineration'
                   : data.damageType === 'archmage_flame_pillar'
                   ? 'ignite'
+                  : data.damageType === 'defense_tower_bolt'
+                  ? 'defense_tower_bolt'
+                  : data.damageType === 'watch_tower_arrow'
+                  ? 'watch_tower_arrow'
+                  : data.damageType === 'siege_tower_arrow'
+                  ? 'siege_tower_arrow'
                   : data.damageType === 'shadowflame'
                   ? 'shadowflame'
                   : 'ignite';
@@ -3382,6 +4005,64 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     });
 
+    addEventHandler('wood-dropped', (data: { drop: WoodDrop }) => {
+      if (!data?.drop?.id) return;
+      setWoodDrops(prev => {
+        const next = new Map(prev);
+        next.set(data.drop.id, data.drop);
+        return next;
+      });
+    });
+
+    addEventHandler('wood-picked-up', (data: { dropId: string }) => {
+      if (!data?.dropId) return;
+      setWoodDrops(prev => {
+        const next = new Map(prev);
+        next.delete(data.dropId);
+        return next;
+      });
+    });
+
+    addEventHandler('stone-dropped', (data: { drop: StoneDrop }) => {
+      if (!data?.drop?.id) return;
+      setStoneDrops(prev => {
+        const next = new Map(prev);
+        next.set(data.drop.id, data.drop);
+        return next;
+      });
+    });
+
+    addEventHandler('stone-picked-up', (data: { dropId: string }) => {
+      if (!data?.dropId) return;
+      setStoneDrops(prev => {
+        const next = new Map(prev);
+        next.delete(data.dropId);
+        return next;
+      });
+    });
+
+    addEventHandler('meat-dropped', (data: { drop: MeatDrop }) => {
+      if (!data?.drop?.id) return;
+      setMeatDrops(prev => {
+        const next = new Map(prev);
+        next.set(data.drop.id, data.drop);
+        return next;
+      });
+    });
+
+    addEventHandler('meat-picked-up', (data: { dropId: string; remainingDrop?: MeatDrop | null }) => {
+      if (!data?.dropId) return;
+      setMeatDrops(prev => {
+        const next = new Map(prev);
+        if (data.remainingDrop?.id) {
+          next.set(data.remainingDrop.id, data.remainingDrop);
+        } else {
+          next.delete(data.dropId);
+        }
+        return next;
+      });
+    });
+
     addEventHandler('player-gold-changed', (data: { playerId: string; gold: number }) => {
       if (!data?.playerId || typeof data.gold !== 'number') return;
       patchPlayerRef(playersRef, data.playerId, { gold: data.gold });
@@ -3392,6 +4073,37 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       if (!data?.playerId || typeof data.flow !== 'number') return;
       patchPlayerRef(playersRef, data.playerId, { flow: data.flow });
       playerFlowChangedHandlersRef.current.forEach((handler) => handler(data));
+    });
+
+    addEventHandler('player-wood-changed', (data: { playerId: string; wood: number }) => {
+      if (!data?.playerId || typeof data.wood !== 'number') return;
+      patchPlayerRef(playersRef, data.playerId, { wood: data.wood });
+      playerWoodChangedHandlersRef.current.forEach((handler) => handler(data));
+    });
+
+    addEventHandler('player-stone-changed', (data: { playerId: string; stone: number }) => {
+      if (!data?.playerId || typeof data.stone !== 'number') return;
+      patchPlayerRef(playersRef, data.playerId, { stone: data.stone });
+      playerStoneChangedHandlersRef.current.forEach((handler) => handler(data));
+    });
+
+    addEventHandler('player-meat-changed', (data: { playerId: string; meat: number }) => {
+      if (!data?.playerId || typeof data.meat !== 'number') return;
+      patchPlayerRef(playersRef, data.playerId, { meat: data.meat });
+      playerMeatChangedHandlersRef.current.forEach((handler) => handler(data));
+    });
+
+    addEventHandler('player-hunger-changed', (data: {
+      playerId: string;
+      hunger: number;
+      starvingCritical?: boolean;
+    }) => {
+      if (!data?.playerId || typeof data.hunger !== 'number') return;
+      patchPlayerRef(playersRef, data.playerId, {
+        hunger: data.hunger,
+        starvingCritical: data.starvingCritical === true,
+      });
+      playerHungerChangedHandlersRef.current.forEach((handler) => handler(data));
     });
 
     addEventHandler('player-fate-changed', (data: { playerId: string; fate: number }) => {
@@ -3576,6 +4288,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopExploreSeed,
         setExploreCamps,
         setMushroomState,
+        setTreeState,
+        setRootState,
+        setRockState,
+        setSpineState,
+        setExploreResearch,
+        setExploreDayNightActive,
+        setExploreDayNightStartedAt,
+        setExploreDayNightFireId,
       });
       applyDefenseSnapshot(data, {
         setCoopDefenseActive,
@@ -3583,6 +4303,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopDefenseWaveState,
         setCoopDefenseBreakEndsAt,
       });
+      applyDungeonSnapshot(data, { setCoopDungeonActive });
       if (data?.players && Array.isArray(data.players)) {
         setPlayers((prev) => {
           const next = new Map(prev);
@@ -3839,6 +4560,38 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setExploreCamps(normalizeExploreCamps(data?.exploreCamps));
     });
 
+    addEventHandler('explore-day-night', (data: {
+      active?: boolean;
+      startedAt?: number;
+      fireId?: string | null;
+    }) => {
+      if ('active' in (data || {})) setExploreDayNightActive(!!data.active);
+      if ('startedAt' in (data || {})) {
+        const at = Number(data.startedAt);
+        setExploreDayNightStartedAt(Number.isFinite(at) ? at : 0);
+      }
+      if ('fireId' in (data || {})) {
+        const fireId = data.fireId;
+        setExploreDayNightFireId(typeof fireId === 'string' ? fireId : null);
+      }
+    });
+
+    addEventHandler('explore-day-survived', (data: {
+      statPoints?: number;
+      wildernessLevel?: number;
+    }) => {
+      const pts = Math.max(0, Math.floor(Number(data?.statPoints) || 0));
+      if (pts > 0) {
+        setStatPointData((prev) => StatSystem.grantStatPoints(prev, pts));
+      }
+    });
+
+    addEventHandler('explore-fog-updated', (data: { exploreFogChunks?: unknown }) => {
+      if ('exploreFogChunks' in (data || {})) {
+        exploreFog.hydrate(data.exploreFogChunks, { replace: false });
+      }
+    });
+
     addEventHandler('explore-camp-claimed', (data: {
       campId?: string;
       kind?: string;
@@ -3990,6 +4743,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopExploreSeed,
         setExploreCamps,
         setMushroomState,
+        setTreeState,
+        setRootState,
+        setRockState,
+        setSpineState,
+        setExploreResearch,
+        setExploreDayNightActive,
+        setExploreDayNightStartedAt,
+        setExploreDayNightFireId,
       });
       applyDefenseSnapshot(data, {
         setCoopDefenseActive,
@@ -3997,6 +4758,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopDefenseWaveState,
         setCoopDefenseBreakEndsAt,
       });
+      applyDungeonSnapshot(data, { setCoopDungeonActive });
       applySunkenSnapshot(data, {
         setCoopSunkenActive,
         setCoopSunkenRoomIndex,
@@ -4097,6 +4859,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopDefenseWaveState,
         setCoopDefenseBreakEndsAt,
       });
+      applyDungeonSnapshot(data, { setCoopDungeonActive });
     });
 
     addEventHandler('coop-defense-failed', (data: any) => {
@@ -4106,6 +4869,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         setCoopDefenseWaveState,
         setCoopDefenseBreakEndsAt,
       });
+      applyDungeonSnapshot(data, { setCoopDungeonActive });
       setCoopDefenseWaveState('failed');
     });
 
@@ -4317,6 +5081,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       setCoopGrassPresetIndex(0);
       setDroppedItems(new Map());
       setGoldDrops(new Map());
+      setWoodDrops(new Map());
+      setStoneDrops(new Map());
       setInventory([]);
       setMerchantInventory([]);
       setDreamLayerInventory([]);
@@ -4565,6 +5331,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     setMushroomState(null);
     setDroppedItems(new Map());
     setGoldDrops(new Map());
+    setWoodDrops(new Map());
     setInventory([]);
     setMerchantInventory([]);
     setDreamLayerInventory([]);
@@ -4691,6 +5458,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const claimExploreCamp = useCallback((campId: string) => {
     if (!campId || !socket || !currentRoomId) return;
     socket.emit('explore-camp-claim', { roomId: currentRoomId, campId });
+  }, [socket, currentRoomId]);
+
+  const emitExploreFogUpdate = useCallback((chunks: ExploreFogChunkDTO[]) => {
+    if (!socket || !currentRoomId || !chunks.length) return;
+    socket.emit('explore-fog-update', { roomId: currentRoomId, exploreFogChunks: chunks });
   }, [socket, currentRoomId]);
 
   const finishPreBossMerchant = useCallback(() => {
@@ -4913,6 +5685,106 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
+  const damageTree = useCallback((index: number, damage: number, sourcePlayerId?: string) => {
+    if (socket && currentRoomId) {
+      socket.emit('tree-damage', {
+        roomId: currentRoomId,
+        index,
+        damage,
+        sourcePlayerId: sourcePlayerId || socket.id,
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const damageRoot = useCallback((index: number, damage: number, sourcePlayerId?: string) => {
+    if (socket && currentRoomId) {
+      socket.emit('root-damage', {
+        roomId: currentRoomId,
+        index,
+        damage,
+        sourcePlayerId: sourcePlayerId || socket.id,
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const damageRock = useCallback((index: number, damage: number, sourcePlayerId?: string) => {
+    if (socket && currentRoomId) {
+      socket.emit('rock-damage', {
+        roomId: currentRoomId,
+        index,
+        damage,
+        sourcePlayerId: sourcePlayerId || socket.id,
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const damageSpine = useCallback((index: number, damage: number, sourcePlayerId?: string) => {
+    if (socket && currentRoomId) {
+      socket.emit('spine-damage', {
+        roomId: currentRoomId,
+        index,
+        damage,
+        sourcePlayerId: sourcePlayerId || socket.id,
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const placeBuilding = useCallback((kind: ExploreBuildingKind, x: number, z: number) => {
+    if (socket && currentRoomId) {
+      socket.emit('place-building', {
+        roomId: currentRoomId,
+        kind,
+        x,
+        z,
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const barracksRecruitAlly = useCallback((kind: CoopAllyKind) => {
+    if (socket && currentRoomId) {
+      socket.emit('barracks-recruit-ally', {
+        roomId: currentRoomId,
+        kind,
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const researchPurchase = useCallback((id: ExploreResearchUpgradeId) => {
+    if (socket && currentRoomId) {
+      socket.emit('research-purchase', {
+        roomId: currentRoomId,
+        id,
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const shrineClaim = useCallback((gift: ExploreShrineGiftId) => {
+    if (socket && currentRoomId) {
+      socket.emit('shrine-claim', {
+        roomId: currentRoomId,
+        gift,
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const obeliskBuyTalent = useCallback((talentId: string) => {
+    if (socket && currentRoomId) {
+      socket.emit('obelisk-buy-talent', {
+        roomId: currentRoomId,
+        talentId,
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const firePitHeal = useCallback((action: ExploreFirePitHealAction) => {
+    if (socket && currentRoomId) {
+      socket.emit('fire-pit-heal', {
+        roomId: currentRoomId,
+        action,
+      });
+    }
+  }, [socket, currentRoomId]);
+
   const damageEnemy = useCallback((enemyId: string, damage: number, sourcePlayerId?: string, meta?: EnemyDamageMeta) => {
     if (socket && currentRoomId) {
       socket.emit('enemy-damage', {
@@ -5032,6 +5904,33 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const pickupGoldDrop = useCallback((dropId: string) => {
     if (socket && currentRoomId) {
       socket.emit('pickup-gold-drop', {
+        roomId: currentRoomId,
+        dropId,
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const pickupWoodDrop = useCallback((dropId: string) => {
+    if (socket && currentRoomId) {
+      socket.emit('pickup-wood-drop', {
+        roomId: currentRoomId,
+        dropId,
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const pickupStoneDrop = useCallback((dropId: string) => {
+    if (socket && currentRoomId) {
+      socket.emit('pickup-stone-drop', {
+        roomId: currentRoomId,
+        dropId,
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const pickupMeatDrop = useCallback((dropId: string) => {
+    if (socket && currentRoomId) {
+      socket.emit('pickup-meat-drop', {
         roomId: currentRoomId,
         dropId,
       });
@@ -5500,6 +6399,26 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     [],
   );
 
+  const registerShrineClaimedHandler = useCallback(
+    (handler: (payload: ExploreShrineClaimedPayload) => void) => {
+      shrineClaimedHandlersRef.current.add(handler);
+      return () => {
+        shrineClaimedHandlersRef.current.delete(handler);
+      };
+    },
+    [],
+  );
+
+  const registerObeliskPurchaseSuccessHandler = useCallback(
+    (handler: (payload: ExploreObeliskPurchasedPayload) => void) => {
+      obeliskPurchaseSuccessHandlersRef.current.add(handler);
+      return () => {
+        obeliskPurchaseSuccessHandlersRef.current.delete(handler);
+      };
+    },
+    [],
+  );
+
   const registerMerchantNpcGreetHandler = useCallback(
     (handler: (payload: { kind: string }) => void) => {
       merchantNpcGreetHandlersRef.current.add(handler);
@@ -5525,6 +6444,46 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       playerFlowChangedHandlersRef.current.add(handler);
       return () => {
         playerFlowChangedHandlersRef.current.delete(handler);
+      };
+    },
+    [],
+  );
+
+  const registerPlayerWoodChangedHandler = useCallback(
+    (handler: (payload: { playerId: string; wood: number }) => void) => {
+      playerWoodChangedHandlersRef.current.add(handler);
+      return () => {
+        playerWoodChangedHandlersRef.current.delete(handler);
+      };
+    },
+    [],
+  );
+
+  const registerPlayerStoneChangedHandler = useCallback(
+    (handler: (payload: { playerId: string; stone: number }) => void) => {
+      playerStoneChangedHandlersRef.current.add(handler);
+      return () => {
+        playerStoneChangedHandlersRef.current.delete(handler);
+      };
+    },
+    [],
+  );
+
+  const registerPlayerMeatChangedHandler = useCallback(
+    (handler: (payload: { playerId: string; meat: number }) => void) => {
+      playerMeatChangedHandlersRef.current.add(handler);
+      return () => {
+        playerMeatChangedHandlersRef.current.delete(handler);
+      };
+    },
+    [],
+  );
+
+  const registerPlayerHungerChangedHandler = useCallback(
+    (handler: (payload: { playerId: string; hunger: number; starvingCritical?: boolean }) => void) => {
+      playerHungerChangedHandlersRef.current.add(handler);
+      return () => {
+        playerHungerChangedHandlersRef.current.delete(handler);
       };
     },
     [],
@@ -5671,10 +6630,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     coopExploreActive,
     coopExploreSeed,
     exploreCamps,
+    exploreDayNightActive,
+    exploreDayNightStartedAt,
+    exploreDayNightFireId,
     coopDefenseActive,
     coopDefenseWave,
     coopDefenseWaveState,
     coopDefenseBreakEndsAt,
+    coopDungeonActive,
     coopSunkenActive,
     coopSunkenRoomIndex,
     coopSunkenPortalOpen,
@@ -5743,6 +6706,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     claimPreBossReward,
     claimDeepSanctumReward,
     claimExploreCamp,
+    emitExploreFogUpdate,
     finishPreBossMerchant,
     updatePlayerPosition,
     updatePlayerWeapon,
@@ -5764,11 +6728,26 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     damageEnemy,
     subscribeEnemyDamage,
     damageMushroom,
+    damageTree,
+    damageRoot,
+    damageRock,
+    damageSpine,
+    placeBuilding,
+    barracksRecruitAlly,
+    researchPurchase,
+    shrineClaim,
+    obeliskBuyTalent,
+    firePitHeal,
     detonateWyvernConcentratedVenom,
     triggerTyrantsCloakStrike,
     triggerDeathdealerStaggerProc,
     applyStatusEffect,
     mushroomState,
+    treeState,
+    rootState,
+    rockState,
+    spineState,
+    exploreResearch,
     updatePlayerExperience,
     updatePlayerLevel,
     updatePlayerEssence,
@@ -5807,19 +6786,31 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     dreamLayerPurchaseState,
     registerMerchantPurchaseSuccessHandler,
     registerDeepSanctumRewardClaimedHandler,
+    registerShrineClaimedHandler,
+    registerObeliskPurchaseSuccessHandler,
     registerMerchantNpcGreetHandler,
     registerPlayerGoldChangedHandler,
     registerPlayerFlowChangedHandler,
+    registerPlayerWoodChangedHandler,
+    registerPlayerStoneChangedHandler,
+    registerPlayerMeatChangedHandler,
+    registerPlayerHungerChangedHandler,
     registerPlayerFateChangedHandler,
     registerBossDefeatedHandler,
     registerBossItemPickupHandler,
     registerRunePickupHandler,
     droppedItems,
     goldDrops,
+    woodDrops,
+    stoneDrops,
+    meatDrops,
     inventory,
     merchantInventory,
     pickupItem,
     pickupGoldDrop,
+    pickupWoodDrop,
+    pickupStoneDrop,
+    pickupMeatDrop,
     chatMessages,
     isChatOpen,
     sendChatMessage,
@@ -5827,7 +6818,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     closeChat,
     setPlayers
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, playerRosterMetaRev, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopSkyPresetIndex, coopGrassPresetIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopFullResetSeq, coopMainArenaIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, lateJoinCombatLoadout, clearLateJoinCombatLoadout, reclaimedPlayerState, clearReclaimedPlayerState, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, switchRoom, leaveRoom, previewRoom, clearPreview, startGame, restartCoopRunToThrone, endCoopGame, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerArchetype, updatePlayerWeaponAspect, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastAlliedHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, selectedArchetype, selectedWeaponAspect, weaponAspectByWeapon, setSelectedWeapons, setSelectedArchetype, setSelectedWeaponAspect, rememberWeaponAspect, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, registerMerchantNpcGreetHandler, registerPlayerGoldChangedHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
+  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, playerRosterMetaRev, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopSkyPresetIndex, coopGrassPresetIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopFullResetSeq, coopMainArenaIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, lateJoinCombatLoadout, clearLateJoinCombatLoadout, reclaimedPlayerState, clearReclaimedPlayerState, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, switchRoom, leaveRoom, previewRoom, clearPreview, startGame, restartCoopRunToThrone, endCoopGame, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerArchetype, updatePlayerWeaponAspect, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastAlliedHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, damageTree, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, treeState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, selectedArchetype, selectedWeaponAspect, weaponAspectByWeapon, setSelectedWeapons, setSelectedArchetype, setSelectedWeaponAspect, rememberWeaponAspect, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, registerMerchantNpcGreetHandler, registerPlayerGoldChangedHandler, registerPlayerWoodChangedHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
 
   const actionsValue: MultiplayerActionsContextType = useMemo(
     () => ({
@@ -5854,6 +6845,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       claimPreBossReward,
       claimDeepSanctumReward,
       claimExploreCamp,
+      emitExploreFogUpdate,
       finishPreBossMerchant,
       updatePlayerPosition,
       updatePlayerWeapon,
@@ -5879,6 +6871,16 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       triggerDeathdealerStaggerProc,
       applyStatusEffect,
       damageMushroom,
+      damageTree,
+      damageRoot,
+      damageRock,
+      damageSpine,
+      placeBuilding,
+      barracksRecruitAlly,
+      researchPurchase,
+      shrineClaim,
+      obeliskBuyTalent,
+      firePitHeal,
       updatePlayerExperience,
       updatePlayerLevel,
       updatePlayerEssence,
@@ -5906,15 +6908,24 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       purchaseDreamLayerHeal,
       registerMerchantPurchaseSuccessHandler,
       registerDeepSanctumRewardClaimedHandler,
+      registerShrineClaimedHandler,
+      registerObeliskPurchaseSuccessHandler,
       registerMerchantNpcGreetHandler,
       registerPlayerGoldChangedHandler,
       registerPlayerFlowChangedHandler,
+      registerPlayerWoodChangedHandler,
+      registerPlayerStoneChangedHandler,
+      registerPlayerMeatChangedHandler,
+      registerPlayerHungerChangedHandler,
       registerPlayerFateChangedHandler,
       registerBossDefeatedHandler,
       registerBossItemPickupHandler,
       registerRunePickupHandler,
       pickupItem,
       pickupGoldDrop,
+      pickupWoodDrop,
+      pickupStoneDrop,
+      pickupMeatDrop,
       sendChatMessage,
       openChat,
       closeChat,
@@ -5950,6 +6961,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       claimPreBossReward,
       claimDeepSanctumReward,
       claimExploreCamp,
+      emitExploreFogUpdate,
       finishPreBossMerchant,
       updatePlayerPosition,
       updatePlayerWeapon,
@@ -5975,6 +6987,13 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       triggerDeathdealerStaggerProc,
       applyStatusEffect,
       damageMushroom,
+      damageTree,
+      damageRoot,
+      placeBuilding,
+      barracksRecruitAlly,
+      shrineClaim,
+      obeliskBuyTalent,
+      firePitHeal,
       updatePlayerExperience,
       updatePlayerLevel,
       updatePlayerEssence,
@@ -6002,15 +7021,24 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       purchaseDreamLayerHeal,
       registerMerchantPurchaseSuccessHandler,
       registerDeepSanctumRewardClaimedHandler,
+      registerShrineClaimedHandler,
+      registerObeliskPurchaseSuccessHandler,
       registerMerchantNpcGreetHandler,
       registerPlayerGoldChangedHandler,
       registerPlayerFlowChangedHandler,
+      registerPlayerWoodChangedHandler,
+      registerPlayerStoneChangedHandler,
+      registerPlayerMeatChangedHandler,
+      registerPlayerHungerChangedHandler,
       registerPlayerFateChangedHandler,
       registerBossDefeatedHandler,
       registerBossItemPickupHandler,
       registerRunePickupHandler,
       pickupItem,
       pickupGoldDrop,
+      pickupWoodDrop,
+      pickupStoneDrop,
+      pickupMeatDrop,
       sendChatMessage,
       openChat,
       closeChat,
@@ -6083,10 +7111,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopExploreActive,
       coopExploreSeed,
       exploreCamps,
+      exploreDayNightActive,
+      exploreDayNightStartedAt,
+      exploreDayNightFireId,
       coopDefenseActive,
       coopDefenseWave,
       coopDefenseWaveState,
       coopDefenseBreakEndsAt,
+      coopDungeonActive,
       coopSunkenActive,
       coopSunkenRoomIndex,
       coopSunkenPortalOpen,
@@ -6139,12 +7171,20 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       talentLoadout,
       droppedItems,
       goldDrops,
+      woodDrops,
+      stoneDrops,
+      meatDrops,
       inventory,
       merchantInventory,
       merchantPurchaseState,
       dreamLayerInventory,
       dreamLayerPurchaseState,
       mushroomState,
+      treeState,
+      rootState,
+      rockState,
+      spineState,
+      exploreResearch,
     }),
     [
       isConnected,
@@ -6199,10 +7239,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopExploreActive,
       coopExploreSeed,
       exploreCamps,
+      exploreDayNightActive,
+      exploreDayNightStartedAt,
+      exploreDayNightFireId,
       coopDefenseActive,
       coopDefenseWave,
       coopDefenseWaveState,
       coopDefenseBreakEndsAt,
+      coopDungeonActive,
       coopPetCompanionUpgrade,
       coopEdenFountainUsed,
       coopEdenResumeKind,
@@ -6230,12 +7274,20 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       talentLoadout,
       droppedItems,
       goldDrops,
+      woodDrops,
+      stoneDrops,
+      meatDrops,
       inventory,
       merchantInventory,
       merchantPurchaseState,
       dreamLayerInventory,
       dreamLayerPurchaseState,
       mushroomState,
+      treeState,
+      rootState,
+      rockState,
+      spineState,
+      exploreResearch,
     ],
   );
 

@@ -363,6 +363,114 @@ io.on('connection', (socket) => {
     room.damageMushroom(index, damage, pid);
   });
 
+  socket.on('tree-damage', (data) => {
+    const { roomId, index, damage, sourcePlayerId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.damageTree !== 'function') return;
+    const pid = sourcePlayerId || socket.id;
+    room.damageTree(index, damage, pid);
+  });
+
+  socket.on('root-damage', (data) => {
+    const { roomId, index, damage, sourcePlayerId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.damageRoot !== 'function') return;
+    const pid = sourcePlayerId || socket.id;
+    room.damageRoot(index, damage, pid);
+  });
+
+  socket.on('rock-damage', (data) => {
+    const { roomId, index, damage, sourcePlayerId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.damageRock !== 'function') return;
+    const pid = sourcePlayerId || socket.id;
+    room.damageRock(index, damage, pid);
+  });
+
+  socket.on('spine-damage', (data) => {
+    const { roomId, index, damage, sourcePlayerId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.damageSpine !== 'function') return;
+    const pid = sourcePlayerId || socket.id;
+    room.damageSpine(index, damage, pid);
+  });
+
+  socket.on('pickup-wood-drop', (data) => {
+    const { roomId, dropId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.pickupWoodDrop !== 'function') return;
+    room.pickupWoodDrop(dropId, socket.id);
+  });
+
+  socket.on('pickup-stone-drop', (data) => {
+    const { roomId, dropId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.pickupStoneDrop !== 'function') return;
+    room.pickupStoneDrop(dropId, socket.id);
+  });
+
+  socket.on('pickup-meat-drop', (data) => {
+    const { roomId, dropId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.pickupMeatDrop !== 'function') return;
+    room.pickupMeatDrop(dropId, socket.id);
+  });
+
+  socket.on('place-building', (data) => {
+    const { roomId, kind, x, z } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.placeBuilding !== 'function') return;
+    room.placeBuilding(socket.id, { kind, x, z });
+  });
+
+  socket.on('barracks-recruit-ally', (data) => {
+    const { roomId, kind } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.barracksRecruitAlly !== 'function') return;
+    room.barracksRecruitAlly(socket.id, { kind });
+  });
+
+  socket.on('research-purchase', (data) => {
+    const { roomId, id } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.researchPurchase !== 'function') return;
+    room.researchPurchase(socket.id, { id });
+  });
+
+  socket.on('shrine-claim', (data) => {
+    const { roomId, gift } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.shrineClaim !== 'function') return;
+    room.shrineClaim(socket.id, { gift });
+  });
+
+  socket.on('obelisk-buy-talent', (data) => {
+    const { roomId, talentId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.obeliskBuyTalent !== 'function') return;
+    room.obeliskBuyTalent(socket.id, { talentId });
+  });
+
+  socket.on('fire-pit-heal', (data) => {
+    const { roomId, action } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.firePitHeal !== 'function') return;
+    room.firePitHeal(socket.id, { action });
+  });
+
   // Handle heartbeat from client
   socket.on('heartbeat', () => {
     playerHeartbeats.set(socket.id, Date.now());
@@ -506,6 +614,8 @@ io.on('connection', (socket) => {
       ok = room.isInCoopThronePrep() ? room.beginExploreRoom() : false;
     } else if (camp === 'defense') {
       ok = room.isInCoopThronePrep() ? room.beginDefenseRoom() : false;
+    } else if (camp === 'dungeon') {
+      ok = room.isInCoopThronePrep() ? room.beginDungeonRoom() : false;
     } else if (room.isInCoopThronePrep()) {
       ok = room.beginFaeRealmRoom(1);
     } else if (room.coopFaeRealmPortalOpen && room.coopFaeRealmActive) {
@@ -641,6 +751,23 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('explore-fog-update', (data) => {
+    const { roomId, exploreFogChunks } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    if (!room.getPlayer(socket.id)) return;
+    if (typeof room.mergeExploreFogChunks !== 'function') return;
+
+    const merged = room.mergeExploreFogChunks(exploreFogChunks);
+    if (merged.length > 0) {
+      socket.to(roomId).emit('explore-fog-updated', {
+        exploreFogChunks: merged,
+        timestamp: Date.now(),
+      });
+    }
+  });
+
   socket.on('coop-pre-boss-merchant-finished', (data) => {
     const { roomId } = data || {};
     if (!roomId || !gameRooms.has(roomId)) return;
@@ -770,6 +897,9 @@ function emitRoomJoined(socket, room, roomId, gameMode, extra = {}) {
     merchantInventory: typeof room.getMerchantInventory === 'function' ? room.getMerchantInventory() : [],
     mushroomState: typeof room.getMushroomState === 'function' ? room.getMushroomState() : null,
     goldDrops: typeof room.getGoldDrops === 'function' ? room.getGoldDrops() : [],
+    woodDrops: typeof room.getWoodDrops === 'function' ? room.getWoodDrops() : [],
+    stoneDrops: typeof room.getStoneDrops === 'function' ? room.getStoneDrops() : [],
+    meatDrops: typeof room.getMeatDrops === 'function' ? room.getMeatDrops() : [],
     lateJoinCombatLoadout: extra.reclaimed ? null : (() => {
       const p = room.getPlayer(socket.id);
       if (!p?.lateJoinCombatLoadout) return null;

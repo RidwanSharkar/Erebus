@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useFrame } from '@react-three/fiber';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useFrame, useThree } from '@react-three/fiber';
 import {
   Color,
   Mesh,
@@ -9,19 +9,28 @@ import {
   UniformsLib,
   UniformsUtils,
   FrontSide,
+  FogExp2,
+  PerspectiveCamera,
 } from '@/utils/three-exports';
 import type { Vector3 } from 'three';
-import CustomSky from './CustomSky';
+import CustomSky, { SKY_INDIGO_NIGHT, type SkyThemeUniforms } from './CustomSky';
 import ExploreChunkStreamer from './ExploreChunkStreamer';
 import ExploreCampProps, { preloadExploreCampPropGlbs } from './ExploreCampProps';
 import { EXPLORE_PLAYER_VIEW_RADIUS, exploreFog } from '@/utils/exploreFogOfWar';
-import { useMultiplayerRoom } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions, useMultiplayerRoom } from '@/contexts/MultiplayerContext';
+import {
+  exploreDayNightPhaseFromStartedAt,
+  resolveExploreDayNightLighting,
+  resolveExploreDayNightTheme,
+} from '@/utils/exploreDayNightCycle';
 
 preloadExploreCampPropGlbs();
 
 const GROUND_RADIUS = 80;
 const GROUND_FADE_INNER = 45;
 const GROUND_FADE_OUTER = 75;
+const EXPLORE_FOG_DENSITY = 0.045;
+const EXPLORE_CAMERA_FAR = 600;
 
 const GROUND_VERT = `
 #include <common>
@@ -56,17 +65,35 @@ interface ExploreRoomProps {
   playerPositionRef: React.MutableRefObject<Vector3>;
   combatActive?: boolean;
   mushroomHiddenIndices?: ReadonlySet<number>;
+  treeHiddenIndices?: ReadonlySet<number>;
+  rootHiddenIndices?: ReadonlySet<number>;
+  rockHiddenIndices?: ReadonlySet<number>;
+  spineHiddenIndices?: ReadonlySet<number>;
+  onFogHorizonChange?: (horizonHex: string) => void;
 }
 
 export default function ExploreRoom({
   playerPositionRef,
   combatActive = false,
   mushroomHiddenIndices,
+  treeHiddenIndices,
+  rootHiddenIndices,
+  rockHiddenIndices,
+  spineHiddenIndices,
+  onFogHorizonChange,
 }: ExploreRoomProps) {
-  const { coopExploreSeed } = useMultiplayerRoom();
+  const { coopExploreSeed, exploreDayNightActive, exploreDayNightStartedAt } = useMultiplayerRoom();
+  const { emitExploreFogUpdate } = useMultiplayerActions();
+  const { scene, camera } = useThree();
   const seed = coopExploreSeed || 1;
   const groundRef = useRef<Mesh>(null);
+  const prevSeedRef = useRef<number | null>(null);
   const [animateClouds, setAnimateClouds] = useState(!combatActive);
+  const [skyTheme, setSkyTheme] = useState<SkyThemeUniforms | null>(null);
+  const [lighting, setLighting] = useState(() => resolveExploreDayNightLighting(0));
+  const fogRef = useRef<FogExp2 | null>(null);
+  const onFogHorizonChangeRef = useRef(onFogHorizonChange);
+  onFogHorizonChangeRef.current = onFogHorizonChange;
 
   const groundMat = useMemo(() => {
     const mat = new ShaderMaterial({
@@ -88,11 +115,33 @@ export default function ExploreRoom({
 
   useEffect(() => () => groundMat.dispose(), [groundMat]);
 
-  useEffect(() => {
-    exploreFog.reset();
+  useLayoutEffect(() => {
+    const prevFog = scene.fog;
+    const horizon = exploreDayNightActive && skyTheme ? skyTheme.horizon : SKY_INDIGO_NIGHT.horizon;
+    const fog = new FogExp2(horizon, EXPLORE_FOG_DENSITY);
+    fogRef.current = fog;
+    scene.fog = fog;
+    const persp = camera instanceof PerspectiveCamera ? camera : null;
+    const prevFar = persp?.far;
+    if (persp) {
+      persp.far = EXPLORE_CAMERA_FAR;
+      persp.updateProjectionMatrix();
+    }
     return () => {
-      exploreFog.reset();
+      if (scene.fog === fog) scene.fog = prevFog;
+      if (persp && prevFar != null && persp.far === EXPLORE_CAMERA_FAR) {
+        persp.far = prevFar;
+        persp.updateProjectionMatrix();
+      }
     };
+  }, [scene, camera, exploreDayNightActive, skyTheme?.horizon]);
+
+  useEffect(() => {
+    const prev = prevSeedRef.current;
+    prevSeedRef.current = seed;
+    if (prev != null && prev !== seed) {
+      exploreFog.reset();
+    }
   }, [seed]);
 
   useEffect(() => {
@@ -102,20 +151,57 @@ export default function ExploreRoom({
   useFrame(() => {
     const pos = playerPositionRef.current;
     if (!pos) return;
-    exploreFog.markExplored(pos.x, pos.z, EXPLORE_PLAYER_VIEW_RADIUS);
+
+    if (exploreDayNightActive && exploreDayNightStartedAt > 0) {
+      const phase = exploreDayNightPhaseFromStartedAt(exploreDayNightStartedAt);
+      const theme = resolveExploreDayNightTheme(phase);
+      setSkyTheme(theme);
+      setLighting(resolveExploreDayNightLighting(phase));
+      if (fogRef.current) {
+        fogRef.current.color.set(theme.horizon);
+      }
+      onFogHorizonChangeRef.current?.(theme.horizon);
+    } else {
+      setSkyTheme(null);
+      setLighting(resolveExploreDayNightLighting(0.85));
+      if (fogRef.current) {
+        fogRef.current.color.set(SKY_INDIGO_NIGHT.horizon);
+      }
+      onFogHorizonChangeRef.current?.(SKY_INDIGO_NIGHT.horizon);
+    }
+
+    const changed = exploreFog.markExplored(pos.x, pos.z, EXPLORE_PLAYER_VIEW_RADIUS);
+    if (changed) {
+      const dirty = exploreFog.consumeDirtyChunks();
+      if (dirty.length > 0) emitExploreFogUpdate(dirty);
+    }
     if (groundRef.current) {
       groundRef.current.position.set(pos.x, -0.04, pos.z);
     }
   });
 
+  const start = playerPositionRef.current;
   return (
     <group name="explore-room">
-      <CustomSky skyPreset="indigoNight" animateClouds={animateClouds} />
-      <hemisphereLight color="#a8b8e0" groundColor="#0a0c18" intensity={0.45} />
-      <directionalLight position={[40, 60, 20]} intensity={0.4} color="#c8d0ff" />
+      <CustomSky
+        skyPreset="indigoNight"
+        animateClouds={animateClouds}
+        themeUniforms={exploreDayNightActive ? skyTheme : null}
+      />
+      <hemisphereLight
+        color={lighting.hemiColor}
+        groundColor={lighting.hemiGround}
+        intensity={lighting.hemiIntensity}
+      />
+      <directionalLight
+        position={[40, 60, 20]}
+        intensity={lighting.dirIntensity}
+        color={lighting.dirColor}
+      />
       <mesh
         ref={groundRef}
         rotation={[-Math.PI / 2, 0, 0]}
+        position={[start?.x ?? 0, -0.04, start?.z ?? 0]}
         receiveShadow={false}
         frustumCulled={false}
       >
@@ -127,6 +213,10 @@ export default function ExploreRoom({
         playerPositionRef={playerPositionRef}
         combatActive={combatActive}
         mushroomHiddenIndices={mushroomHiddenIndices}
+        treeHiddenIndices={treeHiddenIndices}
+        rootHiddenIndices={rootHiddenIndices}
+        rockHiddenIndices={rockHiddenIndices}
+        spineHiddenIndices={spineHiddenIndices}
       />
       <ExploreCampProps />
     </group>

@@ -8,6 +8,8 @@
  */
 
 import type { MushroomInstance } from './mushroomLayout';
+import { exploreTreeVariant, type ExploreTreeInstance } from './exploreTreeLayout';
+import type { ExploreRootInstance } from './exploreGroundPropLayout';
 
 export const EXPLORE_CHUNK_SIZE = 48;
 export const EXPLORE_GRASS_PER_CHUNK = 1200;
@@ -40,6 +42,10 @@ export type ExploreChunkData = {
   rockCount: number;
   mushrooms: Float32Array;
   mushroomCount: number;
+  roots: Float32Array;
+  rootCount: number;
+  spines: Float32Array;
+  spineCount: number;
 };
 
 export function chunkKey(cx: number, cz: number): string {
@@ -172,6 +178,15 @@ export function unpackExploreMushroomIndex(
   return { cx, cz, slot };
 }
 
+export const packExploreTreeIndex = packExploreMushroomIndex;
+export const unpackExploreTreeIndex = unpackExploreMushroomIndex;
+export const packExploreRootIndex = packExploreMushroomIndex;
+export const unpackExploreRootIndex = unpackExploreMushroomIndex;
+export const packExploreRockIndex = packExploreMushroomIndex;
+export const unpackExploreRockIndex = unpackExploreMushroomIndex;
+export const packExploreSpineIndex = packExploreMushroomIndex;
+export const unpackExploreSpineIndex = unpackExploreMushroomIndex;
+
 export function mushroomVisualFromScale(scale: number): { h: number; cr: number } {
   return { h: 0.14 + scale * 0.45, cr: 0.7 + scale * 0.9 };
 }
@@ -193,13 +208,119 @@ export function getExploreMushroom(seed: number, packedIndex: number): MushroomI
   return { index: packedIndex, x, z, h: vis.h, cr: vis.cr };
 }
 
-export function isExploreBlocked(seed: number, x: number, z: number, pad = 1.2): boolean {
+export function getExploreTree(seed: number, packedIndex: number): ExploreTreeInstance | null {
+  const unpacked = unpackExploreTreeIndex(packedIndex);
+  if (!unpacked) return null;
+  const chunk = generateChunk(seed, unpacked.cx, unpacked.cz);
+  if (unpacked.slot >= chunk.treeCount) return null;
+  const o = unpacked.slot * EXPLORE_DISC_STRIDE;
+  const x = chunk.trees[o]!;
+  const z = chunk.trees[o + 1]!;
+  const radius = chunk.trees[o + 2]!;
+  const scale = chunk.trees[o + 3]!;
+  return {
+    index: packedIndex,
+    x,
+    z,
+    radius,
+    scale,
+    variant: exploreTreeVariant(x, z),
+  };
+}
+
+export function getExploreRoot(seed: number, packedIndex: number): ExploreRootInstance | null {
+  const unpacked = unpackExploreRootIndex(packedIndex);
+  if (!unpacked) return null;
+  const chunk = generateChunk(seed, unpacked.cx, unpacked.cz);
+  if (unpacked.slot >= chunk.rootCount) return null;
+  const o = unpacked.slot * EXPLORE_DISC_STRIDE;
+  const x = chunk.roots[o]!;
+  const z = chunk.roots[o + 1]!;
+  const radius = chunk.roots[o + 2]!;
+  const scale = chunk.roots[o + 3]!;
+  return {
+    index: packedIndex,
+    x,
+    z,
+    radius,
+    scale,
+  };
+}
+
+export type ExploreRockInstance = {
+  index: number;
+  x: number;
+  z: number;
+  radius: number;
+  scale: number;
+  variant: 0 | 1;
+};
+
+export function getExploreRock(seed: number, packedIndex: number): ExploreRockInstance | null {
+  const unpacked = unpackExploreRockIndex(packedIndex);
+  if (!unpacked) return null;
+  const chunk = generateChunk(seed, unpacked.cx, unpacked.cz);
+  if (unpacked.slot >= chunk.rockCount) return null;
+  const o = unpacked.slot * EXPLORE_DISC_STRIDE;
+  const x = chunk.rocks[o]!;
+  const z = chunk.rocks[o + 1]!;
+  const radius = chunk.rocks[o + 2]!;
+  const scale = chunk.rocks[o + 3]!;
+  return {
+    index: packedIndex,
+    x,
+    z,
+    radius,
+    scale,
+    variant: exploreRockVariant(x, z),
+  };
+}
+
+export type ExploreSpineInstance = {
+  index: number;
+  x: number;
+  z: number;
+  radius: number;
+  scale: number;
+};
+
+export function getExploreSpine(seed: number, packedIndex: number): ExploreSpineInstance | null {
+  const unpacked = unpackExploreSpineIndex(packedIndex);
+  if (!unpacked) return null;
+  const chunk = generateChunk(seed, unpacked.cx, unpacked.cz);
+  if (unpacked.slot >= chunk.spineCount) return null;
+  const o = unpacked.slot * EXPLORE_DISC_STRIDE;
+  const x = chunk.spines[o]!;
+  const z = chunk.spines[o + 1]!;
+  const radius = chunk.spines[o + 2]!;
+  const scale = chunk.spines[o + 3]!;
+  return {
+    index: packedIndex,
+    x,
+    z,
+    radius,
+    scale,
+  };
+}
+
+export function isExploreBlocked(
+  seed: number,
+  x: number,
+  z: number,
+  pad = 1.2,
+  destroyedTreeHealth: Map<number, number> | null = null,
+  destroyedRootHealth: Map<number, number> | null = null,
+  destroyedRockHealth: Map<number, number> | null = null,
+  destroyedSpineHealth: Map<number, number> | null = null,
+): boolean {
   const { cx, cz } = worldToChunk(x, z);
   for (let dz = -1; dz <= 1; dz++) {
     for (let dx = -1; dx <= 1; dx++) {
       const chunk = generateChunk(seed, cx + dx, cz + dz);
-      if (discHits(chunk.trees, chunk.treeCount, x, z, pad)) return true;
-      if (discHits(chunk.rocks, chunk.rockCount, x, z, pad)) return true;
+      if (treeDiscHits(chunk, x, z, pad, destroyedTreeHealth)) return true;
+      if (rockDiscHits(chunk, x, z, pad, destroyedRockHealth)) return true;
+      if (rootDiscHits(chunk, x, z, pad, destroyedRootHealth)) return true;
+      if (spineDiscHits(chunk, x, z, pad, destroyedSpineHealth)) return true;
     }
   }
   return false;
@@ -213,6 +334,98 @@ function discHits(
   pad: number,
 ): boolean {
   for (let i = 0; i < count; i++) {
+    const o = i * EXPLORE_DISC_STRIDE;
+    const dx = data[o]! - x;
+    const dz = data[o + 1]! - z;
+    const r = data[o + 2]! + pad;
+    if (dx * dx + dz * dz < r * r) return true;
+  }
+  return false;
+}
+
+function treeDiscHits(
+  chunk: ExploreChunkData,
+  x: number,
+  z: number,
+  pad: number,
+  destroyedTreeHealth: Map<number, number> | null,
+): boolean {
+  const data = chunk.trees;
+  for (let i = 0; i < chunk.treeCount; i++) {
+    if (destroyedTreeHealth) {
+      const packed = packExploreTreeIndex(chunk.cx, chunk.cz, i);
+      const hp = destroyedTreeHealth.get(packed);
+      if (hp !== undefined && hp <= 0) continue;
+    }
+    const o = i * EXPLORE_DISC_STRIDE;
+    const dx = data[o]! - x;
+    const dz = data[o + 1]! - z;
+    const r = data[o + 2]! + pad;
+    if (dx * dx + dz * dz < r * r) return true;
+  }
+  return false;
+}
+
+function rootDiscHits(
+  chunk: ExploreChunkData,
+  x: number,
+  z: number,
+  pad: number,
+  destroyedRootHealth: Map<number, number> | null,
+): boolean {
+  const data = chunk.roots;
+  for (let i = 0; i < chunk.rootCount; i++) {
+    if (destroyedRootHealth) {
+      const packed = packExploreRootIndex(chunk.cx, chunk.cz, i);
+      const hp = destroyedRootHealth.get(packed);
+      if (hp !== undefined && hp <= 0) continue;
+    }
+    const o = i * EXPLORE_DISC_STRIDE;
+    const dx = data[o]! - x;
+    const dz = data[o + 1]! - z;
+    const r = data[o + 2]! + pad;
+    if (dx * dx + dz * dz < r * r) return true;
+  }
+  return false;
+}
+
+function rockDiscHits(
+  chunk: ExploreChunkData,
+  x: number,
+  z: number,
+  pad: number,
+  destroyedRockHealth: Map<number, number> | null,
+): boolean {
+  const data = chunk.rocks;
+  for (let i = 0; i < chunk.rockCount; i++) {
+    if (destroyedRockHealth) {
+      const packed = packExploreRockIndex(chunk.cx, chunk.cz, i);
+      const hp = destroyedRockHealth.get(packed);
+      if (hp !== undefined && hp <= 0) continue;
+    }
+    const o = i * EXPLORE_DISC_STRIDE;
+    const dx = data[o]! - x;
+    const dz = data[o + 1]! - z;
+    const r = data[o + 2]! + pad;
+    if (dx * dx + dz * dz < r * r) return true;
+  }
+  return false;
+}
+
+function spineDiscHits(
+  chunk: ExploreChunkData,
+  x: number,
+  z: number,
+  pad: number,
+  destroyedSpineHealth: Map<number, number> | null,
+): boolean {
+  const data = chunk.spines;
+  for (let i = 0; i < chunk.spineCount; i++) {
+    if (destroyedSpineHealth) {
+      const packed = packExploreSpineIndex(chunk.cx, chunk.cz, i);
+      const hp = destroyedSpineHealth.get(packed);
+      if (hp !== undefined && hp <= 0) continue;
+    }
     const o = i * EXPLORE_DISC_STRIDE;
     const dx = data[o]! - x;
     const dz = data[o + 1]! - z;
@@ -307,6 +520,55 @@ export function generateChunk(seed: number, cx: number, cz: number): ExploreChun
     mushroomCount++;
   }
 
+  const rootTarget = Math.round(treeTarget * 0.5);
+  const rootScratch: number[] = [];
+  let rootCount = 0;
+  for (let i = 0; i < rootTarget * 4 && rootCount < rootTarget; i++) {
+    const x = origin.x + 1.5 + rand() * (EXPLORE_CHUNK_SIZE - 3);
+    const z = origin.z + 1.5 + rand() * (EXPLORE_CHUNK_SIZE - 3);
+    if (
+      rejectNearPacked(rootScratch, rootCount, x, z, 2.2) ||
+      rejectNearPacked(treeScratch, treeCount, x, z, 2.5) ||
+      rejectNearPacked(rockScratch, rockCount, x, z, 2.2) ||
+      rejectNearPacked(mushScratch, mushroomCount, x, z, 1.4)
+    ) {
+      continue;
+    }
+    const scale = 0.85 + rand() * 0.55;
+    const o = rootCount * EXPLORE_DISC_STRIDE;
+    rootScratch[o] = x;
+    rootScratch[o + 1] = z;
+    rootScratch[o + 2] = 0.55 * scale;
+    rootScratch[o + 3] = scale;
+    rootScratch[o + 4] = rand() * Math.PI * 2;
+    rootCount++;
+  }
+
+  const spineTarget = Math.max(0, Math.round(treeTarget / 8));
+  const spineScratch: number[] = [];
+  let spineCount = 0;
+  for (let i = 0; i < spineTarget * 4 && spineCount < spineTarget; i++) {
+    const x = origin.x + 2 + rand() * (EXPLORE_CHUNK_SIZE - 4);
+    const z = origin.z + 2 + rand() * (EXPLORE_CHUNK_SIZE - 4);
+    if (
+      rejectNearPacked(spineScratch, spineCount, x, z, 5) ||
+      rejectNearPacked(treeScratch, treeCount, x, z, 3.5) ||
+      rejectNearPacked(rockScratch, rockCount, x, z, 2.5) ||
+      rejectNearPacked(mushScratch, mushroomCount, x, z, 1.6) ||
+      rejectNearPacked(rootScratch, rootCount, x, z, 2.5)
+    ) {
+      continue;
+    }
+    const scale = 0.7 + rand() * 1.1;
+    const o = spineCount * EXPLORE_DISC_STRIDE;
+    spineScratch[o] = x;
+    spineScratch[o + 1] = z;
+    spineScratch[o + 2] = 0.9 * scale;
+    spineScratch[o + 3] = scale;
+    spineScratch[o + 4] = rand() * Math.PI * 2;
+    spineCount++;
+  }
+
   return {
     cx,
     cz,
@@ -321,5 +583,9 @@ export function generateChunk(seed: number, cx: number, cz: number): ExploreChun
     rockCount,
     mushrooms: packDiscs(mushScratch, mushroomCount),
     mushroomCount,
+    roots: packDiscs(rootScratch, rootCount),
+    rootCount,
+    spines: packDiscs(spineScratch, spineCount),
+    spineCount,
   };
 }

@@ -9,6 +9,7 @@ import { World } from '@/ecs/World';
 import { getRejuvenatingShotHealAmount } from '@/utils/bowConstants';
 import { ENTANGLEMENT_DURATION_MS } from '@/utils/talents';
 import { addGlobalEntangledEnemy } from '@/components/weapons/EntangleManager';
+import { applyDungeonChestY, getDungeonMeshCollider } from '@/utils/dungeonLayout';
 
 const _scratchMovement = new Vector3();
 
@@ -94,6 +95,13 @@ type HitResult =
   | { kind: 'player' | 'ally'; target: HealTarget; distance: number }
   | { kind: 'enemy'; target: EnemyTarget; distance: number };
 
+function hitDistance(a: Vector3, b: Vector3): number {
+  if (getDungeonMeshCollider()) {
+    return Math.hypot(a.x - b.x, a.z - b.z);
+  }
+  return a.distanceTo(b);
+}
+
 function findClosestHit(
   projectilePosition: Vector3,
   playerPositions: HealTarget[],
@@ -104,7 +112,7 @@ function findClosestHit(
 
   const considerHeal = (kind: 'player' | 'ally', target: HealTarget) => {
     if (target.health >= target.maxHealth) return;
-    const distance = projectilePosition.distanceTo(target.position);
+    const distance = hitDistance(projectilePosition, target.position);
     if (distance > HEALING_RANGE) return;
     if (!closest || distance < closest.distance) {
       closest = { kind, target, distance };
@@ -113,7 +121,7 @@ function findClosestHit(
 
   const considerEnemy = (target: EnemyTarget) => {
     if (target.health <= 0) return;
-    const distance = projectilePosition.distanceTo(target.position);
+    const distance = hitDistance(projectilePosition, target.position);
     if (distance > HEALING_RANGE) return;
     if (!closest || distance < closest.distance) {
       closest = { kind: 'enemy', target, distance };
@@ -245,6 +253,7 @@ export default function RejuvenatingShotManager({
 
       const movement = _scratchMovement.copy(projectile.direction).multiplyScalar(PROJECTILE_SPEED);
       projectile.position.add(movement);
+      applyDungeonChestY(projectile.position);
 
       projectile.distanceTraveled = projectile.position.distanceTo(projectile.startPosition);
       

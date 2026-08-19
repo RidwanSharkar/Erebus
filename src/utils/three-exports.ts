@@ -31,6 +31,7 @@ export {
   Sphere,
   RingGeometry,
   OctahedronGeometry,
+  IcosahedronGeometry,
   TorusGeometry,
   TubeGeometry,
   BufferAttribute,

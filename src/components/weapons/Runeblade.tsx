@@ -86,6 +86,14 @@ interface RunebladeProps {
   onHit?: (targetId: string, damage: number, isCritical?: boolean, position?: Vector3, isBlizzard?: boolean) => void;
   mushroomTargets?: Array<{ index: number; position: Vector3 }>;
   onMushroomHit?: (index: number, baseDamage: number) => void;
+  treeTargets?: Array<{ index: number; position: Vector3; radius?: number }>;
+  onTreeHit?: (index: number, baseDamage: number) => void;
+  rootTargets?: Array<{ index: number; position: Vector3; radius?: number }>;
+  onRootHit?: (index: number, baseDamage: number) => void;
+  rockTargets?: Array<{ index: number; position: Vector3; radius?: number }>;
+  onRockHit?: (index: number, baseDamage: number) => void;
+  spineTargets?: Array<{ index: number; position: Vector3; radius?: number }>;
+  onSpineHit?: (index: number, baseDamage: number) => void;
   setDamageNumbers?: (callback: (prev: Array<{
     id: number;
     damage: number;
@@ -197,6 +205,14 @@ export default function Runeblade({
   comboStepResolver,
   mushroomTargets,
   onMushroomHit,
+  treeTargets,
+  onTreeHit,
+  rootTargets,
+  onRootHit,
+  rockTargets,
+  onRockHit,
+  spineTargets,
+  onSpineHit,
   getExecutionerFlatBonus,
   getCrusaderLmbFlatBonus,
   getTitansGripLmbFlatBonus,
@@ -1134,7 +1150,7 @@ export default function Runeblade({
       cs.tryFirePoisonDartIfArmed?.(playerPosition, forward);
     }
 
-    if (!enemyData.length && !mushroomTargets?.length) return;
+    if (!enemyData.length && !mushroomTargets?.length && !treeTargets?.length && !rootTargets?.length && !rockTargets?.length && !spineTargets?.length) return;
 
     const now = Date.now();
 
@@ -1232,7 +1248,139 @@ export default function Runeblade({
       );
     }
 
-    onPrimaryHitsResolved?.(enemiesHitThisSwing + mushroomsHitThisSwing);
+    let treesHitThisSwing = 0;
+    if (treeTargets?.length && onTreeHit) {
+      const yaw = playerRotation?.y ?? 0;
+      forEachMushroomHitBySwing(
+        playerPosition,
+        yaw,
+        comboStep,
+        treeTargets,
+        (index) => {
+          onTreeHit(index, baseDamage);
+          treesHitThisSwing++;
+          if (setDamageNumbers && nextDamageNumberId) {
+            const t = treeTargets.find((target) => target.index === index);
+            if (t) {
+              setDamageNumbers((prev) => [
+                ...prev,
+                {
+                  id: nextDamageNumberId.current++,
+                  damage: baseDamage,
+                  position: t.position.clone(),
+                  isCritical: false,
+                },
+              ]);
+            }
+          }
+        },
+        now,
+        lastSwingHitTime.current,
+        100,
+        'tree',
+      );
+    }
+
+    let rootsHitThisSwing = 0;
+    if (rootTargets?.length && onRootHit) {
+      const yaw = playerRotation?.y ?? 0;
+      forEachMushroomHitBySwing(
+        playerPosition,
+        yaw,
+        comboStep,
+        rootTargets,
+        (index) => {
+          onRootHit(index, baseDamage);
+          rootsHitThisSwing++;
+          if (setDamageNumbers && nextDamageNumberId) {
+            const t = rootTargets.find((target) => target.index === index);
+            if (t) {
+              setDamageNumbers((prev) => [
+                ...prev,
+                {
+                  id: nextDamageNumberId.current++,
+                  damage: baseDamage,
+                  position: t.position.clone(),
+                  isCritical: false,
+                },
+              ]);
+            }
+          }
+        },
+        now,
+        lastSwingHitTime.current,
+        100,
+        'root',
+      );
+    }
+
+    let rocksHitThisSwing = 0;
+    if (rockTargets?.length && onRockHit) {
+      const yaw = playerRotation?.y ?? 0;
+      forEachMushroomHitBySwing(
+        playerPosition,
+        yaw,
+        comboStep,
+        rockTargets,
+        (index) => {
+          onRockHit(index, baseDamage);
+          rocksHitThisSwing++;
+          if (setDamageNumbers && nextDamageNumberId) {
+            const t = rockTargets.find((target) => target.index === index);
+            if (t) {
+              setDamageNumbers((prev) => [
+                ...prev,
+                {
+                  id: nextDamageNumberId.current++,
+                  damage: baseDamage,
+                  position: t.position.clone(),
+                  isCritical: false,
+                },
+              ]);
+            }
+          }
+        },
+        now,
+        lastSwingHitTime.current,
+        100,
+        'rock',
+      );
+    }
+
+    let spinesHitThisSwing = 0;
+    if (spineTargets?.length && onSpineHit) {
+      const yaw = playerRotation?.y ?? 0;
+      forEachMushroomHitBySwing(
+        playerPosition,
+        yaw,
+        comboStep,
+        spineTargets,
+        (index) => {
+          onSpineHit(index, baseDamage);
+          spinesHitThisSwing++;
+          if (setDamageNumbers && nextDamageNumberId) {
+            const t = spineTargets.find((target) => target.index === index);
+            if (t) {
+              setDamageNumbers((prev) => [
+                ...prev,
+                {
+                  id: nextDamageNumberId.current++,
+                  damage: baseDamage,
+                  position: t.position.clone(),
+                  isCritical: false,
+                },
+              ]);
+            }
+          }
+        },
+        now,
+        lastSwingHitTime.current,
+        100,
+        'spine',
+      );
+    }
+
+    onPrimaryHitsResolved?.(enemiesHitThisSwing + mushroomsHitThisSwing + treesHitThisSwing + rootsHitThisSwing + rocksHitThisSwing + spinesHitThisSwing);
   };
 
   return (

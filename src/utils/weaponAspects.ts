@@ -1032,6 +1032,8 @@ export const BEASTMASTER_TIGER_ATTACK_RANGE = 2.6;
 export const BEASTMASTER_TIGER_WALK_SPEED = 2.85;
 export const BEASTMASTER_TIGER_RUN_SPEED = 4.2;
 export const BEASTMASTER_TIGER_ATTACK_COOLDOWN_MS = 1100;
+/** Explorer only: Beastmaster tiger auto-revives beside its owner after this delay. */
+export const BEASTMASTER_TIGER_EXPLORE_REVIVE_MS = 30000;
 /** Throne prep: tiger stops attacking the training dummy if owner has not hit it for this long. */
 export const THRONE_DUMMY_TIGER_DISENGAGE_MS = 5000;
 

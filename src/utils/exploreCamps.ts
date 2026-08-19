@@ -87,6 +87,18 @@ export const EXPLORE_REWARD_CAMP_KINDS = Object.freeze([
   'abyssal',
 ] as const satisfies readonly ExploreCampKind[]);
 
+export type ExploreRewardCampKind = (typeof EXPLORE_REWARD_CAMP_KINDS)[number];
+
+/** Weighted reward-camp kinds by wilderness level. Level 1 has no stat camps. Mirrored in backend/gameRoom.js. */
+export const EXPLORE_REWARD_CAMP_WEIGHTS_BY_LEVEL: Readonly<
+  Record<1 | 2 | 3 | 4, Readonly<Partial<Record<ExploreRewardCampKind, number>>>>
+> = Object.freeze({
+  1: Object.freeze({ gold: 90, tempest: 2.5, eldritch: 2.5, infernal: 2.5, abyssal: 2.5 }),
+  2: Object.freeze({ gold: 70, stat: 18, tempest: 3, eldritch: 3, infernal: 3, abyssal: 3 }),
+  3: Object.freeze({ gold: 50, stat: 32, tempest: 4.5, eldritch: 4.5, infernal: 4.5, abyssal: 4.5 }),
+  4: Object.freeze({ gold: 40, stat: 40, tempest: 5, eldritch: 5, infernal: 5, abyssal: 5 }),
+});
+
 export type ExploreCampPublic = {
   id: string;
   kind: ExploreCampKind;

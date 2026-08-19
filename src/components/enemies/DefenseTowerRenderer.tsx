@@ -30,6 +30,7 @@ interface DefenseTowerRendererProps {
   health: number;
   maxHealth: number;
   isDying?: boolean;
+  powered?: boolean;
 }
 
 interface DefenseTowerAttackEvent {
@@ -49,6 +50,7 @@ function DefenseTowerRenderer({
   health,
   maxHealth,
   isDying = false,
+  powered = true,
 }: DefenseTowerRendererProps) {
   const theme = campHpTheme('ally-green');
   const { socket, enemiesRef, enemyTransformsRef } = useMultiplayerActions();
@@ -80,6 +82,7 @@ function DefenseTowerRenderer({
   useEffect(() => {
     if (!socket) return;
     const onAttack = (data: DefenseTowerAttackEvent) => {
+      if (!powered) return;
       if (data.towerId !== id || data.kind !== 'bolt') return;
       const origin = data.origin;
       const impact = data.impact;
@@ -97,7 +100,7 @@ function DefenseTowerRenderer({
     return () => {
       socket.off('defense-tower-attack', onAttack);
     };
-  }, [socket, id, slot]);
+  }, [socket, id, slot, powered]);
 
   useFrame((_, delta) => {
     if (enemyTransformsRef) {
@@ -126,6 +129,12 @@ function DefenseTowerRenderer({
       )}
       <group ref={setGroupRef} visible={!isDying || opacity.current > 0.02}>
         <DefenseTower />
+        {!powered && !isDying && (
+          <mesh position={[0, 3.2, 0]}>
+            <cylinderGeometry args={[1.55, 1.75, 6.4, 10]} />
+            <meshBasicMaterial color="#0b1220" transparent opacity={0.38} depthWrite={false} />
+          </mesh>
+        )}
         <Billboard position={[0, DEFENSE_TOWER_HP_BAR_Y, 0]} follow lockX={false} lockY={false} lockZ={false}>
           {health > 0 && !isDying && (
             <>

@@ -5,6 +5,8 @@ import { MUSHROOM_MELEE_RANGE } from './mushroomConstants';
 export interface MushroomMeleeTarget {
   index: number;
   position: Vector3;
+  /** When set, effective range is `distance - radius` (trunk-plus trees). */
+  radius?: number;
 }
 
 /**
@@ -19,14 +21,15 @@ export function forEachMushroomHitBySwing(
   now: number,
   lastHitTime: Record<string, number>,
   hitCooldownMs: number = 100,
+  cooldownKeyPrefix: string = 'mushroom',
 ): void {
   if (!mushrooms?.length) return;
   for (const m of mushrooms) {
     if (!m.position) continue;
-    const key = `mushroom-${m.index}`;
+    const key = `${cooldownKeyPrefix}-${m.index}`;
     if (now - (lastHitTime[key] || 0) < hitCooldownMs) continue;
-    const distance = playerPosition.distanceTo(m.position);
-    if (distance > MUSHROOM_MELEE_RANGE) continue;
+    const surfaceDist = Math.max(0, playerPosition.distanceTo(m.position) - (m.radius ?? 0));
+    if (surfaceDist > MUSHROOM_MELEE_RANGE) continue;
     if (comboStep === 3) {
       lastHitTime[key] = now;
       onHit(m.index);

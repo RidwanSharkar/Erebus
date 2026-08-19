@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { Color } from '@/utils/three-exports';
 import { FAE_REALM_HEX_RADIUS, MAIN_ARENA_HEX_RADIUS } from '@/utils/mapConstants';
 import AtmosphericParticles from './AtmosphericParticles';
@@ -8,7 +8,7 @@ import StylizedGrass from './StylizedGrass';
 import InstancedMushrooms from './InstancedMushrooms';
 import ThroneCenterSeal from './ThroneCenterSeal';
 import FaeRealmDecor from './FaeRealmDecor';
-import FaeRealmSkyDome from './FaeRealmSkyDome';
+import CustomSky from './CustomSky';
 import ArenaFallingSnow from './ArenaFallingSnow';
 
 const FAE_REALM_GRASS_COUNT = Math.round(
@@ -16,24 +16,29 @@ const FAE_REALM_GRASS_COUNT = Math.round(
 );
 
 /** Center seal disc — leaves a clear pad under the accent ring. */
-const FAE_REALM_CENTER_SEAL_RADIUS = 6.25;
+const FAE_REALM_CENTER_SEAL_RADIUS = 5.35;
 
 interface FaeRealmRoomProps {
   combatActive?: boolean;
   hiddenIndices?: ReadonlySet<number>;
+  /** Server-authoritative random CustomSky preset index. */
+  skyPresetIndex?: number;
 }
 
 export default function FaeRealmRoom({
   combatActive = false,
   hiddenIndices,
+  skyPresetIndex,
 }: FaeRealmRoomProps) {
   const particleColor = useMemo(() => new Color('#9ad8ff'), []);
 
   return (
     <group name="fae-realm-room">
-      <Suspense fallback={null}>
-        <FaeRealmSkyDome combatActive={combatActive} />
-      </Suspense>
+      <CustomSky
+        skyPresetIndex={skyPresetIndex}
+        skyPreset="throneBlue"
+        animateClouds={!combatActive}
+      />
       <hemisphereLight color="#ec4899" groundColor="#1a0a14" intensity={0.42} />
       <ArenaFallingSnow
         count={240}

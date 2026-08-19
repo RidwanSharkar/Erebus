@@ -79,14 +79,13 @@ const NUMBERED_FAE_PYLONS = new Set<FaeRealmDecorModel>([
 export const FAE_REALM_DECOR_LAYOUT: readonly FaeRealmDecorDef[] = [
   {
     model: 'giantSpine',
-    position: [4.2, 0, 11.2],
+    position: [4.2, -0.25, 11.2],
     rotationY: Math.PI,
-    scale: 0.9,
+    scale: 0.6,
   },
 
-  { model: 'barkRoot', position: [-12.8, 0, -4.2], rotationY: 1.8, scale: 0.59 },
 
-  { model: 'barkRoot', position: [5.2, 0, -7.2], rotationY: 2.1, scale: 0.85 },
+  { model: 'barkRoot', position: [5.2, 0, -7.2], rotationY: 2.1, scale: 0.45 },
 ];
 
 export function listUniqueFaeRealmDecorModels(

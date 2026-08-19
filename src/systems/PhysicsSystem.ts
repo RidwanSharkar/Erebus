@@ -1,5 +1,5 @@
 // Physics system for handling movement physics
-import { Vector3 } from '@/utils/three-exports';
+import { Object3D, Raycaster, Vector3 } from '@/utils/three-exports';
 import { PhysicsSystem as BasePhysicsSystem } from '@/ecs/System';
 import { Entity } from '@/ecs/Entity';
 import { Transform } from '@/ecs/components/Transform';
@@ -29,6 +29,16 @@ export class PhysicsSystem extends BasePhysicsSystem {
 
   /** Streamed explore-mode prop discs (trees/rocks); updated as chunks load/unload. */
   private streamedObstacles: Array<{ x: number; z: number; radius: number }> = [];
+
+  /** Optional triangle mesh used for ground snap + wall blocking (dungeon interiors). */
+  private meshCollider: Object3D | null = null;
+  /** Optional XZ AABB used when mesh walking is active (or as a void fence). */
+  private playableAabb: { minX: number; maxX: number; minZ: number; maxZ: number } | null = null;
+  private _meshRaycaster = new Raycaster();
+  private _meshRayOrigin = new Vector3();
+  private _meshRayDir = new Vector3();
+  private _meshDown = new Vector3(0, -1, 0);
+  private _meshHitNormal = new Vector3();
 
   private _deltaPosition = new Vector3();
   private _currentPosition = new Vector3();
@@ -121,6 +131,22 @@ export class PhysicsSystem extends BasePhysicsSystem {
     this.streamedObstacles = obstacles && obstacles.length > 0 ? obstacles : [];
   }
 
+  /** Triangle mesh for dungeon ground / walls. Pass null to restore flat Y=0 ground. */
+  public setMeshCollider(collider: Object3D | null): void {
+    this.meshCollider = collider;
+  }
+
+  public hasMeshCollider(): boolean {
+    return this.meshCollider != null;
+  }
+
+  /** XZ playable fence. Pass null to disable. */
+  public setPlayableAabb(
+    aabb: { minX: number; maxX: number; minZ: number; maxZ: number } | null,
+  ): void {
+    this.playableAabb = aabb;
+  }
+
   public update(entities: Entity[], deltaTime: number): void {
     // This runs every frame for variable timestep updates
     for (const entity of entities) {
@@ -189,6 +215,13 @@ export class PhysicsSystem extends BasePhysicsSystem {
       ? this.getHexBoundaryCorrection(potentialPosition)
       : null;
     const skipArenaClamp = this.arenaBoundaryMode === 'none';
+
+    if (this.meshCollider) {
+      if (!movement.isDashing) {
+        this.resolveMeshMovement(transform, movement, currentPosition, potentialPosition, deltaPosition);
+      }
+      return;
+    }
 
     // Check for tree, corner mountains, throne pillars, and castle-wall collisions
     const treeCollision = this.treeCollisionEnabled
@@ -593,8 +626,12 @@ export class PhysicsSystem extends BasePhysicsSystem {
   }
 
   private applyPhysics(transform: Transform, movement: Movement, deltaTime: number): void {
-    // Apply gravity (only affects Y velocity)
-    movement.applyGravity(deltaTime);
+    const meshDash = this.meshCollider != null && movement.isDashing;
+    if (!meshDash) {
+      movement.applyGravity(deltaTime);
+    } else {
+      movement.velocity.y = 0;
+    }
 
     this.syncHorizontalVelocityFromInput(movement);
 
@@ -609,6 +646,13 @@ export class PhysicsSystem extends BasePhysicsSystem {
     // Simple ground check (Y = 0 is ground level, account for sphere radius)
     const sphereRadius = 0.5; // Player sphere radius
     const groundLevel = sphereRadius; // Sphere center should be at radius height above ground
+
+    if (this.meshCollider) {
+      if (!movement.isDashing) {
+        this.applyMeshGround(transform, movement, sphereRadius);
+      }
+      return;
+    }
     
     if (transform.position.y <= groundLevel && movement.velocity.y <= 0) {
       transform.position.y = groundLevel;
@@ -617,5 +661,282 @@ export class PhysicsSystem extends BasePhysicsSystem {
     } else {
       movement.isGrounded = false;
     }
+  }
+
+  private readonly meshWallRadius = 0.55;
+  private readonly meshPlayerRadius = 0.5;
+  private readonly meshWalkableMinNy = 0.55;
+  private readonly meshMaxStepUp = 1.15;
+  private readonly meshMaxStepDown = 2.4;
+  private readonly meshDashMaxStepUp = 4.5;
+  private readonly meshDashMaxStepDown = 2.4;
+  private readonly meshMoveSubstep = 0.4;
+  private readonly meshDashSubstep = 0.4;
+  private readonly _meshDashOut = { x: 0, y: 0, z: 0, blocked: false };
+
+  private meshRaycast(
+    origin: Vector3,
+    direction: Vector3,
+    far: number,
+    firstHitOnly: boolean,
+  ) {
+    if (!this.meshCollider) return [];
+    this._meshRaycaster.near = 0;
+    this._meshRaycaster.far = Math.max(0.05, far);
+    (this._meshRaycaster as Raycaster & { firstHitOnly?: boolean }).firstHitOnly = firstHitOnly;
+    this._meshRaycaster.set(origin, direction);
+    return this._meshRaycaster.intersectObject(this.meshCollider, true);
+  }
+
+  private meshRaycastFirst(origin: Vector3, direction: Vector3, far: number) {
+    const hits = this.meshRaycast(origin, direction, far, true);
+    return hits.length > 0 ? hits[0] : null;
+  }
+
+  private hitWalkableNy(hit: { face?: { normal: Vector3 } | null; object?: Object3D }): number | null {
+    if (!hit.face) return null;
+    this._meshHitNormal.copy(hit.face.normal);
+    if (hit.object) {
+      this._meshHitNormal.transformDirection(hit.object.matrixWorld);
+    }
+    if (this._meshHitNormal.y <= this.meshWalkableMinNy) return null;
+    return this._meshHitNormal.y;
+  }
+
+  /**
+   * Downward probe that ignores ceilings / walls. Picks the walkable hit whose
+   * height is nearest `feetY` inside the step-up / step-down window.
+   */
+  public probeWalkableGroundY(
+    x: number,
+    z: number,
+    feetY: number,
+    maxStepUp: number = this.meshMaxStepUp,
+    maxStepDown: number = this.meshMaxStepDown,
+  ): number | null {
+    const originY = feetY + maxStepUp + 0.35;
+    const far = maxStepUp + maxStepDown + 1.25;
+    const hits = this.meshRaycast(
+      this._meshRayOrigin.set(x, originY, z),
+      this._meshDown,
+      far,
+      false,
+    );
+    let bestY: number | null = null;
+    let bestDist = Infinity;
+    const minY = feetY - maxStepDown;
+    const maxY = feetY + maxStepUp;
+    for (let i = 0; i < hits.length; i++) {
+      const hit = hits[i];
+      if (this.hitWalkableNy(hit) == null) continue;
+      const gy = hit.point.y;
+      if (gy < minY - 1e-3 || gy > maxY + 1e-3) continue;
+      const d = Math.abs(gy - feetY);
+      if (d < bestDist) {
+        bestDist = d;
+        bestY = gy;
+      }
+    }
+    return bestY;
+  }
+
+  /**
+   * Substep an XZ dash onto walkable mesh, including higher ledges.
+   * Stops at the last valid stand point instead of falling into void.
+   */
+  public resolveMeshDash(
+    from: Vector3,
+    desiredX: number,
+    desiredZ: number,
+  ): { x: number; y: number; z: number; blocked: boolean } {
+    const out = this._meshDashOut;
+    const feetStart = from.y - this.meshPlayerRadius;
+    const startGround = this.probeWalkableGroundY(
+      from.x,
+      from.z,
+      feetStart,
+      this.meshDashMaxStepUp,
+      this.meshDashMaxStepDown,
+    );
+    let x = from.x;
+    let z = from.z;
+    let feetY = startGround != null ? startGround : feetStart;
+    const dx = desiredX - from.x;
+    const dz = desiredZ - from.z;
+    const moveLen = Math.hypot(dx, dz);
+    let blocked = false;
+
+    if (moveLen > 1e-5) {
+      const steps = Math.max(1, Math.ceil(moveLen / this.meshDashSubstep));
+      const stepX = dx / steps;
+      const stepZ = dz / steps;
+      const inv = 1 / moveLen;
+      this._meshRayDir.set(dx * inv, 0, dz * inv);
+      let chestY = feetY + this.meshPlayerRadius;
+
+      for (let i = 0; i < steps; i++) {
+        const tryX = x + stepX;
+        const tryZ = z + stepZ;
+        const stepLen = Math.hypot(stepX, stepZ);
+        const wallHit = this.meshRaycastFirst(
+          this._meshRayOrigin.set(x, chestY, z),
+          this._meshRayDir,
+          stepLen + this.meshWallRadius,
+        );
+        if (wallHit && wallHit.face) {
+          this._meshHitNormal.copy(wallHit.face.normal);
+          if (wallHit.object) {
+            this._meshHitNormal.transformDirection(wallHit.object.matrixWorld);
+          }
+          if (Math.abs(this._meshHitNormal.y) <= this.meshWalkableMinNy) {
+            blocked = true;
+            break;
+          }
+        }
+
+        const destGround = this.probeWalkableGroundY(
+          tryX,
+          tryZ,
+          feetY,
+          this.meshDashMaxStepUp,
+          this.meshDashMaxStepDown,
+        );
+        if (destGround == null) {
+          blocked = true;
+          break;
+        }
+        x = tryX;
+        z = tryZ;
+        feetY = destGround;
+        chestY = feetY + this.meshPlayerRadius;
+      }
+    }
+
+    const clamped = this.clampPositionToPlayableAabb(x, z);
+    if (clamped.x !== x || clamped.z !== z) {
+      blocked = true;
+      x = clamped.x;
+      z = clamped.z;
+      const clampedGround = this.probeWalkableGroundY(
+        x,
+        z,
+        feetY,
+        this.meshDashMaxStepUp,
+        this.meshDashMaxStepDown,
+      );
+      if (clampedGround != null) feetY = clampedGround;
+    }
+
+    out.x = x;
+    out.y = feetY + this.meshPlayerRadius;
+    out.z = z;
+    out.blocked = blocked;
+    return out;
+  }
+
+  private applyMeshGround(transform: Transform, movement: Movement, sphereRadius: number): void {
+    const feetY = transform.position.y - sphereRadius;
+    const groundY = this.probeWalkableGroundY(
+      transform.position.x,
+      transform.position.z,
+      feetY,
+    );
+    if (groundY == null) {
+      movement.isGrounded = false;
+      return;
+    }
+    const desiredY = groundY + sphereRadius;
+    const above = transform.position.y - desiredY;
+    if (movement.velocity.y <= 0.2 && above <= this.meshMaxStepUp) {
+      transform.position.y = desiredY;
+      movement.velocity.y = 0;
+      movement.isGrounded = true;
+      return;
+    }
+    movement.isGrounded = false;
+  }
+
+  private clampPositionToPlayableAabb(x: number, z: number): { x: number; z: number } {
+    const aabb = this.playableAabb;
+    if (!aabb) return { x, z };
+    return {
+      x: Math.max(aabb.minX, Math.min(aabb.maxX, x)),
+      z: Math.max(aabb.minZ, Math.min(aabb.maxZ, z)),
+    };
+  }
+
+  private resolveMeshMovement(
+    transform: Transform,
+    movement: Movement,
+    currentPosition: Vector3,
+    potentialPosition: Vector3,
+    deltaPosition: Vector3,
+  ): void {
+    let x = currentPosition.x;
+    let z = currentPosition.z;
+    const dx = potentialPosition.x - currentPosition.x;
+    const dz = potentialPosition.z - currentPosition.z;
+    const moveLen = Math.hypot(dx, dz);
+    let feetY = currentPosition.y - this.meshPlayerRadius;
+
+    if (moveLen > 1e-5) {
+      const steps = Math.max(1, Math.ceil(moveLen / this.meshMoveSubstep));
+      const stepX = dx / steps;
+      const stepZ = dz / steps;
+      const inv = 1 / moveLen;
+      const dirX = dx * inv;
+      const dirZ = dz * inv;
+      this._meshRayDir.set(dirX, 0, dirZ);
+
+      for (let i = 0; i < steps; i++) {
+        let tryX = x + stepX;
+        let tryZ = z + stepZ;
+        const stepLen = Math.hypot(stepX, stepZ);
+        const wallHit = this.meshRaycastFirst(
+          this._meshRayOrigin.set(x, feetY + this.meshPlayerRadius, z),
+          this._meshRayDir,
+          stepLen + this.meshWallRadius,
+        );
+        if (wallHit && wallHit.face) {
+          this._meshHitNormal.copy(wallHit.face.normal);
+          if (wallHit.object) {
+            this._meshHitNormal.transformDirection(wallHit.object.matrixWorld);
+          }
+          if (Math.abs(this._meshHitNormal.y) <= this.meshWalkableMinNy) {
+            this._meshHitNormal.y = 0;
+            if (this._meshHitNormal.lengthSq() > 1e-6) {
+              this._meshHitNormal.normalize();
+              const into = dirX * this._meshHitNormal.x + dirZ * this._meshHitNormal.z;
+              if (into > 0) {
+                tryX = x + stepX - this._meshHitNormal.x * into * stepLen;
+                tryZ = z + stepZ - this._meshHitNormal.z * into * stepLen;
+                this._velocityNormal.set(this._meshHitNormal.x, 0, this._meshHitNormal.z);
+                const vn = movement.velocity.x * this._velocityNormal.x
+                  + movement.velocity.z * this._velocityNormal.z;
+                if (vn > 0) {
+                  movement.velocity.x -= this._velocityNormal.x * vn;
+                  movement.velocity.z -= this._velocityNormal.z * vn;
+                }
+              }
+            }
+          }
+        }
+
+        const destGround = this.probeWalkableGroundY(tryX, tryZ, feetY);
+        if (destGround == null) {
+          break;
+        }
+        x = tryX;
+        z = tryZ;
+        feetY = destGround;
+      }
+    }
+
+    const clamped = this.clampPositionToPlayableAabb(x, z);
+    const nextY = movement.isGrounded
+      ? feetY + this.meshPlayerRadius
+      : currentPosition.y + deltaPosition.y;
+    transform.setPosition(clamped.x, nextY, clamped.z);
+    transform.matrixNeedsUpdate = true;
   }
 }

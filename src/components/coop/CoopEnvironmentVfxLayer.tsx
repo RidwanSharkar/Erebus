@@ -4,6 +4,9 @@ import React, { forwardRef, memo, useCallback, useImperativeHandle, useState } f
 import { Vector3 } from '@/utils/three-exports';
 import type { Position3 } from '@/utils/position3';
 import GoldCollectMoteEffect from '@/components/enemies/GoldCollectMoteEffect';
+import WoodCollectMoteEffect from '@/components/environment/WoodCollectMoteEffect';
+import StoneCollectMoteEffect from '@/components/environment/StoneCollectMoteEffect';
+import MeatCollectMoteEffect from '@/components/environment/MeatCollectMoteEffect';
 import DreamShardEffect from '@/components/enemies/DreamShardEffect';
 import RunePickupRiseEffect from '@/components/enemies/RunePickupRiseEffect';
 import MushroomEruptionVfx from '@/components/environment/MushroomEruptionVfx';
@@ -14,12 +17,18 @@ import type {
   GoldCollectMoteState,
   MushroomEruptionFxState,
   RunePickupRiseState,
+  WoodCollectMoteBatchState,
+  StoneCollectMoteBatchState,
+  MeatCollectMoteBatchState,
 } from '@/components/coop/coopVfxLayerTypes';
 
 export type CoopEnvironmentVfxLayerHandle = {
   clearAll: () => void;
   addGoldCollectMote: (mote: GoldCollectMoteState) => void;
   addGoldCollectMotes: (motes: GoldCollectMoteState[]) => void;
+  addWoodCollectBatch: (batch: WoodCollectMoteBatchState) => void;
+  addStoneCollectBatch: (batch: StoneCollectMoteBatchState) => void;
+  addMeatCollectBatch: (batch: MeatCollectMoteBatchState) => void;
   addRunePickupRise: (fx: RunePickupRiseState) => void;
   addRunePickupRises: (fxList: RunePickupRiseState[]) => void;
   addMushroomEruption: (fx: MushroomEruptionFxState) => void;
@@ -54,6 +63,9 @@ const CoopEnvironmentVfxLayer = memo(forwardRef<CoopEnvironmentVfxLayerHandle, C
     onDreamShardComplete,
   }, ref) {
     const [goldCollectMotes, setGoldCollectMotes] = useState<GoldCollectMoteState[]>([]);
+    const [woodCollectBatches, setWoodCollectBatches] = useState<WoodCollectMoteBatchState[]>([]);
+    const [stoneCollectBatches, setStoneCollectBatches] = useState<StoneCollectMoteBatchState[]>([]);
+    const [meatCollectBatches, setMeatCollectBatches] = useState<MeatCollectMoteBatchState[]>([]);
     const [dreamShards, setDreamShards] = useState<DreamShardState[]>([]);
     const [runePickupRises, setRunePickupRises] = useState<RunePickupRiseState[]>([]);
     const [mushroomEruptionFx, setMushroomEruptionFx] = useState<MushroomEruptionFxState[]>([]);
@@ -61,6 +73,9 @@ const CoopEnvironmentVfxLayer = memo(forwardRef<CoopEnvironmentVfxLayerHandle, C
 
     const clearAll = useCallback(() => {
       setGoldCollectMotes([]);
+      setWoodCollectBatches([]);
+      setStoneCollectBatches([]);
+      setMeatCollectBatches([]);
       setDreamShards([]);
       setRunePickupRises([]);
       setMushroomEruptionFx([]);
@@ -74,6 +89,21 @@ const CoopEnvironmentVfxLayer = memo(forwardRef<CoopEnvironmentVfxLayerHandle, C
     const addGoldCollectMotes = useCallback((motes: GoldCollectMoteState[]) => {
       if (motes.length === 0) return;
       setGoldCollectMotes((prev) => [...prev, ...motes]);
+    }, []);
+
+    const addWoodCollectBatch = useCallback((batch: WoodCollectMoteBatchState) => {
+      if (batch.motes.length === 0) return;
+      setWoodCollectBatches((prev) => [...prev, batch]);
+    }, []);
+
+    const addStoneCollectBatch = useCallback((batch: StoneCollectMoteBatchState) => {
+      if (batch.motes.length === 0) return;
+      setStoneCollectBatches((prev) => [...prev, batch]);
+    }, []);
+
+    const addMeatCollectBatch = useCallback((batch: MeatCollectMoteBatchState) => {
+      if (batch.motes.length === 0) return;
+      setMeatCollectBatches((prev) => [...prev, batch]);
     }, []);
 
     const addRunePickupRise = useCallback((fx: RunePickupRiseState) => {
@@ -119,6 +149,9 @@ const CoopEnvironmentVfxLayer = memo(forwardRef<CoopEnvironmentVfxLayerHandle, C
       clearAll,
       addGoldCollectMote,
       addGoldCollectMotes,
+      addWoodCollectBatch,
+      addStoneCollectBatch,
+      addMeatCollectBatch,
       addRunePickupRise,
       addRunePickupRises,
       addMushroomEruption,
@@ -130,6 +163,9 @@ const CoopEnvironmentVfxLayer = memo(forwardRef<CoopEnvironmentVfxLayerHandle, C
       clearAll,
       addGoldCollectMote,
       addGoldCollectMotes,
+      addWoodCollectBatch,
+      addStoneCollectBatch,
+      addMeatCollectBatch,
       addRunePickupRise,
       addRunePickupRises,
       addMushroomEruption,
@@ -153,6 +189,51 @@ const CoopEnvironmentVfxLayer = memo(forwardRef<CoopEnvironmentVfxLayerHandle, C
               setGoldCollectMotes((prev) => prev.filter((m) => m.id !== mote.id));
               onGoldCollectMoteComplete?.(mote.id);
               window.dispatchEvent(new CustomEvent('gold-pocket-collected'));
+            }}
+          />
+        ))}
+
+        {woodCollectBatches.map((batch) => (
+          <WoodCollectMoteEffect
+            key={batch.batchId}
+            batchId={batch.batchId}
+            motes={batch.motes}
+            getCurrentPlayerPosition={getCurrentPlayerPosition}
+            onMoteComplete={() => {
+              window.dispatchEvent(new CustomEvent('wood-collected'));
+            }}
+            onBatchComplete={() => {
+              setWoodCollectBatches((prev) => prev.filter((b) => b.batchId !== batch.batchId));
+            }}
+          />
+        ))}
+
+        {stoneCollectBatches.map((batch) => (
+          <StoneCollectMoteEffect
+            key={batch.batchId}
+            batchId={batch.batchId}
+            motes={batch.motes}
+            getCurrentPlayerPosition={getCurrentPlayerPosition}
+            onMoteComplete={() => {
+              window.dispatchEvent(new CustomEvent('stone-collected'));
+            }}
+            onBatchComplete={() => {
+              setStoneCollectBatches((prev) => prev.filter((b) => b.batchId !== batch.batchId));
+            }}
+          />
+        ))}
+
+        {meatCollectBatches.map((batch) => (
+          <MeatCollectMoteEffect
+            key={batch.batchId}
+            batchId={batch.batchId}
+            motes={batch.motes}
+            getCurrentPlayerPosition={getCurrentPlayerPosition}
+            onMoteComplete={() => {
+              window.dispatchEvent(new CustomEvent('meat-collected'));
+            }}
+            onBatchComplete={() => {
+              setMeatCollectBatches((prev) => prev.filter((b) => b.batchId !== batch.batchId));
             }}
           />
         ))}

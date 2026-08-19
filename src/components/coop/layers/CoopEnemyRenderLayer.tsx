@@ -38,6 +38,14 @@ import VengefulSpiritRenderer from '@/components/enemies/VengefulSpiritRenderer'
 import AlliedKnightRenderer from '@/components/enemies/AlliedKnightRenderer';
 import AlliedHealerRenderer from '@/components/enemies/AlliedHealerRenderer';
 import DefenseTowerRenderer from '@/components/enemies/DefenseTowerRenderer';
+import WatchTowerRenderer from '@/components/enemies/WatchTowerRenderer';
+import SiegeTowerRenderer from '@/components/enemies/SiegeTowerRenderer';
+import FirePitRenderer from '@/components/enemies/FirePitRenderer';
+import BarracksRenderer from '@/components/enemies/BarracksRenderer';
+import ResearchStationRenderer from '@/components/enemies/ResearchStationRenderer';
+import ShrineRenderer from '@/components/enemies/ShrineRenderer';
+import ObeliskRenderer from '@/components/enemies/ObeliskRenderer';
+import ShieldBatteryRenderer from '@/components/enemies/ShieldBatteryRenderer';
 import AlliedHuntressRenderer from '@/components/enemies/AlliedHuntressRenderer';
 import AlliedPhantomRenderer from '@/components/enemies/AlliedPhantomRenderer';
 import AlliedDemonRenderer from '@/components/enemies/AlliedDemonRenderer';
@@ -240,6 +248,159 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
             health={enemy.health}
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
+          />
+        );
+      })}
+
+      {(enemiesByType.get('fire-pit') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <FirePitRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={enemy.position}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+          />
+        );
+      })}
+
+      {(enemiesByType.get('barracks') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <BarracksRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={enemy.position}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+            powered={enemy.powered !== false}
+          />
+        );
+      })}
+
+      {(enemiesByType.get('tower') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <DefenseTowerRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={enemy.position}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+            powered={enemy.powered !== false}
+          />
+        );
+      })}
+
+      {(enemiesByType.get('watch-tower') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <WatchTowerRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={enemy.position}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+            powered={enemy.powered !== false}
+          />
+        );
+      })}
+
+      {(enemiesByType.get('siege-tower') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <SiegeTowerRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={enemy.position}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+            powered={enemy.powered !== false}
+          />
+        );
+      })}
+
+      {(enemiesByType.get('research-station') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <ResearchStationRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={enemy.position}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+            powered={enemy.powered !== false}
+          />
+        );
+      })}
+
+      {(enemiesByType.get('shrine') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <ShrineRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={enemy.position}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+            powered={enemy.powered !== false}
+            shrineUsed={enemy.shrineUsed === true}
+          />
+        );
+      })}
+
+      {(enemiesByType.get('obelisk') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <ObeliskRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={enemy.position}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+            powered={enemy.powered !== false}
+          />
+        );
+      })}
+
+      {(enemiesByType.get('shield-battery') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        return (
+          <ShieldBatteryRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={enemy.position}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+            powered={enemy.powered !== false}
           />
         );
       })}

@@ -1,5 +1,6 @@
 import type { MutableRefObject } from 'react';
 import { Vector3 } from 'three';
+import { applyDungeonFeetY } from '@/utils/dungeonLayout';
 
 export interface EnemyLiveTransform {
   position: { x: number; y: number; z: number };
@@ -64,6 +65,7 @@ export function syncEnemyTransformFromRef(
   if (!live) return 0;
 
   _scratch.set(live.position.x, live.position.y, live.position.z);
+  applyDungeonFeetY(_scratch);
   const dist = targetPosition.distanceTo(_scratch);
   targetPosition.copy(_scratch);
   targetRotation.current = live.rotation;

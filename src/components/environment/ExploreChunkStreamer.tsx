@@ -28,13 +28,23 @@ import {
   EXPLORE_DISC_STRIDE,
   EXPLORE_MUSHROOM_VIEW_RADIUS,
   packExploreMushroomIndex,
+  packExploreTreeIndex,
+  packExploreRootIndex,
+  packExploreRockIndex,
+  packExploreSpineIndex,
   mushroomVisualFromScale,
   exploreRockVariant,
   type ExploreChunkData,
 } from '@/utils/exploreWorldGen';
 import { publishExploreObstacles, type ExploreObstacleDisc } from '@/utils/exploreObstacles';
 import { publishExploreMushrooms } from '@/utils/exploreMushrooms';
+import { publishExploreTrees } from '@/utils/exploreTrees';
+import { publishExploreRoots } from '@/utils/exploreRoots';
+import { publishExploreRocks, type ExploreRockInstance } from '@/utils/exploreRocks';
+import { publishExploreSpines, type ExploreSpineInstance } from '@/utils/exploreSpines';
 import type { MushroomInstance } from '@/utils/mushroomLayout';
+import type { ExploreTreeInstance } from '@/utils/exploreTreeLayout';
+import type { ExploreRootInstance } from '@/utils/exploreGroundPropLayout';
 import InstancedMushrooms from './InstancedMushrooms';
 import ExploreInstancedRocks, {
   preloadExploreRockGlbs,
@@ -44,7 +54,19 @@ import ExploreInstancedTrees, {
   preloadExploreTreeGlbs,
   type ExploreTreePlacement,
 } from './ExploreInstancedTrees';
+import ExploreInstancedGlbDiscs, {
+  preloadExploreGlbDisc,
+  type ExploreGlbDiscPlacement,
+} from './ExploreInstancedGlbDiscs';
 import { exploreTreeVariant } from '@/utils/exploreTreeLayout';
+import {
+  EXPLORE_ROOT_META,
+  EXPLORE_ROOT_URL,
+  EXPLORE_ROOT_VISUAL_SCALE,
+  EXPLORE_SPINE_META,
+  EXPLORE_SPINE_URL,
+  EXPLORE_SPINE_VISUAL_SCALE,
+} from '@/utils/exploreGroundPropLayout';
 import { GRASS_VERTEX, GRASS_FRAGMENT } from './StylizedGrass';
 
 const LOAD_RADIUS = 1;
@@ -69,6 +91,8 @@ const GRASS_CELL_RADIUS = GRASS_CELL * Math.SQRT1_2 + 1.25;
 const COMBAT_GRASS_SCALE = 0.5;
 const TREE_POOL = 256;
 const ROCK_POOL = 192;
+const ROOT_POOL = 128;
+const SPINE_POOL = 32;
 const MUSH_POOL = 128;
 
 const UP = new Vector3(0, 1, 0);
@@ -193,14 +217,25 @@ function markPoolDirty(mesh: InstancedMesh, count: number, stride: number): void
 let obstacleBufA: ExploreObstacleDisc[] = [];
 let obstacleBufB: ExploreObstacleDisc[] = [];
 let obstacleUseA = true;
+const EMPTY_HIDDEN = new Set<number>();
 
-function publishNearbyObstacles(loaded: Map<string, ExploreChunkData>, px: number, pz: number): void {
+function publishNearbyObstacles(
+  loaded: Map<string, ExploreChunkData>,
+  px: number,
+  pz: number,
+  hiddenTrees: ReadonlySet<number> = EMPTY_HIDDEN,
+  hiddenRoots: ReadonlySet<number> = EMPTY_HIDDEN,
+  hiddenRocks: ReadonlySet<number> = EMPTY_HIDDEN,
+  hiddenSpines: ReadonlySet<number> = EMPTY_HIDDEN,
+): void {
   const next = obstacleUseA ? obstacleBufA : obstacleBufB;
   obstacleUseA = !obstacleUseA;
   next.length = 0;
   for (const chunk of loaded.values()) {
     const trees = chunk.trees;
     for (let i = 0; i < chunk.treeCount; i++) {
+      const packed = packExploreTreeIndex(chunk.cx, chunk.cz, i);
+      if (hiddenTrees.has(packed)) continue;
       const o = i * EXPLORE_DISC_STRIDE;
       const x = trees[o]!;
       const z = trees[o + 1]!;
@@ -211,6 +246,8 @@ function publishNearbyObstacles(loaded: Map<string, ExploreChunkData>, px: numbe
     }
     const rocks = chunk.rocks;
     for (let i = 0; i < chunk.rockCount; i++) {
+      const packed = packExploreRockIndex(chunk.cx, chunk.cz, i);
+      if (hiddenRocks.has(packed)) continue;
       const o = i * EXPLORE_DISC_STRIDE;
       const x = rocks[o]!;
       const z = rocks[o + 1]!;
@@ -218,6 +255,30 @@ function publishNearbyObstacles(loaded: Map<string, ExploreChunkData>, px: numbe
       const dz = z - pz;
       if (dx * dx + dz * dz > OBSTACLE_RADIUS2) continue;
       next.push({ x, z, radius: rocks[o + 2]! });
+    }
+    const roots = chunk.roots;
+    for (let i = 0; i < chunk.rootCount; i++) {
+      const packed = packExploreRootIndex(chunk.cx, chunk.cz, i);
+      if (hiddenRoots.has(packed)) continue;
+      const o = i * EXPLORE_DISC_STRIDE;
+      const x = roots[o]!;
+      const z = roots[o + 1]!;
+      const dx = x - px;
+      const dz = z - pz;
+      if (dx * dx + dz * dz > OBSTACLE_RADIUS2) continue;
+      next.push({ x, z, radius: roots[o + 2]! });
+    }
+    const spines = chunk.spines;
+    for (let i = 0; i < chunk.spineCount; i++) {
+      const packed = packExploreSpineIndex(chunk.cx, chunk.cz, i);
+      if (hiddenSpines.has(packed)) continue;
+      const o = i * EXPLORE_DISC_STRIDE;
+      const x = spines[o]!;
+      const z = spines[o + 1]!;
+      const dx = x - px;
+      const dz = z - pz;
+      if (dx * dx + dz * dz > OBSTACLE_RADIUS2) continue;
+      next.push({ x, z, radius: spines[o + 2]! });
     }
   }
   publishExploreObstacles(next);
@@ -228,16 +289,26 @@ interface ExploreChunkStreamerProps {
   playerPositionRef: React.MutableRefObject<Vector3Type>;
   combatActive?: boolean;
   mushroomHiddenIndices?: ReadonlySet<number>;
+  treeHiddenIndices?: ReadonlySet<number>;
+  rootHiddenIndices?: ReadonlySet<number>;
+  rockHiddenIndices?: ReadonlySet<number>;
+  spineHiddenIndices?: ReadonlySet<number>;
 }
 
 preloadExploreRockGlbs();
 preloadExploreTreeGlbs();
+preloadExploreGlbDisc(EXPLORE_ROOT_URL);
+preloadExploreGlbDisc(EXPLORE_SPINE_URL);
 
 export default function ExploreChunkStreamer({
   seed,
   playerPositionRef,
   combatActive = false,
   mushroomHiddenIndices,
+  treeHiddenIndices,
+  rootHiddenIndices,
+  rockHiddenIndices,
+  spineHiddenIndices,
 }: ExploreChunkStreamerProps) {
   const grassRefs = useRef<(InstancedMesh | null)[]>(Array.from({ length: GRASS_CHUNK_COUNT }, () => null));
   const attachGrassChunks = useMemo(
@@ -258,6 +329,8 @@ export default function ExploreChunkStreamer({
   );
   const [treePlacements, setTreePlacements] = useState<ExploreTreePlacement[]>([]);
   const [rockPlacements, setRockPlacements] = useState<ExploreRockPlacement[]>([]);
+  const [rootPlacements, setRootPlacements] = useState<ExploreGlbDiscPlacement[]>([]);
+  const [spinePlacements, setSpinePlacements] = useState<ExploreGlbDiscPlacement[]>([]);
   const [mushInstances, setMushInstances] = useState<MushroomInstance[]>([]);
 
   const loadedRef = useRef(new Map<string, ExploreChunkData>());
@@ -268,6 +341,18 @@ export default function ExploreChunkStreamer({
   const lastCombatRef = useRef(combatActive);
   const combatActiveRef = useRef(combatActive);
   combatActiveRef.current = combatActive;
+  const treeHiddenRef = useRef<ReadonlySet<number>>(EMPTY_HIDDEN);
+  treeHiddenRef.current = treeHiddenIndices ?? EMPTY_HIDDEN;
+  const lastTreeLiveRef = useRef<ExploreTreeInstance[]>([]);
+  const rootHiddenRef = useRef<ReadonlySet<number>>(EMPTY_HIDDEN);
+  rootHiddenRef.current = rootHiddenIndices ?? EMPTY_HIDDEN;
+  const lastRootLiveRef = useRef<ExploreRootInstance[]>([]);
+  const rockHiddenRef = useRef<ReadonlySet<number>>(EMPTY_HIDDEN);
+  rockHiddenRef.current = rockHiddenIndices ?? EMPTY_HIDDEN;
+  const lastRockLiveRef = useRef<ExploreRockInstance[]>([]);
+  const spineHiddenRef = useRef<ReadonlySet<number>>(EMPTY_HIDDEN);
+  spineHiddenRef.current = spineHiddenIndices ?? EMPTY_HIDDEN;
+  const lastSpineLiveRef = useRef<ExploreSpineInstance[]>([]);
 
   const grassMat = useMemo(() => {
     const mat = new ShaderMaterial({
@@ -308,10 +393,108 @@ export default function ExploreChunkStreamer({
     lastWriteZRef.current = Number.POSITIVE_INFINITY;
     publishExploreObstacles([]);
     publishExploreMushrooms([]);
+    publishExploreTrees([]);
+    publishExploreRoots([]);
+    publishExploreRocks([]);
+    publishExploreSpines([]);
+    lastTreeLiveRef.current = [];
+    lastRootLiveRef.current = [];
+    lastRockLiveRef.current = [];
+    lastSpineLiveRef.current = [];
     setTreePlacements([]);
     setRockPlacements([]);
+    setRootPlacements([]);
+    setSpinePlacements([]);
     setMushInstances([]);
   }, [seed]);
+
+  useEffect(() => {
+    const hidden = treeHiddenIndices ?? EMPTY_HIDDEN;
+    setTreePlacements((prev) => {
+      const next = prev.filter((p) => !hidden.has(p.index));
+      return next.length === prev.length ? prev : next;
+    });
+    lastTreeLiveRef.current = lastTreeLiveRef.current.filter((t) => !hidden.has(t.index));
+    publishExploreTrees(lastTreeLiveRef.current);
+    const pos = playerPositionRef.current;
+    if (pos) {
+      publishNearbyObstacles(
+        loadedRef.current,
+        pos.x,
+        pos.z,
+        hidden,
+        rootHiddenRef.current,
+        rockHiddenRef.current,
+        spineHiddenRef.current,
+      );
+    }
+  }, [treeHiddenIndices, playerPositionRef]);
+
+  useEffect(() => {
+    const hidden = rootHiddenIndices ?? EMPTY_HIDDEN;
+    setRootPlacements((prev) => {
+      const next = prev.filter((p) => p.index == null || !hidden.has(p.index));
+      return next.length === prev.length ? prev : next;
+    });
+    lastRootLiveRef.current = lastRootLiveRef.current.filter((r) => !hidden.has(r.index));
+    publishExploreRoots(lastRootLiveRef.current);
+    const pos = playerPositionRef.current;
+    if (pos) {
+      publishNearbyObstacles(
+        loadedRef.current,
+        pos.x,
+        pos.z,
+        treeHiddenRef.current,
+        hidden,
+        rockHiddenRef.current,
+        spineHiddenRef.current,
+      );
+    }
+  }, [rootHiddenIndices, playerPositionRef]);
+
+  useEffect(() => {
+    const hidden = rockHiddenIndices ?? EMPTY_HIDDEN;
+    setRockPlacements((prev) => {
+      const next = prev.filter((p) => p.index == null || !hidden.has(p.index));
+      return next.length === prev.length ? prev : next;
+    });
+    lastRockLiveRef.current = lastRockLiveRef.current.filter((r) => !hidden.has(r.index));
+    publishExploreRocks(lastRockLiveRef.current);
+    const pos = playerPositionRef.current;
+    if (pos) {
+      publishNearbyObstacles(
+        loadedRef.current,
+        pos.x,
+        pos.z,
+        treeHiddenRef.current,
+        rootHiddenRef.current,
+        hidden,
+        spineHiddenRef.current,
+      );
+    }
+  }, [rockHiddenIndices, playerPositionRef]);
+
+  useEffect(() => {
+    const hidden = spineHiddenIndices ?? EMPTY_HIDDEN;
+    setSpinePlacements((prev) => {
+      const next = prev.filter((p) => p.index == null || !hidden.has(p.index));
+      return next.length === prev.length ? prev : next;
+    });
+    lastSpineLiveRef.current = lastSpineLiveRef.current.filter((s) => !hidden.has(s.index));
+    publishExploreSpines(lastSpineLiveRef.current);
+    const pos = playerPositionRef.current;
+    if (pos) {
+      publishNearbyObstacles(
+        loadedRef.current,
+        pos.x,
+        pos.z,
+        treeHiddenRef.current,
+        rootHiddenRef.current,
+        rockHiddenRef.current,
+        hidden,
+      );
+    }
+  }, [spineHiddenIndices, playerPositionRef]);
 
   const rewritePools = (px: number, pz: number) => {
     const grasses = grassRefs.current;
@@ -326,7 +509,13 @@ export default function ExploreChunkStreamer({
     let grassN = 0;
     const grassBudget = combatThin ? Math.floor(GRASS_POOL * COMBAT_GRASS_SCALE) : GRASS_POOL;
     const nextTrees: ExploreTreePlacement[] = [];
+    const nextTreeLive: ExploreTreeInstance[] = [];
     const nextRocks: ExploreRockPlacement[] = [];
+    const nextRockLive: ExploreRockInstance[] = [];
+    const nextRoots: ExploreGlbDiscPlacement[] = [];
+    const nextRootLive: ExploreRootInstance[] = [];
+    const nextSpines: ExploreGlbDiscPlacement[] = [];
+    const nextSpineLive: ExploreSpineInstance[] = [];
     const nextMush: MushroomInstance[] = [];
 
     for (const chunk of loadedRef.current.values()) {
@@ -361,24 +550,41 @@ export default function ExploreChunkStreamer({
       }
 
       const trees = chunk.trees;
+      const hiddenTrees = treeHiddenRef.current;
       for (let i = 0; i < chunk.treeCount && nextTrees.length < TREE_POOL; i++) {
+        const packed = packExploreTreeIndex(chunk.cx, chunk.cz, i);
+        if (hiddenTrees.has(packed)) continue;
         const o = i * EXPLORE_DISC_STRIDE;
         const x = trees[o]!;
         const z = trees[o + 1]!;
         const dx = x - px;
         const dz = z - pz;
         if (dx * dx + dz * dz > PROP_RADIUS2) continue;
+        const scale = trees[o + 3]!;
+        const variant = exploreTreeVariant(x, z);
         nextTrees.push({
+          index: packed,
           x,
           z,
-          scale: trees[o + 3]!,
+          scale,
           rotY: trees[o + 4]!,
-          variant: exploreTreeVariant(x, z),
+          variant,
+        });
+        nextTreeLive.push({
+          index: packed,
+          x,
+          z,
+          radius: trees[o + 2]!,
+          scale,
+          variant,
         });
       }
 
       const rocks = chunk.rocks;
+      const hiddenRocks = rockHiddenRef.current;
       for (let i = 0; i < chunk.rockCount && nextRocks.length < ROCK_POOL; i++) {
+        const packed = packExploreRockIndex(chunk.cx, chunk.cz, i);
+        if (hiddenRocks.has(packed)) continue;
         const o = i * EXPLORE_DISC_STRIDE;
         const x = rocks[o]!;
         const z = rocks[o + 1]!;
@@ -386,12 +592,78 @@ export default function ExploreChunkStreamer({
         const dz = z - pz;
         if (dx * dx + dz * dz > PROP_RADIUS2) continue;
         const scale = rocks[o + 3]!;
+        const variant = exploreRockVariant(x, z);
         nextRocks.push({
+          index: packed,
           x,
           z,
           scale,
           rotY: rocks[o + 4]!,
-          variant: exploreRockVariant(x, z),
+          variant,
+        });
+        nextRockLive.push({
+          index: packed,
+          x,
+          z,
+          radius: rocks[o + 2]!,
+          scale,
+          variant,
+        });
+      }
+
+      const roots = chunk.roots;
+      const hiddenRoots = rootHiddenRef.current;
+      for (let i = 0; i < chunk.rootCount && nextRoots.length < ROOT_POOL; i++) {
+        const packed = packExploreRootIndex(chunk.cx, chunk.cz, i);
+        if (hiddenRoots.has(packed)) continue;
+        const o = i * EXPLORE_DISC_STRIDE;
+        const x = roots[o]!;
+        const z = roots[o + 1]!;
+        const dx = x - px;
+        const dz = z - pz;
+        if (dx * dx + dz * dz > PROP_RADIUS2) continue;
+        const scale = roots[o + 3]!;
+        nextRoots.push({
+          index: packed,
+          x,
+          z,
+          scale,
+          rotY: roots[o + 4]!,
+        });
+        nextRootLive.push({
+          index: packed,
+          x,
+          z,
+          radius: roots[o + 2]!,
+          scale,
+        });
+      }
+
+      const spines = chunk.spines;
+      const hiddenSpines = spineHiddenRef.current;
+      for (let i = 0; i < chunk.spineCount && nextSpines.length < SPINE_POOL; i++) {
+        const packed = packExploreSpineIndex(chunk.cx, chunk.cz, i);
+        if (hiddenSpines.has(packed)) continue;
+        const o = i * EXPLORE_DISC_STRIDE;
+        const x = spines[o]!;
+        const z = spines[o + 1]!;
+        const dx = x - px;
+        const dz = z - pz;
+        if (dx * dx + dz * dz > PROP_RADIUS2) continue;
+        const scale = spines[o + 3]!;
+        nextSpines.push({
+          index: packed,
+          x,
+          z,
+          scale,
+          rotY: spines[o + 4]!,
+        });
+        nextSpineLive.push({
+          index: packed,
+          x,
+          z,
+          radius: spines[o + 2]!,
+          scale,
         });
       }
 
@@ -430,10 +702,28 @@ export default function ExploreChunkStreamer({
     lastWriteXRef.current = px;
     lastWriteZRef.current = pz;
     lastCombatRef.current = combatThin;
-    publishNearbyObstacles(loadedRef.current, px, pz);
+    publishNearbyObstacles(
+      loadedRef.current,
+      px,
+      pz,
+      treeHiddenRef.current,
+      rootHiddenRef.current,
+      rockHiddenRef.current,
+      spineHiddenRef.current,
+    );
     publishExploreMushrooms(nextMush);
+    publishExploreTrees(nextTreeLive);
+    publishExploreRoots(nextRootLive);
+    publishExploreRocks(nextRockLive);
+    publishExploreSpines(nextSpineLive);
+    lastTreeLiveRef.current = nextTreeLive;
+    lastRootLiveRef.current = nextRootLive;
+    lastRockLiveRef.current = nextRockLive;
+    lastSpineLiveRef.current = nextSpineLive;
     setTreePlacements(nextTrees);
     setRockPlacements(nextRocks);
+    setRootPlacements(nextRoots);
+    setSpinePlacements(nextSpines);
     setMushInstances(nextMush);
   };
 
@@ -503,6 +793,22 @@ export default function ExploreChunkStreamer({
       ))}
       <ExploreInstancedTrees placements={treePlacements} />
       <ExploreInstancedRocks placements={rockPlacements} />
+      <ExploreInstancedGlbDiscs
+        name="explore-glb-roots"
+        url={EXPLORE_ROOT_URL}
+        meta={EXPLORE_ROOT_META}
+        placements={rootPlacements}
+        pool={ROOT_POOL}
+        visualScale={EXPLORE_ROOT_VISUAL_SCALE}
+      />
+      <ExploreInstancedGlbDiscs
+        name="explore-glb-spines"
+        url={EXPLORE_SPINE_URL}
+        meta={EXPLORE_SPINE_META}
+        placements={spinePlacements}
+        pool={SPINE_POOL}
+        visualScale={EXPLORE_SPINE_VISUAL_SCALE}
+      />
       <InstancedMushrooms
         instances={mushInstances}
         hiddenIndices={mushroomHiddenIndices}

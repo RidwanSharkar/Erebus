@@ -17,6 +17,7 @@ import GhostTrail from './GhostTrail';
 import DashFireTrail from './DashFireTrail';
 import { WeaponType, WeaponSubclass } from './weapons';
 import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
+import { queryWeaponHittableEntities } from '@/utils/destructibleEnvironmentTargeting';
 import { World } from '@/ecs/World';
 import { Movement } from '@/ecs/components/Movement';
 import { Transform } from '@/ecs/components/Transform';
@@ -228,6 +229,14 @@ interface DragonRendererProps {
   /** Co-op: mushroom ring melee (Sword/Runeblade) — server `mushroom-damage`. */
   mushroomTargets?: Array<{ index: number; position: Vector3 }>;
   onMushroomHit?: (index: number, baseDamage: number) => void;
+  treeTargets?: Array<{ index: number; position: Vector3; radius?: number }>;
+  onTreeHit?: (index: number, baseDamage: number) => void;
+  rootTargets?: Array<{ index: number; position: Vector3; radius?: number }>;
+  onRootHit?: (index: number, baseDamage: number) => void;
+  rockTargets?: Array<{ index: number; position: Vector3; radius?: number }>;
+  onRockHit?: (index: number, baseDamage: number) => void;
+  spineTargets?: Array<{ index: number; position: Vector3; radius?: number }>;
+  onSpineHit?: (index: number, baseDamage: number) => void;
 
   /** Wrathful Talons: Reaping Talons return arrow uses preset crit when local player has talent. */
   wrathfulTalonsReturnCrit?: boolean;
@@ -421,6 +430,14 @@ function DragonRenderer({
   talentLoadout = null,
   mushroomTargets,
   onMushroomHit,
+  treeTargets,
+  onTreeHit,
+  rootTargets,
+  onRootHit,
+  rockTargets,
+  onRockHit,
+  spineTargets,
+  onSpineHit,
   isPrimeMateriaActive: isPrimeMateriaActiveProp = false,
   isIncinerationCharging: isIncinerationChargingProp = false,
 }: DragonRendererProps) {
@@ -506,24 +523,24 @@ function DragonRenderer({
   }, []);
 
   const refreshEnemyDataRef = useCallback(() => {
-    const enemies = world
-      .queryEntities([Transform, Health, Enemy])
-      .filter((entity) => !shouldExcludeFromWeaponEnemyData(entity));
+    const hittables = queryWeaponHittableEntities(world).filter(
+      (entity) => !shouldExcludeFromWeaponEnemyData(entity),
+    );
     const enemyDataArray = enemyDataRef.current;
     let writeIndex = 0;
 
-    for (const enemy of enemies) {
-      const transform = enemy.getComponent(Transform)!;
-      const health = enemy.getComponent(Health)!;
+    for (const target of hittables) {
+      const transform = target.getComponent(Transform)!;
+      const health = target.getComponent(Health)!;
       if (health.currentHealth <= 0 || health.isDead) continue;
-      if (enemy.userData?.coopEnemyDying) continue;
+      if (target.userData?.coopEnemyDying) continue;
 
-      const ec = enemy.getComponent(Enemy);
+      const ec = target.getComponent(Enemy);
       const worldPos = transform.getWorldPosition();
-      const isDying = !!enemy.userData?.coopEnemyDying;
+      const isDying = !!target.userData?.coopEnemyDying;
       if (writeIndex < enemyDataArray.length) {
         const entry = enemyDataArray[writeIndex];
-        entry.id = enemy.id.toString();
+        entry.id = target.id.toString();
         entry.position.copy(worldPos);
         entry.health = health.currentHealth;
         entry.maxHealth = health.maxHealth;
@@ -531,7 +548,7 @@ function DragonRenderer({
         entry.isDying = isDying;
       } else {
         enemyDataArray.push({
-          id: enemy.id.toString(),
+          id: target.id.toString(),
           position: worldPos.clone(),
           health: health.currentHealth,
           maxHealth: health.maxHealth,
@@ -1102,6 +1119,14 @@ function DragonRenderer({
           onRunebladeTitansGripHit={onRunebladeTitansGripHit}
           mushroomTargets={mushroomTargets}
           onMushroomHit={onMushroomHit}
+          treeTargets={treeTargets}
+          onTreeHit={onTreeHit}
+          rootTargets={rootTargets}
+          onRootHit={onRootHit}
+          rockTargets={rockTargets}
+          onRockHit={onRockHit}
+          spineTargets={spineTargets}
+          onSpineHit={onSpineHit}
           isLocalPlayer={isLocalPlayer}
         />
       </group>
