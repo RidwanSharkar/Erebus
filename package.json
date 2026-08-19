@@ -17,6 +17,7 @@
     "assets:retarget-knight-blocks": "node scripts/retarget-knight-block.mjs",
     "assets:retarget-character-sprint": "node scripts/retarget-character-sprint.mjs",
     "assets:validate-models": "node scripts/validate-model-assets.mjs",
+    "assets:validate-dungeon-packs": "node scripts/validate-dungeon-packs.mjs",
     "assets:convert-props": "node scripts/convert-props-batch.mjs",
     "assets:convert-turrets": "node scripts/convert-props-batch.mjs --dir turrets"
   },

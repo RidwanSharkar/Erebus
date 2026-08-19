@@ -928,7 +928,6 @@ const BOSS_TECTONIC_SPIKE_WARN_MS = 750;
 const BOSS_TECTONIC_SHARD_RADIUS = 2.5;
 const BOSS_TECTONIC_SHARD_DAMAGE = 34;
 const BOSS_STATIONARY_EPS = 0.03;
-const BOSS_TECTONIC_CENTER = { x: 0, y: 0, z: 0 };
 // Boss throw-spear ability
 const BOSS_THROW_MIN_RANGE     = 3;
 const BOSS_THROW_MAX_RANGE     = 18;
@@ -2426,12 +2425,20 @@ class EnemyAI {
    * Melee telegraph targeting fields.
    * When swinging at a player combat ally (pet/zombie/knight), emit targetCombatAllyId
    * so clients do not schedule local-player MISS floaters for the owner.
+   * Trap / hostile enemy targets emit targetEnemyId instead of stuffing the id into targetPlayerId.
    */
   _meleeTelegraphTargetFields(target) {
     if (target?.combatAllyId) {
-      return { targetCombatAllyId: target.combatAllyId };
+      return { targetCombatAllyId: target.combatAllyId, targetKind: 'ally' };
     }
-    return { targetPlayerId: target?.id };
+    const kind = target?.targetKind;
+    if (kind === 'trap' || kind === 'hostile' || kind === 'enemy') {
+      return { targetEnemyId: target.id, targetKind: kind };
+    }
+    if (target?.targetEnemyId) {
+      return { targetEnemyId: target.targetEnemyId, targetKind: kind || 'enemy' };
+    }
+    return { targetPlayerId: target?.id, targetKind: 'player' };
   }
 
   /** Horizontal XZ distance (ignores Y) — fair for flying / elevated units. */
@@ -4222,7 +4229,7 @@ class EnemyAI {
           });
         } else if (resolved.kind === 'hostile') {
           const hostile = resolved.enemy;
-          this.telegraphShadeAttack(shade, { id: hostile.id, position: hostile.position });
+          this.telegraphShadeAttack(shade, { id: hostile.id, position: hostile.position, targetKind: 'hostile' });
           this.scheduleAllyShadeDaggerChecks(
             shade.id,
             hostile.position.x,
@@ -4243,7 +4250,7 @@ class EnemyAI {
           });
         } else if (resolved.kind === 'trap') {
           const tr = resolved.trap;
-          this.telegraphShadeAttack(shade, { id: tr.id, position: tr.position });
+          this.telegraphShadeAttack(shade, { id: tr.id, position: tr.position, targetKind: 'trap' });
           this.scheduleAllyShadeDaggerChecks(
             shade.id,
             tr.position.x,
@@ -7202,9 +7209,14 @@ class EnemyAI {
 
   _buildTitanPatrolWaypoints(spawnX, spawnZ) {
     const explore = !!this.room?.coopExploreActive;
-    const patrolRadius = explore ? TITAN_EXPLORE_PATROL_RADIUS : this._arenaPatrolRadius();
-    const cx = explore ? spawnX : 0;
-    const cz = explore ? spawnZ : 0;
+    const dungeon = !!this.room?.coopDungeonActive;
+    const patrolRadius = explore
+      ? TITAN_EXPLORE_PATROL_RADIUS
+      : dungeon
+        ? 8
+        : this._arenaPatrolRadius();
+    const cx = (explore || dungeon) ? spawnX : 0;
+    const cz = (explore || dungeon) ? spawnZ : 0;
     const waypoints = [];
     for (let i = 0; i < TITAN_PATROL_WAYPOINT_COUNT; i++) {
       const angle = (Math.PI * 2 * i) / TITAN_PATROL_WAYPOINT_COUNT - Math.PI / 2;
@@ -8213,6 +8225,13 @@ class EnemyAI {
     return this.computeLeapLandXZ(boss, targetPlayer, leapCap, BOSS_LEAP_LAND_STANDOFF_M);
   }
 
+  getBossHomeXZ(boss) {
+    if (this.room?.coopExploreActive && boss?.initialPosition) {
+      return { x: boss.initialPosition.x || 0, z: boss.initialPosition.z || 0 };
+    }
+    return { x: 0, z: 0 };
+  }
+
   moveBossTowardPoint(boss, px, pz) {
     const d = this.calculateDistance(boss.position, { x: px, y: 0, z: pz });
     const baseSpeed = boss.moveSpeed ?? this.getEnemyMoveSpeed('boss');
@@ -8744,25 +8763,33 @@ class EnemyAI {
   boss2SummonPurpleWarlock(boss) {
     if (!this.room || !boss || boss.type !== 'boss2') return;
 
+    const dungeon = !!this.room.coopDungeonActive;
+    const groundY = dungeon ? (boss._dungeonSpawnY ?? boss.position.y ?? 0) : 0;
     const ex = BOSS2_SUMMON_ARENA_EXTENT;
-    const clampXZ = (x, z) => ({
-      x: Math.max(-ex, Math.min(ex, x)),
-      y: 0,
-      z: Math.max(-ex, Math.min(ex, z)),
-    });
+    const clampXZ = (x, z) => {
+      if (dungeon) {
+        const c = this.clampToArenaXZ(x, z);
+        return { x: c.x, y: groundY, z: c.z };
+      }
+      return {
+        x: Math.max(-ex, Math.min(ex, x)),
+        y: 0,
+        z: Math.max(-ex, Math.min(ex, z)),
+      };
+    };
 
     const bx = boss.position.x;
     const bz = boss.position.z;
-    let pos = { ...clampXZ(bx + 5, bz), y: 0 };
+    let pos = { ...clampXZ(bx + 5, bz), y: groundY };
     for (let attempt = 0; attempt < 48; attempt += 1) {
       const a = Math.random() * Math.PI * 2;
       const rad = 3.5 + Math.random() * (ex - 3.5);
-      const rawX = Math.sin(a) * rad;
-      const rawZ = Math.cos(a) * rad;
+      const rawX = dungeon ? bx + Math.sin(a) * rad : Math.sin(a) * rad;
+      const rawZ = dungeon ? bz + Math.cos(a) * rad : Math.cos(a) * rad;
       const p = clampXZ(rawX, rawZ);
       if (Math.hypot(p.x - bx, p.z - bz) < 2.8) continue;
       const resolved = this.resolveEnemyWallCollisions(p.x, p.z);
-      pos = { x: resolved.x, y: 0, z: resolved.z };
+      pos = { x: resolved.x, y: groundY, z: resolved.z };
       break;
     }
 
@@ -8774,7 +8801,7 @@ class EnemyAI {
     const warlock = {
       id: warlockId,
       type: 'warlock',
-      position: { x: pos.x, y: 0, z: pos.z },
+      position: { x: pos.x, y: groundY, z: pos.z },
       rotation: rotationYTowardEntry(pos.x, pos.z),
       health: 800,
       maxHealth: 800,
@@ -8788,6 +8815,7 @@ class EnemyAI {
       bossId: null,
       summonedByBoss2Id: boss.id,
       spawnedAt: Date.now(),
+      ...(dungeon ? { _dungeonSpawnY: groundY } : {}),
     };
 
     this.room.addEnemy(warlock);
@@ -8989,12 +9017,11 @@ class EnemyAI {
       return;
     }
 
-    const ox = boss.position.x;
-    const oz = boss.position.z;
-    const dCenter = Math.hypot(ox, oz);
+    const home = this.getBossHomeXZ(boss);
+    const dCenter = Math.hypot(boss.position.x - home.x, boss.position.z - home.z);
 
     if (dCenter > BOSS3_CENTER_HOLD_DIST) {
-      this.moveBossTowardPoint(boss, 0, 0);
+      this.moveBossTowardPoint(boss, home.x, home.z);
       boss.bossStationary = false;
       return;
     }
@@ -9660,8 +9687,11 @@ class EnemyAI {
     const tectonic = this.bossTectonicData.get(boss.id);
     if (tectonic) {
       if (tectonic.phase === 'move') {
-        const d = this.calculateDistance(boss.position, BOSS_TECTONIC_CENTER);
-        const forwardR = rotationYTowardEntry(0, 0);
+        const home = this.getBossHomeXZ(boss);
+        const d = this.calculateDistance(boss.position, { x: home.x, y: 0, z: home.z });
+        const forwardR = this.room?.coopExploreActive
+          ? Math.atan2(home.x - boss.position.x, home.z - boss.position.z)
+          : rotationYTowardEntry(0, 0);
         const cur = boss.rotation || 0;
         let rDiff = forwardR - cur;
         while (rDiff > Math.PI) rDiff -= Math.PI * 2;
@@ -9673,13 +9703,15 @@ class EnemyAI {
           tectonic.jumpIndex = 0;
           tectonic.nextAt = now;
         } else {
-          this.moveBossTowardPoint(boss, 0, 0);
+          this.moveBossTowardPoint(boss, home.x, home.z);
         }
         boss.bossStationary = false;
         return;
       }
       if (tectonic.phase === 'jumps') {
-        boss.rotation = rotationYTowardEntry(0, 0);
+        if (!this.room?.coopExploreActive) {
+          boss.rotation = rotationYTowardEntry(0, 0);
+        }
         if (now < tectonic.nextAt) {
           boss.bossStationary = false;
           return;
@@ -13436,7 +13468,10 @@ class EnemyAI {
     if ((tower.attackReadyAt || 0) > now) return;
 
     const range = tower.attackRange || 8;
-    const damage = tower.damage || 150;
+    let damage = tower.damage || 150;
+    if (tower.type === 'watch-tower' && this.room?.exploreResearch) {
+      damage = exploreBuildings.getExploreWatchTowerArrowDamage(this.room.exploreResearch.towerDamage);
+    }
     const best = this._findDefenseTowerNearestHostile(tower, range);
     if (!best) return;
 
@@ -18728,6 +18763,27 @@ class EnemyAI {
     return Math.hypot(dx, dz);
   }
 
+  _dungeonGroundY(enemy) {
+    if (!this.room?.coopDungeonActive) return 0;
+    if (enemy?._dungeonSpawnY != null) return enemy._dungeonSpawnY;
+    if (enemy?.initialPosition?.y != null) return enemy.initialPosition.y;
+    return enemy?.position?.y ?? 0;
+  }
+
+  _destinyHoverY(destiny) {
+    return this._dungeonGroundY(destiny) + DESTINY_HOVER_Y;
+  }
+
+  _destinyLandXZ(destiny) {
+    if (this.room?.coopDungeonActive) {
+      return {
+        x: destiny.initialPosition?.x ?? destiny.position.x,
+        z: destiny.initialPosition?.z ?? destiny.position.z,
+      };
+    }
+    return { x: 0, z: 0 };
+  }
+
   _destinyBeginTakeoff(destiny) {
     if (!destiny || destiny.isDying) return;
     const now = Date.now();
@@ -18750,7 +18806,9 @@ class EnemyAI {
     destiny.flyAttackEndsAt = null;
     destiny.landEndsAt = null;
     destiny.flyRepositionTarget = null;
-    if (destiny.position.y == null || destiny.position.y < 0) destiny.position.y = 0;
+    if (!this.room?.coopDungeonActive && (destiny.position.y == null || destiny.position.y < 0)) {
+      destiny.position.y = 0;
+    }
     this.meleeLockUntil.set(destiny.id, destiny.takeoffEndsAt);
     if (this.io) {
       this.io.to(this.roomId).emit('destiny-takeoff-start', {
@@ -18767,19 +18825,22 @@ class EnemyAI {
   _destinyBeginLand(destiny) {
     if (!destiny || destiny.isDying) return;
     const now = Date.now();
+    const land = this._destinyLandXZ(destiny);
+    const hoverY = this._destinyHoverY(destiny);
+    const groundY = this._dungeonGroundY(destiny);
     destiny.destinyPhase = 'land';
     destiny.moveSpeed = 0;
     destiny.landStartedAt = now;
     destiny.landEndsAt = now + DESTINY_FLY_LAND_MS;
-    destiny.position.x = 0;
-    destiny.position.z = 0;
-    destiny.position.y = DESTINY_HOVER_Y;
+    destiny.position.x = land.x;
+    destiny.position.z = land.z;
+    destiny.position.y = hoverY;
     this.meleeLockUntil.set(destiny.id, destiny.landEndsAt);
     if (this.io) {
       this.io.to(this.roomId).emit('destiny-land-start', {
         destinyId: destiny.id,
         durationMs: DESTINY_FLY_LAND_MS,
-        landPosition: { x: 0, y: 0, z: 0 },
+        landPosition: { x: land.x, y: groundY, z: land.z },
         position: { ...destiny.position },
         timestamp: now,
       });
@@ -18790,9 +18851,10 @@ class EnemyAI {
 
   _destinyCompleteLanding(destiny) {
     if (!destiny || destiny.isDying) return;
-    destiny.position.x = 0;
-    destiny.position.z = 0;
-    destiny.position.y = 0;
+    const land = this._destinyLandXZ(destiny);
+    destiny.position.x = land.x;
+    destiny.position.z = land.z;
+    destiny.position.y = this._dungeonGroundY(destiny);
     destiny.destinyPhase = 'ground';
     destiny.flyPhaseCompleted = true;
     destiny.flyAttackVolleysFired = 0;
@@ -18812,7 +18874,7 @@ class EnemyAI {
   _destinyMoveFlyApproach(destiny, moveTarget) {
     if (!moveTarget?.position) return;
     destiny.moveSpeed = DESTINY_FLY_SPEED;
-    destiny.position.y = DESTINY_HOVER_Y;
+    destiny.position.y = this._destinyHoverY(destiny);
 
     // Optional orbit offset for post-attack reposition (forces flight between volleys)
     const goal = destiny.flyRepositionTarget
@@ -18844,7 +18906,7 @@ class EnemyAI {
     const resolved = this.resolveEnemyWallCollisions(rawX, rawZ);
     destiny.position.x = resolved.x;
     destiny.position.z = resolved.z;
-    destiny.position.y = DESTINY_HOVER_Y;
+    destiny.position.y = this._destinyHoverY(destiny);
     destiny.rotation = Math.atan2(dirX, dirZ);
     this._queueMove(destiny.id, destiny.position, destiny.rotation);
   }
@@ -18857,18 +18919,18 @@ class EnemyAI {
     const rawX = tpos.x + Math.cos(angle) * radius;
     const rawZ = tpos.z + Math.sin(angle) * radius;
     const resolvedPos = this.resolveEnemyWallCollisions(rawX, rawZ);
-    destiny.flyRepositionTarget = { x: resolvedPos.x, y: DESTINY_HOVER_Y, z: resolvedPos.z };
+    destiny.flyRepositionTarget = { x: resolvedPos.x, y: this._destinyHoverY(destiny), z: resolvedPos.z };
   }
 
   _destinyMoveFlyReturn(destiny) {
     destiny.moveSpeed = DESTINY_FLY_SPEED;
-    destiny.position.y = DESTINY_HOVER_Y;
-    const center = { x: 0, y: 0, z: 0 };
+    destiny.position.y = this._destinyHoverY(destiny);
+    const center = this._destinyLandXZ(destiny);
     const horiz = this._destinyHorizontalDistance(destiny.position, center);
     if (horiz < DESTINY_FLY_CENTER_HOLD) return true;
 
-    const dx = -destiny.position.x;
-    const dz = -destiny.position.z;
+    const dx = center.x - destiny.position.x;
+    const dz = center.z - destiny.position.z;
     const mag = Math.hypot(dx, dz);
     if (mag < 1e-6) return true;
 
@@ -18881,7 +18943,7 @@ class EnemyAI {
     const step = Math.min(moveDistance, horiz);
     destiny.position.x += dirX * step;
     destiny.position.z += dirZ * step;
-    destiny.position.y = DESTINY_HOVER_Y;
+    destiny.position.y = this._destinyHoverY(destiny);
     destiny.rotation = Math.atan2(dirX, dirZ);
     this._queueMove(destiny.id, destiny.position, destiny.rotation);
     return this._destinyHorizontalDistance(destiny.position, center) < DESTINY_FLY_CENTER_HOLD;
@@ -18909,7 +18971,7 @@ class EnemyAI {
 
     destiny.destinyPhase = 'fly_attack';
     destiny.moveSpeed = 0;
-    destiny.position.y = DESTINY_HOVER_Y;
+    destiny.position.y = this._destinyHoverY(destiny);
     destiny.flyRepositionTarget = null;
     destiny.flyAttackEndsAt = now + DESTINY_FLY_ATTACK_CAST_MS;
     this.meleeLockUntil.set(did, destiny.flyAttackEndsAt);
@@ -19075,16 +19137,18 @@ class EnemyAI {
     const now = Date.now();
     const phase = destiny.destinyPhase;
 
-    // --- Takeoff: rise 0 → hover Y ---
+    // --- Takeoff: rise ground → hover Y ---
     if (phase === 'takeoff') {
       destiny.moveSpeed = 0;
       const started = destiny.takeoffStartedAt || now;
       const ends = destiny.takeoffEndsAt || (started + DESTINY_FLY_TAKEOFF_MS);
       const t = Math.min(1, (now - started) / Math.max(1, ends - started));
-      destiny.position.y = DESTINY_HOVER_Y * t;
+      const groundY = this._dungeonGroundY(destiny);
+      const hoverY = this._destinyHoverY(destiny);
+      destiny.position.y = groundY + (hoverY - groundY) * t;
       this._queueMove(destiny.id, destiny.position, destiny.rotation);
-      if (now >= ends || destiny.position.y >= DESTINY_HOVER_Y - 0.05) {
-        destiny.position.y = DESTINY_HOVER_Y;
+      if (now >= ends || destiny.position.y >= hoverY - 0.05) {
+        destiny.position.y = hoverY;
         destiny.destinyPhase = 'fly_idle';
         destiny.flyIdleUntil = now + DESTINY_FLY_IDLE_HOLD_MS;
         this._queueMove(destiny.id, destiny.position, destiny.rotation);
@@ -19092,17 +19156,20 @@ class EnemyAI {
       return;
     }
 
-    // --- Land: descend hover Y → 0 at center ---
+    // --- Land: descend hover Y → ground at land XZ ---
     if (phase === 'land') {
       destiny.moveSpeed = 0;
-      destiny.position.x = 0;
-      destiny.position.z = 0;
+      const land = this._destinyLandXZ(destiny);
+      const groundY = this._dungeonGroundY(destiny);
+      const hoverY = this._destinyHoverY(destiny);
+      destiny.position.x = land.x;
+      destiny.position.z = land.z;
       const started = destiny.landStartedAt || now;
       const ends = destiny.landEndsAt || (started + DESTINY_FLY_LAND_MS);
       const t = Math.min(1, (now - started) / Math.max(1, ends - started));
-      destiny.position.y = DESTINY_HOVER_Y * (1 - t);
+      destiny.position.y = hoverY + (groundY - hoverY) * t;
       this._queueMove(destiny.id, destiny.position, destiny.rotation);
-      if (now >= ends || destiny.position.y <= 0.05) {
+      if (now >= ends || destiny.position.y <= groundY + 0.05) {
         this._destinyCompleteLanding(destiny);
       }
       return;
@@ -19111,7 +19178,7 @@ class EnemyAI {
     // --- Fly idle: brief hold after takeoff ---
     if (phase === 'fly_idle') {
       destiny.moveSpeed = 0;
-      destiny.position.y = DESTINY_HOVER_Y;
+      destiny.position.y = this._destinyHoverY(destiny);
       this._queueMove(destiny.id, destiny.position, destiny.rotation);
       if (now >= (destiny.flyIdleUntil || 0)) {
         destiny.destinyPhase = 'fly_approach';
@@ -19122,7 +19189,7 @@ class EnemyAI {
     // --- Fly attack: hold still while cast runs (timers drive volley + next phase) ---
     if (phase === 'fly_attack') {
       destiny.moveSpeed = 0;
-      destiny.position.y = DESTINY_HOVER_Y;
+      destiny.position.y = this._destinyHoverY(destiny);
       this._queueMove(destiny.id, destiny.position, destiny.rotation);
       return;
     }
@@ -19161,7 +19228,7 @@ class EnemyAI {
     // --- Fly approach: reposition toward target, then stop to attack ---
     if (phase === 'fly_approach') {
       if (!resolved) {
-        destiny.position.y = DESTINY_HOVER_Y;
+        destiny.position.y = this._destinyHoverY(destiny);
         this._queueMove(destiny.id, destiny.position, destiny.rotation);
         return;
       }
@@ -19210,12 +19277,20 @@ class EnemyAI {
     if (!this.room || !destiny || destiny.type !== 'destiny') return;
     if (this.room?.bannedEnemyTypes?.has('wyvern')) return;
 
+    const dungeon = !!this.room.coopDungeonActive;
+    const groundY = dungeon ? (destiny._dungeonSpawnY ?? destiny.position.y ?? 0) : 0;
     const ex = BOSS2_SUMMON_ARENA_EXTENT;
-    const clampXZ = (x, z) => ({
-      x: Math.max(-ex, Math.min(ex, x)),
-      y: 0,
-      z: Math.max(-ex, Math.min(ex, z)),
-    });
+    const clampXZ = (x, z) => {
+      if (dungeon) {
+        const c = this.clampToArenaXZ(x, z);
+        return { x: c.x, y: groundY, z: c.z };
+      }
+      return {
+        x: Math.max(-ex, Math.min(ex, x)),
+        y: 0,
+        z: Math.max(-ex, Math.min(ex, z)),
+      };
+    };
 
     const bx = destiny.position.x;
     const bz = destiny.position.z;
@@ -19232,20 +19307,20 @@ class EnemyAI {
       if (pref) {
         const raw = clampXZ(bx + pref.dx, bz + pref.dz);
         const resolved = this.resolveEnemyWallCollisions(raw.x, raw.z);
-        pos = { x: resolved.x, y: 0, z: resolved.z };
+        pos = { x: resolved.x, y: groundY, z: resolved.z };
       }
       if (!pos) {
-        pos = { ...clampXZ(bx + 5, bz), y: 0 };
+        pos = { ...clampXZ(bx + 5, bz), y: groundY };
         for (let attempt = 0; attempt < 48; attempt += 1) {
           const a = Math.random() * Math.PI * 2;
           const rad = 3.5 + Math.random() * (ex - 3.5);
-          const rawX = Math.sin(a) * rad;
-          const rawZ = Math.cos(a) * rad;
+          const rawX = dungeon ? bx + Math.sin(a) * rad : Math.sin(a) * rad;
+          const rawZ = dungeon ? bz + Math.cos(a) * rad : Math.cos(a) * rad;
           const p = clampXZ(rawX, rawZ);
           if (Math.hypot(p.x - bx, p.z - bz) < 2.8) continue;
           if (used.some((u) => Math.hypot(u.x - p.x, u.z - p.z) < 2.5)) continue;
           const resolved = this.resolveEnemyWallCollisions(p.x, p.z);
-          pos = { x: resolved.x, y: 0, z: resolved.z };
+          pos = { x: resolved.x, y: groundY, z: resolved.z };
           break;
         }
       }
@@ -19255,7 +19330,7 @@ class EnemyAI {
       const wyvern = {
         id: wyvernId,
         type: 'wyvern',
-        position: { x: pos.x, y: 0, z: pos.z },
+        position: { x: pos.x, y: groundY, z: pos.z },
         rotation: rotationYTowardEntry(pos.x, pos.z),
         health: 4900,
         maxHealth: 4900,
@@ -19268,6 +19343,7 @@ class EnemyAI {
         breathVariant: 1,
         summonedByDestinyId: destiny.id,
         spawnedAt: Date.now(),
+        ...(dungeon ? { _dungeonSpawnY: groundY } : {}),
       };
 
       this.room.addEnemy(wyvern);

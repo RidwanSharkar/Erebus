@@ -43,7 +43,15 @@ export class InputManager extends EventEmitter {
   private readonly boundOnWindowBlur: () => void;
   private readonly boundOnWindowFocus: () => void;
   private readonly boundOnVisibilityChange: () => void;
+  private readonly boundOnDocumentLeave: (event: MouseEvent | PointerEvent) => void;
   private readonly boundPreventContextMenu: (event: Event) => void;
+
+  /** MouseEvent.buttons bits: left=1, right=2, middle=4 */
+  private static readonly MOUSE_BUTTON_BITS: ReadonlyArray<[button: number, bit: number]> = [
+    [0, 1],
+    [2, 2],
+    [1, 4],
+  ];
 
   // Flag to allow all keyboard input (used for chat)
   private allowAllInput = false;
@@ -74,6 +82,7 @@ export class InputManager extends EventEmitter {
     this.boundOnWindowBlur = this.onWindowBlur.bind(this);
     this.boundOnWindowFocus = this.onWindowFocus.bind(this);
     this.boundOnVisibilityChange = this.onVisibilityChange.bind(this);
+    this.boundOnDocumentLeave = this.onDocumentLeave.bind(this);
     this.boundPreventContextMenu = (e) => e.preventDefault();
     this.setupEventListeners();
   }
@@ -245,6 +254,8 @@ export class InputManager extends EventEmitter {
     document.addEventListener('pointerlockerror', this.boundOnPointerLockError);
     document.addEventListener('contextmenu', this.boundPreventContextMenu);
     document.addEventListener('visibilitychange', this.boundOnVisibilityChange);
+    document.addEventListener('mouseleave', this.boundOnDocumentLeave);
+    document.addEventListener('pointerleave', this.boundOnDocumentLeave);
     window.addEventListener('blur', this.boundOnWindowBlur);
     window.addEventListener('focus', this.boundOnWindowFocus);
   }
@@ -346,16 +357,32 @@ export class InputManager extends EventEmitter {
   }
 
   private onMouseUp(event: MouseEvent): void {
-    if (this.gameInputBlocked || isEventOverGameUi(event)) return;
-    this.mouseButtons.delete(event.button);
+    // Always release — HUD skip applies to mousedown only. Releasing over UI must not stick RMB.
+    this.releaseMouseButton(event.button, event.clientX, event.clientY);
+  }
+
+  private releaseMouseButton(button: number, x: number, y: number): void {
+    if (!this.mouseButtons.has(button)) return;
+    this.mouseButtons.delete(button);
     this.emit('mouseUp', {
-      button: event.button,
-      x: event.clientX,
-      y: event.clientY,
+      button,
+      x,
+      y,
     });
   }
 
+  /** Drop stored buttons that are no longer in event.buttons (missed mouseup over chrome / off-window). */
+  private syncReleasedButtonsFromEvent(event: MouseEvent): void {
+    for (const [button, bit] of InputManager.MOUSE_BUTTON_BITS) {
+      if ((event.buttons & bit) === 0) {
+        this.releaseMouseButton(button, event.clientX, event.clientY);
+      }
+    }
+  }
+
   private onMouseMove(event: MouseEvent): void {
+    this.syncReleasedButtonsFromEvent(event);
+
     if (!this.gameInputBlocked) {
       if (this.isPointerLocked) {
         // Use movement deltas when pointer is locked
@@ -417,6 +444,11 @@ export class InputManager extends EventEmitter {
     this.releaseAllInput();
   }
 
+  private onDocumentLeave(event: MouseEvent | PointerEvent): void {
+    if (event.relatedTarget != null) return;
+    this.releaseAllInput();
+  }
+
   private onVisibilityChange(): void {
     // Tab switches often fire visibilitychange without window.blur — clear held keys.
     if (document.hidden) {
@@ -458,6 +490,8 @@ export class InputManager extends EventEmitter {
     document.removeEventListener('pointerlockchange', this.boundOnPointerLockChange);
     document.removeEventListener('pointerlockerror', this.boundOnPointerLockError);
     document.removeEventListener('visibilitychange', this.boundOnVisibilityChange);
+    document.removeEventListener('mouseleave', this.boundOnDocumentLeave);
+    document.removeEventListener('pointerleave', this.boundOnDocumentLeave);
     window.removeEventListener('blur', this.boundOnWindowBlur);
     window.removeEventListener('focus', this.boundOnWindowFocus);
 

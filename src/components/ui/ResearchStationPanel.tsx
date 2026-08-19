@@ -10,10 +10,15 @@ import {
 import {
   EXPLORE_RESEARCH_UPGRADES,
   EXPLORE_SPIRIT_LINEAGE_MAX_RANK,
+  EXPLORE_TOWER_DAMAGE_MAX_RANK,
+  EXPLORE_TOWER_EFFICIENCY_GOLD_COST,
   getExploreResearchFlowCost,
   getSpiritLineageDescription,
   getSpiritLineageLabel,
   getSpiritLineageNextCost,
+  getTowerDamageDescription,
+  getTowerDamageLabel,
+  getTowerDamageNextCost,
   isExploreResearchPurchased,
   type ExploreResearchState,
   type ExploreResearchUpgradeId,
@@ -22,6 +27,7 @@ import {
 interface ResearchStationPanelProps {
   open: boolean;
   flow: number;
+  gold: number;
   research: ExploreResearchState;
   onPurchase: (id: ExploreResearchUpgradeId) => void;
   widthPercent?: number;
@@ -32,6 +38,7 @@ const DEFAULT_WIDTH_PERCENT = 72;
 export default function ResearchStationPanel({
   open,
   flow,
+  gold,
   research,
   onPurchase,
   widthPercent = DEFAULT_WIDTH_PERCENT,
@@ -111,6 +118,85 @@ export default function ResearchStationPanel({
                 </span>
                 <span style={{ opacity: 0.85 }}>
                   {maxed ? 'Researched' : `${cost} flow`}
+                </span>
+              </button>
+            );
+          }
+
+          if (upgrade.id === 'tower-damage') {
+            const rank = research.towerDamage ?? 0;
+            const maxed = rank >= EXPLORE_TOWER_DAMAGE_MAX_RANK;
+            const cost = getTowerDamageNextCost(rank);
+            const label = maxed ? 'Tower Damage Level III' : getTowerDamageLabel(rank);
+            const description = maxed
+              ? 'Max Watch Tower arrow damage (200)'
+              : getTowerDamageDescription(rank);
+            const selectable = !maxed && cost != null && gold >= cost;
+            const dimmed = maxed || !selectable;
+            return (
+              <button
+                key={upgrade.id}
+                type="button"
+                className="flex items-center justify-between gap-3 text-xs font-medium tracking-wide w-full bg-transparent border-0 cursor-pointer p-0"
+                style={{
+                  color: dimmed ? 'rgba(140, 150, 170, 0.65)' : 'rgba(240, 230, 255, 0.95)',
+                  textShadow: '0 1px 6px rgba(0,0,0,0.9)',
+                  pointerEvents: selectable ? 'auto' : 'none',
+                }}
+                onClick={() => selectable && onPurchase(upgrade.id)}
+              >
+                <span className="flex items-center gap-2">
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      minWidth: '1.25rem',
+                      color: selectable ? 'rgba(200, 160, 255, 0.95)' : undefined,
+                    }}
+                  >
+                    [{upgrade.hotkey}]
+                  </span>
+                  {label}
+                  <span style={{ opacity: 0.7, fontWeight: 400 }}>— {description}</span>
+                </span>
+                <span style={{ opacity: 0.85 }}>
+                  {maxed ? 'Researched' : `${cost} gold`}
+                </span>
+              </button>
+            );
+          }
+
+          if (upgrade.id === 'tower-efficiency') {
+            const purchased = research.towerEfficiency;
+            const cost = EXPLORE_TOWER_EFFICIENCY_GOLD_COST;
+            const selectable = !purchased && gold >= cost;
+            const dimmed = purchased || !selectable;
+            return (
+              <button
+                key={upgrade.id}
+                type="button"
+                className="flex items-center justify-between gap-3 text-xs font-medium tracking-wide w-full bg-transparent border-0 cursor-pointer p-0"
+                style={{
+                  color: dimmed ? 'rgba(140, 150, 170, 0.65)' : 'rgba(240, 230, 255, 0.95)',
+                  textShadow: '0 1px 6px rgba(0,0,0,0.9)',
+                  pointerEvents: selectable ? 'auto' : 'none',
+                }}
+                onClick={() => selectable && onPurchase(upgrade.id)}
+              >
+                <span className="flex items-center gap-2">
+                  <span
+                    style={{
+                      display: 'inline-block',
+                      minWidth: '1.25rem',
+                      color: selectable ? 'rgba(200, 160, 255, 0.95)' : undefined,
+                    }}
+                  >
+                    [{upgrade.hotkey}]
+                  </span>
+                  {upgrade.label}
+                  <span style={{ opacity: 0.7, fontWeight: 400 }}>— {upgrade.description}</span>
+                </span>
+                <span style={{ opacity: 0.85 }}>
+                  {purchased ? 'Researched' : `${cost} gold`}
                 </span>
               </button>
             );

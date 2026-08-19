@@ -69,7 +69,7 @@ export default function AvalancheEffectManager({
     (enemyId: string, _position: Vector3) => {
       if (!world) return;
       const entity = findEnemyEntityForAvalanche(world, enemyId);
-      if (entity && isCoopPlayerAllyEntity(entity)) return;
+      if (!entity || isCoopPlayerAllyEntity(entity)) return;
 
       const now = Date.now();
       const expiresAtMs = now + ARCTIC_BLIZZARD_DURATION_SEC * 1000;

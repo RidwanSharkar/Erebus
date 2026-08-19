@@ -69,7 +69,7 @@ const EXPLORE_BUILDING_DEFS = Object.freeze({
     kind: 'research-station',
     label: 'Research Station',
     hotkey: 'J',
-    woodCost: 200,
+    woodCost: 150,
     flowCost: 5,
     maxHp: 150,
     hullRadius: RESEARCH_STATION_HULL_RADIUS,
@@ -136,6 +136,12 @@ const EXPLORE_STONE_BREAKER_FLOW_COST = 5;
 const EXPLORE_GREATER_HARVEST_FLOW_COST = 15;
 const EXPLORE_SPIRIT_LINEAGE_MAX_RANK = 4;
 const EXPLORE_SPIRIT_LINEAGE_COSTS = Object.freeze([10, 15, 20, 25]);
+const EXPLORE_TOWER_EFFICIENCY_GOLD_COST = 100;
+const EXPLORE_WATCH_TOWER_EFFICIENT_WOOD_COST = 50;
+const EXPLORE_TOWER_DAMAGE_MAX_RANK = 3;
+const EXPLORE_TOWER_DAMAGE_COSTS = Object.freeze([100, 200, 300]);
+const EXPLORE_WATCH_TOWER_DAMAGE_PER_RANK = 50;
+const EXPLORE_WATCH_TOWER_BASE_DAMAGE = 50;
 
 function getExploreAllyCap(spiritLineageRank) {
   const rank = Math.max(0, Math.min(EXPLORE_SPIRIT_LINEAGE_MAX_RANK, Math.floor(Number(spiritLineageRank) || 0)));
@@ -146,6 +152,26 @@ function getSpiritLineageNextCost(spiritLineageRank) {
   const rank = Math.max(0, Math.floor(Number(spiritLineageRank) || 0));
   if (rank >= EXPLORE_SPIRIT_LINEAGE_MAX_RANK) return null;
   return EXPLORE_SPIRIT_LINEAGE_COSTS[rank] ?? null;
+}
+
+function getTowerDamageNextCost(towerDamageRank) {
+  const rank = Math.max(0, Math.floor(Number(towerDamageRank) || 0));
+  if (rank >= EXPLORE_TOWER_DAMAGE_MAX_RANK) return null;
+  return EXPLORE_TOWER_DAMAGE_COSTS[rank] ?? null;
+}
+
+function getExploreWatchTowerArrowDamage(towerDamageRank) {
+  const rank = Math.max(
+    0,
+    Math.min(EXPLORE_TOWER_DAMAGE_MAX_RANK, Math.floor(Number(towerDamageRank) || 0)),
+  );
+  return EXPLORE_WATCH_TOWER_BASE_DAMAGE + EXPLORE_WATCH_TOWER_DAMAGE_PER_RANK * rank;
+}
+
+function getExploreWatchTowerWoodCost(exploreResearch) {
+  const base = EXPLORE_BUILDING_DEFS['watch-tower'].woodCost;
+  if (exploreResearch?.towerEfficiency) return EXPLORE_WATCH_TOWER_EFFICIENT_WOOD_COST;
+  return base;
 }
 
 const EXPLORE_SHRINE_INTERACT_RADIUS = 3.5;
@@ -292,6 +318,12 @@ module.exports = {
   EXPLORE_GREATER_HARVEST_FLOW_COST,
   EXPLORE_SPIRIT_LINEAGE_MAX_RANK,
   EXPLORE_SPIRIT_LINEAGE_COSTS,
+  EXPLORE_TOWER_EFFICIENCY_GOLD_COST,
+  EXPLORE_WATCH_TOWER_EFFICIENT_WOOD_COST,
+  EXPLORE_TOWER_DAMAGE_MAX_RANK,
+  EXPLORE_TOWER_DAMAGE_COSTS,
+  EXPLORE_WATCH_TOWER_DAMAGE_PER_RANK,
+  EXPLORE_WATCH_TOWER_BASE_DAMAGE,
   EXPLORE_SHRINE_INTERACT_RADIUS,
   EXPLORE_OBELISK_INTERACT_RADIUS,
   EXPLORE_CATHEDRAL_INTERACT_RADIUS,
@@ -305,6 +337,9 @@ module.exports = {
   exploreBuildingRequiresShrineOrObelisk,
   getExploreAllyCap,
   getSpiritLineageNextCost,
+  getTowerDamageNextCost,
+  getExploreWatchTowerArrowDamage,
+  getExploreWatchTowerWoodCost,
   isExploreShrineGiftId,
   isExploreObeliskClassTalentId,
 };

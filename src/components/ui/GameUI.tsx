@@ -190,8 +190,8 @@ export default function GameUI({
         className="fixed bottom-4 inset-x-0 z-40 flex justify-center pointer-events-none"
         data-block-game-input
       >
-        <div className="pointer-events-auto inline-flex w-max flex-col items-stretch gap-2">
-          <BuildMenuPanel open={buildMenuOpen} view={buildMenuView} wood={playerWood} flow={playerFlow} stone={playerStone} hasLiveSpiritLounge={hasLiveSpiritLounge} hasLiveShrineOrObelisk={hasLiveShrineOrObelisk} />
+        <div className="pointer-events-auto select-none inline-flex w-max flex-col items-stretch gap-2">
+          <BuildMenuPanel open={buildMenuOpen} view={buildMenuView} wood={playerWood} flow={playerFlow} stone={playerStone} hasLiveSpiritLounge={hasLiveSpiritLounge} hasLiveShrineOrObelisk={hasLiveShrineOrObelisk} exploreResearch={exploreResearch} />
           <BarracksRecruitPanel
             open={barracksRecruitOpen && !buildMenuOpen && !researchPanelOpen && !shrinePanelOpen && !cathedralPanelOpen && !obeliskPanelOpen && !firePitHealOpen}
             gold={playerGold}
@@ -202,6 +202,7 @@ export default function GameUI({
           <ResearchStationPanel
             open={researchPanelOpen && !buildMenuOpen && !barracksRecruitOpen && !shrinePanelOpen && !cathedralPanelOpen && !obeliskPanelOpen && !firePitHealOpen}
             flow={playerFlow}
+            gold={playerGold}
             research={exploreResearch}
             onPurchase={(id) => onResearchPurchase?.(id)}
           />

@@ -73,7 +73,7 @@ export const EXPLORE_CAMP_DESPAWN_DIST = 12;
 export const EXPLORE_CAMP_DESPAWN_DELAY_MS = 30000;
 
 /** Pack-member kill thresholds for explore boss encounters 1 / 2 / 3. */
-export const EXPLORE_BOSS_KILL_THRESHOLDS = Object.freeze([20, 45, 75] as const);
+export const EXPLORE_BOSS_KILL_THRESHOLDS = Object.freeze([35, 80, 150] as const);
 
 export const EXPLORE_BOSS_SPAWN_DIST = 15;
 

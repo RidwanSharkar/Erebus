@@ -6,12 +6,7 @@ import {
   Group,
   Mesh,
   MeshBasicMaterial,
-  PlaneGeometry,
 } from '@/utils/three-exports';
-import {
-  DUNGEON_NEXUS_MODEL_POSITION,
-  DUNGEON_NEXUS_MODEL_SCALE,
-} from '@/utils/dungeonLayout';
 
 /** Native XZ cell size for frustum chunks (before `DUNGEON_NEXUS_MODEL_SCALE`). */
 export const DUNGEON_CULL_CELL_NATIVE = 48;
@@ -185,68 +180,6 @@ function disposeBoundsTree(geometry: BufferGeometry): void {
   }
 }
 
-function worldToNative(x: number, y: number, z: number): { x: number; y: number; z: number } {
-  const scale = DUNGEON_NEXUS_MODEL_SCALE;
-  const lift = DUNGEON_NEXUS_MODEL_POSITION[1];
-  return {
-    x: x / scale,
-    y: (y - lift) / scale,
-    z: z / scale,
-  };
-}
-
-/**
- * Hidden walkable ledges from RallyArea overlook (y ≈ −15.5, z ≈ −85) onto Lair9
- * (y ≈ −33.3, z ≈ −96). Each step drops ≤ 2.2 (under meshMaxStepDown 2.4).
- * Authored in world space, converted to native GLB space for the scaled collider.
- */
-function createDungeonDescentCollider(): Group {
-  const group = new Group();
-  group.name = 'dungeon-descent-collider';
-
-  const startY = -15.5;
-  const endY = -33.3;
-  const startZ = -85;
-  const endZ = -96;
-  const minX = -20;
-  const maxX = -8;
-  const steps = 9;
-  const worldWidth = maxX - minX;
-  const worldDepth = 2;
-  const nativeWidth = worldWidth / DUNGEON_NEXUS_MODEL_SCALE;
-  const nativeDepth = worldDepth / DUNGEON_NEXUS_MODEL_SCALE;
-  const centerX = (minX + maxX) * 0.5;
-
-  const mat = new MeshBasicMaterial({
-    color: 0x000000,
-    transparent: true,
-    opacity: 0,
-    depthWrite: false,
-  });
-  mat.userData.dungeonDescent = true;
-
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps;
-    const worldY = startY + t * (endY - startY);
-    const worldZ = startZ + t * (endZ - startZ);
-    const native = worldToNative(centerX, worldY, worldZ);
-    const geo = new PlaneGeometry(nativeWidth, nativeDepth);
-    geo.userData.dungeonChunk = true;
-    geo.computeBoundingSphere();
-    const mesh = new Mesh(geo, mat);
-    mesh.name = `dungeon-descent-ledge-${i}`;
-    mesh.position.set(native.x, native.y, native.z);
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.visible = false;
-    mesh.frustumCulled = true;
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    group.add(mesh);
-  }
-
-  return group;
-}
-
 /**
  * Unlit visual map: spatially chunked for frustum culling, no raycasts.
  * Shared by dungeon (plus a hidden collider) and defense (visual only).
@@ -277,7 +210,7 @@ export function prepareStaticMapVisual(
 
 /**
  * Unlit visual map plus a hidden collider clone (no authored extra geometry).
- * Shared by sky temple; dungeon adds descent ledges on top.
+ * Shared by sky temple and dungeon.
  */
 export function prepareMeshMapScenes(
   source: Object3D,
@@ -315,13 +248,11 @@ export function prepareDungeonMapScenes(source: Object3D): {
   visual: Group;
   collider: Group;
 } {
-  const { visual, collider } = prepareMeshMapScenes(source, {
+  return prepareMeshMapScenes(source, {
     cellSize: DUNGEON_CULL_CELL_NATIVE,
     visualName: 'dungeon-lair-visual',
     colliderName: 'dungeon-lair-collider',
   });
-  collider.add(createDungeonDescentCollider());
-  return { visual, collider };
 }
 
 function visitMapScenes(
@@ -338,8 +269,7 @@ function visitMapScenes(
       const mat = mats[i];
       if (!mat || seenMats.has(mat)) continue;
       const dropUnlit = disposeMats && mat.userData?.dungeonUnlit;
-      const dropDescent = mat.userData?.dungeonDescent;
-      if (!dropUnlit && !dropDescent) continue;
+      if (!dropUnlit) continue;
       seenMats.add(mat);
       mat.dispose();
     }

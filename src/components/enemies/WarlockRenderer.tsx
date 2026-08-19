@@ -9,6 +9,7 @@ import WarlockModel from './WarlockModel';
 import CubeSoulEffect from './CubeSoulEffect';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { applyDungeonFeetY } from '@/utils/dungeonLayout';
 import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
@@ -247,6 +248,7 @@ function WarlockRenderer({
 
     if (isBlinkingRef.current) {
       group.position.lerp(targetPosition.current, Math.min(1, delta * BLINK_LERP_SPEED));
+      applyDungeonFeetY(group.position);
       let deltaAngle = targetRotation.current - group.rotation.y;
       while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;
       while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
@@ -272,6 +274,7 @@ function WarlockRenderer({
 
       if (!isLaunchLocked) {
         group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
+        applyDungeonFeetY(group.position);
 
         let deltaAngle = targetRotation.current - group.rotation.y;
         while (deltaAngle >  Math.PI) deltaAngle -= Math.PI * 2;

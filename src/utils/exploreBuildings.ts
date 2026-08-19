@@ -129,7 +129,7 @@ export const EXPLORE_BUILDING_DEFS: Readonly<Record<ExploreBuildingKind, Explore
     kind: 'research-station',
     label: 'Research Station',
     hotkey: 'J',
-    woodCost: 200,
+    woodCost: 150,
     flowCost: 5,
     maxHp: 150,
     hullRadius: RESEARCH_STATION_HULL_RADIUS,
@@ -198,6 +198,27 @@ export const EXPLORE_TOWER_PICK_ORDER: readonly ExploreBuildingKind[] = [
 
 export function getExploreBuildingDef(kind: ExploreBuildingKind): ExploreBuildingDef {
   return EXPLORE_BUILDING_DEFS[kind];
+}
+
+export type ExploreBuildMenuIconId = ExploreBuildingKind | 'tower-category';
+
+const EXPLORE_BUILDING_ICON_SRC: Record<ExploreBuildMenuIconId, string> = {
+  'fire-pit': '/icons/buildings/fire-pit.svg',
+  barracks: '/icons/buildings/spirit-lounge.svg',
+  tower: '/icons/buildings/mage-tower.svg',
+  'watch-tower': '/icons/buildings/watch-tower.svg',
+  'siege-tower': '/icons/buildings/siege-tower.svg',
+  'research-station': '/icons/buildings/research-station.svg',
+  shrine: '/icons/buildings/shrine.svg',
+  obelisk: '/icons/buildings/obelisk.svg',
+  'shield-battery': '/icons/buildings/shield-battery.svg',
+  cathedral: '/icons/buildings/cathedral.svg',
+  'tower-category': '/icons/buildings/tower.svg',
+};
+
+/** Public URL for explore build-menu HUD icons (`public/icons/buildings/*.svg`). */
+export function getExploreBuildingIconSrc(id: ExploreBuildMenuIconId): string {
+  return EXPLORE_BUILDING_ICON_SRC[id];
 }
 
 export function isPlayerExploreBuildingType(type: string | undefined | null): boolean {
@@ -372,7 +393,13 @@ export function isExploreShrineGiftId(value: unknown): value is ExploreShrineGif
 /** Gold cost per class talent at an explore obelisk. */
 export const EXPLORE_OBELISK_TALENT_GOLD_COST = 500;
 
-export type ExploreResearchUpgradeId = 'stone-breaker' | 'soul-stealer' | 'spirit-lineage' | 'greater-harvest';
+export type ExploreResearchUpgradeId =
+  | 'stone-breaker'
+  | 'soul-stealer'
+  | 'spirit-lineage'
+  | 'greater-harvest'
+  | 'tower-efficiency'
+  | 'tower-damage';
 
 /** Flow cost for Soul Stealer research upgrade. */
 export const EXPLORE_RESEARCH_FLOW_COST = 10;
@@ -388,6 +415,24 @@ export const EXPLORE_SPIRIT_LINEAGE_MAX_RANK = 4;
 
 /** Cost to buy the next Spirit Lineage rank, indexed by current rank. */
 export const EXPLORE_SPIRIT_LINEAGE_COSTS: readonly number[] = [10, 15, 20, 25];
+
+/** Gold cost for Tower Efficiency (watch towers cost 50 wood). */
+export const EXPLORE_TOWER_EFFICIENCY_GOLD_COST = 100;
+
+/** Watch tower wood cost after Tower Efficiency research. */
+export const EXPLORE_WATCH_TOWER_EFFICIENT_WOOD_COST = 50;
+
+/** Tower Damage ranks: 0 (50 dmg) through 3 (200 dmg). */
+export const EXPLORE_TOWER_DAMAGE_MAX_RANK = 3;
+
+/** Gold cost to buy the next Tower Damage rank, indexed by current rank. */
+export const EXPLORE_TOWER_DAMAGE_COSTS: readonly number[] = [100, 200, 300];
+
+/** Damage added per Tower Damage rank (+50 per rank). */
+export const EXPLORE_WATCH_TOWER_DAMAGE_PER_RANK = 50;
+
+/** Base watch tower arrow damage before research. */
+export const EXPLORE_WATCH_TOWER_BASE_DAMAGE = 50;
 
 export function getExploreAllyCap(spiritLineageRank: number): number {
   const rank = Math.max(0, Math.min(EXPLORE_SPIRIT_LINEAGE_MAX_RANK, Math.floor(Number(spiritLineageRank) || 0)));
@@ -413,11 +458,59 @@ export function getSpiritLineageDescription(spiritLineageRank: number): string {
   return `Raise Spirit Lounge ally cap ${cap} → ${nextCap}`;
 }
 
+export function getTowerDamageNextCost(towerDamageRank: number): number | null {
+  const rank = Math.max(0, Math.floor(Number(towerDamageRank) || 0));
+  if (rank >= EXPLORE_TOWER_DAMAGE_MAX_RANK) return null;
+  return EXPLORE_TOWER_DAMAGE_COSTS[rank] ?? null;
+}
+
+export function getExploreWatchTowerArrowDamage(towerDamageRank: number): number {
+  const rank = Math.max(
+    0,
+    Math.min(EXPLORE_TOWER_DAMAGE_MAX_RANK, Math.floor(Number(towerDamageRank) || 0)),
+  );
+  return EXPLORE_WATCH_TOWER_BASE_DAMAGE + EXPLORE_WATCH_TOWER_DAMAGE_PER_RANK * rank;
+}
+
+export function getTowerDamageLabel(towerDamageRank: number): string {
+  const rank = Math.max(0, Math.floor(Number(towerDamageRank) || 0));
+  if (rank <= 0) return 'Tower Damage';
+  const numerals = ['I', 'II', 'III'] as const;
+  return `Tower Damage Level ${numerals[Math.min(rank - 1, numerals.length - 1)]}`;
+}
+
+export function getTowerDamageDescription(towerDamageRank: number): string {
+  const current = getExploreWatchTowerArrowDamage(towerDamageRank);
+  const next = getExploreWatchTowerArrowDamage(
+    Math.min(
+      Math.max(0, Math.floor(Number(towerDamageRank) || 0)) + 1,
+      EXPLORE_TOWER_DAMAGE_MAX_RANK,
+    ),
+  );
+  return `Watch Tower arrows ${current} → ${next} damage`;
+}
+
+export function getExploreWatchTowerWoodCost(research: ExploreResearchState | null | undefined): number {
+  const base = EXPLORE_BUILDING_DEFS['watch-tower'].woodCost;
+  if (research?.towerEfficiency) return EXPLORE_WATCH_TOWER_EFFICIENT_WOOD_COST;
+  return base;
+}
+
+export function getExploreBuildingWoodCost(
+  kind: ExploreBuildingKind,
+  research: ExploreResearchState | null | undefined,
+): number {
+  if (kind === 'watch-tower') return getExploreWatchTowerWoodCost(research);
+  return EXPLORE_BUILDING_DEFS[kind].woodCost;
+}
+
 export interface ExploreResearchState {
   stoneBreaker: boolean;
   soulStealer: boolean;
   spiritLineage: number;
   greaterHarvest: boolean;
+  towerEfficiency: boolean;
+  towerDamage: number;
 }
 
 export const EMPTY_EXPLORE_RESEARCH: ExploreResearchState = {
@@ -425,19 +518,27 @@ export const EMPTY_EXPLORE_RESEARCH: ExploreResearchState = {
   soulStealer: false,
   spiritLineage: 0,
   greaterHarvest: false,
+  towerEfficiency: false,
+  towerDamage: 0,
 };
 
 export function normalizeExploreResearch(raw: unknown): ExploreResearchState {
   const r = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
-  const rank = Math.max(
+  const spiritLineage = Math.max(
     0,
     Math.min(EXPLORE_SPIRIT_LINEAGE_MAX_RANK, Math.floor(Number(r.spiritLineage) || 0)),
+  );
+  const towerDamage = Math.max(
+    0,
+    Math.min(EXPLORE_TOWER_DAMAGE_MAX_RANK, Math.floor(Number(r.towerDamage) || 0)),
   );
   return {
     stoneBreaker: !!r.stoneBreaker,
     soulStealer: !!r.soulStealer,
-    spiritLineage: rank,
+    spiritLineage,
     greaterHarvest: !!r.greaterHarvest,
+    towerEfficiency: !!r.towerEfficiency,
+    towerDamage,
   };
 }
 
@@ -454,6 +555,7 @@ export function isExploreResearchPurchased(
   if (id === 'stone-breaker') return research.stoneBreaker;
   if (id === 'soul-stealer') return research.soulStealer;
   if (id === 'greater-harvest') return research.greaterHarvest;
+  if (id === 'tower-efficiency') return research.towerEfficiency;
   return false;
 }
 
@@ -494,5 +596,17 @@ export const EXPLORE_RESEARCH_UPGRADES: readonly {
     label: 'Greater Harvest',
     hotkey: '4',
     description: 'Double wood from trees and roots',
+  },
+  {
+    id: 'tower-efficiency',
+    label: 'Tower Efficiency',
+    hotkey: '5',
+    description: 'Watch Towers cost 50 wood instead of 100',
+  },
+  {
+    id: 'tower-damage',
+    label: 'Tower Damage',
+    hotkey: '6',
+    description: 'Increase Watch Tower arrow damage',
   },
 ];

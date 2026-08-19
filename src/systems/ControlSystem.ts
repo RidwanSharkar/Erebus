@@ -6780,7 +6780,7 @@ export class ControlSystem extends System {
         this.tryGuardSabresSwipesBladeProc(playerTransform);
         this.tryPsionicBladesProc(target, attackDirection, 'left');
 
-        if (this.weaponAspect === ASPECT_FROST_AFFINITY) {
+        if (this.weaponAspect === ASPECT_FROST_AFFINITY && target.getComponent(Enemy)) {
           const avalancheEnemyId =
             (target.userData?.serverEnemyId as string | undefined) ??
             target.id.toString();
@@ -6821,7 +6821,7 @@ export class ControlSystem extends System {
             this.tryGuardSabresSwipesBladeProc(playerTransform);
             this.tryPsionicBladesProc(target, attackDirection, 'right');
 
-            if (this.weaponAspect === ASPECT_FROST_AFFINITY) {
+            if (this.weaponAspect === ASPECT_FROST_AFFINITY && target.getComponent(Enemy)) {
               const avalancheEnemyId =
                 (target.userData?.serverEnemyId as string | undefined) ??
                 target.id.toString();

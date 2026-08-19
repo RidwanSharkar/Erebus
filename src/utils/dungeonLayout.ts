@@ -30,24 +30,38 @@ export const DUNGEON_PLAYABLE_MAX_Z = 16.95;
 
 /** EntranceTransition walkable stand point after scale + floor lift. */
 export const DUNGEON_SPAWN = Object.freeze({ x: -17.63, y: 1, z: -20.1 });
+/** Yaw facing down the lair corridor (−Z). Keep in sync with `backend/gameRoom.js`. */
+export const DUNGEON_SPAWN_FACING_Y = Math.PI;
 
 /** RallyArea past the entrance stairs. Keep in sync with `backend/gameRoom.js`. */
 /** y is RallyArea world floor height (native Y ≈ −25 × scale 0.625 + lift ≈ −15.5). */
 export const DUNGEON_ENTRANCE_PACK = Object.freeze([
-  Object.freeze({ type: 'knight', x: -21.5, y: -15.5, z: -82, campColor: 'red' }),
+  Object.freeze({ type: 'knight', x: -20.0, y: -15.8, z: -81, campColor: 'red' }),
   Object.freeze({ type: 'knight', x: -14.0, y: -15.5, z: -80, campColor: 'blue' }),
   Object.freeze({ type: 'wyvern', x: -17.6, y: -15.5, z: -80, campColor: 'red' }),
 ]);
-/** Lair9 chamber past the RallyArea overlook. Reachable via hidden descent collider. */
+/** Open RallyArea floor west of pack 1 (walkable cavern, y ≈ −15.9). */
 export const DUNGEON_BRIDGE_PACK = Object.freeze([
-  Object.freeze({ type: 'knight', x: -11.6, y: -33.3, z: -96.2, campColor: 'red' }),
-  Object.freeze({ type: 'knight', x: -8.5, y: -34.9, z: -96.2, campColor: 'blue' }),
-  Object.freeze({ type: 'knight', x: -10.5, y: -35.9, z: -98.5, campColor: 'red' }),
+  Object.freeze({ type: 'knight', x: -32.5, y: -15.9, z: -68.5, campColor: 'red' }),
+  Object.freeze({ type: 'knight', x: -29.5, y: -15.9, z: -70.0, campColor: 'blue' }),
+  Object.freeze({ type: 'knight', x: -32.0, y: -15.9, z: -71.5, campColor: 'red' }),
 ]);
-/** Lair9 island further in, after pack 2. Keep in sync with `backend/gameRoom.js`. */
+/** East ledge branch past the cavern. Keep in sync with `backend/gameRoom.js`. */
 export const DUNGEON_PRE_BOSS_PACK = Object.freeze([
-  Object.freeze({ type: 'wyvern', x: -18.8, y: -36.0, z: -101.4, campColor: 'red' }),
-  Object.freeze({ type: 'wyvern', x: 0.1, y: -36.9, z: -101.2, campColor: 'blue' }),
+  Object.freeze({ type: 'wyvern', x: 29.0, y: -24.8, z: -61.5, campColor: 'red' }),
+  Object.freeze({ type: 'wyvern', x: 34.0, y: -24.8, z: -62.0, campColor: 'blue' }),
+]);
+/** Great-lair opening past the east-ledge descent. Keep in sync with `backend/gameRoom.js`. */
+export const DUNGEON_LAIR_OPENING_PACK = Object.freeze([
+  Object.freeze({ type: 'knight', x: 29.0, y: -58.4, z: -95.0, campColor: 'red' }),
+  Object.freeze({ type: 'knight', x: 33.0, y: -58.7, z: -95.0, campColor: 'blue' }),
+  Object.freeze({ type: 'knight', x: 35.0, y: -58.9, z: -95.0, campColor: 'red' }),
+  Object.freeze({ type: 'stone-giant', x: 31.0, y: -58.8, z: -97.0, campColor: 'red' }),
+]);
+/** Deeper great-lair floor. Keep in sync with `backend/gameRoom.js`. */
+export const DUNGEON_GREAT_LAIR_PACK = Object.freeze([
+  Object.freeze({ type: 'boss2', x: 29.0, y: -54.5, z: -145.0, campColor: 'red' }),
+  Object.freeze({ type: 'destiny', x: 39.0, y: -53.8, z: -145.0, campColor: 'purple' }),
 ]);
 
 export type DungeonPlayableAabb = {

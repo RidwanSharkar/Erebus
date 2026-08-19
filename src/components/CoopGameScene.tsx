@@ -167,8 +167,14 @@ import {
   OBELISK_HULL_RADIUS,
   CATHEDRAL_HULL_RADIUS,
   EXPLORE_OBELISK_TALENT_GOLD_COST,
+  EXPLORE_TOWER_EFFICIENCY_GOLD_COST,
   exploreBuildingRequiresSpiritLounge,
   exploreBuildingRequiresShrineOrObelisk,
+  getExploreBuildingWoodCost,
+  getExploreResearchFlowCost,
+  getSpiritLineageNextCost,
+  getTowerDamageNextCost,
+  isExploreResearchPurchased,
   getExploreLowHungerMaxEnergyBonus,
   isExploreTowerType,
   isPlayerExploreBuildingType,
@@ -552,6 +558,7 @@ import {
   DUNGEON_FOG_DENSITY,
   DUNGEON_PLAYABLE_AABB,
   DUNGEON_SPAWN,
+  DUNGEON_SPAWN_FACING_Y,
   resolveDungeonPlayerCenterY,
   subscribeDungeonMeshCollider,
 } from '@/utils/dungeonLayout';
@@ -3163,6 +3170,7 @@ export function CoopGameScene({
   const buildModeRef = useRef<'idle' | 'menu' | 'tower-pick' | 'placing'>('idle');
   const buildKeyPrevRef = useRef(false);
   const buildEscKeyPrevRef = useRef(false);
+  const buildMenuShownAtRef = useRef(0);
   const buildFKeyPrevRef = useRef(false);
   const buildPlacementPosRef = useRef({ x: 0, z: 0, valid: false });
   const buildLeftMousePrevRef = useRef(false);
@@ -3173,6 +3181,8 @@ export function CoopGameScene({
   barracksRecruitAllyRef.current = barracksRecruitAlly;
   const researchPurchaseRef = useRef(researchPurchase);
   researchPurchaseRef.current = researchPurchase;
+  const exploreResearchRef = useRef(exploreResearch);
+  exploreResearchRef.current = exploreResearch;
   const shrineClaimRef = useRef(shrineClaim);
   shrineClaimRef.current = shrineClaim;
   const cathedralClaimRef = useRef(cathedralClaim);
@@ -3668,6 +3678,7 @@ export function CoopGameScene({
   useEffect(() => {
     if (isExplore) return;
     buildModeRef.current = 'idle';
+    buildMenuShownAtRef.current = 0;
     setBuildPlacementActive(false);
     controlSystemRef.current?.setBuildPlacementActive(false);
     controlSystemRef.current?.setBuildMenuHotkeysActive(false);
@@ -3982,6 +3993,7 @@ export function CoopGameScene({
    * of the entry ring, so the character looks back toward the rim. Orbit 180° behind the facing-into-arena
    * yaw on each combat segment enter (teleport) so the first frame match server-facing remotes.
    * Explore has no arena center — skip this yaw so reclaim/late join does not spin toward origin.
+   * Dungeon is a corridor toward −Z, not a ring around origin — face down the lair.
    */
   useEffect(() => {
     if (!engineRef.current || !gameStarted || !engineReady) return;
@@ -3997,11 +4009,11 @@ export function CoopGameScene({
     const c = coopArenaClampBounds == null
       ? { x: livePos.x, z: livePos.z }
       : clampToMainArenaXZ(livePos.x, livePos.z, coopArenaClampBounds);
-    const faceY = rotationYTowardArenaCenter(c.x, c.z);
+    const faceY = isDungeon ? DUNGEON_SPAWN_FACING_Y : rotationYTowardArenaCenter(c.x, c.z);
     const phi = cameraSystemRef.current.getVerticalAngle();
     cameraSystemRef.current.setAngles(faceY + Math.PI, phi);
     cameraSystemRef.current.snapToTarget();
-  }, [coopCombatArenaEnterSeq, gameStarted, engineReady, socket?.id, coopArenaClampBounds, contextPlayersRef, playersTransformsRef, isExplore]);
+  }, [coopCombatArenaEnterSeq, gameStarted, engineReady, socket?.id, coopArenaClampBounds, contextPlayersRef, playersTransformsRef, isExplore, isDungeon]);
 
   // PVP Kill Counter - tracks kills for all players
   const [playerKills, setPlayerKills] = useState<Map<string, number>>(new Map());
@@ -12897,7 +12909,10 @@ export function CoopGameScene({
 
     const handleShadeAttackTelegraph = (data: {
       shadeId: string;
-      targetPlayerId: string;
+      targetPlayerId?: string;
+      targetCombatAllyId?: string;
+      targetEnemyId?: string;
+      targetKind?: string;
       startPosition: { x: number; y: number; z: number };
       targetPosition: { x: number; y: number; z: number };
       damage: number;
@@ -12913,20 +12928,56 @@ export function CoopGameScene({
       const isYellowShade = shadeEnemy?.soulType === 'yellow' || isAlliedPhantom;
       const isBlueShade = !isYellowShade && shadeEnemy?.soulType === 'blue';
       const daggerCount = isBlueShade ? 2 : 3;
+      const nonPlayerKind =
+        data.targetKind === 'trap'
+        || data.targetKind === 'hostile'
+        || data.targetKind === 'enemy'
+        || data.targetKind === 'ally';
+      const isPlayerAimedVolley =
+        !isAlliedPhantom
+        && !data.targetCombatAllyId
+        && !data.targetEnemyId
+        && !nonPlayerKind
+        && !!data.targetPlayerId
+        && playersRef.current.has(data.targetPlayerId);
 
       // Spawn daggers staggered after the throw animation release point.
-      // Each dagger samples live player aim at launch; spawn origin uses live shade
-      // position (+1.5 Y hand offset, matching enemyAI telegraphShadeAttack) so post-boss
-      // blink timing cannot desync projectile start from the mesh.
+      // Player-targeted volleys sample live aim at launch; trap/hostile/ally keep the
+      // telegraph (or live enemy) aim. Spawn origin uses live shade position (+1.5 Y
+      // hand offset, matching enemyAI telegraphShadeAttack) so post-boss blink timing
+      // cannot desync projectile start from the mesh.
       for (let i = 0; i < daggerCount; i++) {
         setTimeout(() => {
           let target = staleTarget.clone();
-          if (!isAlliedPhantom) {
-            const playerEntity = getLocalPlayerEntity();
-            if (playerEntity) {
-              const t = playerEntity.getComponent(Transform);
-              if (t) {
-                target = new Vector3(t.position.x, data.targetPosition.y, t.position.z);
+          if (isPlayerAimedVolley && data.targetPlayerId) {
+            if (data.targetPlayerId === socket?.id) {
+              const playerEntity = getLocalPlayerEntity();
+              if (playerEntity) {
+                const t = playerEntity.getComponent(Transform);
+                if (t) {
+                  target = new Vector3(t.position.x, data.targetPosition.y, t.position.z);
+                }
+              }
+            } else {
+              const livePlayer = playersTransformsRef.current.get(data.targetPlayerId);
+              if (livePlayer?.position) {
+                target = new Vector3(
+                  livePlayer.position.x,
+                  data.targetPosition.y,
+                  livePlayer.position.z,
+                );
+              }
+            }
+          } else {
+            const liveTargetId = data.targetEnemyId || data.targetCombatAllyId;
+            if (liveTargetId) {
+              const liveEnemy = enemiesRef.current.get(liveTargetId);
+              if (liveEnemy?.position) {
+                target = new Vector3(
+                  liveEnemy.position.x,
+                  data.targetPosition.y,
+                  liveEnemy.position.z,
+                );
               }
             }
           }
@@ -15972,6 +16023,7 @@ export function CoopGameScene({
 
         const closeBuildMenu = () => {
           buildModeRef.current = 'idle';
+          buildMenuShownAtRef.current = 0;
           cs.setBuildPlacementActive(false);
           cs.setBuildMenuHotkeysActive(false);
           setBuildPlacementActive(false);
@@ -15980,6 +16032,7 @@ export function CoopGameScene({
 
         const enterPlacing = (kind: ExploreBuildingKind) => {
           buildModeRef.current = 'placing';
+          buildMenuShownAtRef.current = 0;
           setBuildPlacementKind(kind);
           cs.setBuildPlacementActive(true);
           cs.setBuildMenuHotkeysActive(false);
@@ -15992,6 +16045,7 @@ export function CoopGameScene({
             closeBuildMenu();
           } else {
             buildModeRef.current = 'menu';
+            buildMenuShownAtRef.current = Date.now();
             cs.setBuildMenuHotkeysActive(true);
             onBuildMenuChangeRef.current?.(true, 'root');
           }
@@ -16000,8 +16054,16 @@ export function CoopGameScene({
         if (escEdge && buildModeRef.current !== 'idle') {
           if (buildModeRef.current === 'tower-pick') {
             buildModeRef.current = 'menu';
+            buildMenuShownAtRef.current = Date.now();
             onBuildMenuChangeRef.current?.(true, 'root');
           } else {
+            closeBuildMenu();
+          }
+        }
+
+        if (buildModeRef.current === 'menu' || buildModeRef.current === 'tower-pick') {
+          const shownAt = buildMenuShownAtRef.current;
+          if (shownAt > 0 && Date.now() - shownAt >= 5000) {
             closeBuildMenu();
           }
         }
@@ -16014,6 +16076,7 @@ export function CoopGameScene({
           buildHotkeyPrevRef.current[towerKey] = towerDown;
           if (towerEdge) {
             buildModeRef.current = 'tower-pick';
+            buildMenuShownAtRef.current = Date.now();
             cs.setBuildMenuHotkeysActive(true);
             onBuildMenuChangeRef.current?.(true, 'towers');
           }
@@ -16024,7 +16087,7 @@ export function CoopGameScene({
             const prev = buildHotkeyPrevRef.current[key] ?? false;
             const keyEdge = keyDown && !prev;
             buildHotkeyPrevRef.current[key] = keyDown;
-            if (keyEdge && def.enabled && localWood >= def.woodCost && localFlow >= (def.flowCost ?? 0) && localStone >= (def.stoneCost ?? 0)) {
+            if (keyEdge && def.enabled && localWood >= getExploreBuildingWoodCost(kind, exploreResearchRef.current) && localFlow >= (def.flowCost ?? 0) && localStone >= (def.stoneCost ?? 0)) {
               if (exploreBuildingRequiresSpiritLounge(kind) && !buildPlacementRulesRef.current.hasLiveSpiritLounge) {
                 continue;
               }
@@ -16043,7 +16106,7 @@ export function CoopGameScene({
             const prev = buildHotkeyPrevRef.current[key] ?? false;
             const keyEdge = keyDown && !prev;
             buildHotkeyPrevRef.current[key] = keyDown;
-            if (keyEdge && def.enabled && localWood >= def.woodCost && localFlow >= (def.flowCost ?? 0) && localStone >= (def.stoneCost ?? 0)) {
+            if (keyEdge && def.enabled && localWood >= getExploreBuildingWoodCost(kind, exploreResearchRef.current) && localFlow >= (def.flowCost ?? 0) && localStone >= (def.stoneCost ?? 0)) {
               enterPlacing(kind);
               break;
             }
@@ -16128,16 +16191,30 @@ export function CoopGameScene({
             break;
           }
         } else if (nearResearchRef.current && buildModeRef.current === 'idle') {
+          const localGold = playersRef.current.get(socket?.id || '')?.gold ?? 0;
+          const research = exploreResearchRef.current;
           for (const upgrade of EXPLORE_RESEARCH_UPGRADES) {
             const digit = upgrade.hotkey;
             const digitDown = cs.isKeyPressed(digit);
             const prev = buildHotkeyPrevRef.current[`research-${digit}`] ?? false;
             const digitEdge = digitDown && !prev;
             buildHotkeyPrevRef.current[`research-${digit}`] = digitDown;
-            if (digitEdge) {
-              researchPurchaseRef.current(upgrade.id);
+            if (!digitEdge) continue;
+            if (upgrade.id === 'spirit-lineage') {
+              const cost = getSpiritLineageNextCost(research.spiritLineage ?? 0);
+              if (cost == null || localFlow < cost) break;
+            } else if (upgrade.id === 'tower-damage') {
+              const cost = getTowerDamageNextCost(research.towerDamage ?? 0);
+              if (cost == null || localGold < cost) break;
+            } else if (upgrade.id === 'tower-efficiency') {
+              if (research.towerEfficiency || localGold < EXPLORE_TOWER_EFFICIENCY_GOLD_COST) break;
+            } else if (isExploreResearchPurchased(upgrade.id, research)) {
+              break;
+            } else if (localFlow < getExploreResearchFlowCost(upgrade.id)) {
               break;
             }
+            researchPurchaseRef.current(upgrade.id);
+            break;
           }
         } else if (nearFirePitRef.current && buildModeRef.current === 'idle') {
           const localMeat = contextPlayersRef.current.get(socket?.id || '')?.meat ?? 0;

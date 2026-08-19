@@ -11,6 +11,7 @@ import EnemyMeleeAttackRangeRing, { TITAN_MELEE_ATTACK_RANGE } from './EnemyMele
 import { parseMeleeTelegraphPayload, meleeAttackDurationFromTelegraph, type MeleeTelegraphVisual } from '@/utils/meleeTelegraphVisual';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { applyDungeonFeetY } from '@/utils/dungeonLayout';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   applyEnemyHealthBarFill,
@@ -157,6 +158,7 @@ function StoneGiantRenderer({
     );
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
+    applyDungeonFeetY(group.position);
     let deltaAngle = targetRotation.current - group.rotation.y;
     while (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2;
     while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;

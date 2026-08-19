@@ -555,7 +555,7 @@ const EXPLORE_CAMP_PROP_OFFSET_MAX = 6;
 const EXPLORE_CAMP_DESPAWN_DIST = 12;
 const EXPLORE_CAMP_DESPAWN_DELAY_MS = 30000;
 /** Pack-member kill thresholds for explore boss encounters 1 / 2 / 3. */
-const EXPLORE_BOSS_KILL_THRESHOLDS = Object.freeze([20, 45, 75]);
+const EXPLORE_BOSS_KILL_THRESHOLDS = Object.freeze([35, 80, 150]);
 const EXPLORE_BOSS_SPAWN_DIST = 15;
 /** Pack recipes by wilderness level. Members are a type string or `{ type, campColor }`. */
 const EXPLORE_WILDERNESS_PACKS = Object.freeze({
@@ -644,6 +644,7 @@ const DUNGEON_PLAYABLE_MAX_Z = 16.95;
 const DUNGEON_SPAWN_X = -17.63;
 const DUNGEON_SPAWN_Y = 1;
 const DUNGEON_SPAWN_Z = -20.1;
+const DUNGEON_SPAWN_FACING_Y = Math.PI;
 const SKY_TEMPLE_PLAYABLE_MIN_X = -37;
 const SKY_TEMPLE_PLAYABLE_MAX_X = 37;
 const SKY_TEMPLE_PLAYABLE_MIN_Z = -32;
@@ -662,20 +663,32 @@ const SKY_TEMPLE_PACK = Object.freeze([
 /** RallyArea past the entrance stairs. Keep in sync with `src/utils/dungeonLayout.ts`. */
 /** y is RallyArea world floor height (native Y ≈ −25 × scale 0.625 + lift ≈ −15.5). */
 const DUNGEON_ENTRANCE_PACK = Object.freeze([
-  Object.freeze({ type: 'knight', x: -21.5, y: -15.5, z: -82, campColor: 'red' }),
+  Object.freeze({ type: 'knight', x: -20.0, y: -15.8, z: -81, campColor: 'red' }),
   Object.freeze({ type: 'knight', x: -14.0, y: -15.5, z: -80, campColor: 'blue' }),
   Object.freeze({ type: 'wyvern', x: -17.6, y: -15.5, z: -80, campColor: 'red' }),
 ]);
-/** Lair9 chamber past the RallyArea overlook. Reachable via hidden descent collider. */
+/** Open RallyArea floor west of pack 1 (walkable cavern, y ≈ −15.9). */
 const DUNGEON_BRIDGE_PACK = Object.freeze([
-  Object.freeze({ type: 'knight', x: -11.6, y: -33.3, z: -96.2, campColor: 'red' }),
-  Object.freeze({ type: 'knight', x: -8.5, y: -34.9, z: -96.2, campColor: 'blue' }),
-  Object.freeze({ type: 'knight', x: -10.5, y: -35.9, z: -98.5, campColor: 'red' }),
+  Object.freeze({ type: 'knight', x: -32.5, y: -15.9, z: -68.5, campColor: 'red' }),
+  Object.freeze({ type: 'knight', x: -29.5, y: -15.9, z: -70.0, campColor: 'blue' }),
+  Object.freeze({ type: 'knight', x: -32.0, y: -15.9, z: -71.5, campColor: 'red' }),
 ]);
-/** Lair9 island further in, after pack 2. Keep in sync with `src/utils/dungeonLayout.ts`. */
+/** East ledge branch past the cavern. Keep in sync with `src/utils/dungeonLayout.ts`. */
 const DUNGEON_PRE_BOSS_PACK = Object.freeze([
-  Object.freeze({ type: 'wyvern', x: -18.8, y: -36.0, z: -101.4, campColor: 'red' }),
-  Object.freeze({ type: 'wyvern', x: 0.1, y: -36.9, z: -101.2, campColor: 'blue' }),
+  Object.freeze({ type: 'wyvern', x: 29.0, y: -24.8, z: -61.5, campColor: 'red' }),
+  Object.freeze({ type: 'wyvern', x: 34.0, y: -24.8, z: -62.0, campColor: 'blue' }),
+]);
+/** Great-lair opening past the east-ledge descent. Keep in sync with `src/utils/dungeonLayout.ts`. */
+const DUNGEON_LAIR_OPENING_PACK = Object.freeze([
+  Object.freeze({ type: 'knight', x: 29.0, y: -58.4, z: -95.0, campColor: 'red' }),
+  Object.freeze({ type: 'knight', x: 33.0, y: -58.7, z: -95.0, campColor: 'blue' }),
+  Object.freeze({ type: 'knight', x: 35.0, y: -58.9, z: -95.0, campColor: 'red' }),
+  Object.freeze({ type: 'stone-giant', x: 31.0, y: -58.8, z: -97.0, campColor: 'red' }),
+]);
+/** Deeper great-lair floor. Keep in sync with `src/utils/dungeonLayout.ts`. */
+const DUNGEON_GREAT_LAIR_PACK = Object.freeze([
+  Object.freeze({ type: 'boss2', x: 29.0, y: -54.5, z: -145.0, campColor: 'red' }),
+  Object.freeze({ type: 'destiny', x: 39.0, y: -53.8, z: -145.0, campColor: 'purple' }),
 ]);
 const DEFENSE_TOWER_TRIANGLE_RADIUS = 7;
 const DEFENSE_TOWER_HULL_RADIUS = 1.4;
@@ -1282,7 +1295,14 @@ class GameRoom {
     /** Explore: packed-index spine HP map; missing key = full HP; 0 = destroyed. */
     this.exploreSpineHealth = new Map();
     /** Explore: room-wide research unlocks (persist when research station is replaced). */
-    this.exploreResearch = { stoneBreaker: false, soulStealer: false, spiritLineage: 0, greaterHarvest: false };
+    this.exploreResearch = {
+      stoneBreaker: false,
+      soulStealer: false,
+      spiritLineage: 0,
+      greaterHarvest: false,
+      towerEfficiency: false,
+      towerDamage: 0,
+    };
     /** Explore Spirit Lounge: monotonic id suffix so multiple allies of the same kind can coexist. */
     this._exploreAllySeq = 0;
     this._resetMushroomState();
@@ -1387,7 +1407,7 @@ class GameRoom {
     this._exploreCompanionSeq = 0;
     /** @type {Map<string, ReturnType<typeof setTimeout>>} playerId → pending Beastmaster tiger explore-revive timeout. */
     this._beastmasterTigerReviveTimers = new Map();
-    /** Next boss encounter index (0 = first at 20 kills, 1 = second at 45, 2 = third at 75). */
+    /** Next boss encounter index (0 = first at 35 kills, 1 = second at 80, 2 = third at 150). */
     this.exploreBossEncounterIndex = 0;
     /** @type {Set<string>} Active explore boss / elite knight ids — exempt from far-despawn. */
     this.exploreBossIds = new Set();
@@ -6058,6 +6078,10 @@ class GameRoom {
       this._spawnDungeonPack(DUNGEON_BRIDGE_PACK, 2);
     } else if (current === 2) {
       this._spawnDungeonPack(DUNGEON_PRE_BOSS_PACK, 3);
+    } else if (current === 3) {
+      this._spawnDungeonPack(DUNGEON_LAIR_OPENING_PACK, 4);
+    } else if (current === 4) {
+      this._spawnDungeonPack(DUNGEON_GREAT_LAIR_PACK, 5);
     }
   }
 
@@ -6167,7 +6191,7 @@ class GameRoom {
         y: DUNGEON_SPAWN_Y,
         z: DUNGEON_SPAWN_Z + Math.cos(angle) * spawnRadius,
       };
-      player.rotation = { x: 0, y: 0, z: 0 };
+      player.rotation = { x: 0, y: DUNGEON_SPAWN_FACING_Y, z: 0 };
       idx++;
     }
     this.repositionAllBeastCompanionsNearOwners();
@@ -11587,18 +11611,27 @@ class GameRoom {
   }
 
   getExploreResearch() {
-    const rank = Math.max(
+    const spiritLineage = Math.max(
       0,
       Math.min(
         exploreBuildings.EXPLORE_SPIRIT_LINEAGE_MAX_RANK,
         Math.floor(Number(this.exploreResearch?.spiritLineage) || 0),
       ),
     );
+    const towerDamage = Math.max(
+      0,
+      Math.min(
+        exploreBuildings.EXPLORE_TOWER_DAMAGE_MAX_RANK,
+        Math.floor(Number(this.exploreResearch?.towerDamage) || 0),
+      ),
+    );
     return {
       stoneBreaker: !!this.exploreResearch?.stoneBreaker,
       soulStealer: !!this.exploreResearch?.soulStealer,
-      spiritLineage: rank,
+      spiritLineage,
       greaterHarvest: !!this.exploreResearch?.greaterHarvest,
+      towerEfficiency: !!this.exploreResearch?.towerEfficiency,
+      towerDamage,
     };
   }
 
@@ -12301,13 +12334,23 @@ class GameRoom {
     if (!station) return { ok: false, reason: 'no_research_station' };
 
     const id = payload?.id;
-    if (id !== 'stone-breaker' && id !== 'soul-stealer' && id !== 'spirit-lineage' && id !== 'greater-harvest') {
+    if (id !== 'stone-breaker' && id !== 'soul-stealer' && id !== 'spirit-lineage' && id !== 'greater-harvest'
+      && id !== 'tower-efficiency' && id !== 'tower-damage') {
       return { ok: false, reason: 'invalid_upgrade' };
     }
 
     if (!this.exploreResearch) {
-      this.exploreResearch = { stoneBreaker: false, soulStealer: false, spiritLineage: 0, greaterHarvest: false };
+      this.exploreResearch = {
+        stoneBreaker: false,
+        soulStealer: false,
+        spiritLineage: 0,
+        greaterHarvest: false,
+        towerEfficiency: false,
+        towerDamage: 0,
+      };
     }
+
+    let goldSpent = false;
 
     if (id === 'spirit-lineage') {
       const rank = Math.max(0, Math.floor(Number(this.exploreResearch.spiritLineage) || 0));
@@ -12316,6 +12359,23 @@ class GameRoom {
       if ((player.flow || 0) < cost) return { ok: false, reason: 'not_enough_flow' };
       player.flow = (player.flow || 0) - cost;
       this.exploreResearch.spiritLineage = rank + 1;
+    } else if (id === 'tower-damage') {
+      const rank = Math.max(0, Math.floor(Number(this.exploreResearch.towerDamage) || 0));
+      const cost = exploreBuildings.getTowerDamageNextCost(rank);
+      if (cost == null) return { ok: false, reason: 'already_purchased' };
+      if ((player.gold || 0) < cost) return { ok: false, reason: 'not_enough_gold' };
+      player.gold = (player.gold || 0) - cost;
+      this.exploreResearch.towerDamage = rank + 1;
+      goldSpent = true;
+    } else if (id === 'tower-efficiency') {
+      if (this.exploreResearch.towerEfficiency) {
+        return { ok: false, reason: 'already_purchased' };
+      }
+      const cost = exploreBuildings.EXPLORE_TOWER_EFFICIENCY_GOLD_COST;
+      if ((player.gold || 0) < cost) return { ok: false, reason: 'not_enough_gold' };
+      player.gold = (player.gold || 0) - cost;
+      this.exploreResearch.towerEfficiency = true;
+      goldSpent = true;
     } else {
       if (id === 'stone-breaker' && this.exploreResearch.stoneBreaker) {
         return { ok: false, reason: 'already_purchased' };
@@ -12347,11 +12407,19 @@ class GameRoom {
     }
 
     if (this.io) {
-      this.io.to(this.roomId).emit('player-flow-changed', {
-        playerId: player.id,
-        flow: player.flow,
-        timestamp: Date.now(),
-      });
+      if (goldSpent) {
+        this.io.to(this.roomId).emit('player-gold-changed', {
+          playerId: player.id,
+          gold: player.gold,
+          timestamp: Date.now(),
+        });
+      } else {
+        this.io.to(this.roomId).emit('player-flow-changed', {
+          playerId: player.id,
+          flow: player.flow,
+          timestamp: Date.now(),
+        });
+      }
       this.io.to(this.roomId).emit('explore-research-changed', {
         research: this.getExploreResearch(),
         playerId: player.id,
@@ -12642,7 +12710,10 @@ class GameRoom {
 
     const player = this.players.get(playerId);
     if (!player || player.health <= 0) return { ok: false };
-    if ((player.wood || 0) < def.woodCost) return { ok: false };
+    const woodCost = kind === 'watch-tower'
+      ? exploreBuildings.getExploreWatchTowerWoodCost(this.exploreResearch)
+      : def.woodCost;
+    if ((player.wood || 0) < woodCost) return { ok: false };
     const stoneCost = def.stoneCost || 0;
     if ((player.stone || 0) < stoneCost) return { ok: false };
     const flowCost = def.flowCost || 0;
@@ -12710,7 +12781,7 @@ class GameRoom {
       for (const old of stale) this._removeExploreBuildingInstant(old);
     }
 
-    player.wood = (player.wood || 0) - def.woodCost;
+    player.wood = (player.wood || 0) - woodCost;
     if (stoneCost > 0) {
       player.stone = (player.stone || 0) - stoneCost;
     }
@@ -13376,6 +13447,27 @@ class GameRoom {
       return { id: `valkyrie-${campIndex}-${slotIndex}-${ts}`, type: 'valkyrie', ...base,
         health: 2950 + hpBonus, maxHealth: 2950 + hpBonus,
         damage: 56, moveSpeed: 0.6, soulType: campDef.knightSoulType };
+    }
+    if (type === 'boss2') {
+      const maxHealth = this.getCoopBossMaxHealth('boss2');
+      return {
+        id: `boss2-${campIndex}-${slotIndex}-${ts}`, type: 'boss2', ...base,
+        initialPosition: { x: pos.x, y: pos.y ?? 0, z: pos.z },
+        health: maxHealth, maxHealth, moveSpeed: 2.0,
+        spawnedAt: ts, bossStationary: false,
+      };
+    }
+    if (type === 'destiny') {
+      const maxHealth = this.getCoopBossMaxHealth('destiny');
+      return {
+        id: `destiny-${campIndex}-${slotIndex}-${ts}`, type: 'destiny', ...base,
+        initialPosition: { x: pos.x, y: pos.y ?? 0, z: pos.z },
+        health: maxHealth, maxHealth, moveSpeed: 2.5,
+        spawnedAt: ts, bossStationary: false,
+        attackVariant: 1, breathVariant: 1, visualScale: 1.8, damage: 71,
+        destinyPhase: 'ground', flyPhaseCompleted: false,
+        flyAttackVolleysFired: 0, nextAirEmberAt: 0,
+      };
     }
     // viper
     return { id: `viper-${campIndex}-${slotIndex}-${ts}`, type: 'viper', ...base,
@@ -15947,7 +16039,22 @@ class GameRoom {
 
       // Special rewards for boss kills
       if (COOP_BOSS_TYPES.has(enemy.type)) {
-        if (enemy.waveRoomBoss) {
+        if (enemy._dungeonPack) {
+          if (this.io) {
+            this.players.forEach((player, playerId) => {
+              this.io.to(this.roomId).emit('player-experience-gained', {
+                playerId,
+                experienceGained: 1000,
+                source: 'boss_kill',
+                enemyId,
+                timestamp: Date.now()
+              });
+            });
+          }
+          this._clearBossSummonedAdds(enemyId);
+          this._registerCoopWaveKill(`👹 Dungeon ${enemy.type} defeated`);
+          console.log(`⚔️ Dungeon pack boss ${enemy.type} defeated by player ${fromPlayerId}`);
+        } else if (enemy.waveRoomBoss) {
           // ── Mini-boss1 inside a wave room ────────────────────────────────────
           // Grant reduced EXP; no boss-completion flow (no portal, no count increment).
           if (this.io) {

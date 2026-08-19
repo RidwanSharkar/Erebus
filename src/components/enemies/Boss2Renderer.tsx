@@ -14,6 +14,7 @@ import BoneAura from '../dragon/BoneAura';
 import { WeaponType } from '../dragon/weapons';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation, updateEnemyWalkStateFromMoveDist } from '@/utils/enemyLiveTransform';
+import { applyDungeonFeetY } from '@/utils/dungeonLayout';
 import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { STAGGER_MAX_BOSS } from '@/utils/talents';
@@ -200,6 +201,7 @@ function Boss2Renderer({
     );
 
     group.position.lerp(targetPosition.current, Math.min(1, delta * LERP_SPEED));
+    applyDungeonFeetY(group.position);
     let deltaAngle = targetRotation.current - group.rotation.y;
     while (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2;
     while (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
