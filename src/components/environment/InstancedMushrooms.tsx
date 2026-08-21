@@ -1,4 +1,12 @@
-import React, { useRef, useMemo, useLayoutEffect, useCallback, useEffect } from 'react';
+import React, {
+  forwardRef,
+  useRef,
+  useMemo,
+  useLayoutEffect,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+} from 'react';
 import { useFrame } from '@react-three/fiber';
 import {
   InstancedMesh,
@@ -8,6 +16,7 @@ import {
   Vector3,
   Color,
   DoubleSide,
+  DynamicDrawUsage,
 } from '@/utils/three-exports';
 import { MUSHROOM_COUNT, buildMushroomInstances, type MushroomInstance } from '@/utils/mushroomLayout';
 import { isInsideHexArenaXZ } from '@/utils/mapConstants';
@@ -90,132 +99,186 @@ export interface InstancedMushroomsProps {
   maxCount?: number;
 }
 
-const InstancedMushrooms: React.FC<InstancedMushroomsProps> = ({
-  hiddenIndices,
-  hexRadius,
-  instances: instancesProp,
-  maxCount,
-}) => {
-  const stemRef = useRef<InstancedMesh>(null);
-  const capRef = useRef<InstancedMesh>(null);
+export type InstancedMushroomsHandle = {
+  write(instances: readonly MushroomInstance[], hidden?: ReadonlySet<number>): boolean;
+};
 
-  const arenaInstances = useMemo(() => buildMushroomInstances(), []);
-  const instances = instancesProp ?? arenaInstances;
-  const capacity = Math.max(1, maxCount ?? instances.length ?? MUSHROOM_COUNT);
+const InstancedMushrooms = forwardRef<InstancedMushroomsHandle, InstancedMushroomsProps>(
+  function InstancedMushrooms(
+    {
+      hiddenIndices,
+      hexRadius,
+      instances: instancesProp,
+      maxCount,
+    },
+    ref,
+  ) {
+    const stemRef = useRef<InstancedMesh | null>(null);
+    const capRef = useRef<InstancedMesh | null>(null);
 
-  const stemGeo = useMemo(() => new CylinderGeometry(0.06, 0.09, 0.32, 7, 2), []);
-  const capGeo = useMemo(() => new CylinderGeometry(0.05, 0.28, 0.12, 10, 1), []);
+    const arenaInstances = useMemo(() => buildMushroomInstances(), []);
+    const streamed = maxCount != null && instancesProp === undefined;
+    const liveRef = useRef<readonly MushroomInstance[]>(
+      instancesProp ?? (streamed ? [] : arenaInstances),
+    );
+    if (instancesProp) liveRef.current = instancesProp;
+    const hiddenRef = useRef(hiddenIndices);
+    hiddenRef.current = hiddenIndices;
+    const hexRadiusRef = useRef(hexRadius);
+    hexRadiusRef.current = hexRadius;
+    const capacity = Math.max(1, maxCount ?? liveRef.current.length ?? MUSHROOM_COUNT);
 
-  const stemMat = useMemo(
-    () =>
-      new ShaderMaterial({
-        uniforms: { uTime: { value: 0 } },
-        vertexShader: STEM_VERT,
-        fragmentShader: STEM_FRAG,
-        side: DoubleSide,
-      }),
-    [],
-  );
+    const stemGeo = useMemo(() => new CylinderGeometry(0.06, 0.09, 0.32, 7, 2), []);
+    const capGeo = useMemo(() => new CylinderGeometry(0.05, 0.28, 0.12, 10, 1), []);
 
-  const capMat = useMemo(
-    () =>
-      new ShaderMaterial({
-        uniforms: {
-          uTime: { value: 0 },
-          uCapColor: { value: new Color('#7c22d4') },
-        },
-        vertexShader: CAP_VERT,
-        fragmentShader: CAP_FRAG,
-        side: DoubleSide,
-      }),
-    [],
-  );
+    const stemMat = useMemo(
+      () =>
+        new ShaderMaterial({
+          uniforms: { uTime: { value: 0 } },
+          vertexShader: STEM_VERT,
+          fragmentShader: STEM_FRAG,
+          side: DoubleSide,
+        }),
+      [],
+    );
 
-  useEffect(() => {
-    return () => {
-      stemGeo.dispose();
-      capGeo.dispose();
-    };
-  }, [stemGeo, capGeo]);
+    const capMat = useMemo(
+      () =>
+        new ShaderMaterial({
+          uniforms: {
+            uTime: { value: 0 },
+            uCapColor: { value: new Color('#7c22d4') },
+          },
+          vertexShader: CAP_VERT,
+          fragmentShader: CAP_FRAG,
+          side: DoubleSide,
+        }),
+      [],
+    );
 
-  useEffect(() => {
-    return () => {
-      stemMat.dispose();
-      capMat.dispose();
-    };
-  }, [stemMat, capMat]);
+    useEffect(() => {
+      return () => {
+        stemGeo.dispose();
+        capGeo.dispose();
+      };
+    }, [stemGeo, capGeo]);
 
-  const fillInstances = useCallback((hide: ReadonlySet<number> | undefined) => {
-    const stem = stemRef.current;
-    const cap = capRef.current;
-    if (!stem || !cap) return;
+    useEffect(() => {
+      return () => {
+        stemMat.dispose();
+        capMat.dispose();
+      };
+    }, [stemMat, capMat]);
 
-    const m = new Matrix4();
-    const scl = new Vector3();
-    const pos = new Vector3();
+    const fillInstances = useCallback((
+      list: readonly MushroomInstance[],
+      hide: ReadonlySet<number> | undefined,
+    ): boolean => {
+      const stem = stemRef.current;
+      const cap = capRef.current;
+      if (!stem || !cap) return false;
 
-    const n = Math.min(instances.length, capacity);
-    for (let i = 0; i < n; i++) {
-      const inst = instances[i]!;
-      const { index, x, z, h, cr } = inst;
-      const outsideHex =
-        typeof hexRadius === 'number'
-        && !isInsideHexArenaXZ(x, z, hexRadius, 0.5);
-      if (hide?.has(index) || outsideHex) {
-        stem.setMatrixAt(i, _zero);
-        cap.setMatrixAt(i, _zero);
-        continue;
+      const m = new Matrix4();
+      const scl = new Vector3();
+      const pos = new Vector3();
+      const hex = hexRadiusRef.current;
+
+      const n = Math.min(list.length, capacity);
+      for (let i = 0; i < n; i++) {
+        const inst = list[i]!;
+        const { index, x, z, h, cr } = inst;
+        const outsideHex =
+          typeof hex === 'number'
+          && !isInsideHexArenaXZ(x, z, hex, 0.5);
+        if (hide?.has(index) || outsideHex) {
+          stem.setMatrixAt(i, _zero);
+          cap.setMatrixAt(i, _zero);
+          continue;
+        }
+        scl.set(1, h / 0.32, 1);
+        m.makeScale(scl.x, scl.y, scl.z);
+        pos.set(x, h * 0.5, z);
+        m.setPosition(pos);
+        stem.setMatrixAt(i, m);
+
+        scl.set(cr, h * 0.5, cr);
+        m.makeScale(scl.x, scl.y, scl.z);
+        pos.set(x, h + 0.04 * h, z);
+        m.setPosition(pos);
+        cap.setMatrixAt(i, m);
       }
-      scl.set(1, h / 0.32, 1);
-      m.makeScale(scl.x, scl.y, scl.z);
-      pos.set(x, h * 0.5, z);
-      m.setPosition(pos);
-      stem.setMatrixAt(i, m);
 
-      scl.set(cr, h * 0.5, cr);
-      m.makeScale(scl.x, scl.y, scl.z);
-      pos.set(x, h + 0.04 * h, z);
-      m.setPosition(pos);
-      cap.setMatrixAt(i, m);
-    }
+      stem.count = n;
+      cap.count = n;
+      stem.instanceMatrix.needsUpdate = true;
+      cap.instanceMatrix.needsUpdate = true;
+      stem.computeBoundingSphere();
+      cap.computeBoundingSphere();
+      return true;
+    }, [capacity]);
 
-    stem.count = n;
-    cap.count = n;
-    stem.instanceMatrix.needsUpdate = true;
-    cap.instanceMatrix.needsUpdate = true;
-  }, [instances, hexRadius, capacity]);
+    useImperativeHandle(
+      ref,
+      () => ({
+        write(instances: readonly MushroomInstance[], hidden?: ReadonlySet<number>): boolean {
+          liveRef.current = instances;
+          return fillInstances(instances, hidden ?? hiddenRef.current);
+        },
+      }),
+      [fillInstances],
+    );
 
-  useLayoutEffect(() => {
-    if (stemRef.current && capRef.current) {
-      fillInstances(hiddenIndices);
-      return;
-    }
-    let raf = 0;
-    let attempts = 0;
-    const maxAttempts = 90;
-    const tick = () => {
+    useLayoutEffect(() => {
+      if (streamed) return;
       if (stemRef.current && capRef.current) {
-        fillInstances(hiddenIndices);
+        fillInstances(liveRef.current, hiddenIndices);
         return;
       }
-      if (++attempts >= maxAttempts) return;
+      let raf = 0;
+      let attempts = 0;
+      const maxAttempts = 90;
+      const tick = () => {
+        if (stemRef.current && capRef.current) {
+          fillInstances(liveRef.current, hiddenIndices);
+          return;
+        }
+        if (++attempts >= maxAttempts) return;
+        raf = requestAnimationFrame(tick);
+      };
       raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [fillInstances, hiddenIndices]);
+      return () => cancelAnimationFrame(raf);
+    }, [fillInstances, hiddenIndices, streamed]);
 
-  useFrame((_, delta) => {
-    stemMat.uniforms.uTime.value += delta;
-    capMat.uniforms.uTime.value += delta;
-  });
+    useLayoutEffect(() => {
+      if (!streamed) return;
+      fillInstances(liveRef.current, hiddenIndices);
+    }, [fillInstances, hiddenIndices, streamed]);
 
-  return (
-    <group>
-      <instancedMesh ref={stemRef} args={[stemGeo, stemMat, capacity]} frustumCulled={false} />
-      <instancedMesh ref={capRef} args={[capGeo, capMat, capacity]} frustumCulled={false} />
-    </group>
-  );
-};
+    useFrame((_, delta) => {
+      stemMat.uniforms.uTime.value += delta;
+      capMat.uniforms.uTime.value += delta;
+    });
+
+    const attachStem = useCallback((mesh: InstancedMesh | null) => {
+      stemRef.current = mesh;
+      if (!mesh) return;
+      mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+      mesh.count = 0;
+    }, []);
+    const attachCap = useCallback((mesh: InstancedMesh | null) => {
+      capRef.current = mesh;
+      if (!mesh) return;
+      mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+      mesh.count = 0;
+    }, []);
+
+    return (
+      <group>
+        <instancedMesh ref={attachStem} args={[stemGeo, stemMat, capacity]} frustumCulled />
+        <instancedMesh ref={attachCap} args={[capGeo, capMat, capacity]} frustumCulled />
+      </group>
+    );
+  },
+);
 
 export default React.memo(InstancedMushrooms);

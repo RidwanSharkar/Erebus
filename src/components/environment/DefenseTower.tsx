@@ -3,7 +3,7 @@
 import React, { Suspense, useMemo } from 'react';
 import { useGLTF } from '@react-three/drei';
 import type { Group, Material, Mesh } from 'three';
-import { prepareDecorScene } from './FloatingTrinketMesh';
+import { cloneBuildingScene } from '@/utils/sharedEnemyMaterials';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
 const TOWER_PATH = '/models/environ/Tower2.glb';
@@ -49,7 +49,7 @@ function configureTowerGlow(root: Group): Group {
 function DefenseTowerMesh({ scale = DEFENSE_TOWER_MODEL_SCALE }: { scale?: number }) {
   const { scene } = useGLTF(TOWER_PATH);
   const clonedScene = useMemo(
-    () => configureTowerGlow(prepareDecorScene(scene, true) as Group),
+    () => configureTowerGlow(cloneBuildingScene(scene, TOWER_PATH)),
     [scene],
   );
   useDisposeClonedMaterials(clonedScene);

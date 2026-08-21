@@ -8,6 +8,9 @@ interface ViperArrowTrailProps {
   size: number;
   arrowHeadRef: React.RefObject<Mesh>;
   opacity?: number;
+  /** Tower shots use a shorter trail; viper enemies keep the default 85. */
+  maxLength?: number;
+  resetSeq?: number;
 }
 
 const THICKNESS = 1.35;
@@ -21,6 +24,8 @@ function ViperArrowTrail({
   size,
   arrowHeadRef,
   opacity = 1,
+  maxLength = MAX_TRAIL_LENGTH,
+  resetSeq = 0,
 }: ViperArrowTrailProps) {
   const trailRef = useRef<Line>(null);
   // Ring buffer: avoids per-frame clone() and O(N) Array.unshift.
@@ -30,6 +35,8 @@ function ViperArrowTrail({
   const initialized = useRef(false);
   const glowRefs = useRef<(Mesh | null)[]>([]);
   const sparkRefs = useRef<(Mesh | null)[]>([]);
+
+  const trailCap = Math.max(2, Math.min(MAX_TRAIL_LENGTH, maxLength));
 
   const trailGeometry = useMemo(() => {
     const geometry = new BufferGeometry();
@@ -136,9 +143,19 @@ function ViperArrowTrail({
     };
   }, [trailGeometry, trailMaterial, trailLine, glowGeos, glowMats, sparkGeo, sparkMats]);
 
+  useEffect(() => {
+    if (resetSeq === 0) return;
+    initialized.current = false;
+    ringFill.current = 0;
+    ringHead.current = 0;
+    trailGeometry.setDrawRange(0, 0);
+    if (trailRef.current) trailRef.current.visible = false;
+  }, [resetSeq, trailGeometry]);
+
   const _scratchPos = useRef(new Vector3());
 
   useFrame(() => {
+    if (opacity <= 0) return;
     if (!arrowHeadRef.current || !trailRef.current) return;
 
     const currentPos = _scratchPos.current;
@@ -147,33 +164,33 @@ function ViperArrowTrail({
     if (currentPos.lengthSq() < 0.01) return;
 
     if (!initialized.current) {
-      for (let i = 0; i < MAX_TRAIL_LENGTH; i++) {
+      for (let i = 0; i < trailCap; i++) {
         posRing.current[i].copy(currentPos);
       }
       ringHead.current = 0;
-      ringFill.current = MAX_TRAIL_LENGTH;
+      ringFill.current = trailCap;
       initialized.current = true;
 
       const positions = trailGeometry.attributes.position.array as Float32Array;
-      for (let i = 0; i < MAX_TRAIL_LENGTH; i++) {
+      for (let i = 0; i < trailCap; i++) {
         positions[i * 3] = currentPos.x;
         positions[i * 3 + 1] = currentPos.y;
         positions[i * 3 + 2] = currentPos.z;
       }
       trailGeometry.attributes.position.needsUpdate = true;
-      applyArrowTrailDrawRange(trailGeometry, MAX_TRAIL_LENGTH);
+      applyArrowTrailDrawRange(trailGeometry, trailCap);
       if (trailRef.current) trailRef.current.visible = true;
     } else {
       // Ring-buffer write.
-      ringHead.current = (ringHead.current + MAX_TRAIL_LENGTH - 1) % MAX_TRAIL_LENGTH;
+      ringHead.current = (ringHead.current + trailCap - 1) % trailCap;
       posRing.current[ringHead.current].copy(currentPos);
-      if (ringFill.current < MAX_TRAIL_LENGTH) ringFill.current++;
+      if (ringFill.current < trailCap) ringFill.current++;
 
       const positions = trailGeometry.attributes.position.array as Float32Array;
       const len = ringFill.current;
       const head = ringHead.current;
       for (let i = 0; i < len; i++) {
-        const p = posRing.current[(head + i) % MAX_TRAIL_LENGTH];
+        const p = posRing.current[(head + i) % trailCap];
         positions[i * 3] = p.x;
         positions[i * 3 + 1] = p.y;
         positions[i * 3 + 2] = p.z;
@@ -191,13 +208,13 @@ function ViperArrowTrail({
     for (let i = 0; i < GLOW_COUNT; i++) {
       const glow = glowRefs.current[i];
       if (glow && i < _fill) {
-        glow.position.copy(_ring[(_head + i) % MAX_TRAIL_LENGTH]);
+        glow.position.copy(_ring[(_head + i) % trailCap]);
       }
     }
 
     for (let g = 0; g < SPARK_GROUP_COUNT; g++) {
       if (g >= _fill) continue;
-      const groupPos = _ring[(_head + g) % MAX_TRAIL_LENGTH];
+      const groupPos = _ring[(_head + g) % trailCap];
       if (!groupPos) continue;
       for (let s = 0; s < SPARKS_PER_GROUP; s++) {
         const idx = g * SPARKS_PER_GROUP + s;

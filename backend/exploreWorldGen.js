@@ -8,7 +8,7 @@ const EXPLORE_CHUNK_SIZE = 48;
 // Must match `EXPLORE_GRASS_PER_CHUNK` in src/utils/exploreWorldGen.ts so tree/rock/mushroom RNG stays in lockstep.
 const EXPLORE_GRASS_PER_CHUNK = 1200;
 const EXPLORE_DISC_STRIDE = 5;
-const EXPLORE_MUSHROOM_SLOT_SPAN = 16;
+const EXPLORE_MUSHROOM_SLOT_SPAN = 64;
 const EXPLORE_CHUNK_COORD_SPAN = 16384;
 const EXPLORE_CHUNK_COORD_BIAS = 8192;
 const CHUNK_CACHE_MAX = 48;
@@ -124,10 +124,12 @@ function generateChunkUncached(seed, cx, cz) {
     void z;
   }
 
-  const treeTarget = biome === 'forest' ? 14 : biome === 'meadow' ? 5 : biome === 'mist' ? 4 : 2;
+  // Pass 1: legacy density so rock/mushroom/root/spine RNG stays identical.
+  const baseTreeTarget = biome === 'forest' ? 18 : biome === 'meadow' ? 6 : biome === 'mist' ? 5 : 3;
+  const treeTarget = baseTreeTarget * 2;
   const treeScratch = [];
   let treeCount = 0;
-  for (let i = 0; i < treeTarget * 4 && treeCount < treeTarget; i++) {
+  for (let i = 0; i < baseTreeTarget * 4 && treeCount < baseTreeTarget; i++) {
     const x = origin.x + 2 + rand() * (EXPLORE_CHUNK_SIZE - 4);
     const z = origin.z + 2 + rand() * (EXPLORE_CHUNK_SIZE - 4);
     if (rejectNearPacked(treeScratch, treeCount, x, z, 4.5)) continue;
@@ -185,7 +187,8 @@ function generateChunkUncached(seed, cx, cz) {
     mushroomCount++;
   }
 
-  const rootTarget = Math.round(treeTarget * 0.5);
+  // Frozen at legacy baseTreeTarget ratios so denser trees do not add roots/spines.
+  const rootTarget = biome === 'forest' ? 9 : biome === 'meadow' ? 3 : biome === 'mist' ? 3 : 2;
   const rootScratch = [];
   let rootCount = 0;
   for (let i = 0; i < rootTarget * 4 && rootCount < rootTarget; i++) {
@@ -209,7 +212,7 @@ function generateChunkUncached(seed, cx, cz) {
     rootCount++;
   }
 
-  const spineTarget = Math.max(0, Math.round(treeTarget / 8));
+  const spineTarget = biome === 'forest' ? 2 : biome === 'barren' ? 0 : 1;
   const spineScratch = [];
   let spineCount = 0;
   for (let i = 0; i < spineTarget * 4 && spineCount < spineTarget; i++) {
@@ -232,6 +235,30 @@ function generateChunkUncached(seed, cx, cz) {
     spineScratch[o + 3] = scale;
     spineScratch[o + 4] = rand() * Math.PI * 2;
     spineCount++;
+  }
+
+  // Pass 2: fill to 2× tree density without disturbing earlier prop RNG.
+  const extraTreeBudget = (treeTarget - baseTreeTarget) * 8;
+  for (let i = 0; i < extraTreeBudget && treeCount < treeTarget; i++) {
+    const x = origin.x + 2 + rand() * (EXPLORE_CHUNK_SIZE - 4);
+    const z = origin.z + 2 + rand() * (EXPLORE_CHUNK_SIZE - 4);
+    if (
+      rejectNearPacked(treeScratch, treeCount, x, z, 4.5) ||
+      rejectNearPacked(rockScratch, rockCount, x, z, 2.5) ||
+      rejectNearPacked(mushScratch, mushroomCount, x, z, 1.6) ||
+      rejectNearPacked(rootScratch, rootCount, x, z, 2.5) ||
+      rejectNearPacked(spineScratch, spineCount, x, z, 3.5)
+    ) {
+      continue;
+    }
+    const scale = 0.85 + rand() * 0.55;
+    const o = treeCount * EXPLORE_DISC_STRIDE;
+    treeScratch[o] = x;
+    treeScratch[o + 1] = z;
+    treeScratch[o + 2] = 0.55 * scale;
+    treeScratch[o + 3] = scale;
+    treeScratch[o + 4] = rand() * Math.PI * 2;
+    treeCount++;
   }
 
   return {

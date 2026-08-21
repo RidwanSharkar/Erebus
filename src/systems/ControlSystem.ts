@@ -394,7 +394,6 @@ export interface RoomBoomDashPayload {
 /** Module-level scratches for ability AoE paths — avoid per-target allocations. */
 const _abilityDirScratch = new Vector3();
 const _abilityToTargetScratch = new Vector3();
-const _wraithDirScratch = new Vector3();
 
 export class ControlSystem extends System {
   public readonly requiredComponents = [Transform, Movement];
@@ -430,7 +429,6 @@ export class ControlSystem extends System {
   /** Extra query radius so large environment colliders aren't culled before the surface-range test. */
   private static readonly MELEE_COLLIDER_QUERY_PAD = 2.5;
   private backstabPlayerDirection = new Vector3();
-  private backstabDirectionToTarget = new Vector3();
 
   private static readonly DASH_DIR_FORWARD = new Vector3(0, 0, -1);
   private static readonly DASH_DIR_BACK = new Vector3(0, 0, 1);
@@ -5545,25 +5543,16 @@ export class ControlSystem extends System {
 
   private performWraithStrikeDamage(playerTransform: Transform): void {
     const playerPosition = playerTransform.position;
-    
-    // Get player facing direction (camera direction)
-    const playerDirection = new Vector3();
-    this.camera.getWorldDirection(playerDirection);
-    playerDirection.normalize();
-
-    const forwardXZ = playerDirection.clone();
-    forwardXZ.y = 0;
-    if (forwardXZ.lengthSq() < 1e-8) {
-      forwardXZ.set(0, 0, 1);
-    } else {
-      forwardXZ.normalize();
-    }
+    const forwardXZ = this.flattenMeleeAttackDirection(this.meleeAttackDirection);
 
     const wraithStrikeRange = 5.0; // Same range as melee attacks
-    const wraithStrikeAngle = Math.PI / 2; // 90 degree cone
+    const wraithStrikeHalfAngle = Math.PI / 4; // 90 degree cone
 
-    // Only consider entities within strike range instead of scanning the whole world
-    const allEntities = this.queryNearbyEntities(playerPosition, wraithStrikeRange);
+    // Pad so tree/root colliders at raised combat centers still enter the spatial query
+    const allEntities = this.queryNearbyEntities(
+      playerPosition,
+      wraithStrikeRange + ControlSystem.MELEE_COLLIDER_QUERY_PAD,
+    );
     const wraithStrikeBaseDamage =
       (this.shouldApplyInfestedStrikeTalent() ? 190 : 140) +
       getSpellbladeWraithStrikeFlatDamageBonus(
@@ -5590,21 +5579,16 @@ export class ControlSystem extends System {
       const targetTransform = entity.getComponent(Transform);
       
       if (!targetHealth || !targetTransform || targetHealth.isDead) continue;
-      
-      // Check if target is in range
-      const distance = playerPosition.distanceTo(targetTransform.position);
-      if (distance > wraithStrikeRange) continue;
-      
-      // Check if target is in front of player (cone attack)
-      const directionToTarget = _wraithDirScratch
-        .subVectors(targetTransform.position, playerPosition)
-        .normalize();
-      
-      const dotProduct = playerDirection.dot(directionToTarget);
-      const angleThreshold = Math.cos(wraithStrikeAngle / 2);
-      
-      if (dotProduct < angleThreshold) continue;
-      
+      if (!this.isInFlattenedMeleeCone(
+        playerPosition,
+        entity,
+        forwardXZ,
+        wraithStrikeRange,
+        wraithStrikeHalfAngle,
+      )) {
+        continue;
+      }
+
       // Apply damage
       const combatSystem = this.world.getSystem(CombatSystem);
       if (combatSystem) {
@@ -7147,13 +7131,14 @@ export class ControlSystem extends System {
 
   private countSunderConeHits(playerTransform: Transform): number {
     const playerPosition = playerTransform.position;
-    const playerDirection = new Vector3();
-    this.camera.getWorldDirection(playerDirection);
-    playerDirection.normalize();
-
+    const attackDirection = this.flattenMeleeAttackDirection(this.meleeAttackDirection);
     const sunderRange = 4;
+    const sunderHalfAngle = Math.PI / 4;
     let hitCount = 0;
-    const allEntities = this.queryNearbyEntities(playerPosition, sunderRange);
+    const allEntities = this.queryNearbyEntities(
+      playerPosition,
+      sunderRange + ControlSystem.MELEE_COLLIDER_QUERY_PAD,
+    );
 
     for (const entity of allEntities) {
       if (entity === this.playerEntity) continue;
@@ -7162,17 +7147,15 @@ export class ControlSystem extends System {
       const targetHealth = entity.getComponent(Health);
       const targetTransform = entity.getComponent(Transform);
       if (!targetHealth || !targetTransform || targetHealth.isDead) continue;
-
-      const distance = playerPosition.distanceTo(targetTransform.position);
-      if (distance > sunderRange) continue;
-
-      const directionToTarget = new Vector3()
-        .subVectors(targetTransform.position, playerPosition)
-        .normalize();
-      const dotProduct = playerDirection.dot(directionToTarget);
-      const angleThreshold = Math.cos(Math.PI / 4);
-
-      if (dotProduct < angleThreshold) continue;
+      if (!this.isInFlattenedMeleeCone(
+        playerPosition,
+        entity,
+        attackDirection,
+        sunderRange,
+        sunderHalfAngle,
+      )) {
+        continue;
+      }
       hitCount++;
     }
 
@@ -7190,20 +7173,19 @@ export class ControlSystem extends System {
   
   private performSunderDamage(playerTransform: Transform): void {
     const playerPosition = playerTransform.position;
-    
-    // Get player facing direction (camera direction)
-    const playerDirection = new Vector3();
-    this.camera.getWorldDirection(playerDirection);
-    playerDirection.normalize();
+    const attackDirection = this.flattenMeleeAttackDirection(this.meleeAttackDirection);
 
     this.fireFanOfKnivesFan(playerTransform);
     this.performFireAffinityStorm(playerTransform);
 
     const sunderRange = 4; // Same range as backstab
+    const sunderHalfAngle = Math.PI / 4;
     const currentTime = Date.now() / 1000;
 
-    // Only consider entities within sunder range instead of scanning the whole world
-    const allEntities = this.queryNearbyEntities(playerPosition, sunderRange);
+    const allEntities = this.queryNearbyEntities(
+      playerPosition,
+      sunderRange + ControlSystem.MELEE_COLLIDER_QUERY_PAD,
+    );
     
     for (const entity of allEntities) {
       if (entity === this.playerEntity) continue;
@@ -7213,20 +7195,15 @@ export class ControlSystem extends System {
       const targetTransform = entity.getComponent(Transform);
       
       if (!targetHealth || !targetTransform || targetHealth.isDead) continue;
-      
-      // Check if target is in range
-      const distance = playerPosition.distanceTo(targetTransform.position);
-      if (distance > sunderRange) continue;
-      
-      // Check if target is in front of player (cone attack)
-      const directionToTarget = new Vector3()
-        .subVectors(targetTransform.position, playerPosition)
-        .normalize();
-      
-      const dotProduct = playerDirection.dot(directionToTarget);
-      const angleThreshold = Math.cos(Math.PI / 4); // 60 degree cone
-      
-      if (dotProduct < angleThreshold) continue;
+      if (!this.isInFlattenedMeleeCone(
+        playerPosition,
+        entity,
+        attackDirection,
+        sunderRange,
+        sunderHalfAngle,
+      )) {
+        continue;
+      }
       
       // Apply Sunder stacks and calculate damage
       const { damage: rawSunderDamage, stackCount, isStunned } = this.applySunderStack(entity.id, currentTime);
@@ -7334,7 +7311,7 @@ export class ControlSystem extends System {
       
       // Trigger callback for multiplayer/visual effects
       if (this.onSunderCallback) {
-        this.onSunderCallback(playerTransform.position, playerDirection, finalDamage, stackCount);
+        this.onSunderCallback(playerTransform.position, attackDirection, finalDamage, stackCount);
       }
     }
   }
@@ -8435,8 +8412,11 @@ export class ControlSystem extends System {
 
   private performBackstabDamage(playerTransform: Transform): void {
     const backstabRange = 4.75;
+    const backstabHalfAngle = Math.PI / 3; // 60 degree cone
     const vorpalGust = shouldApplyVorpalGustTalent(this.talentLoadout);
-    const queryRadius = vorpalGust ? VORPAL_GUST_BEAM_LENGTH + 1.5 : backstabRange;
+    const queryRadius = vorpalGust
+      ? VORPAL_GUST_BEAM_LENGTH + 1.5
+      : backstabRange + ControlSystem.MELEE_COLLIDER_QUERY_PAD;
     const candidates = this.queryNearbyEntities(playerTransform.position, queryRadius);
     const playerPosition = playerTransform.position;
 
@@ -8473,6 +8453,7 @@ export class ControlSystem extends System {
       return;
     }
 
+    const flatDir = this.flattenMeleeAttackDirection(this.meleeAttackDirection);
     for (const entity of candidates) {
       if (entity === this.playerEntity) continue;
 
@@ -8481,17 +8462,15 @@ export class ControlSystem extends System {
 
       if (!targetHealth || !targetTransform || targetHealth.isDead) continue;
 
-      const distance = playerPosition.distanceTo(targetTransform.position);
-      if (distance > backstabRange) continue;
-
-      this.backstabDirectionToTarget
-        .subVectors(targetTransform.position, playerPosition)
-        .normalize();
-
-      const dotProduct = this.backstabPlayerDirection.dot(this.backstabDirectionToTarget);
-      const angleThreshold = Math.cos(Math.PI / 3); // 60 degree cone
-
-      if (dotProduct < angleThreshold) continue;
+      if (!this.isInFlattenedMeleeCone(
+        playerPosition,
+        entity,
+        flatDir,
+        backstabRange,
+        backstabHalfAngle,
+      )) {
+        continue;
+      }
 
       this.applyBackstabDamageToTarget(
         entity,

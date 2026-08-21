@@ -2,6 +2,10 @@
  * Module-level tab visibility tracker.
  * Background tabs freeze rAF while socket handlers keep running; coop VFX
  * uses this to drop cosmetic events while hidden and for a short resume grace.
+ *
+ * Hidden is driven only by document.visibilityState — not window.blur — so
+ * unfocused-but-visible windows (two-window co-op on one machine) still receive
+ * remote projectiles and other cosmetic events.
  */
 
 const RESUME_VFX_GRACE_MS = 400;
@@ -35,22 +39,12 @@ function onVisibilityChange(): void {
   setHidden(readDocumentHidden());
 }
 
-function onWindowBlur(): void {
-  setHidden(true);
-}
-
-function onWindowFocus(): void {
-  if (!readDocumentHidden()) setHidden(false);
-}
-
 function install(): void {
   if (installed || typeof window === 'undefined' || typeof document === 'undefined') return;
   installed = true;
   hidden = readDocumentHidden();
   lastVisibleAtMs = 0;
   document.addEventListener('visibilitychange', onVisibilityChange);
-  window.addEventListener('blur', onWindowBlur);
-  window.addEventListener('focus', onWindowFocus);
 }
 
 install();

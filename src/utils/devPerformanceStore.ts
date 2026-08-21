@@ -15,6 +15,10 @@ export interface DevPerformanceSnapshot {
   textures: number;
   programs: number;
   dpr: number;
+  /** Explore orbit radius from exploreZoomLod (null outside explore / unset). */
+  exploreZoomRadius: number | null;
+  exploreZoomClose: boolean;
+  exploreZoomVeryClose: boolean;
 
   // Memory (Chrome performance.memory)
   heapUsedMB: number | null;
@@ -68,6 +72,9 @@ const EMPTY_SNAPSHOT: DevPerformanceSnapshot = {
   textures: 0,
   programs: 0,
   dpr: 1,
+  exploreZoomRadius: null,
+  exploreZoomClose: false,
+  exploreZoomVeryClose: false,
   heapUsedMB: null,
   heapTotalMB: null,
   heapLimitMB: null,

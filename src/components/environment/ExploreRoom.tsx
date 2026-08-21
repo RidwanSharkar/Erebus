@@ -13,6 +13,7 @@ import {
   PerspectiveCamera,
 } from '@/utils/three-exports';
 import type { Vector3 } from 'three';
+import { DirectionalLight, HemisphereLight } from 'three';
 import CustomSky, { SKY_INDIGO_NIGHT, type SkyThemeUniforms } from './CustomSky';
 import ExploreChunkStreamer from './ExploreChunkStreamer';
 import ExploreCampProps, { preloadExploreCampPropGlbs } from './ExploreCampProps';
@@ -89,8 +90,11 @@ export default function ExploreRoom({
   const groundRef = useRef<Mesh>(null);
   const prevSeedRef = useRef<number | null>(null);
   const [animateClouds, setAnimateClouds] = useState(!combatActive);
-  const [skyTheme, setSkyTheme] = useState<SkyThemeUniforms | null>(null);
-  const [lighting, setLighting] = useState(() => resolveExploreDayNightLighting(0));
+  const initialLighting = useMemo(() => resolveExploreDayNightLighting(0.85), []);
+  const skyThemeHolder = useRef<SkyThemeUniforms>({ ...SKY_INDIGO_NIGHT });
+  const hemiRef = useRef<HemisphereLight>(null);
+  const dirRef = useRef<DirectionalLight>(null);
+  const lastHorizonRef = useRef('');
   const fogRef = useRef<FogExp2 | null>(null);
   const onFogHorizonChangeRef = useRef(onFogHorizonChange);
   onFogHorizonChangeRef.current = onFogHorizonChange;
@@ -117,7 +121,7 @@ export default function ExploreRoom({
 
   useLayoutEffect(() => {
     const prevFog = scene.fog;
-    const horizon = exploreDayNightActive && skyTheme ? skyTheme.horizon : SKY_INDIGO_NIGHT.horizon;
+    const horizon = SKY_INDIGO_NIGHT.horizon;
     const fog = new FogExp2(horizon, EXPLORE_FOG_DENSITY);
     fogRef.current = fog;
     scene.fog = fog;
@@ -134,7 +138,7 @@ export default function ExploreRoom({
         persp.updateProjectionMatrix();
       }
     };
-  }, [scene, camera, exploreDayNightActive, skyTheme?.horizon]);
+  }, [scene, camera]);
 
   useEffect(() => {
     const prev = prevSeedRef.current;
@@ -152,22 +156,45 @@ export default function ExploreRoom({
     const pos = playerPositionRef.current;
     if (!pos) return;
 
+    let horizon = SKY_INDIGO_NIGHT.horizon;
     if (exploreDayNightActive && exploreDayNightStartedAt > 0) {
       const phase = exploreDayNightPhaseFromStartedAt(exploreDayNightStartedAt);
       const theme = resolveExploreDayNightTheme(phase);
-      setSkyTheme(theme);
-      setLighting(resolveExploreDayNightLighting(phase));
-      if (fogRef.current) {
-        fogRef.current.color.set(theme.horizon);
+      Object.assign(skyThemeHolder.current, theme);
+      const lighting = resolveExploreDayNightLighting(phase);
+      const hemi = hemiRef.current;
+      if (hemi) {
+        hemi.color.set(lighting.hemiColor);
+        hemi.groundColor.set(lighting.hemiGround);
+        hemi.intensity = lighting.hemiIntensity;
       }
-      onFogHorizonChangeRef.current?.(theme.horizon);
+      const dir = dirRef.current;
+      if (dir) {
+        dir.color.set(lighting.dirColor);
+        dir.intensity = lighting.dirIntensity;
+      }
+      horizon = theme.horizon;
     } else {
-      setSkyTheme(null);
-      setLighting(resolveExploreDayNightLighting(0.85));
-      if (fogRef.current) {
-        fogRef.current.color.set(SKY_INDIGO_NIGHT.horizon);
+      Object.assign(skyThemeHolder.current, SKY_INDIGO_NIGHT);
+      const lighting = initialLighting;
+      const hemi = hemiRef.current;
+      if (hemi) {
+        hemi.color.set(lighting.hemiColor);
+        hemi.groundColor.set(lighting.hemiGround);
+        hemi.intensity = lighting.hemiIntensity;
       }
-      onFogHorizonChangeRef.current?.(SKY_INDIGO_NIGHT.horizon);
+      const dir = dirRef.current;
+      if (dir) {
+        dir.color.set(lighting.dirColor);
+        dir.intensity = lighting.dirIntensity;
+      }
+    }
+    if (fogRef.current) {
+      fogRef.current.color.set(horizon);
+    }
+    if (horizon !== lastHorizonRef.current) {
+      lastHorizonRef.current = horizon;
+      onFogHorizonChangeRef.current?.(horizon);
     }
 
     const changed = exploreFog.markExplored(pos.x, pos.z, EXPLORE_PLAYER_VIEW_RADIUS);
@@ -186,17 +213,19 @@ export default function ExploreRoom({
       <CustomSky
         skyPreset="indigoNight"
         animateClouds={animateClouds}
-        themeUniforms={exploreDayNightActive ? skyTheme : null}
+        themeUniforms={skyThemeHolder.current}
       />
       <hemisphereLight
-        color={lighting.hemiColor}
-        groundColor={lighting.hemiGround}
-        intensity={lighting.hemiIntensity}
+        ref={hemiRef}
+        color={initialLighting.hemiColor}
+        groundColor={initialLighting.hemiGround}
+        intensity={initialLighting.hemiIntensity}
       />
       <directionalLight
+        ref={dirRef}
         position={[40, 60, 20]}
-        intensity={lighting.dirIntensity}
-        color={lighting.dirColor}
+        intensity={initialLighting.dirIntensity}
+        color={initialLighting.dirColor}
       />
       <mesh
         ref={groundRef}

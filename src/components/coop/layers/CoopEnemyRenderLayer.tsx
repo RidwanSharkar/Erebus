@@ -1,7 +1,10 @@
 'use client';
 
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFrame } from '@react-three/fiber';
 import type { Enemy } from '@/contexts/MultiplayerContext';
+import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
+import { useRelayDefenseTowerAttacks } from '@/utils/exploreTowerAttackBus';
 import KnightRenderer from '@/components/enemies/KnightRenderer';
 import GhoulRenderer from '@/components/enemies/GhoulRenderer';
 import WarlockRenderer from '@/components/enemies/WarlockRenderer';
@@ -47,6 +50,17 @@ import ShrineRenderer from '@/components/enemies/ShrineRenderer';
 import ObeliskRenderer from '@/components/enemies/ObeliskRenderer';
 import ShieldBatteryRenderer from '@/components/enemies/ShieldBatteryRenderer';
 import CathedralRenderer from '@/components/enemies/CathedralRenderer';
+import ExploreInstancedBuildingGlb from '@/components/environment/ExploreInstancedBuildingGlb';
+import {
+  SPIRIT_LOUNGE_PATH,
+  SPIRIT_LOUNGE_MODEL_SCALE,
+  SPIRIT_LOUNGE_MODEL_Y,
+} from '@/components/environment/SpiritLounge';
+import {
+  RESEARCH_STATION_PATH,
+  RESEARCH_STATION_MODEL_SCALE,
+  RESEARCH_STATION_MODEL_Y,
+} from '@/components/environment/ResearchStation';
 import AlliedHuntressRenderer from '@/components/enemies/AlliedHuntressRenderer';
 import AlliedPhantomRenderer from '@/components/enemies/AlliedPhantomRenderer';
 import AlliedDemonRenderer from '@/components/enemies/AlliedDemonRenderer';
@@ -60,7 +74,9 @@ import SummonedBossSkeleton from '@/components/enemies/SummonedBossSkeleton';
 
 type CoopEnemyRenderLayerProps = {
   enemiesByType: Map<string, Enemy[]>;
-  isCoopEnemyVisibleForRender: (x: number, z: number) => boolean;
+  isCoopEnemyVisibleForRender: (x: number, z: number, type?: string) => boolean;
+  playerPositionRef?: React.MutableRefObject<{ x: number; z: number }>;
+  cullOnMove?: boolean;
 };
 
 const DEATH_VISUAL_LINGER_MS = 1000;
@@ -131,18 +147,66 @@ function useCoopEnemyDeathLinger(enemiesByType: Map<string, Enemy[]>) {
 }
 
 /** Memoized enemy roster — skips re-render when unrelated room UI state changes. */
+const EXPLORE_BUILDING_CULL_STEP2 = 8 * 8;
+
 const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
   enemiesByType,
   isCoopEnemyVisibleForRender,
+  playerPositionRef,
+  cullOnMove = false,
 }: CoopEnemyRenderLayerProps) {
+  const { socket } = useMultiplayerActions();
+  useRelayDefenseTowerAttacks(socket);
   const shouldRenderCoopEnemy = useCoopEnemyDeathLinger(enemiesByType);
+  const lastCullX = useRef(Number.POSITIVE_INFINITY);
+  const lastCullZ = useRef(Number.POSITIVE_INFINITY);
+  const [, setCullTick] = useState(0);
+
+  useFrame(() => {
+    if (!cullOnMove || !playerPositionRef) return;
+    const pos = playerPositionRef.current;
+    if (!pos) return;
+    const dx = pos.x - lastCullX.current;
+    const dz = pos.z - lastCullZ.current;
+    if (dx * dx + dz * dz < EXPLORE_BUILDING_CULL_STEP2) return;
+    lastCullX.current = pos.x;
+    lastCullZ.current = pos.z;
+    setCullTick((n) => n + 1);
+  });
+
+  const isVisible = (enemy: Enemy) =>
+    isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z, enemy.type);
+
+  const barracksPlacements: { x: number; z: number; rotY: number }[] = [];
+  const researchPlacements: { x: number; z: number; rotY: number }[] = [];
+  for (const e of enemiesByType.get('barracks') ?? []) {
+    if (!shouldRenderCoopEnemy(e) || !isVisible(e) || e.isDying) continue;
+    barracksPlacements.push({ x: e.position.x, z: e.position.z, rotY: e.rotation || 0 });
+  }
+  for (const e of enemiesByType.get('research-station') ?? []) {
+    if (!shouldRenderCoopEnemy(e) || !isVisible(e) || e.isDying) continue;
+    researchPlacements.push({ x: e.position.x, z: e.position.z, rotY: e.rotation || 0 });
+  }
 
   return (
     <>
+      <ExploreInstancedBuildingGlb
+        url={SPIRIT_LOUNGE_PATH}
+        scale={SPIRIT_LOUNGE_MODEL_SCALE}
+        modelY={SPIRIT_LOUNGE_MODEL_Y}
+        placements={barracksPlacements}
+      />
+      <ExploreInstancedBuildingGlb
+        url={RESEARCH_STATION_PATH}
+        scale={RESEARCH_STATION_MODEL_SCALE}
+        modelY={RESEARCH_STATION_MODEL_Y}
+        placements={researchPlacements}
+      />
+
       {(enemiesByType.get('boss-skeleton') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <SummonedBossSkeleton
             key={enemy.id}
@@ -159,7 +223,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
       {(enemiesByType.get('knight') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <KnightRenderer
             key={enemy.id}
@@ -181,7 +245,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('training-dummy') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <KnightRenderer
             key={enemy.id}
@@ -202,7 +266,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('allied-knight') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <AlliedKnightRenderer
             key={enemy.id}
@@ -221,7 +285,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('allied-healer') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <AlliedHealerRenderer
             key={enemy.id}
@@ -239,7 +303,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('allied-tower') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <DefenseTowerRenderer
             key={enemy.id}
@@ -255,7 +319,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('fire-pit') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <FirePitRenderer
             key={enemy.id}
@@ -271,7 +335,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('barracks') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <BarracksRenderer
             key={enemy.id}
@@ -282,13 +346,14 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
             powered={enemy.powered !== false}
+            hideMesh={!enemy.isDying}
           />
         );
       })}
 
       {(enemiesByType.get('tower') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <DefenseTowerRenderer
             key={enemy.id}
@@ -305,7 +370,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('watch-tower') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <WatchTowerRenderer
             key={enemy.id}
@@ -322,7 +387,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('siege-tower') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <SiegeTowerRenderer
             key={enemy.id}
@@ -339,7 +404,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('research-station') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <ResearchStationRenderer
             key={enemy.id}
@@ -350,13 +415,14 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
             powered={enemy.powered !== false}
+            hideMesh={!enemy.isDying}
           />
         );
       })}
 
       {(enemiesByType.get('shrine') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <ShrineRenderer
             key={enemy.id}
@@ -374,7 +440,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('obelisk') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <ObeliskRenderer
             key={enemy.id}
@@ -391,7 +457,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('shield-battery') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <ShieldBatteryRenderer
             key={enemy.id}
@@ -408,7 +474,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('cathedral') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <CathedralRenderer
             key={enemy.id}
@@ -426,7 +492,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('allied-huntress') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <AlliedHuntressRenderer
@@ -444,7 +510,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('allied-phantom') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <AlliedPhantomRenderer
@@ -462,7 +528,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('allied-demon') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <AlliedDemonRenderer
@@ -480,7 +546,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('allied-tiger') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <AlliedTigerRenderer
@@ -499,7 +565,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('allied-wolf') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <AlliedWolfRenderer
@@ -518,7 +584,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('allied-bear') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <AlliedBearRenderer
@@ -537,7 +603,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('allied-serpent') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <AlliedSerpentRenderer
@@ -556,7 +622,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('allied-spider') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <AlliedSpiderRenderer
@@ -575,7 +641,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('allied-enchantress') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <AlliedEnchantressRenderer
@@ -593,7 +659,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('shade') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <ShadeRenderer
             key={enemy.id}
@@ -612,7 +678,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('warlock') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <WarlockRenderer
@@ -632,7 +698,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('templar') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <TemplarRenderer
@@ -651,7 +717,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('viper') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <ViperRenderer
@@ -670,7 +736,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('weaver') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <WeaverRenderer
             key={enemy.id}
@@ -689,7 +755,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('ghoul') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <GhoulRenderer
             key={enemy.id}
@@ -707,7 +773,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('titan') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <TitanRenderer
@@ -728,7 +794,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('spectre') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <SpectreRenderer
@@ -747,7 +813,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('death-knight') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <DeathKnightRenderer
@@ -766,7 +832,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('shaman') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <ShamanRenderer
@@ -785,7 +851,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('assassin') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <AssassinRenderer
@@ -804,7 +870,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('serpent') ?? []).concat(enemiesByType.get('boss-serpent') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <SerpentRenderer
@@ -824,7 +890,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('frost-queen') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <FrostQueenRenderer
@@ -843,7 +909,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('medusa') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <MedusaRenderer
@@ -862,7 +928,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('wyvern') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <WyvernRenderer
@@ -881,7 +947,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('terrorhawk') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <TerrorhawkRenderer
@@ -901,7 +967,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('tiger') ?? []).concat(enemiesByType.get('boss-tiger') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <EnemyTigerRenderer
@@ -923,7 +989,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('wolf') ?? []).concat(enemiesByType.get('boss-wolf') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <WolfRenderer
@@ -943,7 +1009,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('bear') ?? []).concat(enemiesByType.get('boss-bear') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <BearRenderer
@@ -963,7 +1029,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('skyray') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <SkyRayRenderer
@@ -982,7 +1048,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('bone-spider') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <BoneSpiderRenderer
@@ -1001,7 +1067,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('sentinel') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <SentinelRenderer
@@ -1020,7 +1086,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('nemesis') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <NemesisRenderer
@@ -1039,7 +1105,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('stone-giant') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <StoneGiantRenderer
@@ -1058,7 +1124,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('eternal-oak') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <EternalOakRenderer
@@ -1077,7 +1143,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('colossus') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <ColossusRenderer
@@ -1096,7 +1162,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('valkyrie') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <ValkyrieRenderer
@@ -1115,7 +1181,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('greed') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <React.Suspense key={enemy.id} fallback={null}>
             <GreedRenderer
@@ -1134,7 +1200,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('martyr') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <MartyrRenderer
             key={enemy.id}
@@ -1151,7 +1217,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('wraith') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <WraithRenderer
             key={enemy.id}
@@ -1169,7 +1235,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('player-zombie') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <ZombieRenderer
             key={enemy.id}
@@ -1187,7 +1253,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
 
       {(enemiesByType.get('vengeful-spirit') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
-        if (!isCoopEnemyVisibleForRender(enemy.position.x, enemy.position.z)) return null;
+        if (!isVisible(enemy)) return null;
         return (
           <VengefulSpiritRenderer
             key={enemy.id}

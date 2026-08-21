@@ -23,6 +23,9 @@ import { calculateDamage, DamageResult } from '@/core/DamageCalculator';
 import { INFERNAL_SMITE_CRIT_CHANCE_ADD, STAGGERING_SMITE_BEAM_STAGGER } from '@/utils/talents';
 import { createBeamCylinderAdditiveMaterial } from '@/utils/beamCylinderAdditiveMaterial';
 import { addEnemyHitDamageNumber } from '@/utils/enemyDamageNumber';
+import { queryDestructibleHarvestEntities } from '@/utils/destructibleEnvironmentTargeting';
+import { Collider } from '@/ecs/components/Collider';
+import { Transform } from '@/ecs/components/Transform';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
 import {
   getSmiteAspectDefaultColorPair,
@@ -368,6 +371,22 @@ const SmiteComponent = memo(function Smite({
     let totalDamage = 0;
     let targetsHit = 0;
 
+    const rollSmiteHit = (): { finalDamage: number; isCritical: boolean } => {
+      if (useFlatDamage) {
+        return { finalDamage: Math.max(0, Math.floor(baseSmiteDamage)), isCritical: false };
+      }
+      const damageResult: DamageResult = infernalSmiteVisual
+        ? calculateDamage(baseSmiteDamage, weaponType ?? WeaponType.RUNEBLADE, {
+            critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD,
+          })
+        : calculateDamage(baseSmiteDamage, weaponType ?? WeaponType.RUNEBLADE);
+      const vengeanceMult = getVengeanceSmiteDamageMultiplier?.() ?? 1;
+      return {
+        finalDamage: Math.max(0, Math.floor(damageResult.damage * vengeanceMult)),
+        isCritical: damageResult.isCritical,
+      };
+    };
+
     enemyData.forEach(enemy => {
       if (!enemy.health || enemy.health <= 0) return;
 
@@ -376,21 +395,7 @@ const SmiteComponent = memo(function Smite({
       const horizontalDist = Math.hypot(dx, dz);
 
       if (horizontalDist <= damageRadius) {
-        let finalDamage: number;
-        let isCritical = false;
-
-        if (useFlatDamage) {
-          finalDamage = Math.max(0, Math.floor(baseSmiteDamage));
-        } else {
-          const damageResult: DamageResult = infernalSmiteVisual
-            ? calculateDamage(baseSmiteDamage, weaponType ?? WeaponType.RUNEBLADE, {
-                critChanceAdd: INFERNAL_SMITE_CRIT_CHANCE_ADD,
-              })
-            : calculateDamage(baseSmiteDamage, weaponType ?? WeaponType.RUNEBLADE);
-          const vengeanceMult = getVengeanceSmiteDamageMultiplier?.() ?? 1;
-          finalDamage = Math.max(0, Math.floor(damageResult.damage * vengeanceMult));
-          isCritical = damageResult.isCritical;
-        }
+        const { finalDamage, isCritical } = rollSmiteHit();
 
         // Enemy is within damage radius - deal damage
         if (onHit) {
@@ -449,6 +454,38 @@ const SmiteComponent = memo(function Smite({
         targetsHit += 1;
       }
     });
+
+    const harvestWorld = combatSystem?.world;
+    if (harvestWorld) {
+      const staggerToAdd = !useFlatDamage && staggeringSmiteVisual ? STAGGERING_SMITE_BEAM_STAGGER : undefined;
+      for (const entity of queryDestructibleHarvestEntities(harvestWorld)) {
+        const transform = entity.getComponent(Transform);
+        if (!transform) continue;
+        const worldPos = transform.getWorldPosition();
+        const collider = entity.getComponent(Collider);
+        const radius = collider?.radius ?? 0;
+        const dx = worldPos.x - position.x;
+        const dz = worldPos.z - position.z;
+        const horizontalDist = Math.max(0, Math.hypot(dx, dz) - radius);
+        if (horizontalDist > damageRadius) continue;
+
+        const { finalDamage, isCritical } = rollSmiteHit();
+        combatSystem.queueDamage(
+          entity,
+          finalDamage,
+          null,
+          resolvedDamageType,
+          undefined,
+          isCritical,
+          undefined,
+          staggerToAdd,
+          !useFlatDamage && infestedSmiteVisual,
+          !useFlatDamage && infernalSmiteVisual,
+        );
+        totalDamage += finalDamage;
+        targetsHit += 1;
+      }
+    }
 
     if (onDamageDealt) {
       onDamageDealt(totalDamage, { targetsHit });

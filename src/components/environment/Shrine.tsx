@@ -2,17 +2,16 @@
 
 import React, { Suspense, useMemo } from 'react';
 import { useGLTF } from '@react-three/drei';
-import type { Group } from 'three';
-import { prepareDecorScene } from './FloatingTrinketMesh';
+import { cloneBuildingScene } from '@/utils/sharedEnemyMaterials';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
 const SHRINE_PATH = '/models/environ/shrine.glb';
-/** Native XZ ≈ 3.817. Scale to a 3.2-unit footprint (hull radius 1.6). */
-export const SHRINE_MODEL_SCALE = 0.838;
+/** Native XZ ≈ 3.817. Scale to a ~1.92-unit footprint (hull radius 0.96). */
+export const SHRINE_MODEL_SCALE = 0.503;
 /** Lift so the lowest vertex (native min Y ≈ -0.974) sits on the ground. */
-export const SHRINE_MODEL_Y = 0.816;
+export const SHRINE_MODEL_Y = 0.49;
 /** HP billboard just above the scaled crown. */
-export const SHRINE_HP_BAR_Y = 5.35;
+export const SHRINE_HP_BAR_Y = 3.21;
 
 useGLTF.preload(SHRINE_PATH);
 
@@ -23,7 +22,7 @@ export function preloadShrine(): void {
 function ShrineMesh({ scale = SHRINE_MODEL_SCALE }: { scale?: number }) {
   const { scene } = useGLTF(SHRINE_PATH);
   const clonedScene = useMemo(
-    () => prepareDecorScene(scene, true) as Group,
+    () => cloneBuildingScene(scene, SHRINE_PATH),
     [scene],
   );
   useDisposeClonedMaterials(clonedScene);

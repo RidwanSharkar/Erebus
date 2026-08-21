@@ -554,6 +554,8 @@ const EXPLORE_CAMP_PROP_OFFSET_MAX = 6;
 /** ~40ft at meter-scale. Timer starts only after a player has approached within this range. */
 const EXPLORE_CAMP_DESPAWN_DIST = 12;
 const EXPLORE_CAMP_DESPAWN_DELAY_MS = 30000;
+/** Immediate unload when all players leave this radius (matches EXPLORE_BUILDING_RENDER_RADIUS). */
+const EXPLORE_CAMP_STREAM_RADIUS = 36;
 /** Pack-member kill thresholds for explore boss encounters 1 / 2 / 3. */
 const EXPLORE_BOSS_KILL_THRESHOLDS = Object.freeze([35, 80, 150]);
 const EXPLORE_BOSS_SPAWN_DIST = 15;
@@ -642,7 +644,7 @@ const DUNGEON_PLAYABLE_MAX_X = 142.22;
 const DUNGEON_PLAYABLE_MIN_Z = -186.18;
 const DUNGEON_PLAYABLE_MAX_Z = 16.95;
 const DUNGEON_SPAWN_X = -17.63;
-const DUNGEON_SPAWN_Y = 1;
+const DUNGEON_SPAWN_Y = -2;
 const DUNGEON_SPAWN_Z = -20.1;
 const DUNGEON_SPAWN_FACING_Y = Math.PI;
 const SKY_TEMPLE_PLAYABLE_MIN_X = -37;
@@ -652,13 +654,52 @@ const SKY_TEMPLE_PLAYABLE_MAX_Z = 22.5;
 const SKY_TEMPLE_SPAWN_X = 0;
 const SKY_TEMPLE_SPAWN_Y = 4;
 const SKY_TEMPLE_SPAWN_Z = -28;
-/** Fixed encounter on plaza flanks. Keep in sync with `src/utils/skyTempleLayout.ts`. */
-const SKY_TEMPLE_PACK = Object.freeze([
+/** Kill-gated plaza waves. Keep in sync with `src/utils/skyTempleLayout.ts`. */
+const SKY_TEMPLE_WAVE_1 = Object.freeze([
   Object.freeze({ type: 'spectre', x: -26, y: 0, z: 2, campColor: 'purple' }),
   Object.freeze({ type: 'death-knight', x: -22, y: 0, z: -6, campColor: 'red' }),
-  Object.freeze({ type: 'assassin', x: 24, y: 0, z: 0, campColor: 'green' }),
+  Object.freeze({ type: 'viper', x: 24, y: 0, z: 2, campColor: 'green' }),
+  Object.freeze({ type: 'viper', x: 24, y: 0, z: -4, campColor: 'blue' }),
   Object.freeze({ type: 'knight', x: 21, y: 0, z: 5, campColor: 'red' }),
   Object.freeze({ type: 'knight', x: 27, y: 0, z: -5, campColor: 'blue' }),
+]);
+const SKY_TEMPLE_WAVE_2 = Object.freeze([
+  Object.freeze({ type: 'stone-giant', x: -6, y: 0, z: 0, campColor: 'red' }),
+  Object.freeze({ type: 'stone-giant', x: 6, y: 0, z: 0, campColor: 'blue' }),
+]);
+const SKY_TEMPLE_WAVE_3 = Object.freeze([
+  Object.freeze({ type: 'weaver', x: -26, y: 0, z: 2, campColor: 'green' }),
+  Object.freeze({ type: 'weaver', x: -22, y: 0, z: -6, campColor: 'blue' }),
+  Object.freeze({ type: 'weaver', x: -28, y: 0, z: -4, campColor: 'green' }),
+  Object.freeze({ type: 'assassin', x: -24, y: 0, z: 0, campColor: 'green' }),
+  Object.freeze({ type: 'valkyrie', x: 21, y: 0, z: 4, campColor: 'green' }),
+  Object.freeze({ type: 'valkyrie', x: 27, y: 0, z: -4, campColor: 'blue' }),
+]);
+const SKY_TEMPLE_WAVE_4 = Object.freeze([
+  Object.freeze({ type: 'eternal-oak', x: 0, y: 0, z: 0, campColor: 'green' }),
+  Object.freeze({ type: 'tiger', x: -7, y: 0, z: 3, campColor: 'red' }),
+  Object.freeze({ type: 'tiger', x: 7, y: 0, z: -3, campColor: 'blue' }),
+]);
+const SKY_TEMPLE_WAVE_5 = Object.freeze([
+  Object.freeze({ type: 'death-knight', x: -26, y: 0, z: 2, campColor: 'red' }),
+  Object.freeze({ type: 'death-knight', x: -22, y: 0, z: -6, campColor: 'purple' }),
+  Object.freeze({ type: 'wraith', x: -28, y: 0, z: -2, campColor: 'purple' }),
+  Object.freeze({ type: 'wraith', x: -20, y: 0, z: 4, campColor: 'red' }),
+  Object.freeze({ type: 'titan', x: 21, y: 0, z: 4, campColor: 'red', forceCannon: true }),
+  Object.freeze({ type: 'titan', x: 27, y: 0, z: -4, campColor: 'blue', forceCannon: true }),
+]);
+const SKY_TEMPLE_WAVE_6 = Object.freeze([
+  Object.freeze({ type: 'colossus', x: 0, y: 0, z: 0, campColor: 'red' }),
+  Object.freeze({ type: 'spectre', x: -8, y: 0, z: 2, campColor: 'purple' }),
+  Object.freeze({ type: 'spectre', x: 8, y: 0, z: -2, campColor: 'blue' }),
+]);
+const SKY_TEMPLE_WAVES = Object.freeze([
+  SKY_TEMPLE_WAVE_1,
+  SKY_TEMPLE_WAVE_2,
+  SKY_TEMPLE_WAVE_3,
+  SKY_TEMPLE_WAVE_4,
+  SKY_TEMPLE_WAVE_5,
+  SKY_TEMPLE_WAVE_6,
 ]);
 /** RallyArea past the entrance stairs. Keep in sync with `src/utils/dungeonLayout.ts`. */
 /** y is RallyArea world floor height (native Y ≈ −25 × scale 0.625 + lift ≈ −15.5). */
@@ -678,17 +719,30 @@ const DUNGEON_PRE_BOSS_PACK = Object.freeze([
   Object.freeze({ type: 'wyvern', x: 29.0, y: -24.8, z: -61.5, campColor: 'red' }),
   Object.freeze({ type: 'wyvern', x: 34.0, y: -24.8, z: -62.0, campColor: 'blue' }),
 ]);
-/** Great-lair opening past the east-ledge descent. Keep in sync with `src/utils/dungeonLayout.ts`. */
-const DUNGEON_LAIR_OPENING_PACK = Object.freeze([
-  Object.freeze({ type: 'knight', x: 29.0, y: -58.4, z: -95.0, campColor: 'red' }),
-  Object.freeze({ type: 'knight', x: 33.0, y: -58.7, z: -95.0, campColor: 'blue' }),
-  Object.freeze({ type: 'knight', x: 35.0, y: -58.9, z: -95.0, campColor: 'red' }),
-  Object.freeze({ type: 'stone-giant', x: 31.0, y: -58.8, z: -97.0, campColor: 'red' }),
+/** Further down the same east ledge (pack 4). Keep in sync with `src/utils/dungeonLayout.ts`. */
+const DUNGEON_LEDGE_PACK = Object.freeze([
+  Object.freeze({ type: 'stone-giant', x: 31.0, y: -25.64, z: -71.0, campColor: 'red' }),
+  Object.freeze({ type: 'knight', x: 27.0, y: -25.78, z: -71.0, campColor: 'red' }),
+  Object.freeze({ type: 'knight', x: 37.0, y: -25.68, z: -71.0, campColor: 'blue' }),
+  Object.freeze({ type: 'wraith', x: 29.0, y: -25.60, z: -73.0, campColor: 'purple' }),
+  Object.freeze({ type: 'wraith', x: 33.0, y: -25.60, z: -73.0, campColor: 'red' }),
 ]);
-/** Deeper great-lair floor. Keep in sync with `src/utils/dungeonLayout.ts`. */
+/** Great-lair mouth just before the old opening cluster (pack 5). Keep in sync with `src/utils/dungeonLayout.ts`. */
+const DUNGEON_LAIR_MOUTH_PACK = Object.freeze([
+  Object.freeze({ type: 'eternal-oak', x: 31.0, y: -58.38, z: -93.0, campColor: 'green' }),
+  Object.freeze({ type: 'wyvern', x: 35.0, y: -58.33, z: -93.0, campColor: 'red' }),
+  Object.freeze({ type: 'knight', x: 33.0, y: -58.02, z: -93.0, campColor: 'blue' }),
+  Object.freeze({ type: 'knight', x: 31.0, y: -58.80, z: -95.0, campColor: 'red' }),
+]);
+/** Warlock (boss2) at the old lair-opening cluster (pack 6). Keep in sync with `src/utils/dungeonLayout.ts`. */
+const DUNGEON_LAIR_OPENING_PACK = Object.freeze([
+  Object.freeze({ type: 'boss2', x: 31.0, y: -58.80, z: -97.0, campColor: 'red' }),
+]);
+/** Destiny + wyverns on the deep great-lair floor (pack 7). Keep in sync with `src/utils/dungeonLayout.ts`. */
 const DUNGEON_GREAT_LAIR_PACK = Object.freeze([
-  Object.freeze({ type: 'boss2', x: 29.0, y: -54.5, z: -145.0, campColor: 'red' }),
-  Object.freeze({ type: 'destiny', x: 39.0, y: -53.8, z: -145.0, campColor: 'purple' }),
+  Object.freeze({ type: 'destiny', x: 33.0, y: -54.23, z: -145.0, campColor: 'purple' }),
+  Object.freeze({ type: 'wyvern', x: 29.0, y: -54.48, z: -145.0, campColor: 'red' }),
+  Object.freeze({ type: 'wyvern', x: 39.0, y: -53.75, z: -145.0, campColor: 'blue' }),
 ]);
 const DEFENSE_TOWER_TRIANGLE_RADIUS = 7;
 const DEFENSE_TOWER_HULL_RADIUS = 1.4;
@@ -822,6 +876,9 @@ const STONE_VISUAL_PIECE_CAP = 10;
 const STONE_PICKUP_RADIUS = 6;
 const MEAT_VISUAL_PIECE_CAP = 10;
 const MEAT_PICKUP_RADIUS = 6;
+const MEAT_DROP_EXPIRE_MS = 60000;
+const PET_MEAT_HEAL = 50;
+const PET_MEAT_EAT_RADIUS = 2.5;
 const MEAT_DROP_RANGES = Object.freeze({
   serpent: Object.freeze({ min: 1, max: 2 }),
   'boss-serpent': Object.freeze({ min: 1, max: 2 }),
@@ -1429,9 +1486,10 @@ class GameRoom {
     /** Highest dungeon pack id that has been spawned this visit (1–3). */
     this._dungeonPackSpawned = 0;
 
-    /** Sky Temple mode: walkable outdoor temple plaza sandbox (no waves). */
+    /** Sky Temple mode: walkable outdoor temple plaza with kill-gated packs. */
     this.coopSkyTempleActive = false;
-    this._skyTemplePackSpawned = false;
+    /** Highest sky-temple pack id that has been spawned this visit (1–6). */
+    this._skyTemplePackSpawned = 0;
 
     /** Co-op sunken temple: one-time 4-room sequence after Boss 1 (mid-run). */
     this.coopSunkenActive = false;
@@ -2234,6 +2292,8 @@ class GameRoom {
       }
     });
 
+    this.removeAllAlliedBeastCompanions();
+    this._exploreCompanionSeq = 0;
     this._clearAllCombatEnemies();
     this.stopCompanionAI();
     this.enemyAI?.stopAI?.();
@@ -2856,6 +2916,32 @@ class GameRoom {
         enemyId: beastId,
         timestamp: Date.now(),
       });
+    }
+    if (!this._hasLivingBeastCompanion()) {
+      this.stopCompanionAI();
+    }
+  }
+
+  /** Full hub wipe (Retry / END GAME): remove every allied beast companion, including explore pets. */
+  removeAllAlliedBeastCompanions() {
+    const ids = [];
+    for (const [id, enemy] of this.enemies) {
+      if (!this._isAlliedBeastCompanion(enemy)) continue;
+      ids.push(id);
+    }
+    for (const id of ids) {
+      this._clearEnemyDoTTimers(id);
+      this._pruneEnemyMaps(id);
+      if (this.enemyAI) {
+        this.enemyAI.removeEnemyAggro(id);
+      }
+      this.enemies.delete(id);
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-removed', {
+          enemyId: id,
+          timestamp: Date.now(),
+        });
+      }
     }
     if (!this._hasLivingBeastCompanion()) {
       this.stopCompanionAI();
@@ -3542,6 +3628,7 @@ class GameRoom {
   _resetExploreCampState() {
     this.exploreCamps = new Map();
     this._exploreCampSeq = 0;
+    this._exploreCompanionSeq = 0;
     this.exploreFogChunks = new Map();
     this.exploreKillCount = 0;
     this.exploreBossEncounterIndex = 0;
@@ -3752,9 +3839,11 @@ class GameRoom {
   }
 
   /**
-   * After a player approaches a camp then leaves beyond EXPLORE_CAMP_DESPAWN_DIST,
-   * despawn the prop + pack after EXPLORE_CAMP_DESPAWN_DELAY_MS so skipped camps
-   * do not linger on the horizon.
+   * Stream / leave despawn for reward camps (prop + remaining pack).
+   * - Beyond EXPLORE_CAMP_STREAM_RADIUS: despawn immediately (like trees leaving the area).
+   * - After approach within EXPLORE_CAMP_DESPAWN_DIST then leave for EXPLORE_CAMP_DESPAWN_DELAY_MS:
+   *   despawn so skipped-nearby camps do not linger.
+   * Live explore boss encounters (exploreBossIds) are not camps and are not touched here.
    */
   _tickExploreCampDespawn() {
     if (!this.exploreCamps || this.exploreCamps.size === 0) return;
@@ -3767,6 +3856,11 @@ class GameRoom {
       for (const p of players) {
         const d = Math.hypot(p.position.x - camp.x, p.position.z - camp.z);
         if (d < nearest) nearest = d;
+      }
+      // Stream unload: all players left the area — drop immediately (no approach gate).
+      if (nearest > EXPLORE_CAMP_STREAM_RADIUS) {
+        toDespawn.push(camp);
+        continue;
       }
       if (nearest <= EXPLORE_CAMP_DESPAWN_DIST) {
         camp.approached = true;
@@ -6079,9 +6173,13 @@ class GameRoom {
     } else if (current === 2) {
       this._spawnDungeonPack(DUNGEON_PRE_BOSS_PACK, 3);
     } else if (current === 3) {
-      this._spawnDungeonPack(DUNGEON_LAIR_OPENING_PACK, 4);
+      this._spawnDungeonPack(DUNGEON_LEDGE_PACK, 4);
     } else if (current === 4) {
-      this._spawnDungeonPack(DUNGEON_GREAT_LAIR_PACK, 5);
+      this._spawnDungeonPack(DUNGEON_LAIR_MOUTH_PACK, 5);
+    } else if (current === 5) {
+      this._spawnDungeonPack(DUNGEON_LAIR_OPENING_PACK, 6);
+    } else if (current === 6) {
+      this._spawnDungeonPack(DUNGEON_GREAT_LAIR_PACK, 7);
     }
   }
 
@@ -6092,22 +6190,47 @@ class GameRoom {
 
   _resetSkyTempleState() {
     this.coopSkyTempleActive = false;
-    this._skyTemplePackSpawned = false;
+    this._skyTemplePackSpawned = 0;
   }
 
-  _spawnSkyTemplePack() {
-    if (!this.coopSkyTempleActive || this._skyTemplePackSpawned) return;
-    for (let i = 0; i < SKY_TEMPLE_PACK.length; i++) {
-      const spec = SKY_TEMPLE_PACK[i];
+  _hasSkyTemplePack(packId) {
+    for (const enemy of this.enemies.values()) {
+      if (enemy?._skyTemplePack === packId && !enemy.isDying && (enemy.health == null || enemy.health > 0)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  _spawnSkyTempleWave(specList, packId) {
+    if (!this.coopSkyTempleActive || this._hasSkyTemplePack(packId)) return;
+    const slotBase = packId * 10;
+    for (let i = 0; i < specList.length; i++) {
+      const spec = specList[i];
       const campDef = GameRoom.CAMP_TYPES[spec.campColor] || GameRoom.CAMP_TYPES.red;
-      const enemy = this._buildEnemy(spec.type, 0, i, { x: spec.x, y: spec.y ?? 0, z: spec.z }, campDef);
+      const enemy = this._buildEnemy(spec.type, 0, slotBase + i, { x: spec.x, y: spec.y ?? 0, z: spec.z }, campDef);
+      enemy._skyTemplePack = packId;
+      if (spec.forceCannon) enemy.erebusForceCannon = true;
       this.enemies.set(enemy.id, enemy);
       if (this.io) {
         this.io.to(this.roomId).emit('enemy-spawned', { enemy, timestamp: Date.now() });
       }
       this._emitEnemySummonVfx(enemy);
     }
-    this._skyTemplePackSpawned = true;
+    this._skyTemplePackSpawned = packId;
+  }
+
+  _spawnSkyTemplePack() {
+    this._spawnSkyTempleWave(SKY_TEMPLE_WAVE_1, 1);
+  }
+
+  _onSkyTemplePackKill() {
+    if (!this.coopSkyTempleActive) return;
+    const current = this._skyTemplePackSpawned;
+    if (!current || this._hasSkyTemplePack(current)) return;
+    const next = current + 1;
+    const nextSpecs = SKY_TEMPLE_WAVES[next - 1];
+    if (nextSpecs) this._spawnSkyTempleWave(nextSpecs, next);
   }
 
   beginDungeonRoom() {
@@ -6222,7 +6345,7 @@ class GameRoom {
     this._resetDefenseState();
     this._resetDungeonState();
     this.coopSkyTempleActive = true;
-    this._skyTemplePackSpawned = false;
+    this._skyTemplePackSpawned = 0;
     this.currentCoopRoomKind = 'sky_temple';
     this.clearedCoopRoomKind = null;
     this.combatArenaActive = true;
@@ -9023,7 +9146,10 @@ class GameRoom {
     }
     if (this.gameMode !== 'coop' || !this.combatArenaActive || this.bossSpawned) return;
     if (this.coopExploreActive) return;
-    if (this.coopSkyTempleActive) return;
+    if (this.coopSkyTempleActive) {
+      this._onSkyTemplePackKill();
+      return;
+    }
     if (this.coopDungeonActive) {
       this._onDungeonPackKill();
       return;
@@ -10076,12 +10202,18 @@ class GameRoom {
   }
 
   /**
-   * Late join / reclaim into an active explore session: stand next to an existing
-   * wilderness player. Solo reclaim keeps the stashed position; no one else → origin ring.
+   * Late join / reclaim: stand next to an existing player. Solo reclaim keeps stashed position;
+   * no anchor → soloFallbackPos or a small ring around origin.
    */
-  _placePlayerAtExploreLateJoin(player) {
+  _placePlayerNearAnchorLateJoin(player, {
+    getAnchorPool,
+    defaultY,
+    copyAnchorY = false,
+    soloFallbackPos = null,
+  }) {
     if (!player) return;
-    const others = this._getExplorePlayers().filter((p) => p && p.id !== player.id && p.position);
+    const poolSource = typeof getAnchorPool === 'function' ? getAnchorPool() : [];
+    const others = poolSource.filter((p) => p && p.id !== player.id && p.position);
     const living = others.filter((p) => (p.health ?? 1) > 0);
     const pool = living.length > 0 ? living : others;
     const playerIndex = Math.max(0, this.players.size - 1);
@@ -10093,14 +10225,28 @@ class GameRoom {
     if (pool.length === 0) {
       const px = player.position?.x;
       const pz = player.position?.z;
+      const py = player.position?.y;
       if (Number.isFinite(px) && Number.isFinite(pz) && (Math.abs(px) > 0.01 || Math.abs(pz) > 0.01)) {
-        player.position = { x: px, y: 1, z: pz };
+        player.position = {
+          x: px,
+          y: Number.isFinite(py) ? py : defaultY,
+          z: pz,
+        };
         player.rotation = player.rotation || { x: 0, y: 0, z: 0 };
+        return;
+      }
+      if (soloFallbackPos) {
+        player.position = {
+          x: soloFallbackPos.x,
+          y: soloFallbackPos.y ?? defaultY,
+          z: soloFallbackPos.z,
+        };
+        player.rotation = { x: 0, y: soloFallbackPos.rotationY ?? 0, z: 0 };
         return;
       }
       player.position = {
         x: Math.sin(angle) * spawnRadius,
-        y: 1,
+        y: defaultY,
         z: Math.cos(angle) * spawnRadius,
       };
       player.rotation = { x: 0, y: 0, z: 0 };
@@ -10108,12 +10254,46 @@ class GameRoom {
     }
 
     const anchor = pool[0];
-    player.position = {
-      x: anchor.position.x + Math.sin(angle) * spawnRadius,
-      y: 1,
-      z: anchor.position.z + Math.cos(angle) * spawnRadius,
-    };
+    const rawX = anchor.position.x + Math.sin(angle) * spawnRadius;
+    const rawZ = anchor.position.z + Math.cos(angle) * spawnRadius;
+    const c = clampPositionToPlayableXZ(this, rawX, rawZ);
+    const y = copyAnchorY && Number.isFinite(anchor.position.y) ? anchor.position.y : defaultY;
+    player.position = { x: c.x, y, z: c.z };
     player.rotation = { x: 0, y: 0, z: 0 };
+  }
+
+  /**
+   * Late join / reclaim into an active explore session: stand next to an existing
+   * wilderness player. Solo reclaim keeps the stashed position; no one else → origin ring.
+   */
+  _placePlayerAtExploreLateJoin(player) {
+    this._placePlayerNearAnchorLateJoin(player, {
+      getAnchorPool: () => this._getExplorePlayers(),
+      defaultY: 1,
+      copyAnchorY: false,
+    });
+  }
+
+  /**
+   * Late join / reclaim into dungeon or sky temple: stand next to an existing player
+   * (copy their mesh height). Solo → mode entrance spawn.
+   */
+  _placePlayerAtMeshRoomLateJoin(player, roomKind) {
+    const isSky = roomKind === 'sky_temple';
+    const soloFallbackPos = isSky
+      ? { x: SKY_TEMPLE_SPAWN_X, y: SKY_TEMPLE_SPAWN_Y, z: SKY_TEMPLE_SPAWN_Z, rotationY: 0 }
+      : {
+        x: DUNGEON_SPAWN_X,
+        y: DUNGEON_SPAWN_Y,
+        z: DUNGEON_SPAWN_Z,
+        rotationY: DUNGEON_SPAWN_FACING_Y,
+      };
+    this._placePlayerNearAnchorLateJoin(player, {
+      getAnchorPool: () => Array.from(this.players.values()),
+      defaultY: soloFallbackPos.y,
+      copyAnchorY: true,
+      soloFallbackPos,
+    });
   }
 
   /** Place a player at the current room spawn (throne ring vs combat entry). */
@@ -10136,6 +10316,16 @@ class GameRoom {
 
     if (this.coopExploreActive || this.currentCoopRoomKind === 'explore') {
       this._placePlayerAtExploreLateJoin(player);
+      return;
+    }
+
+    if (this.coopDungeonActive || this.currentCoopRoomKind === 'dungeon') {
+      this._placePlayerAtMeshRoomLateJoin(player, 'dungeon');
+      return;
+    }
+
+    if (this.coopSkyTempleActive || this.currentCoopRoomKind === 'sky_temple') {
+      this._placePlayerAtMeshRoomLateJoin(player, 'sky_temple');
       return;
     }
 
@@ -13369,8 +13559,10 @@ class GameRoom {
         spawnedAt: ts };
     }
     if (type === 'wolf') {
-      // Keep howl stagger in sync with WOLF_HOWL_* in enemyAI.js
-      const howlStartsAt = ts + slotIndex * 200;
+      // Pack-local stagger only — slotIndex is a global ID counter (explore
+      // _exploreSpawnSlot, crypt 850+), not an index in the pack.
+      const howlSlot = Math.abs(slotIndex) % 8;
+      const howlStartsAt = ts + howlSlot * 200;
       return { id: `wolf-${campIndex}-${slotIndex}-${ts}`, type: 'wolf', ...base,
         health: 700 + hpBonus, maxHealth: 700 + hpBonus,
         damage: 14, attackCooldown: 850, moveSpeed: 3.1,
@@ -18217,7 +18409,88 @@ class GameRoom {
       });
     }
 
+    this._scheduleTimeout(() => {
+      if (this.meatDrops.has(dropId)) {
+        this.meatDrops.delete(dropId);
+        if (this.io) {
+          this.io.to(this.roomId).emit('meat-expired', { dropId, timestamp: Date.now() });
+        }
+      }
+    }, MEAT_DROP_EXPIRE_MS);
+
     return drop;
+  }
+
+  findNearestMeatDrop(position, maxRange) {
+    if (!position || !this.meatDrops || this.meatDrops.size === 0) return null;
+    const maxR = Number.isFinite(maxRange) ? maxRange : Infinity;
+    const maxR2 = maxR * maxR;
+    let nearest = null;
+    let nearestD2 = Infinity;
+    for (const drop of this.meatDrops.values()) {
+      if (!drop?.position || !(drop.amount > 0)) continue;
+      const dx = position.x - drop.position.x;
+      const dz = position.z - drop.position.z;
+      const d2 = dx * dx + dz * dz;
+      if (d2 > maxR2 || d2 >= nearestD2) continue;
+      nearest = drop;
+      nearestD2 = d2;
+    }
+    return nearest;
+  }
+
+  consumeMeatDropByPet(ally) {
+    if (!this.coopExploreActive || !ally) return null;
+    if (!this._isAlliedBeastCompanion(ally)) return null;
+    if (ally.isDying || (ally.health ?? 0) <= 0) return null;
+    const maxHp = ally.maxHealth ?? 0;
+    if (maxHp <= 0 || ally.health >= maxHp) return null;
+    if (!ally.position) return null;
+
+    const drop = this.findNearestMeatDrop(ally.position, PET_MEAT_EAT_RADIUS);
+    if (!drop) return null;
+
+    drop.amount -= 1;
+    drop.pieceCount = Math.max(1, Math.min(Math.floor(drop.amount), MEAT_VISUAL_PIECE_CAP));
+    const remainingDrop = drop.amount > 0 ? { ...drop } : null;
+    if (!remainingDrop) {
+      this.meatDrops.delete(drop.id);
+    }
+
+    const previousHealth = ally.health;
+    ally.health = Math.min(maxHp, ally.health + PET_MEAT_HEAL);
+    const actualHeal = ally.health - previousHealth;
+    ally.lastPetMeatEatAt = Date.now();
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('meat-picked-up', {
+        dropId: drop.id,
+        drop: {
+          ...drop,
+          amount: 1,
+        },
+        amount: 1,
+        remainingDrop,
+        timestamp: Date.now(),
+      });
+      if (actualHeal > 0) {
+        this.io.to(this.roomId).emit('enemy-healed', {
+          enemyId: ally.id,
+          healAmount: actualHeal,
+          newHealth: ally.health,
+          maxHealth: maxHp,
+          healingType: 'beast_regen',
+          position: {
+            x: ally.position?.x ?? 0,
+            y: ally.position?.y ?? 0,
+            z: ally.position?.z ?? 0,
+          },
+          timestamp: Date.now(),
+        });
+      }
+    }
+
+    return { drop, remainingDrop, healAmount: actualHeal };
   }
 
   pickupMeatDrop(dropId, pickerPlayerId) {

@@ -19,6 +19,13 @@ interface ViperStingManagerProps {
     isBoss?: boolean;
     isDying?: boolean;
   }>;
+  harvestHittables?: Array<{
+    id: string;
+    position: Vector3;
+    health: number;
+    radius?: number;
+    isDying?: boolean;
+  }>;
   onHit: (
     targetId: string,
     damage: number,
@@ -118,6 +125,7 @@ export const triggerGlobalViperStingSoulSteal = (enemyPosition: Vector3): void =
 export default function ViperStingManager({
   parentRef,
   enemyData,
+  harvestHittables,
   onHit,
   setDamageNumbers,
   nextDamageNumberId,
@@ -155,6 +163,7 @@ export default function ViperStingManager({
     parentRef,
     onHit,
     enemyData,
+    harvestHittables,
     setDamageNumbers,
     nextDamageNumberId,
     onHealthChange,

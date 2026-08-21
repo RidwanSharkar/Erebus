@@ -1,24 +1,19 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Billboard } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { Group, Mesh, Vector3 } from 'three';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
-import {
-  syncEnemyHealthBarFillFromRef,
-  syncEnemyHealthBarNumericTextFromRef,
-} from '@/utils/enemyHealthBar';
+import { ExploreBuildingHpBillboard, syncExploreBuildingHpIfVisible } from './ExploreBuildingHpBillboard';
 import { syncEnemyRotationFromRef } from '@/utils/enemyLiveTransform';
+import { subscribeExploreTowerAttack } from '@/utils/exploreTowerAttackBus';
 import {
   DEFENSE_TOWER_BOLT_THEMES,
   DEFENSE_TOWER_IMPACT_Y,
   DEFENSE_TOWER_MUZZLE_Y,
   getDefenseTowerSlot,
 } from '@/utils/defenseLayout';
-import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
-import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import DefenseTower, { DEFENSE_TOWER_HP_BAR_Y } from '@/components/environment/DefenseTower';
 import DefenseTowerBolt, { type DefenseTowerBoltShot } from './DefenseTowerBolt';
 import type { Position3 } from '@/utils/position3';
@@ -33,14 +28,6 @@ interface DefenseTowerRendererProps {
   powered?: boolean;
 }
 
-interface DefenseTowerAttackEvent {
-  towerId: string;
-  kind: 'bolt';
-  origin?: { x: number; y: number; z: number };
-  impact?: { x: number; y: number; z: number };
-  targetId?: string;
-}
-
 const FADE_DURATION = 1.4;
 
 function DefenseTowerRenderer({
@@ -53,10 +40,11 @@ function DefenseTowerRenderer({
   powered = true,
 }: DefenseTowerRendererProps) {
   const theme = campHpTheme('ally-green');
-  const { socket, enemiesRef, enemyTransformsRef } = useMultiplayerActions();
+  const { enemiesRef, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
   const hpTextRef = useRef<any>(null);
+  const hpBarVisibleRef = useRef(false);
   const opacity = useRef(1);
   const fadeTimer = useRef(0);
   const targetRotation = useRef(rotation);
@@ -80,10 +68,9 @@ function DefenseTowerRenderer({
   }, [position.x, position.y, position.z, rotation]);
 
   useEffect(() => {
-    if (!socket) return;
-    const onAttack = (data: DefenseTowerAttackEvent) => {
+    return subscribeExploreTowerAttack(id, (data) => {
       if (!powered) return;
-      if (data.towerId !== id || data.kind !== 'bolt') return;
+      if (data.kind !== 'bolt') return;
       const origin = data.origin;
       const impact = data.impact;
       if (!origin || !impact) return;
@@ -95,22 +82,20 @@ function DefenseTowerRenderer({
         to: new Vector3(impact.x, impact.y ?? DEFENSE_TOWER_IMPACT_Y, impact.z),
         theme: boltTheme,
       });
-    };
-    socket.on('defense-tower-attack', onAttack);
-    return () => {
-      socket.off('defense-tower-attack', onAttack);
-    };
-  }, [socket, id, slot, powered]);
+    });
+  }, [id, slot, powered]);
 
   useFrame((_, delta) => {
     if (enemyTransformsRef) {
       syncEnemyRotationFromRef(id, enemyTransformsRef, targetRotation);
     }
-    if (groupRef.current) {
-      groupRef.current.rotation.y = targetRotation.current;
+    const g = groupRef.current;
+    if (g && g.rotation.y !== targetRotation.current) {
+      g.rotation.y = targetRotation.current;
     }
-    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth);
-    syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
+    syncExploreBuildingHpIfVisible(
+      hpBarVisibleRef, hpFillRef, hpTextRef, enemiesRef, id, health, maxHealth,
+    );
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
@@ -122,7 +107,6 @@ function DefenseTowerRenderer({
     <>
       {boltShot && (
         <DefenseTowerBolt
-          key={boltShot.seq}
           shot={boltShot}
           onComplete={() => setBoltShot(null)}
         />
@@ -135,25 +119,19 @@ function DefenseTowerRenderer({
             <meshBasicMaterial color="#0b1220" transparent opacity={0.38} depthWrite={false} />
           </mesh>
         )}
-        <Billboard position={[0, DEFENSE_TOWER_HP_BAR_Y, 0]} follow lockX={false} lockY={false} lockZ={false}>
-          {health > 0 && !isDying && (
-            <>
-              <EnemyHpBarPlanes
-                fillRef={hpFillRef}
-                backgroundColor={theme.background}
-                fillColor={theme.fill}
-              />
-              <EnemyHealthBarTextLabel
-                leading="HP"
-                numericRef={hpTextRef}
-                health={health}
-                maxHealth={maxHealth}
-                fontSize={0.16}
-                color={theme.text}
-              />
-            </>
-          )}
-        </Billboard>
+        <ExploreBuildingHpBillboard
+          y={DEFENSE_TOWER_HP_BAR_Y}
+          health={health}
+          maxHealth={maxHealth}
+          fillRef={hpFillRef}
+          numericRef={hpTextRef}
+          backgroundColor={theme.background}
+          fillColor={theme.fill}
+          textColor={theme.text}
+          fontSize={0.16}
+          hidden={isDying}
+          barVisibleRef={hpBarVisibleRef}
+        />
       </group>
     </>
   );

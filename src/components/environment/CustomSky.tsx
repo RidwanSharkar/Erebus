@@ -1,6 +1,7 @@
 import React, { useMemo, useLayoutEffect, useEffect } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { ShaderMaterial, SphereGeometry, Vector3, Color, BackSide } from '@/utils/three-exports';
+import { isExploreZoomClose } from '@/utils/exploreZoomLod';
 import type { RoomBorderTheme } from './SimpleBorderEffects';
 
 /** Per-room sky: gradient, sun, and subtle atmosphere so clouds match the combat palette. */
@@ -967,7 +968,9 @@ const CustomSky: React.FC<{
   }, [geo, material]);
 
   useFrame((_, delta) => {
-    if (animateClouds) {
+    const cloudsOn = animateClouds && !isExploreZoomClose();
+    material.uniforms.uEnableClouds.value = cloudsOn ? 1 : 0;
+    if (cloudsOn) {
       material.uniforms.uTime.value += delta;
     }
   });

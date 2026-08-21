@@ -7,6 +7,9 @@ import { EXPLORE_CHUNK_SIZE, chunkKey, worldToChunk } from './exploreWorldGen';
 
 export const EXPLORE_FOG_CELLS = 12;
 export const EXPLORE_PLAYER_VIEW_RADIUS = 27;
+/** 3D building GLBs unmount past this XZ radius (fog already hides farther). Minimap still uses explored cells. */
+export const EXPLORE_BUILDING_RENDER_RADIUS = 36;
+const EXPLORE_BUILDING_RENDER_RADIUS2 = EXPLORE_BUILDING_RENDER_RADIUS * EXPLORE_BUILDING_RENDER_RADIUS;
 export const EXPLORE_FOG_CELL_SIZE = EXPLORE_CHUNK_SIZE / EXPLORE_FOG_CELLS;
 export const EXPLORE_FOG_CHUNK_BYTES = EXPLORE_FOG_CELLS * EXPLORE_FOG_CELLS;
 export const EXPLORE_FOG_MAX_CHUNKS = 1024;
@@ -243,6 +246,17 @@ class ExploreFogOfWar {
     const dz = enemyZ - playerZ;
     if (dx * dx + dz * dz < EXPLORE_PLAYER_VIEW_RADIUS * EXPLORE_PLAYER_VIEW_RADIUS) return true;
     return this.isPositionExplored(enemyX, enemyZ);
+  }
+
+  isBuildingInRenderRange(buildingX: number, buildingZ: number, playerX: number, playerZ: number): boolean {
+    const dx = buildingX - playerX;
+    const dz = buildingZ - playerZ;
+    return dx * dx + dz * dz <= EXPLORE_BUILDING_RENDER_RADIUS2;
+  }
+
+  /** Same XZ bubble as buildings — unmount hostiles / camp props past this for memory. */
+  isExploreEntityInRenderRange(x: number, z: number, playerX: number, playerZ: number): boolean {
+    return this.isBuildingInRenderRange(x, z, playerX, playerZ);
   }
 }
 

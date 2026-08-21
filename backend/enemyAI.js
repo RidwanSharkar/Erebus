@@ -380,14 +380,8 @@ const WYVERN_BREATH_COOLDOWN_MS = 5000;
 const WYVERN_BREATH_CAST_LOCK_MS = 1500;
 const WYVERN_BREATH_ROAR_CAST_LOCK_MS = 2000; // +500ms over base cast (drake_roar)
 const WYVERN_BREATH_LAUNCH_EARLY_MS = 400; // firebolts release before cast ends (animation sync)
-// Simultaneous fan: far left (+36°), left (+18°), center, right (−18°), far right (−36°)
-const WYVERN_BREATH_ROAR_FAN_ANGLES_RAD = [
-  Math.PI / 5,
-  Math.PI / 10,
-  0,
-  -Math.PI / 10,
-  -Math.PI / 5,
-];
+const WYVERN_BREATH_SPECIAL_BURST_COUNT = 3;
+const WYVERN_BREATH_SPECIAL_BURST_GAP_MS = 125;
 const WYVERN_BREATH_DAMAGE = 36;
 const WYVERN_BREATH_CAST_RANGE = 10;
 const WYVERN_BREATH_MAX_RANGE = WYVERN_BREATH_CAST_RANGE; // bolt always travels full cast range
@@ -660,6 +654,9 @@ const BEASTMASTER_TIGER_HIT_DELAY_MS = 500;
 /** Explore pets: tiny self-defense pull. Assist range is used when the owner is in combat. */
 const EXPLORE_COMPANION_AGGRO_RADIUS = 4;
 const EXPLORE_COMPANION_ASSIST_RADIUS = 16;
+const PET_MEAT_EAT_COOLDOWN_MS = 5000;
+const PET_MEAT_EAT_RADIUS = 2.5;
+const PET_MEAT_SEEK_RADIUS = 10;
 
 /**
  * Allied beast companion configs — keep in sync with src/utils/faeBeastCompanion.ts
@@ -4568,8 +4565,10 @@ class EnemyAI {
     const distance = this.calculateDistance(wraith.position, tpos);
     const aggroRadius = this.resolveAggroRadius(WRAITH_AGGRO_RADIUS);
     const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
+    const losOk = this.hasLineOfSight(wraith.position, tpos);
+    const dungeonVerticalBlock = this._dungeonVerticalSeparationBlocksAggro(wraith, tpos);
 
-    if (!aggroData.isAggroed && distance <= aggroRadius && this.hasLineOfSight(wraith.position, tpos)) {
+    if (!aggroData.isAggroed && distance <= aggroRadius && losOk && !dungeonVerticalBlock) {
       aggroData.isAggroed = true;
     } else if (aggroData.isAggroed && distance > leashRadius) {
       aggroData.isAggroed = false;
@@ -7901,7 +7900,8 @@ class EnemyAI {
       for (const p of players) {
         if (!p || p.health <= 0) continue;
         const dist = this.calculateDistance(enemy.position, p.position);
-        if (dist <= aggroRadius && this.hasLineOfSight(enemy.position, p.position)) {
+        const dungeonVerticalBlock = this._dungeonVerticalSeparationBlocksAggro(enemy, p.position);
+        if (dist <= aggroRadius && this.hasLineOfSight(enemy.position, p.position) && !dungeonVerticalBlock) {
           aggroData.isAggroed = true;
           aggroData.targetPlayerId = p.id;
           aggroData.targetZombieId = null;
@@ -7912,7 +7912,10 @@ class EnemyAI {
     }
 
     if (!aggroData.isAggroed) {
-      this._moveTitanTowardsPatrolWaypoint(enemy);
+      // Dungeon: hold spawn pose (patrol walks heavies off lair ledges).
+      if (!this.room?.coopDungeonActive) {
+        this._moveTitanTowardsPatrolWaypoint(enemy);
+      }
       return;
     }
 
@@ -7931,7 +7934,9 @@ class EnemyAI {
     const resolved = this.resolveAggroCombatTarget(aggroData, enemy, players);
     if (!resolved) {
       aggroData.isAggroed = false;
-      this._moveTitanTowardsPatrolWaypoint(enemy);
+      if (!this.room?.coopDungeonActive) {
+        this._moveTitanTowardsPatrolWaypoint(enemy);
+      }
       return;
     }
 
@@ -7942,7 +7947,9 @@ class EnemyAI {
     if (aggroData.isAggroed && distance > leashRadius && !aggroData.threatFromDamage && !aggroData.directPlayerDamageAggroed) {
       aggroData.isAggroed = false;
       aggroData.threatFromDamage = false;
-      this._moveTitanTowardsPatrolWaypoint(enemy);
+      if (!this.room?.coopDungeonActive) {
+        this._moveTitanTowardsPatrolWaypoint(enemy);
+      }
       return;
     }
 
@@ -10167,7 +10174,7 @@ class EnemyAI {
         return 1.4;
       case 'fire-pit':
       case 'shield-battery':
-        return 0.85;
+        return 0.6375;
       case 'barracks':
         return 1.6;
       case 'cathedral':
@@ -10175,9 +10182,9 @@ class EnemyAI {
       case 'research-station':
         return 1.6;
       case 'shrine':
-        return 1.6;
+        return 0.96;
       case 'obelisk':
-        return 1.5;
+        return 0.975;
       case 'allied-demon':
         return 0.85;
       case 'allied-tiger':
@@ -11558,6 +11565,14 @@ class EnemyAI {
       return best;
     }
 
+    // Explore: stay with the player when nothing is in bow range. Knight-style
+    // map-wide chase would send her across distant camps forever.
+    if (this.room.coopExploreActive) {
+      huntress.alliedTargetEnemyId = null;
+      huntress.combatInitiated = false;
+      return null;
+    }
+
     return this.findAlliedKnightTarget(huntress);
   }
 
@@ -12554,6 +12569,35 @@ class EnemyAI {
     };
   }
 
+  /**
+   * Out-of-combat pets walk to leftover ground meat and eat 1 unit for HP.
+   * Returns true when the pet consumed or is pathing to a pile (skip follow).
+   */
+  tryAlliedBeastMeatSeekOrEat(beast, config) {
+    if (!this.room?.coopExploreActive || !beast) return false;
+    if (beast.beastCompanionPhase === 'entering') return false;
+    if (beast.isDying || (beast.health ?? 0) <= 0) return false;
+    const maxHp = beast.maxHealth ?? 0;
+    if (maxHp <= 0 || beast.health >= maxHp) return false;
+    const now = Date.now();
+    if (now - (beast.lastPetMeatEatAt || 0) < PET_MEAT_EAT_COOLDOWN_MS) return false;
+
+    const drop = this.room.findNearestMeatDrop?.(beast.position, PET_MEAT_SEEK_RADIUS);
+    if (!drop?.position) return false;
+
+    const dist = this.calculateDistance(beast.position, drop.position);
+    if (dist <= PET_MEAT_EAT_RADIUS) {
+      return !!this.room.consumeMeatDropByPet?.(beast);
+    }
+
+    beast.tigerLocomotion = 'walk';
+    beast.moveSpeed = config?.walkSpeed ?? beast.moveSpeed;
+    this.moveEnemyTowardsTarget(beast, { id: drop.id, position: drop.position }, {
+      stopThreshold: PET_MEAT_EAT_RADIUS * 0.6,
+    });
+    return true;
+  }
+
   updateAlliedBeastFollowOnly(beast, players) {
     if (!this.room || beast.isDying || beast.health <= 0) return;
     const config = getAlliedBeastConfig(beast.type);
@@ -12567,6 +12611,8 @@ class EnemyAI {
       this.updateAlliedBeastEntering(beast, players, config);
       return;
     }
+
+    if (this.tryAlliedBeastMeatSeekOrEat(beast, config)) return;
 
     if (!this._shouldAlliesDisengageForDreamshroud() && this._isExploreBaseDefender(beast)) {
       beast.tigerLocomotion = 'walk';
@@ -12852,6 +12898,7 @@ class EnemyAI {
     if (defendBase && target && !this._isWithinExploreBaseLeash(ally, target.position)) {
       ally.alliedTargetEnemyId = null;
       ally.combatInitiated = false;
+      if (this.tryAlliedBeastMeatSeekOrEat(ally, config)) return;
       this._followExploreBase(ally);
       return;
     }
@@ -12859,6 +12906,7 @@ class EnemyAI {
       this.clearBeastAggroSfx(ally.id);
       ally.tigerLocomotion = 'walk';
       ally.moveSpeed = config.walkSpeed;
+      if (this.tryAlliedBeastMeatSeekOrEat(ally, config)) return;
       if (defendBase) {
         this._followExploreBase(ally);
         return;
@@ -16613,22 +16661,28 @@ class EnemyAI {
     const now = Date.now();
     const skipHowl = wolf.type === 'boss-wolf';
     if (!skipHowl) {
-      const howlStartsAt = wolf.howlStartsAt ?? (wolf.spawnedAt ?? 0);
-      const howlEndsAt = wolf.howlEndsAt ?? (howlStartsAt + WOLF_HOWL_DURATION_MS);
+      const aggro = this.enemyAggro.get(wolf.id);
+      if (aggro?.threatFromDamage || aggro?.directPlayerDamageAggroed) {
+        wolf.howlEndsAt = Math.min(wolf.howlEndsAt ?? now, now);
+        this.meleeLockUntil.delete(wolf.id);
+      } else {
+        const howlStartsAt = wolf.howlStartsAt ?? (wolf.spawnedAt ?? 0);
+        const howlEndsAt = wolf.howlEndsAt ?? (howlStartsAt + WOLF_HOWL_DURATION_MS);
 
-      if (now < howlEndsAt) {
-        if (now >= howlStartsAt && !this.wolfHowlEmitted.get(wolf.id)) {
-          this.wolfHowlEmitted.set(wolf.id, true);
-          this.meleeLockUntil.set(wolf.id, howlEndsAt);
-          if (this.io) {
-            this.io.to(this.roomId).emit('wolf-howl-start', {
-              wolfId: wolf.id,
-              durationMs: Math.max(0, howlEndsAt - now),
-              timestamp: now,
-            });
+        if (now < howlEndsAt) {
+          if (now >= howlStartsAt && !this.wolfHowlEmitted.get(wolf.id)) {
+            this.wolfHowlEmitted.set(wolf.id, true);
+            this.meleeLockUntil.set(wolf.id, howlEndsAt);
+            if (this.io) {
+              this.io.to(this.roomId).emit('wolf-howl-start', {
+                wolfId: wolf.id,
+                durationMs: Math.max(0, howlEndsAt - now),
+                timestamp: now,
+              });
+            }
           }
+          return;
         }
-        return;
       }
     }
 
@@ -17381,14 +17435,29 @@ class EnemyAI {
     wyvern.breathRoarVolleyId = roarVolleyId;
 
     if (breathVariant === 2) {
-      const handle = this._scheduleTimeout(() => {
-        if (!this.room?.getGameStarted()) return;
-        const live = this.room?.getEnemy?.(wid);
-        if (!live || live.isDying || live.health <= 0 || !live.breathActive) return;
-        if (live.breathRoarVolleyId !== roarVolleyId) return;
-        this.wyvernLaunchRoarFanVolley(live, resolved);
-      }, launchAtMs);
-      launchHandles.push(handle);
+      // Frozen primitive trajectory — shots 1–2 must not share mutable start/target refs.
+      let lockedAim = null;
+      for (let shotIndex = 0; shotIndex < WYVERN_BREATH_SPECIAL_BURST_COUNT; shotIndex++) {
+        const handle = this._scheduleTimeout(() => {
+          if (!this.room?.getGameStarted()) return;
+          const live = this.room?.getEnemy?.(wid);
+          if (!live || live.isDying || live.health <= 0 || !live.breathActive) return;
+          if (live.breathRoarVolleyId !== roarVolleyId) return;
+          if (shotIndex === 0) {
+            const aim = this._resolveBreathFireboltAim(live, resolved, 1.4, WYVERN_BREATH_MAX_RANGE);
+            if (!aim) return;
+            lockedAim = {
+              start: { x: aim.start.x, y: aim.start.y, z: aim.start.z },
+              target: { x: aim.target.x, y: aim.target.y, z: aim.target.z },
+              dirLen: aim.dirLen,
+              baseDir: { x: aim.baseDir.x, z: aim.baseDir.z },
+            };
+          }
+          if (!lockedAim) return;
+          this.wyvernLaunchRoarBurstShot(live, lockedAim, shotIndex, roarVolleyId);
+        }, launchAtMs + shotIndex * WYVERN_BREATH_SPECIAL_BURST_GAP_MS);
+        launchHandles.push(handle);
+      }
     } else {
       const handle = this._scheduleTimeout(() => {
         if (!this.room?.getGameStarted()) return;
@@ -17504,21 +17573,17 @@ class EnemyAI {
     }
   }
 
-  /** Variant 2 (drake_roar): simultaneous 5-bolt fan. */
-  wyvernLaunchRoarFanVolley(wyvern, resolved) {
-    this._launchRoarFanVolley(
-      wyvern,
-      resolved,
-      WYVERN_BREATH_ROAR_FAN_ANGLES_RAD,
-      1.4,
-      (wid, start, fanTarget, fanIndex, volleyTs, volleyHits) => {
-        this._simulateWyvernBreathFirebolt(
-          wid, start, fanTarget, `${wid}-roar-${fanIndex}-${volleyTs}`, 2, volleyHits,
-        );
-      },
-      WYVERN_BREATH_MAX_RANGE,
+  /** Variant 2 (drake_roar): one straight firebolt in a 3-shot burst (independent hits). */
+  wyvernLaunchRoarBurstShot(wyvern, aim, shotIndex, volleyTs) {
+    // Fresh copies per shot so one sim/emit cannot mutate the locked burst path.
+    const start = { x: aim.start.x, y: aim.start.y, z: aim.start.z };
+    const target = { x: aim.target.x, y: aim.target.y, z: aim.target.z };
+    this._simulateWyvernBreathFirebolt(
+      wyvern.id, start, target, `${wyvern.id}-roar-${shotIndex}-${volleyTs}`, 2,
     );
-    _enemyAiLog(`🐉 Wyvern ${wyvern.id} roar fan volley (${WYVERN_BREATH_ROAR_FAN_ANGLES_RAD.length} bolts)`);
+    if (shotIndex === 0) {
+      _enemyAiLog(`🐉 Wyvern ${wyvern.id} roar burst (${WYVERN_BREATH_SPECIAL_BURST_COUNT} bolts)`);
+    }
   }
 
   /** Variant 1 (drake_attack2): single non-homing firebolt — full max-range pierce. */

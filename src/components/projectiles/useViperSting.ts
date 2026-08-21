@@ -20,9 +20,26 @@ import type { ViperExplosionTarget } from './viperExplosionTargets';
 /** Reaping Talons base hit damage (forward / return). Keep in sync with PVP manager. */
 export const REAPING_TALONS_BASE_DAMAGE = 91;
 
-const _viperProj2D = new Vector3();
-const _viperEnemy2D = new Vector3();
+const VIPER_ENEMY_HIT_RADIUS = 1.3;
+
+export type ViperFlightTarget = {
+  id: string;
+  position: Vector3;
+  health: number;
+  maxHealth?: number;
+  isBoss?: boolean;
+  isDying?: boolean;
+  /** Harvest collider radius; omitted for enemies (uses VIPER_ENEMY_HIT_RADIUS only). */
+  radius?: number;
+};
 const _viperReturnDir = new Vector3();
+
+function viperFlightHitsTarget(projX: number, projZ: number, target: ViperFlightTarget): boolean {
+  const hitR = VIPER_ENEMY_HIT_RADIUS + (target.radius ?? 0);
+  const dx = projX - target.position.x;
+  const dz = projZ - target.position.z;
+  return dx * dx + dz * dz < hitR * hitR;
+}
 
 interface ViperStingProjectile {
   id: number;
@@ -66,14 +83,8 @@ interface UseViperStingProps {
     isBlizzard?: boolean,
     viperPhase?: 'forward' | 'return' | 'explosion',
   ) => void;
-  enemyData: Array<{
-    id: string;
-    position: Vector3;
-    health: number;
-    maxHealth?: number;
-    isBoss?: boolean;
-    isDying?: boolean;
-  }>;
+  enemyData: ViperFlightTarget[];
+  harvestHittables?: ViperFlightTarget[];
   setDamageNumbers: React.Dispatch<React.SetStateAction<Array<{
     id: number;
     damage: number;
@@ -124,6 +135,7 @@ export function useViperSting({
   parentRef,
   onHit,
   enemyData,
+  harvestHittables = [],
   setDamageNumbers: _setDamageNumbers,
   nextDamageNumberId: _nextDamageNumberId,
   onHealthChange: _onHealthChange,
@@ -273,6 +285,9 @@ export function useViperSting({
 
     const updateProjectilesAndEffects = () => {
       const now = Date.now();
+      const flightTargets = harvestHittables.length > 0
+        ? enemyData.concat(harvestHittables)
+        : enemyData;
 
       projectilePool.current.forEach(projectile => {
         if (!projectile.active) return;
@@ -295,15 +310,12 @@ export function useViperSting({
             projectile.position.addScaledVector(projectile.direction, PROJECTILE_SPEED);
             applyDungeonChestY(projectile.position);
 
-            for (const enemy of enemyData) {
+            for (const enemy of flightTargets) {
               if (enemy.isDying || enemy.health <= 0) continue;
               if (projectile.hitEnemies.has(enemy.id)) continue;
               if (localSocketId && enemy.id === localSocketId) continue;
 
-              _viperProj2D.set(projectile.position.x, 0, projectile.position.z);
-              _viperEnemy2D.set(enemy.position.x, 0, enemy.position.z);
-
-              if (_viperProj2D.distanceTo(_viperEnemy2D) < 1.3) {
+              if (viperFlightHitsTarget(projectile.position.x, projectile.position.z, enemy)) {
                 projectile.hitEnemies.add(enemy.id);
 
                 if (glacialTalonsTheme && !projectile.glacialBlizzardSpawned) {
@@ -355,6 +367,12 @@ export function useViperSting({
 
               for (const enemy of explosionTargets) {
                 if (localSocketId && enemy.id === localSocketId) continue;
+                if (
+                  projectile.hitEnemies.has(enemy.id) &&
+                  harvestHittables.some((h) => h.id === enemy.id)
+                ) {
+                  continue;
+                }
 
                 let explosionDamage = EXPLOSIVE_TALONS_EXPLOSION_DAMAGE;
                 let explosionIsCritical: boolean | undefined = undefined;
@@ -412,15 +430,12 @@ export function useViperSting({
             projectile.position.addScaledVector(projectile.direction, PROJECTILE_RETURN_SPEED);
             applyDungeonChestY(projectile.position);
 
-            for (const enemy of enemyData) {
+            for (const enemy of flightTargets) {
               if (enemy.isDying || enemy.health <= 0) continue;
               if (projectile.returnHitEnemies.has(enemy.id)) continue;
               if (localSocketId && enemy.id === localSocketId) continue;
 
-              _viperProj2D.set(projectile.position.x, 0, projectile.position.z);
-              _viperEnemy2D.set(enemy.position.x, 0, enemy.position.z);
-
-              if (_viperProj2D.distanceTo(_viperEnemy2D) < 1.3) {
+              if (viperFlightHitsTarget(projectile.position.x, projectile.position.z, enemy)) {
                 projectile.returnHitEnemies.add(enemy.id);
 
                 let returnBase = DAMAGE;
@@ -480,7 +495,7 @@ export function useViperSting({
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [enemyData, onHit, createSoulStealEffect, parentRef, createBeamEffect, applyDoT, localSocketId, players, onExecuteFirstForwardHit, giantKiller, glacialTalonsTheme, onExplosiveTalonsDetonate, queryExplosionTargets, getTerminalVelocityBonus]);
+  }, [enemyData, harvestHittables, onHit, createSoulStealEffect, parentRef, createBeamEffect, applyDoT, localSocketId, players, onExecuteFirstForwardHit, giantKiller, glacialTalonsTheme, onExplosiveTalonsDetonate, queryExplosionTargets, getTerminalVelocityBonus]);
 
   return {
     shootViperSting,

@@ -113,6 +113,14 @@ function ExpandedPanel({ s }: { s: DevPerformanceSnapshot }) {
           color={deltaColor(s.deltaPrograms, 10, 30)}
         />
         <MetricRow label="DPR" value={s.dpr.toFixed(2)} />
+        <MetricRow
+          label="Zoom LOD"
+          value={
+            s.exploreZoomRadius != null
+              ? `r=${s.exploreZoomRadius.toFixed(1)}${s.exploreZoomClose ? ' close' : ''}${s.exploreZoomVeryClose ? '+vc' : ''}`
+              : 'n/a'
+          }
+        />
       </Section>
 
       <Section title="Memory">

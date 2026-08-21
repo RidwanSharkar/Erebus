@@ -71,3 +71,55 @@ export function queryWeaponHittableEntities(world: World): Entity[] {
 
   return out;
 }
+
+/** True when an entity is an explore harvest prop (tree/root/rock/spine). */
+export function isDestructibleHarvestEntity(entity: Entity): boolean {
+  return !!(
+    entity.getComponent(DestructibleTree) ||
+    entity.getComponent(DestructibleRoot) ||
+    entity.getComponent(DestructibleRock) ||
+    entity.getComponent(DestructibleSpine)
+  );
+}
+
+/** Live ECS harvest props only (not enemies). */
+export function queryDestructibleHarvestEntities(world: World): Entity[] {
+  const out: Entity[] = [];
+  const seen = new Set<number>();
+
+  for (const entity of world.queryEntities([Transform, Health, DestructibleTree])) {
+    if (!isWeaponHittableEntity(entity)) continue;
+    const health = entity.getComponent(Health);
+    if (!health || health.isDead || health.currentHealth <= 0) continue;
+    out.push(entity);
+    seen.add(entity.id);
+  }
+
+  for (const entity of world.queryEntities([Transform, Health, DestructibleRoot])) {
+    if (seen.has(entity.id)) continue;
+    if (!isWeaponHittableEntity(entity)) continue;
+    const health = entity.getComponent(Health);
+    if (!health || health.isDead || health.currentHealth <= 0) continue;
+    out.push(entity);
+    seen.add(entity.id);
+  }
+
+  for (const entity of world.queryEntities([Transform, Health, DestructibleRock])) {
+    if (seen.has(entity.id)) continue;
+    if (!isWeaponHittableEntity(entity)) continue;
+    const health = entity.getComponent(Health);
+    if (!health || health.isDead || health.currentHealth <= 0) continue;
+    out.push(entity);
+    seen.add(entity.id);
+  }
+
+  for (const entity of world.queryEntities([Transform, Health, DestructibleSpine])) {
+    if (seen.has(entity.id)) continue;
+    if (!isWeaponHittableEntity(entity)) continue;
+    const health = entity.getComponent(Health);
+    if (!health || health.isDead || health.currentHealth <= 0) continue;
+    out.push(entity);
+  }
+
+  return out;
+}

@@ -72,6 +72,13 @@ export const EXPLORE_CAMP_MAX_ACTIVE = 3;
 export const EXPLORE_CAMP_DESPAWN_DIST = 12;
 export const EXPLORE_CAMP_DESPAWN_DELAY_MS = 30000;
 
+/**
+ * Stream unload (mirrored in backend/gameRoom.js).
+ * Matches EXPLORE_BUILDING_RENDER_RADIUS — camps beyond this are despawned immediately
+ * so discovered packs/props do not linger over the horizon like trees/stones.
+ */
+export const EXPLORE_CAMP_STREAM_RADIUS = 36;
+
 /** Pack-member kill thresholds for explore boss encounters 1 / 2 / 3. */
 export const EXPLORE_BOSS_KILL_THRESHOLDS = Object.freeze([35, 80, 150] as const);
 

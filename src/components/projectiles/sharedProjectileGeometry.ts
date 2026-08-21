@@ -54,6 +54,12 @@ export const ENTROPIC_SHAFT_CYL_GEO = new CylinderGeometry(0.058, 0.038, 0.44, 6
 export const ENTROPIC_SHARD_TETRA_GEO = new TetrahedronGeometry(0.032, 0);
 export const ENTROPIC_GLOW_SPHERE_GEO = new SphereGeometry(0.046, 8, 8);
 
+export const SIEGE_BEAM_CORE_GEO = new CylinderGeometry(0.03, 0.03, 1, 8);
+export const SIEGE_BEAM_INNER_GEO = new CylinderGeometry(0.07, 0.07, 1, 8);
+export const SIEGE_BEAM_OUTER_GEO = new CylinderGeometry(0.09, 0.09, 1, 8);
+export const SIEGE_BEAM_RING_GEO = new TorusGeometry(0.35, 0.07, 6, 12);
+export const SIEGE_BEAM_RING_INNER_GEO = new TorusGeometry(0.28, 0.05, 6, 12);
+
 for (const geo of [
   ARROW_TIP_GEO,
   ARROW_SHAFT_GEO,
@@ -89,6 +95,11 @@ for (const geo of [
   ENTROPIC_SHAFT_CYL_GEO,
   ENTROPIC_SHARD_TETRA_GEO,
   ENTROPIC_GLOW_SPHERE_GEO,
+  SIEGE_BEAM_CORE_GEO,
+  SIEGE_BEAM_INNER_GEO,
+  SIEGE_BEAM_OUTER_GEO,
+  SIEGE_BEAM_RING_GEO,
+  SIEGE_BEAM_RING_INNER_GEO,
 ]) {
   geo.userData.shared = true;
 }

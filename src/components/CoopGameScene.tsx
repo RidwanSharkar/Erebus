@@ -481,6 +481,7 @@ import { DamageNumberData } from '@/components/DamageNumbers';
 import { setGlobalCriticalRuneCount, setGlobalCritDamageRuneCount, setControlSystem } from '@/core/DamageCalculator';
 import Environment from '@/components/environment/Environment';
 import DriftingMist from '@/components/environment/DriftingMist';
+import ExploreZoomLodDriver from '@/components/environment/ExploreZoomLodDriver';
 import { CoopMainArenaPortals } from '@/components/environment/CoopMainArenaPortals';
 import ThroneRoom, {
   COOP_DEV_LOCALHOST_FEATURES,
@@ -559,6 +560,7 @@ import {
   DUNGEON_PLAYABLE_AABB,
   DUNGEON_SPAWN,
   DUNGEON_SPAWN_FACING_Y,
+  getDungeonMeshCollider,
   resolveDungeonPlayerCenterY,
   subscribeDungeonMeshCollider,
 } from '@/utils/dungeonLayout';
@@ -611,6 +613,7 @@ import { calculationCache } from '@/utils/CalculationCache';
 import { ENEMY_HP_BAR_BG_GEO } from '@/utils/sharedEnemyUiGeometry';
 import { isDevPerformanceHudEnabled } from '@/utils/isDevPerformanceHudEnabled';
 import { devPerformanceStore, recordReactProfilerCommit } from '@/utils/devPerformanceStore';
+import { getExploreZoomLod } from '@/utils/exploreZoomLod';
 import { logGpuResourceAudit } from '@/utils/gpuResourceAudit';
 import {
   installWebGlDiagnostics,
@@ -843,6 +846,7 @@ function DevPerformanceCollector() {
     }).memory;
     const calcStats = calculationCache.getStats();
 
+    const zoomLod = getExploreZoomLod();
     devPerformanceStore.publish({
       drawCalls: info.render.calls,
       triangles: info.render.triangles,
@@ -852,6 +856,9 @@ function DevPerformanceCollector() {
       textures: info.memory.textures,
       programs: info.programs?.length ?? 0,
       dpr: gl.getPixelRatio(),
+      exploreZoomRadius: zoomLod.radius,
+      exploreZoomClose: zoomLod.close,
+      exploreZoomVeryClose: zoomLod.veryClose,
       heapUsedMB: mem ? Math.round(mem.usedJSHeapSize / 1048576) : null,
       heapTotalMB: mem ? Math.round(mem.totalJSHeapSize / 1048576) : null,
       heapLimitMB: mem ? Math.round(mem.jsHeapSizeLimit / 1048576) : null,
@@ -2821,7 +2828,7 @@ export function CoopGameScene({
   const skyrayPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const terrorhawkPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const wyvernPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  /** Throttle fan-volley firebolt impact SFX so 5 bolts don't stack 5 sounds. */
+  /** Throttle sequential burst firebolt impact SFX so stacked hits don't overlap. */
   const breathImpactSfxAtRef = useRef(new Map<string, number>());
   const bossPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const nemesisPendingMissTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -2887,7 +2894,12 @@ export function CoopGameScene({
   /** Y position captured when portal-fall transitions from rise to fall. */
   const portalFallStartYRef = useRef(VOID_PORTAL_FALL_SPAWN_Y);
   const applyDungeonGroundSnapRef = useRef<
-    (x: number, z: number, rotation?: { x: number; y: number; z: number } | null) => boolean
+    (
+      x: number,
+      z: number,
+      rotation?: { x: number; y: number; z: number } | null,
+      fallbackCenterY?: number,
+    ) => boolean
   >(() => false);
 
   useEffect(() => {
@@ -3061,12 +3073,21 @@ export function CoopGameScene({
   isExploreRef.current = isExplore;
   const isDungeonRef = useRef(false);
   isDungeonRef.current = isMeshWalkRoom;
+  const isSkyTempleRef = useRef(false);
+  isSkyTempleRef.current = isSkyTemple;
   const isCoopEnemyVisibleForRender = useCallback(
-    (enemyX: number, enemyZ: number) => {
+    (enemyX: number, enemyZ: number, enemyType?: string) => {
       if (playerEntityRef.current === null) return true;
       const playerPos = realTimePlayerPositionRef.current;
       if (!playerPos) return true;
       if (isExploreRef.current) {
+        if (isPlayerExploreBuildingType(enemyType)) {
+          return exploreFog.isBuildingInRenderRange(enemyX, enemyZ, playerPos.x, playerPos.z);
+        }
+        // Fog discovery (or in view) AND within stream radius — do not keep horizon silhouettes.
+        if (!exploreFog.isExploreEntityInRenderRange(enemyX, enemyZ, playerPos.x, playerPos.z)) {
+          return false;
+        }
         return exploreFog.isEnemyVisible(enemyX, enemyZ, playerPos.x, playerPos.z);
       }
       // Dungeon corridor is longer than the default 45u arena cull; pack sits ~80u from spawn.
@@ -3577,48 +3598,58 @@ export function CoopGameScene({
   onExploreCampInteractRef.current = onExploreCampInteract;
 
   useEffect(() => {
-    if (isDefense) {
-      const discs = getDefenseTowerObstacles();
-      engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(discs);
-      controlSystemRef.current?.setStreamedObstacles(discs);
-      return () => {
-        engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(null);
-        controlSystemRef.current?.setStreamedObstacles(null);
-      };
-    }
-    if (isMeshWalkRoom) {
-      const phys = engineRef.current?.getWorld().getSystem(PhysicsSystem);
-      phys?.setPlayableAabb(isDungeon ? DUNGEON_PLAYABLE_AABB : SKY_TEMPLE_PLAYABLE_AABB);
-      const unsub = subscribeDungeonMeshCollider((collider) => {
-        engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setMeshCollider(collider);
-        if (!collider || playerEntityRef.current === null || !socket?.id) return;
-        const ent = engineRef.current?.getWorld().getEntity(playerEntityRef.current);
-        const tr = ent?.getComponent(Transform);
-        if (!tr) return;
-        const movement = ent?.getComponent(Movement);
-        const groundY = resolveDungeonPlayerCenterY(
-          tr.position.x,
-          tr.position.z,
-          0.5,
-          isSkyTemple ? SKY_TEMPLE_SPAWN.y : undefined,
-        );
-        const needsSnap =
-          tr.position.y > groundY + 0.35
-          || movement?.isPortalFalling
-          || voidPortalFallActiveRef.current
-          || (movement != null && !movement.isGrounded && tr.position.y > groundY + 0.15);
-        if (needsSnap) {
-          const me = contextPlayersRef.current.get(socket.id);
-          applyDungeonGroundSnapRef.current(tr.position.x, tr.position.z, me?.rotation);
-        }
-      });
-      return () => {
-        unsub();
-        const p = engineRef.current?.getWorld().getSystem(PhysicsSystem);
-        p?.setMeshCollider(null);
-        p?.setPlayableAabb(null);
-      };
-    }
+    if (!isDefense || !engineReady) return;
+    const discs = getDefenseTowerObstacles();
+    engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(discs);
+    controlSystemRef.current?.setStreamedObstacles(discs);
+    return () => {
+      engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(null);
+      controlSystemRef.current?.setStreamedObstacles(null);
+    };
+  }, [isDefense, engineReady]);
+
+  useEffect(() => {
+    if (!isMeshWalkRoom || !engineReady) return;
+    const phys = engineRef.current?.getWorld().getSystem(PhysicsSystem);
+    phys?.setPlayableAabb(isDungeon ? DUNGEON_PLAYABLE_AABB : SKY_TEMPLE_PLAYABLE_AABB);
+    const unsub = subscribeDungeonMeshCollider((collider) => {
+      engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setMeshCollider(collider);
+      if (!collider || playerEntityRef.current === null || !socket?.id) return;
+      const ent = engineRef.current?.getWorld().getEntity(playerEntityRef.current);
+      const tr = ent?.getComponent(Transform);
+      if (!tr) return;
+      const movement = ent?.getComponent(Movement);
+      const me = contextPlayersRef.current.get(socket.id);
+      const hintY = Number.isFinite(me?.position?.y)
+        ? me!.position!.y
+        : (isSkyTemple ? SKY_TEMPLE_SPAWN.y : DUNGEON_SPAWN.y);
+      const groundY = resolveDungeonPlayerCenterY(
+        tr.position.x,
+        tr.position.z,
+        0.5,
+        hintY,
+      );
+      const yDelta = Math.abs(tr.position.y - groundY);
+      const ascendingJump = (movement?.velocity.y ?? 0) > 0;
+      const needsSnap =
+        movement?.isPortalFalling
+        || voidPortalFallActiveRef.current
+        || (!ascendingJump && yDelta > 0.35)
+        || (!ascendingJump && movement != null && !movement.isGrounded && yDelta > 0.15);
+      if (needsSnap) {
+        applyDungeonGroundSnapRef.current(tr.position.x, tr.position.z, me?.rotation, hintY);
+      }
+    });
+    return () => {
+      unsub();
+      const p = engineRef.current?.getWorld().getSystem(PhysicsSystem);
+      p?.setMeshCollider(null);
+      p?.setPlayableAabb(null);
+    };
+  }, [isMeshWalkRoom, isDungeon, isSkyTemple, engineReady, playerEntity, socket?.id]);
+
+  useEffect(() => {
+    if (isDefense || isMeshWalkRoom) return;
     if (!isExplore) {
       setExploreObstacleListener(null);
       engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(null);
@@ -3673,7 +3704,7 @@ export function CoopGameScene({
       engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(null);
       controlSystemRef.current?.setStreamedObstacles(null);
     };
-  }, [isExplore, isDefense, isDungeon, isSkyTemple, isMeshWalkRoom, engineReady, exploreCamps, enemies]);
+  }, [isExplore, isDefense, isMeshWalkRoom, engineReady, exploreCamps, enemies]);
 
   useEffect(() => {
     if (isExplore) return;
@@ -3752,13 +3783,17 @@ export function CoopGameScene({
     x: number,
     z: number,
     rotation?: { x: number; y: number; z: number } | null,
+    fallbackCenterY?: number,
   ) => {
     if (!engineRef.current || playerEntityRef.current === null || !socket?.id) return false;
+    const hintY = Number.isFinite(fallbackCenterY)
+      ? fallbackCenterY
+      : (isSkyTemple ? SKY_TEMPLE_SPAWN.y : DUNGEON_SPAWN.y);
     const y = resolveDungeonPlayerCenterY(
       x,
       z,
       0.5,
-      isSkyTemple ? SKY_TEMPLE_SPAWN.y : undefined,
+      hintY,
     );
     const ent = engineRef.current.getWorld().getEntity(playerEntityRef.current);
     const tr = ent?.getComponent(Transform);
@@ -3831,6 +3866,68 @@ export function CoopGameScene({
     exploreLateJoinSpawnAppliedRef.current = true;
   }, [isExplore, gameStarted, engineReady, socket?.id, players, playerEntity, applyExploreLateJoinGroundSnap, contextPlayersRef]);
 
+  /** Late join into dungeon / sky temple: snap to server position on walkable mesh (no portal overlay). */
+  const meshLateJoinSpawnAppliedRef = useRef(false);
+  if (isMeshWalkRoom && !meshLateJoinSpawnAppliedRef.current && socket?.id) {
+    const seedPos = players.get(socket.id)?.position ?? contextPlayersRef.current.get(socket.id)?.position;
+    const sx = seedPos?.x;
+    const sz = seedPos?.z;
+    const sy = seedPos?.y;
+    if (typeof sx === 'number' && typeof sz === 'number' && Number.isFinite(sx) && Number.isFinite(sz)) {
+      const hintY = Number.isFinite(sy)
+        ? sy
+        : (isSkyTemple ? SKY_TEMPLE_SPAWN.y : DUNGEON_SPAWN.y);
+      const seedY = resolveDungeonPlayerCenterY(sx, sz, 0.5, hintY);
+      realTimePlayerPositionRef.current.set(sx, seedY, sz);
+    }
+  }
+  useLayoutEffect(() => {
+    if (!isMeshWalkRoom) {
+      meshLateJoinSpawnAppliedRef.current = false;
+      return;
+    }
+    const me = socket?.id
+      ? (players.get(socket.id) ?? contextPlayersRef.current.get(socket.id))
+      : undefined;
+    const x = me?.position?.x;
+    const z = me?.position?.z;
+    const serverY = me?.position?.y;
+    if (!meshLateJoinSpawnAppliedRef.current
+      && typeof x === 'number'
+      && typeof z === 'number'
+      && Number.isFinite(x)
+      && Number.isFinite(z)) {
+      const hintY = Number.isFinite(serverY)
+        ? serverY
+        : (isSkyTemple ? SKY_TEMPLE_SPAWN.y : DUNGEON_SPAWN.y);
+      const seedY = resolveDungeonPlayerCenterY(x, z, 0.5, hintY);
+      realTimePlayerPositionRef.current.set(x, seedY, z);
+    }
+    if (meshLateJoinSpawnAppliedRef.current) return;
+    if (coopTransitionOverlayRef.current) {
+      meshLateJoinSpawnAppliedRef.current = true;
+      return;
+    }
+    if (!engineRef.current || !engineReady || !gameStarted || !socket?.id) return;
+    if (playerEntityRef.current === null) return;
+    if (typeof x !== 'number' || typeof z !== 'number' || !Number.isFinite(x) || !Number.isFinite(z)) return;
+    const hintY = Number.isFinite(serverY)
+      ? serverY
+      : (isSkyTemple ? SKY_TEMPLE_SPAWN.y : DUNGEON_SPAWN.y);
+    if (!applyDungeonGroundSnap(x, z, me?.rotation, hintY)) return;
+    meshLateJoinSpawnAppliedRef.current = true;
+  }, [
+    isMeshWalkRoom,
+    isSkyTemple,
+    gameStarted,
+    engineReady,
+    socket?.id,
+    players,
+    playerEntity,
+    applyDungeonGroundSnap,
+    contextPlayersRef,
+  ]);
+
   useEffect(() => {
     if (prevInThroneRef.current && !inThroneRoom) {
       if (process.env.NODE_ENV === 'development') {
@@ -3901,7 +3998,9 @@ export function CoopGameScene({
                 me.position.x,
                 me.position.z,
                 0.5,
-                isSkyTemple ? SKY_TEMPLE_SPAWN.y : undefined,
+                Number.isFinite(me.position.y)
+                  ? me.position.y
+                  : (isSkyTemple ? SKY_TEMPLE_SPAWN.y : DUNGEON_SPAWN.y),
               ),
               z: me.position.z,
             }
@@ -3932,6 +4031,9 @@ export function CoopGameScene({
       const c = coopArenaClampBounds == null
         ? { x: livePos.x, z: livePos.z }
         : clampToMainArenaXZ(livePos.x, livePos.z, coopArenaClampBounds);
+      const meshHintY = Number.isFinite(me?.position?.y)
+        ? me!.position!.y
+        : (isSkyTemple ? SKY_TEMPLE_SPAWN.y : DUNGEON_SPAWN.y);
       const spawnY = exploreLateJoinGround || tabHidden
         ? PORTAL_FALL_GROUND_Y
         : dungeonGroundSnap
@@ -3939,7 +4041,7 @@ export function CoopGameScene({
             c.x,
             c.z,
             0.5,
-            isSkyTemple ? SKY_TEMPLE_SPAWN.y : undefined,
+            meshHintY,
           )
           : VOID_PORTAL_FALL_SPAWN_Y;
       const snappedPos = {
@@ -11746,6 +11848,10 @@ export function CoopGameScene({
       if (data?.dropId) pendingGoldAutoPickupRef.current.delete(data.dropId);
     };
 
+    const handleMeatExpired = (data: { dropId?: string }) => {
+      if (data?.dropId) pendingMeatAutoPickupRef.current.delete(data.dropId);
+    };
+
     const handleItemPickedUpForVfx = (data: {
       itemId: string;
       playerId: string;
@@ -13100,7 +13206,9 @@ export function CoopGameScene({
       }, arrivalDelay);
     };
 
-    onCosmetic('player-attacked', handlePlayerAttack);
+    // Gameplay-critical: do not gate behind shouldDropRemoteVfx (window blur / tab grace).
+    // Unfocused-but-visible co-op windows must still recreate peer projectiles.
+    socket.on('player-attacked', handlePlayerAttack);
     onCosmetic('player-used-ability', handlePlayerAbility);
     socket.on('player-damaged', handlePlayerDamaged);
     socket.on('player-healing', handlePlayerHealing);
@@ -13121,6 +13229,7 @@ export function CoopGameScene({
     socket.on('wood-picked-up', handleWoodPickedUp);
     socket.on('stone-picked-up', handleStonePickedUp);
     socket.on('meat-picked-up', handleMeatPickedUp);
+    socket.on('meat-expired', handleMeatExpired);
     socket.on('item-picked-up', handleItemPickedUpForVfx);
     socket.on('item-expired', handleItemExpired);
     socket.on('player-animation-state', handlePlayerAnimationState);
@@ -13485,7 +13594,7 @@ export function CoopGameScene({
 
     socket.on('wyvern-breath-firebolt', handleWyvernBreathFirebolt);
 
-    const BREATH_IMPACT_SFX_THROTTLE_MS = 150;
+    const BREATH_IMPACT_SFX_THROTTLE_MS = 100;
     const playThrottledBreathImpactSfx = (
       enemyId: string,
       position: { x: number; y?: number; z: number },
@@ -14323,6 +14432,7 @@ export function CoopGameScene({
       greaterHealImpactTimers.current.forEach(clearTimeout);
       greaterHealImpactTimers.current = [];
       for (const off of cosmeticOffs) off();
+      socket.off('player-attacked', handlePlayerAttack);
       socket.off('player-damaged', handlePlayerDamaged);
       socket.off('player-healing', handlePlayerHealing);
       socket.off('enemy-healed', handleEnemyHealed);
@@ -14342,6 +14452,7 @@ export function CoopGameScene({
       socket.off('wood-picked-up', handleWoodPickedUp);
       socket.off('stone-picked-up', handleStonePickedUp);
       socket.off('meat-picked-up', handleMeatPickedUp);
+      socket.off('meat-expired', handleMeatExpired);
       socket.off('item-picked-up', handleItemPickedUpForVfx);
       socket.off('item-expired', handleItemExpired);
       socket.off('player-animation-state', handlePlayerAnimationState);
@@ -18365,12 +18476,22 @@ export function CoopGameScene({
     damagePlayerCallbackRef.current = damagePlayerWithMapping;
 
     const exploreNow = isExploreRef.current;
+    const meshWalkNow = isDungeonRef.current;
     const localPlayerForSpawn =
       players.get(socket?.id || '') ?? contextPlayersRef.current.get(socket?.id || '');
     const spawnX = localPlayerForSpawn?.position.x ?? 0;
     const spawnZ = localPlayerForSpawn?.position.z ?? (exploreNow ? 0 : COOP_MAIN_DEFAULT_SPAWN_Z);
-    const spawnY = exploreNow ? PORTAL_FALL_GROUND_Y : 0.5;
+    const spawnY = exploreNow
+      ? PORTAL_FALL_GROUND_Y
+      : meshWalkNow
+        ? (Number.isFinite(localPlayerForSpawn?.position.y)
+          ? localPlayerForSpawn!.position.y
+          : (isSkyTempleRef.current ? SKY_TEMPLE_SPAWN.y : DUNGEON_SPAWN.y))
+        : 0.5;
     const initialThroneMap = gameMode === 'coop' && !combatArenaActive;
+    const initialMeshWalk = meshWalkNow
+      ? (isSkyTempleRef.current ? 'sky_temple' as const : 'dungeon' as const)
+      : undefined;
     realTimePlayerPositionRef.current.set(spawnX, spawnY, spawnZ);
 
     const { player, controlSystem } = setupCoopGame(
@@ -18383,7 +18504,11 @@ export function CoopGameScene({
       initialWeaponsForEngineRef.current,
       skillPointData,
       cameraSystemRef,
-      { initialSpawn: { x: spawnX, y: spawnY, z: spawnZ }, initialThroneMap },
+      {
+        initialSpawn: { x: spawnX, y: spawnY, z: spawnZ },
+        initialThroneMap,
+        initialMeshWalk,
+      },
     );
 
     realTimePlayerPositionRef.current.set(spawnX, spawnY, spawnZ);
@@ -19189,6 +19314,7 @@ export function CoopGameScene({
   return (
     <>
       <RenderPerfHelpers />
+      <ExploreZoomLodDriver enabled={isExplore} cameraSystemRef={cameraSystemRef} />
       <DevPerformanceCollector />
       <WebGLResilienceMonitor />
       <CoopSceneContentProfiler>
@@ -19333,11 +19459,11 @@ export function CoopGameScene({
             />
           )}
 
-      {/* Lighting — throne room brings its own fill; keep this subtle there */}
-      <ambientLight intensity={dimThroneLikeLighting ? 0.04 : 0.1} />
+      {/* Lighting — throne room brings its own fill; explore uses ExploreRoom day/night */}
+      <ambientLight intensity={isExplore ? 0 : dimThroneLikeLighting ? 0.04 : 0.1} />
       <directionalLight
         position={[10, 10, 5]}
-        intensity={dimThroneLikeLighting ? 0.12 : 0.14}
+        intensity={isExplore ? 0 : dimThroneLikeLighting ? 0.12 : 0.14}
         castShadow={ENABLE_REALTIME_SHADOWS}
         {...(ENABLE_REALTIME_SHADOWS
           ? {
@@ -19946,6 +20072,8 @@ export function CoopGameScene({
       <CoopEnemyRenderLayer
         enemiesByType={enemiesByType}
         isCoopEnemyVisibleForRender={isCoopEnemyVisibleForRender}
+        playerPositionRef={realTimePlayerPositionRef}
+        cullOnMove={isExplore}
       />
 
       <CoopProjectileLayer
@@ -20340,7 +20468,11 @@ function setupCoopGame(
   } | null,
   skillPointData?: any,
   cameraSystemRef?: React.MutableRefObject<CameraSystem | null>,
-  coopSpawnOptions?: { initialSpawn?: { x: number; y: number; z: number }; initialThroneMap?: boolean },
+  coopSpawnOptions?: {
+    initialSpawn?: { x: number; y: number; z: number };
+    initialThroneMap?: boolean;
+    initialMeshWalk?: 'dungeon' | 'sky_temple';
+  },
 ): { player: any; controlSystem: ControlSystem } {
   const world = engine.getWorld();
   const inputManager = engine.getInputManager();
@@ -20456,6 +20588,16 @@ function setupCoopGame(
 
   // Add systems to world (order matters for dependencies)
   world.addSystem(physicsSystem);
+  // Late join / refresh into dungeon or sky temple: the GLB collider may already be registered
+  // before PhysicsSystem exists (subscribe effect runs first). Seed it here like throne pillars.
+  if (coopSpawnOptions?.initialMeshWalk) {
+    physicsSystem.setMeshCollider(getDungeonMeshCollider());
+    physicsSystem.setPlayableAabb(
+      coopSpawnOptions.initialMeshWalk === 'sky_temple'
+        ? SKY_TEMPLE_PLAYABLE_AABB
+        : DUNGEON_PLAYABLE_AABB,
+    );
+  }
   world.addSystem(collisionSystem);
   world.addSystem(combatSystem);
   world.addSystem(interpolationSystem); // Add interpolation system before render system

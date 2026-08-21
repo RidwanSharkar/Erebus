@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useRef, useMemo } from 'react';
+import React, { useRef, useMemo, useState } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import { Mesh, ShaderMaterial, Vector3, Quaternion, DoubleSide, PlaneGeometry } from '@/utils/three-exports';
+import { isExploreZoomClose } from '@/utils/exploreZoomLod';
 
 // Shared simplex-noise + fbm GLSL
 const mistVertexShader = `
@@ -306,15 +307,25 @@ const DriftingMist: React.FC<{ enabled?: boolean; combatActive?: boolean }> = ({
   enabled = true,
   combatActive = false,
 }) => {
+  const zoomCloseRef = useRef(false);
+  const [zoomClose, setZoomClose] = useState(false);
+  useFrame(() => {
+    const close = isExploreZoomClose();
+    if (close === zoomCloseRef.current) return;
+    zoomCloseRef.current = close;
+    setZoomClose(close);
+  });
+
   if (!enabled) return null;
 
+  const thin = combatActive || zoomClose;
   let materialOffset = 0;
   return (
     <group name="drifting-mist">
       {MIST_CLUSTERS.map((params, i) => {
         const offset = materialOffset;
         materialOffset += params.puffs.length;
-        if (combatActive && !(COMBAT_CLUSTER_INDICES as readonly number[]).includes(i)) {
+        if (thin && !(COMBAT_CLUSTER_INDICES as readonly number[]).includes(i)) {
           return null;
         }
         return (
@@ -322,7 +333,7 @@ const DriftingMist: React.FC<{ enabled?: boolean; combatActive?: boolean }> = ({
             key={i}
             params={params}
             materialOffset={offset}
-            maxPuffs={combatActive ? COMBAT_MAX_PUFFS_PER_CLUSTER : undefined}
+            maxPuffs={thin ? COMBAT_MAX_PUFFS_PER_CLUSTER : undefined}
           />
         );
       })}

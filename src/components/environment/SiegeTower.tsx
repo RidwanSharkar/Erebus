@@ -2,8 +2,7 @@
 
 import React, { Suspense, useMemo } from 'react';
 import { useGLTF } from '@react-three/drei';
-import type { Group } from 'three';
-import { prepareDecorScene } from './FloatingTrinketMesh';
+import { cloneBuildingScene } from '@/utils/sharedEnemyMaterials';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
 const SIEGE_TOWER_PATH = '/models/environ/siegeTower.glb';
@@ -26,7 +25,7 @@ export function preloadSiegeTower(): void {
 function SiegeTowerMesh({ scale = SIEGE_TOWER_MODEL_SCALE }: { scale?: number }) {
   const { scene } = useGLTF(SIEGE_TOWER_PATH);
   const clonedScene = useMemo(
-    () => prepareDecorScene(scene, true) as Group,
+    () => cloneBuildingScene(scene, SIEGE_TOWER_PATH),
     [scene],
   );
   useDisposeClonedMaterials(clonedScene);

@@ -22,13 +22,67 @@ export const SKY_TEMPLE_PLAYABLE_MAX_Z = 22.5;
 /** South rim. Y sits above the raised plaza lip so the mesh snap / drop lands on top. */
 export const SKY_TEMPLE_SPAWN = Object.freeze({ x: 0, y: 4, z: -28 });
 
-/** Fixed encounter on plaza flanks. Keep in sync with `backend/gameRoom.js`. */
-export const SKY_TEMPLE_PACK = Object.freeze([
+export type SkyTempleSpawnSpec = {
+  type: string;
+  x: number;
+  y: number;
+  z: number;
+  campColor: string;
+  forceCannon?: boolean;
+};
+
+/** Kill-gated plaza waves. Keep in sync with `backend/gameRoom.js`. */
+export const SKY_TEMPLE_WAVE_1 = Object.freeze([
   Object.freeze({ type: 'spectre', x: -26, y: 0, z: 2, campColor: 'purple' }),
   Object.freeze({ type: 'death-knight', x: -22, y: 0, z: -6, campColor: 'red' }),
-  Object.freeze({ type: 'assassin', x: 24, y: 0, z: 0, campColor: 'green' }),
+  Object.freeze({ type: 'viper', x: 24, y: 0, z: 2, campColor: 'green' }),
+  Object.freeze({ type: 'viper', x: 24, y: 0, z: -4, campColor: 'blue' }),
   Object.freeze({ type: 'knight', x: 21, y: 0, z: 5, campColor: 'red' }),
   Object.freeze({ type: 'knight', x: 27, y: 0, z: -5, campColor: 'blue' }),
+]);
+
+export const SKY_TEMPLE_WAVE_2 = Object.freeze([
+  Object.freeze({ type: 'stone-giant', x: -6, y: 0, z: 0, campColor: 'red' }),
+  Object.freeze({ type: 'stone-giant', x: 6, y: 0, z: 0, campColor: 'blue' }),
+]);
+
+export const SKY_TEMPLE_WAVE_3 = Object.freeze([
+  Object.freeze({ type: 'weaver', x: -26, y: 0, z: 2, campColor: 'green' }),
+  Object.freeze({ type: 'weaver', x: -22, y: 0, z: -6, campColor: 'blue' }),
+  Object.freeze({ type: 'weaver', x: -28, y: 0, z: -4, campColor: 'green' }),
+  Object.freeze({ type: 'assassin', x: -24, y: 0, z: 0, campColor: 'green' }),
+  Object.freeze({ type: 'valkyrie', x: 21, y: 0, z: 4, campColor: 'green' }),
+  Object.freeze({ type: 'valkyrie', x: 27, y: 0, z: -4, campColor: 'blue' }),
+]);
+
+export const SKY_TEMPLE_WAVE_4 = Object.freeze([
+  Object.freeze({ type: 'eternal-oak', x: 0, y: 0, z: 0, campColor: 'green' }),
+  Object.freeze({ type: 'tiger', x: -7, y: 0, z: 3, campColor: 'red' }),
+  Object.freeze({ type: 'tiger', x: 7, y: 0, z: -3, campColor: 'blue' }),
+]);
+
+export const SKY_TEMPLE_WAVE_5 = Object.freeze([
+  Object.freeze({ type: 'death-knight', x: -26, y: 0, z: 2, campColor: 'red' }),
+  Object.freeze({ type: 'death-knight', x: -22, y: 0, z: -6, campColor: 'purple' }),
+  Object.freeze({ type: 'wraith', x: -28, y: 0, z: -2, campColor: 'purple' }),
+  Object.freeze({ type: 'wraith', x: -20, y: 0, z: 4, campColor: 'red' }),
+  Object.freeze({ type: 'titan', x: 21, y: 0, z: 4, campColor: 'red', forceCannon: true }),
+  Object.freeze({ type: 'titan', x: 27, y: 0, z: -4, campColor: 'blue', forceCannon: true }),
+]);
+
+export const SKY_TEMPLE_WAVE_6 = Object.freeze([
+  Object.freeze({ type: 'colossus', x: 0, y: 0, z: 0, campColor: 'red' }),
+  Object.freeze({ type: 'spectre', x: -8, y: 0, z: 2, campColor: 'purple' }),
+  Object.freeze({ type: 'spectre', x: 8, y: 0, z: -2, campColor: 'blue' }),
+]);
+
+export const SKY_TEMPLE_WAVES = Object.freeze([
+  SKY_TEMPLE_WAVE_1,
+  SKY_TEMPLE_WAVE_2,
+  SKY_TEMPLE_WAVE_3,
+  SKY_TEMPLE_WAVE_4,
+  SKY_TEMPLE_WAVE_5,
+  SKY_TEMPLE_WAVE_6,
 ]);
 
 export type SkyTemplePlayableAabb = {

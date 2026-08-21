@@ -1,6 +1,6 @@
 'use client';
 
-import React, { Suspense, useMemo, useRef } from 'react';
+import React, { Suspense, useMemo, useRef, useState } from 'react';
 import { useGLTF } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import type { BufferGeometry, Material, Mesh, Object3D } from 'three';
@@ -13,8 +13,11 @@ import {
   type ExploreCampKind,
   type ExploreCampPublic,
 } from '@/utils/exploreCamps';
+import { exploreFog } from '@/utils/exploreFogOfWar';
 import { useMultiplayerActions, useMultiplayerRoom } from '@/contexts/MultiplayerContext';
 
+/** Re-evaluate stream radius after this much player XZ travel (matches building cull step). */
+const CAMP_PROP_CULL_STEP2 = 8 * 8;
 const CAMP_AURA_COLOR: Record<ExploreCampKind, string> = {
   gold: '#eab308',
   stat: '#f97316',
@@ -187,14 +190,28 @@ export default function ExploreCampProps() {
   const { exploreCamps } = useMultiplayerRoom();
   const { socket } = useMultiplayerActions();
   const localId = socket?.id ?? null;
+  const lastCullX = useRef(Number.POSITIVE_INFINITY);
+  const lastCullZ = useRef(Number.POSITIVE_INFINITY);
+  const [cullTick, setCullTick] = useState(0);
+
+  useFrame(() => {
+    const viewer = exploreFog.getViewer();
+    const dx = viewer.x - lastCullX.current;
+    const dz = viewer.z - lastCullZ.current;
+    if (dx * dx + dz * dz < CAMP_PROP_CULL_STEP2) return;
+    lastCullX.current = viewer.x;
+    lastCullZ.current = viewer.z;
+    setCullTick((n) => n + 1);
+  });
 
   const visible = useMemo(() => {
     if (!exploreCamps?.length) return [];
+    const viewer = exploreFog.getViewer();
     return exploreCamps.filter((c) => {
-      if (!localId) return true;
-      return !c.claimedBy.includes(localId);
+      if (localId && c.claimedBy.includes(localId)) return false;
+      return exploreFog.isExploreEntityInRenderRange(c.x, c.z, viewer.x, viewer.z);
     });
-  }, [exploreCamps, localId]);
+  }, [exploreCamps, localId, cullTick]);
 
   if (visible.length === 0) return null;
 

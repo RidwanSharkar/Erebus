@@ -1911,7 +1911,7 @@ function HomeContent() {
     [clearCoopClearedRoomColor, coopMainArenaPortalPhase, combatArenaActive, setTalentLoadout, setAbilityLoadout, abilityLoadout, enqueueAnnouncement, announceThroneEnterPortal, coopBoon, claimExploreCamp, recordRoomBoonMutexExclusions],
   );
 
-  /** Dungeon / Sky Temple start: extra class talent + one random LMB/Q/E/Dash room boon instead of an ancestor. */
+  /** Dungeon: 1 class talent. Sky Temple: 2 class talents. Both also get one random LMB/Q/E/Dash room boon. */
   useEffect(() => {
     const isStartTalentRoom =
       coopCurrentRoomKind === 'dungeon' || coopCurrentRoomKind === 'sky_temple';
@@ -1924,22 +1924,29 @@ function HomeContent() {
     if (weapon === WeaponType.NONE) return;
 
     dungeonStartTalentsGrantedRef.current = true;
+    const classGrantCount = coopCurrentRoomKind === 'sky_temple' ? 2 : 1;
     setTalentLoadout((prev) => {
-      const classId = pickRandomClassBoonForWeapon(weapon, prev);
-      let next = classId ? applyTalentIdToLoadout(prev, classId) : prev;
+      const classIds: TalentId[] = [];
+      let next = prev;
+      for (let i = 0; i < classGrantCount; i++) {
+        const classId = pickRandomClassBoonForWeapon(weapon, next);
+        if (!classId) break;
+        next = applyTalentIdToLoadout(next, classId);
+        classIds.push(classId);
+      }
       const roomId = pickRandomMutexRoomBoonForWeapon(weapon, abilityLoadoutRef.current, next);
       if (roomId) {
         next = applyTalentIdToLoadout(next, roomId);
       }
       queueMicrotask(() => {
         if (roomId) recordRoomBoonMutexExclusions(roomId);
-        if (classId) {
+        for (const classId of classIds) {
           enqueueAnnouncement('UNLOCKED', REWARD_ANNOUNCEMENT_COLORS.unlocked, `boon-${classId}`);
         }
         if (roomId) {
           enqueueAnnouncement('UNLOCKED', REWARD_ANNOUNCEMENT_COLORS.unlocked, `boon-${roomId}`);
         }
-        if (classId || roomId) {
+        if (classIds.length > 0 || roomId) {
           window.audioSystem?.playUIInterface3Sound?.();
           window.dispatchEvent(new CustomEvent('coop-talent-loadout-picked', { detail: next }));
         }

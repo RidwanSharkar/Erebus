@@ -3,7 +3,7 @@
 import React, { useRef, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, Mesh, MeshBasicMaterial, Color, AdditiveBlending } from 'three';
-import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import { acquireDynamicLight, type DynamicLightHandle } from '@/utils/dynamicLights';
 import ViperArrowTrail from './ViperArrowTrail';
 
 interface ViperArrowProjectileProps {
@@ -16,6 +16,11 @@ interface ViperArrowProjectileProps {
   getPlayerPosition: () => Vector3 | null;
   onHitPlayer: () => void;
   onComplete: () => void;
+  /** Persistent tower shots stay mounted and replay; default true for viper enemies. */
+  active?: boolean;
+  enableLight?: boolean;
+  trailLength?: number;
+  shotSeq?: number;
 }
 
 const SPEED = 25; // units per second
@@ -34,14 +39,34 @@ export default function ViperArrowProjectile({
   getPlayerPosition,
   onHitPlayer,
   onComplete,
+  active = true,
+  enableLight = true,
+  trailLength,
+  shotSeq = 0,
 }: ViperArrowProjectileProps) {
   const groupRef = useRef<Group>(null);
   const arrowTipRef = useRef<Mesh>(null);
   const timeRef  = useRef(0);
   const doneRef  = useRef(false);
+  const arrowLight = useRef<DynamicLightHandle | null>(null);
 
-  // One pooled light follows the arrow (collapses the 2 mounted <pointLight>s → 1).
-  const arrowLight = useDynamicLight({ color: new Color('#aaff00'), distance: 6, decay: 2, priority: 1 });
+  useEffect(() => {
+    if (!active || !enableLight) {
+      arrowLight.current?.release();
+      arrowLight.current = null;
+      return;
+    }
+    arrowLight.current = acquireDynamicLight({
+      color: new Color('#aaff00'),
+      distance: 6,
+      decay: 2,
+      priority: 1,
+    });
+    return () => {
+      arrowLight.current?.release();
+      arrowLight.current = null;
+    };
+  }, [active, enableLight]);
 
   // `targetPosition` is the aim point; the arrow always travels `VIPER_ARROW_MAX_RANGE` along that ray.
   const { direction, totalDist, duration, yaw, pitch } = useMemo(() => {
@@ -104,10 +129,16 @@ export default function ViperArrowProjectile({
     if (!groupRef.current) return;
     groupRef.current.position.copy(startPosition);
     groupRef.current.rotation.set(pitch, yaw, 0, 'YXZ');
-  }, [startPosition, pitch, yaw]);
+    timeRef.current = 0;
+    doneRef.current = false;
+    if (groupRef.current) groupRef.current.visible = active;
+  }, [startPosition, pitch, yaw, shotSeq, active]);
 
   useFrame((_, delta) => {
-    if (doneRef.current || !groupRef.current) return;
+    if (!active || doneRef.current || !groupRef.current) {
+      if (!active) arrowLight.current?.setIntensity(0);
+      return;
+    }
 
     timeRef.current += delta;
     const t        = timeRef.current;
@@ -120,8 +151,10 @@ export default function ViperArrowProjectile({
 
     // Drive the pooled light at the arrow's world position.
     const ap = groupRef.current.position;
-    arrowLight.current?.setPosition(ap.x, ap.y, ap.z);
-    arrowLight.current?.setIntensity(14);
+    if (enableLight) {
+      arrowLight.current?.setPosition(ap.x, ap.y, ap.z);
+      arrowLight.current?.setIntensity(14);
+    }
 
     // Fade out in the last 25 % of travel.
     const fade = progress > 0.75 ? 1 - (progress - 0.75) / 0.25 : 1.0;
@@ -155,7 +188,7 @@ export default function ViperArrowProjectile({
 
   return (
     <>
-    <group ref={groupRef}>
+    <group ref={groupRef} visible={active}>
 
       {/* ── Arrowhead ─────────────────────────────────────────────────────── */}
       {/* White-hot tip cone — points forward along -Z (cone opens toward +Z) */}
@@ -229,7 +262,9 @@ export default function ViperArrowProjectile({
       color="#ccff00"
       size={0.2}
       arrowHeadRef={arrowTipRef}
-      opacity={1}
+      opacity={active ? 1 : 0}
+      maxLength={trailLength}
+      resetSeq={shotSeq}
     />
     </>
   );

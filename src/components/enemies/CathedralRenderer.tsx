@@ -1,17 +1,11 @@
 'use client';
 
 import React, { useCallback, useRef } from 'react';
-import { Billboard } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { Group, Mesh } from 'three';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
-import {
-  syncEnemyHealthBarFillFromRef,
-  syncEnemyHealthBarNumericTextFromRef,
-} from '@/utils/enemyHealthBar';
-import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
-import EnemyHpBarPlanes from './EnemyHpBarPlanes';
+import { ExploreBuildingHpBillboard, syncExploreBuildingHpIfVisible } from './ExploreBuildingHpBillboard';
 import Cathedral, { CATHEDRAL_HP_BAR_Y } from '@/components/environment/Cathedral';
 import type { Position3 } from '@/utils/position3';
 
@@ -36,13 +30,13 @@ function CathedralRenderer({
   maxHealth,
   isDying = false,
   powered = true,
-  cathedralUsed = false,
 }: CathedralRendererProps) {
   const theme = campHpTheme('ally-green');
   const { enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
   const hpTextRef = useRef<any>(null);
+  const hpBarVisibleRef = useRef(false);
   const opacity = useRef(1);
   const fadeTimer = useRef(0);
 
@@ -55,11 +49,9 @@ function CathedralRenderer({
   }, [position.x, position.y, position.z, rotation]);
 
   useFrame((_, delta) => {
-    if (groupRef.current) {
-      groupRef.current.position.set(position.x, position.y, position.z);
-    }
-    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth);
-    syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
+    syncExploreBuildingHpIfVisible(
+      hpBarVisibleRef, hpFillRef, hpTextRef, enemiesRef, id, health, maxHealth,
+    );
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
@@ -67,7 +59,7 @@ function CathedralRenderer({
     }
   });
 
-  const dimmed = (!powered || cathedralUsed) && !isDying;
+  const dimmed = !powered && !isDying;
 
   return (
     <group ref={setGroupRef} rotation={[0, rotation, 0]} visible={!isDying || opacity.current > 0.02}>
@@ -78,25 +70,19 @@ function CathedralRenderer({
           <meshBasicMaterial color="#0b1220" transparent opacity={0.38} depthWrite={false} />
         </mesh>
       )}
-      <Billboard position={[0, CATHEDRAL_HP_BAR_Y, 0]} follow lockX={false} lockY={false} lockZ={false}>
-        {health > 0 && !isDying && (
-          <>
-            <EnemyHpBarPlanes
-              fillRef={hpFillRef}
-              backgroundColor={theme.background}
-              fillColor={theme.fill}
-            />
-            <EnemyHealthBarTextLabel
-              leading="HP"
-              numericRef={hpTextRef}
-              health={health}
-              maxHealth={maxHealth}
-              fontSize={0.16}
-              color={theme.text}
-            />
-          </>
-        )}
-      </Billboard>
+      <ExploreBuildingHpBillboard
+        y={CATHEDRAL_HP_BAR_Y}
+        health={health}
+        maxHealth={maxHealth}
+        fillRef={hpFillRef}
+        numericRef={hpTextRef}
+        backgroundColor={theme.background}
+        fillColor={theme.fill}
+        textColor={theme.text}
+        fontSize={0.16}
+        hidden={isDying}
+        barVisibleRef={hpBarVisibleRef}
+      />
     </group>
   );
 }

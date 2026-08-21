@@ -2,11 +2,11 @@
 
 import React, { Suspense, useMemo } from 'react';
 import { useGLTF } from '@react-three/drei';
-import type { Group } from 'three';
-import { prepareDecorScene } from './FloatingTrinketMesh';
+import { cloneBuildingScene } from '@/utils/sharedEnemyMaterials';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
 const SPIRIT_LOUNGE_PATH = '/models/environ/spiritLounge2.glb';
+export { SPIRIT_LOUNGE_PATH };
 /** Native XZ ≈ 18.874. Scale to a 3.2-unit footprint (hull radius 1.6). */
 export const SPIRIT_LOUNGE_MODEL_SCALE = 0.170;
 /** Native min Y ≈ 0 — already sits on the ground. */
@@ -23,7 +23,7 @@ export function preloadSpiritLounge(): void {
 function SpiritLoungeMesh({ scale = SPIRIT_LOUNGE_MODEL_SCALE }: { scale?: number }) {
   const { scene } = useGLTF(SPIRIT_LOUNGE_PATH);
   const clonedScene = useMemo(
-    () => prepareDecorScene(scene, true) as Group,
+    () => cloneBuildingScene(scene, SPIRIT_LOUNGE_PATH),
     [scene],
   );
   useDisposeClonedMaterials(clonedScene);
@@ -35,7 +35,8 @@ function SpiritLoungeMesh({ scale = SPIRIT_LOUNGE_MODEL_SCALE }: { scale?: numbe
   );
 }
 
-function SpiritLounge({ scale }: { scale?: number }) {
+function SpiritLounge({ scale, hideMesh = false }: { scale?: number; hideMesh?: boolean }) {
+  if (hideMesh) return null;
   return (
     <Suspense fallback={null}>
       <SpiritLoungeMesh scale={scale} />

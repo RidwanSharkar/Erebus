@@ -3,7 +3,7 @@
 import React, { Suspense, useMemo } from 'react';
 import { useGLTF } from '@react-three/drei';
 import type { Group, Material, Mesh } from 'three';
-import { prepareDecorScene } from './FloatingTrinketMesh';
+import { cloneBuildingScene } from '@/utils/sharedEnemyMaterials';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
 const SHIELD_BATTERY_PATH = '/models/environ/shieldBattery.glb';
@@ -41,7 +41,7 @@ export function preloadShieldBattery(): void {
 function ShieldBatteryMesh({ scale = SHIELD_BATTERY_MODEL_SCALE }: { scale?: number }) {
   const { scene } = useGLTF(SHIELD_BATTERY_PATH);
   const clonedScene = useMemo(
-    () => hideGlowCard(prepareDecorScene(scene, true) as Group),
+    () => hideGlowCard(cloneBuildingScene(scene, SHIELD_BATTERY_PATH)),
     [scene],
   );
   useDisposeClonedMaterials(clonedScene);

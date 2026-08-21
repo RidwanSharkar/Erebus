@@ -67,6 +67,10 @@ import {
 } from '@/utils/weaponAspects';
 import { DamageNumberManager } from '@/utils/DamageNumberManager';
 import { addEnemyHitDamageNumber } from '@/utils/enemyDamageNumber';
+import {
+  stampLocalHarvestDamageFloat,
+  type HarvestFloatKind,
+} from '@/utils/exploreHarvestDamageFloats';
 import { ImpactEffectManager } from '@/utils/ImpactEffectManager';
 import type { ImpactEffectEvent } from '@/utils/ImpactEffectManager';
 import { Projectile } from '@/ecs/components/Projectile';
@@ -825,6 +829,29 @@ export class CombatSystem extends System {
     this.onSpineDamageCallback = callback;
   }
 
+  private spawnHarvestHitDamageNumber(
+    target: Entity,
+    actualDamage: number,
+    isCritical: boolean,
+    damageType: string | undefined,
+    kind: HarvestFloatKind,
+    index: number,
+  ): void {
+    stampLocalHarvestDamageFloat(kind, index);
+    const transform = target.getComponent(Transform);
+    if (!transform || !this.damageNumberManager) return;
+    const position = transform.getWorldPosition();
+    position.y += 1.0;
+    this.damageNumberManager.addDamageNumber(
+      actualDamage,
+      isCritical,
+      position,
+      damageType,
+      undefined,
+      damageType === 'barrage' || damageType === 'entropic' ? target.id : undefined,
+    );
+  }
+
   public setCoopMode(isCoop: boolean): void {
     this.isCoopMode = isCoop;
   }
@@ -1510,6 +1537,14 @@ export class CombatSystem extends System {
         finalSourcePlayerId,
         damageType,
       );
+      this.spawnHarvestHitDamageNumber(
+        target,
+        actualDamage,
+        damageResult.isCritical,
+        damageType,
+        'mushroom',
+        destructibleMushroom.mushroomIndex,
+      );
 
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);
@@ -1545,6 +1580,14 @@ export class CombatSystem extends System {
         actualDamage,
         finalSourcePlayerId,
         damageType,
+      );
+      this.spawnHarvestHitDamageNumber(
+        target,
+        actualDamage,
+        damageResult.isCritical,
+        damageType,
+        'tree',
+        destructibleTree.treeIndex,
       );
 
       this.maybeTriggerFrostpath(damageType, source, target);
@@ -1582,6 +1625,14 @@ export class CombatSystem extends System {
         finalSourcePlayerId,
         damageType,
       );
+      this.spawnHarvestHitDamageNumber(
+        target,
+        actualDamage,
+        damageResult.isCritical,
+        damageType,
+        'root',
+        destructibleRoot.rootIndex,
+      );
 
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);
@@ -1618,6 +1669,14 @@ export class CombatSystem extends System {
         finalSourcePlayerId,
         damageType,
       );
+      this.spawnHarvestHitDamageNumber(
+        target,
+        actualDamage,
+        damageResult.isCritical,
+        damageType,
+        'rock',
+        destructibleRock.rockIndex,
+      );
 
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);
@@ -1653,6 +1712,14 @@ export class CombatSystem extends System {
         actualDamage,
         finalSourcePlayerId,
         damageType,
+      );
+      this.spawnHarvestHitDamageNumber(
+        target,
+        actualDamage,
+        damageResult.isCritical,
+        damageType,
+        'spine',
+        destructibleSpine.spineIndex,
       );
 
       this.maybeTriggerFrostpath(damageType, source, target);

@@ -17,11 +17,12 @@ import GhostTrail from './GhostTrail';
 import DashFireTrail from './DashFireTrail';
 import { WeaponType, WeaponSubclass } from './weapons';
 import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
-import { queryWeaponHittableEntities } from '@/utils/destructibleEnvironmentTargeting';
+import { queryWeaponHittableEntities, queryDestructibleHarvestEntities } from '@/utils/destructibleEnvironmentTargeting';
 import { World } from '@/ecs/World';
 import { Movement } from '@/ecs/components/Movement';
 import { Transform } from '@/ecs/components/Transform';
 import { Health } from '@/ecs/components/Health';
+import { Collider } from '@/ecs/components/Collider';
 import { Enemy, EnemyType } from '@/ecs/components/Enemy';
 import { DestructibleRock } from '@/ecs/components/DestructibleRock';
 import { DestructibleRoot } from '@/ecs/components/DestructibleRoot';
@@ -56,6 +57,14 @@ type DragonEnemyDataEntry = {
   health: number;
   maxHealth: number;
   isBoss: boolean;
+  isDying: boolean;
+};
+
+type DragonHarvestHittableEntry = {
+  id: string;
+  position: Vector3;
+  health: number;
+  radius: number;
   isDying: boolean;
 };
 
@@ -474,6 +483,7 @@ function DragonRenderer({
   const currentRotationRef = useRef(new Vector3(0, 0, 0));
   const lastFacingDirection = useRef(new Vector3(0, 0, -1)); // Default facing forward
   const enemyDataRef = useRef<DragonEnemyDataEntry[]>([]);
+  const harvestHittableRef = useRef<DragonHarvestHittableEntry[]>([]);
   const lastEnemyQueryTimeRef = useRef(0);
   const initialDashCharges: DashChargeStatus[] = [
     { isAvailable: true, cooldownRemaining: 0 },
@@ -571,6 +581,34 @@ function DragonRenderer({
       writeIndex++;
     }
     enemyDataArray.length = writeIndex;
+
+    const harvestArray = harvestHittableRef.current;
+    let harvestWrite = 0;
+    for (const target of queryDestructibleHarvestEntities(world)) {
+      const transform = target.getComponent(Transform)!;
+      const health = target.getComponent(Health)!;
+      if (health.currentHealth <= 0 || health.isDead) continue;
+      const worldPos = transform.getWorldPosition();
+      const radius = target.getComponent(Collider)?.radius ?? 0;
+      if (harvestWrite < harvestArray.length) {
+        const entry = harvestArray[harvestWrite];
+        entry.id = target.id.toString();
+        entry.position.copy(worldPos);
+        entry.health = health.currentHealth;
+        entry.radius = radius;
+        entry.isDying = false;
+      } else {
+        harvestArray.push({
+          id: target.id.toString(),
+          position: worldPos.clone(),
+          health: health.currentHealth,
+          radius,
+          isDying: false,
+        });
+      }
+      harvestWrite++;
+    }
+    harvestArray.length = harvestWrite;
   }, [world]);
 
   const queryExplosionTargets = useCallback(
@@ -1168,6 +1206,7 @@ function DragonRenderer({
         <ViperStingManager
           parentRef={groupRef}
           enemyData={enemyDataRef.current}
+          harvestHittables={harvestHittableRef.current}
           onHit={handleSwordHit}
           setDamageNumbers={setDamageNumbers}
           nextDamageNumberId={nextDamageNumberId}

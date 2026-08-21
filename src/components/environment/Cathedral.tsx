@@ -2,8 +2,7 @@
 
 import React, { Suspense, useMemo } from 'react';
 import { useGLTF } from '@react-three/drei';
-import type { Group } from 'three';
-import { prepareDecorScene } from './FloatingTrinketMesh';
+import { cloneBuildingScene } from '@/utils/sharedEnemyMaterials';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
 const CATHEDRAL_PATH = '/models/environ/cathedral.glb';
@@ -23,7 +22,7 @@ export function preloadCathedral(): void {
 function CathedralMesh({ scale = CATHEDRAL_MODEL_SCALE }: { scale?: number }) {
   const { scene } = useGLTF(CATHEDRAL_PATH);
   const clonedScene = useMemo(
-    () => prepareDecorScene(scene, true) as Group,
+    () => cloneBuildingScene(scene, CATHEDRAL_PATH),
     [scene],
   );
   useDisposeClonedMaterials(clonedScene);

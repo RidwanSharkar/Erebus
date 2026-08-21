@@ -2,11 +2,11 @@
 
 import React, { Suspense, useMemo } from 'react';
 import { useGLTF } from '@react-three/drei';
-import type { Group } from 'three';
-import { prepareDecorScene } from './FloatingTrinketMesh';
+import { cloneBuildingScene } from '@/utils/sharedEnemyMaterials';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
 const WATCH_TOWER_PATH = '/models/environ/watchTower.glb';
+export { WATCH_TOWER_PATH };
 /** Native XZ ≈ 30.07. Scale to a ~3.16-unit footprint (hull radius 1.4). */
 export const WATCH_TOWER_MODEL_SCALE = 0.105;
 /** Lift so the lowest vertex (native min Y ≈ -3.299) sits on the ground. */
@@ -25,7 +25,7 @@ export function preloadWatchTower(): void {
 function WatchTowerMesh({ scale = WATCH_TOWER_MODEL_SCALE }: { scale?: number }) {
   const { scene } = useGLTF(WATCH_TOWER_PATH);
   const clonedScene = useMemo(
-    () => prepareDecorScene(scene, true) as Group,
+    () => cloneBuildingScene(scene, WATCH_TOWER_PATH),
     [scene],
   );
   useDisposeClonedMaterials(clonedScene);
@@ -37,7 +37,8 @@ function WatchTowerMesh({ scale = WATCH_TOWER_MODEL_SCALE }: { scale?: number })
   );
 }
 
-function WatchTower({ scale }: { scale?: number }) {
+function WatchTower({ scale, hideMesh = false }: { scale?: number; hideMesh?: boolean }) {
+  if (hideMesh) return null;
   return (
     <Suspense fallback={null}>
       <WatchTowerMesh scale={scale} />

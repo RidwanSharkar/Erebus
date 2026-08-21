@@ -29,7 +29,7 @@ export const DUNGEON_PLAYABLE_MIN_Z = -186.18;
 export const DUNGEON_PLAYABLE_MAX_Z = 16.95;
 
 /** EntranceTransition walkable stand point after scale + floor lift. */
-export const DUNGEON_SPAWN = Object.freeze({ x: -17.63, y: 1, z: -20.1 });
+export const DUNGEON_SPAWN = Object.freeze({ x: -17.63, y: -2, z: -20.1 });
 /** Yaw facing down the lair corridor (−Z). Keep in sync with `backend/gameRoom.js`. */
 export const DUNGEON_SPAWN_FACING_Y = Math.PI;
 
@@ -51,17 +51,30 @@ export const DUNGEON_PRE_BOSS_PACK = Object.freeze([
   Object.freeze({ type: 'wyvern', x: 29.0, y: -24.8, z: -61.5, campColor: 'red' }),
   Object.freeze({ type: 'wyvern', x: 34.0, y: -24.8, z: -62.0, campColor: 'blue' }),
 ]);
-/** Great-lair opening past the east-ledge descent. Keep in sync with `backend/gameRoom.js`. */
-export const DUNGEON_LAIR_OPENING_PACK = Object.freeze([
-  Object.freeze({ type: 'knight', x: 29.0, y: -58.4, z: -95.0, campColor: 'red' }),
-  Object.freeze({ type: 'knight', x: 33.0, y: -58.7, z: -95.0, campColor: 'blue' }),
-  Object.freeze({ type: 'knight', x: 35.0, y: -58.9, z: -95.0, campColor: 'red' }),
-  Object.freeze({ type: 'stone-giant', x: 31.0, y: -58.8, z: -97.0, campColor: 'red' }),
+/** Further down the same east ledge (pack 4). Keep in sync with `backend/gameRoom.js`. */
+export const DUNGEON_LEDGE_PACK = Object.freeze([
+  Object.freeze({ type: 'stone-giant', x: 31.0, y: -25.64, z: -71.0, campColor: 'red' }),
+  Object.freeze({ type: 'knight', x: 27.0, y: -25.78, z: -71.0, campColor: 'red' }),
+  Object.freeze({ type: 'knight', x: 37.0, y: -25.68, z: -71.0, campColor: 'blue' }),
+  Object.freeze({ type: 'wraith', x: 29.0, y: -25.60, z: -73.0, campColor: 'purple' }),
+  Object.freeze({ type: 'wraith', x: 33.0, y: -25.60, z: -73.0, campColor: 'red' }),
 ]);
-/** Deeper great-lair floor. Keep in sync with `backend/gameRoom.js`. */
+/** Great-lair mouth just before the old opening cluster (pack 5). Keep in sync with `backend/gameRoom.js`. */
+export const DUNGEON_LAIR_MOUTH_PACK = Object.freeze([
+  Object.freeze({ type: 'eternal-oak', x: 31.0, y: -58.38, z: -93.0, campColor: 'green' }),
+  Object.freeze({ type: 'wyvern', x: 35.0, y: -58.33, z: -93.0, campColor: 'red' }),
+  Object.freeze({ type: 'knight', x: 33.0, y: -58.02, z: -93.0, campColor: 'blue' }),
+  Object.freeze({ type: 'knight', x: 31.0, y: -58.80, z: -95.0, campColor: 'red' }),
+]);
+/** Warlock (boss2) at the old lair-opening cluster (pack 6). Keep in sync with `backend/gameRoom.js`. */
+export const DUNGEON_LAIR_OPENING_PACK = Object.freeze([
+  Object.freeze({ type: 'boss2', x: 31.0, y: -58.80, z: -97.0, campColor: 'red' }),
+]);
+/** Destiny + wyverns on the deep great-lair floor (pack 7). Keep in sync with `backend/gameRoom.js`. */
 export const DUNGEON_GREAT_LAIR_PACK = Object.freeze([
-  Object.freeze({ type: 'boss2', x: 29.0, y: -54.5, z: -145.0, campColor: 'red' }),
-  Object.freeze({ type: 'destiny', x: 39.0, y: -53.8, z: -145.0, campColor: 'purple' }),
+  Object.freeze({ type: 'destiny', x: 33.0, y: -54.23, z: -145.0, campColor: 'purple' }),
+  Object.freeze({ type: 'wyvern', x: 29.0, y: -54.48, z: -145.0, campColor: 'red' }),
+  Object.freeze({ type: 'wyvern', x: 39.0, y: -53.75, z: -145.0, campColor: 'blue' }),
 ]);
 
 export type DungeonPlayableAabb = {

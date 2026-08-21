@@ -1,26 +1,21 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Billboard } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { Group, Mesh, Vector3 } from 'three';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { campHpTheme } from '@/utils/campHpTheme';
-import {
-  syncEnemyHealthBarFillFromRef,
-  syncEnemyHealthBarNumericTextFromRef,
-} from '@/utils/enemyHealthBar';
+import { ExploreBuildingHpBillboard, syncExploreBuildingHpIfVisible } from './ExploreBuildingHpBillboard';
 import { syncEnemyRotationFromRef } from '@/utils/enemyLiveTransform';
+import { subscribeExploreTowerAttack } from '@/utils/exploreTowerAttackBus';
 import { DEFENSE_TOWER_IMPACT_Y } from '@/utils/defenseLayout';
-import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
-import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 import SiegeTower, {
   SIEGE_TOWER_ARROW_SPEED,
   SIEGE_TOWER_HP_BAR_Y,
   SIEGE_TOWER_MUZZLE_Y,
 } from '@/components/environment/SiegeTower';
 import ViperArrowProjectile from './ViperArrowProjectile';
-import ViperStingBeam from '@/components/projectiles/ViperStingBeam';
+import SiegeTowerBeam from './SiegeTowerBeam';
 import type { Position3 } from '@/utils/position3';
 
 interface SiegeTowerRendererProps {
@@ -33,15 +28,6 @@ interface SiegeTowerRendererProps {
   powered?: boolean;
 }
 
-interface SiegeTowerAttackEvent {
-  towerId: string;
-  kind: 'bolt' | 'arrow';
-  origin?: { x: number; y: number; z: number };
-  impact?: { x: number; y: number; z: number };
-  targetId?: string;
-  damage?: number;
-}
-
 type SiegeTowerArrowShot = {
   seq: number;
   from: Vector3;
@@ -52,6 +38,7 @@ type SiegeTowerArrowShot = {
 };
 
 const FADE_DURATION = 1.4;
+const TOWER_TRAIL_LENGTH = 36;
 
 function SiegeTowerRenderer({
   id,
@@ -63,10 +50,11 @@ function SiegeTowerRenderer({
   powered = true,
 }: SiegeTowerRendererProps) {
   const theme = campHpTheme('ally-green');
-  const { socket, enemiesRef, enemyTransformsRef } = useMultiplayerActions();
+  const { enemiesRef, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
   const hpTextRef = useRef<any>(null);
+  const hpBarVisibleRef = useRef(false);
   const opacity = useRef(1);
   const fadeTimer = useRef(0);
   const targetRotation = useRef(rotation);
@@ -90,10 +78,9 @@ function SiegeTowerRenderer({
   }, [position.x, position.y, position.z, rotation]);
 
   useEffect(() => {
-    if (!socket) return;
-    const onAttack = (data: SiegeTowerAttackEvent) => {
+    return subscribeExploreTowerAttack(id, (data) => {
       if (!powered) return;
-      if (data.towerId !== id || data.kind !== 'arrow') return;
+      if (data.kind !== 'arrow') return;
       const origin = data.origin;
       const impact = data.impact;
       if (!origin || !impact) return;
@@ -113,22 +100,20 @@ function SiegeTowerRenderer({
       };
       setArrowShot(shot);
       setBeamShot(shot);
-    };
-    socket.on('defense-tower-attack', onAttack);
-    return () => {
-      socket.off('defense-tower-attack', onAttack);
-    };
-  }, [socket, id, powered]);
+    });
+  }, [id, powered]);
 
   useFrame((_, delta) => {
     if (enemyTransformsRef) {
       syncEnemyRotationFromRef(id, enemyTransformsRef, targetRotation);
     }
-    if (groupRef.current) {
-      groupRef.current.rotation.y = targetRotation.current;
+    const g = groupRef.current;
+    if (g && g.rotation.y !== targetRotation.current) {
+      g.rotation.y = targetRotation.current;
     }
-    syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth);
-    syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
+    syncExploreBuildingHpIfVisible(
+      hpBarVisibleRef, hpFillRef, hpTextRef, enemiesRef, id, health, maxHealth,
+    );
     if (isDying) {
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
@@ -140,7 +125,6 @@ function SiegeTowerRenderer({
     <>
       {arrowShot && (
         <ViperArrowProjectile
-          key={`arrow-${arrowShot.seq}`}
           startPosition={arrowShot.from}
           targetPosition={arrowShot.to}
           damage={arrowShot.damage}
@@ -149,15 +133,18 @@ function SiegeTowerRenderer({
           getPlayerPosition={() => null}
           onHitPlayer={() => {}}
           onComplete={() => setArrowShot(null)}
+          active
+          enableLight={false}
+          trailLength={TOWER_TRAIL_LENGTH}
+          shotSeq={arrowShot.seq}
         />
       )}
       {beamShot && (
-        <ViperStingBeam
-          key={`beam-${beamShot.seq}`}
+        <SiegeTowerBeam
+          active
           position={beamShot.from}
           direction={beamShot.dir}
           beamLength={beamShot.maxRange}
-          limeTheme
           onComplete={() => setBeamShot(null)}
         />
       )}
@@ -169,25 +156,19 @@ function SiegeTowerRenderer({
             <meshBasicMaterial color="#0b1220" transparent opacity={0.38} depthWrite={false} />
           </mesh>
         )}
-        <Billboard position={[0, SIEGE_TOWER_HP_BAR_Y, 0]} follow lockX={false} lockY={false} lockZ={false}>
-          {health > 0 && !isDying && (
-            <>
-              <EnemyHpBarPlanes
-                fillRef={hpFillRef}
-                backgroundColor={theme.background}
-                fillColor={theme.fill}
-              />
-              <EnemyHealthBarTextLabel
-                leading="HP"
-                numericRef={hpTextRef}
-                health={health}
-                maxHealth={maxHealth}
-                fontSize={0.16}
-                color={theme.text}
-              />
-            </>
-          )}
-        </Billboard>
+        <ExploreBuildingHpBillboard
+          y={SIEGE_TOWER_HP_BAR_Y}
+          health={health}
+          maxHealth={maxHealth}
+          fillRef={hpFillRef}
+          numericRef={hpTextRef}
+          backgroundColor={theme.background}
+          fillColor={theme.fill}
+          textColor={theme.text}
+          fontSize={0.16}
+          hidden={isDying}
+          barVisibleRef={hpBarVisibleRef}
+        />
       </group>
     </>
   );

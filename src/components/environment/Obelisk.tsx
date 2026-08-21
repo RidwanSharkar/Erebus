@@ -2,17 +2,16 @@
 
 import React, { Suspense, useMemo } from 'react';
 import { useGLTF } from '@react-three/drei';
-import type { Group } from 'three';
-import { prepareDecorScene } from './FloatingTrinketMesh';
+import { cloneBuildingScene } from '@/utils/sharedEnemyMaterials';
 import { useDisposeClonedMaterials } from '@/utils/disposeObject3D';
 
 const OBELISK_PATH = '/models/environ/obelisk.glb';
-/** Native XZ ≈ 3.121. Scale to a 3.0-unit footprint (hull radius 1.5). */
-export const OBELISK_MODEL_SCALE = 0.961;
+/** Native XZ ≈ 3.121. Scale to a ~1.95-unit footprint (hull radius 0.975). */
+export const OBELISK_MODEL_SCALE = 0.625;
 /** Lift so the lowest vertex (native min Y ≈ -0.015) sits on the ground. */
-export const OBELISK_MODEL_Y = 0.014;
+export const OBELISK_MODEL_Y = 0.009;
 /** HP billboard just above the scaled crown. */
-export const OBELISK_HP_BAR_Y = 4.58;
+export const OBELISK_HP_BAR_Y = 2.98;
 
 useGLTF.preload(OBELISK_PATH);
 
@@ -23,7 +22,7 @@ export function preloadObelisk(): void {
 function ObeliskMesh({ scale = OBELISK_MODEL_SCALE }: { scale?: number }) {
   const { scene } = useGLTF(OBELISK_PATH);
   const clonedScene = useMemo(
-    () => prepareDecorScene(scene, true) as Group,
+    () => cloneBuildingScene(scene, OBELISK_PATH),
     [scene],
   );
   useDisposeClonedMaterials(clonedScene);

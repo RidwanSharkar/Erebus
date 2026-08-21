@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useLayoutEffect, useMemo, useCallback, type MutableRefObject } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Vector3, Group, Mesh, MeshBasicMaterial, Color, AdditiveBlending, DoubleSide } from 'three';
 import { useDynamicLight } from '@/components/effects/DynamicLightPool';
@@ -26,13 +26,20 @@ export default function GreedFireProjectile({
   onComplete,
   fromAir = false,
 }: GreedFireProjectileProps) {
-  const groupRef = useRef<Group>(null);
+  // MutableRefObject: React 19's `useRef<T>(null)` is RefObject (readonly `.current`).
+  const groupRef: MutableRefObject<Group | null> = useRef(null);
   const coreRef = useRef<Mesh>(null);
   const spinRef = useRef<Group>(null);
   const telegraphRef = useRef<Mesh>(null);
   const timeRef = useRef(0);
   const doneRef = useRef(false);
   const dirRef = useRef(new Vector3(0, 0, -1));
+  const maxLifetimeRef = useRef(1);
+  /** Capture spawn coords once — parent re-renders must not reset flight. */
+  const spawnRef = useRef<{
+    sx: number; sy: number; sz: number;
+    tx: number; ty: number; tz: number;
+  } | null>(null);
 
   const fireLight = useDynamicLight({
     color: '#ff6a00',
@@ -41,14 +48,34 @@ export default function GreedFireProjectile({
     intensity: 0,
   });
 
-  const maxLifetimeRef = useRef(1);
+  if (!spawnRef.current) {
+    const sx = startPosition.x;
+    const sy = startPosition.y;
+    const sz = startPosition.z;
+    const tx = targetPosition.x;
+    const ty = targetPosition.y;
+    const tz = targetPosition.z;
+    spawnRef.current = { sx, sy, sz, tx, ty, tz };
+    // Lifetime matches server XZ travel (server only advances x/z).
+    const dx = tx - sx;
+    const dy = ty - sy;
+    const dz = tz - sz;
+    const xzLen = Math.hypot(dx, dz);
+    if (xzLen > 1e-4) {
+      dirRef.current.set(dx, dy, dz).normalize();
+    } else if (Math.hypot(dx, dy, dz) > 1e-4) {
+      dirRef.current.set(dx, dy, dz).normalize();
+    }
+    maxLifetimeRef.current = (Math.max(xzLen, 0.01) / SPEED) * 1.3;
+  }
 
-  useEffect(() => {
-    const d = targetPosition.clone().sub(startPosition);
-    const len = d.length();
-    if (len > 1e-4) dirRef.current.copy(d).multiplyScalar(1 / len);
-    maxLifetimeRef.current = (Math.max(len, 0.01) / SPEED) * 1.3;
-  }, [startPosition, targetPosition]);
+  const setGroupRef = useCallback((group: Group | null) => {
+    groupRef.current = group;
+    if (!group || !spawnRef.current) return;
+    const { sx, sy, sz } = spawnRef.current;
+    group.position.set(sx, sy, sz);
+    group.rotation.y = Math.atan2(dirRef.current.x, dirRef.current.z);
+  }, []);
 
   const coreMat = useMemo(() => new MeshBasicMaterial({
     color: new Color('#fff3b0'),
@@ -86,10 +113,12 @@ export default function GreedFireProjectile({
     };
   }, [coreMat, midMat, auraMat, telegraphMat]);
 
-  useEffect(() => {
-    if (!groupRef.current) return;
+  useLayoutEffect(() => {
+    if (!groupRef.current || !spawnRef.current) return;
+    const { sx, sy, sz } = spawnRef.current;
+    groupRef.current.position.set(sx, sy, sz);
     groupRef.current.rotation.y = Math.atan2(dirRef.current.x, dirRef.current.z);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   useFrame((_, delta) => {
     if (doneRef.current || !groupRef.current) return;
@@ -126,6 +155,7 @@ export default function GreedFireProjectile({
   const coreRadius = fromAir ? 0.3 : 0.24;
   const midRadius = fromAir ? 0.52 : 0.4;
   const auraRadius = fromAir ? 0.8 : 0.62;
+  const spawn = spawnRef.current;
 
   return (
     <>
@@ -137,17 +167,18 @@ export default function GreedFireProjectile({
         opacity={0.95}
         flightDirectionRef={dirRef}
       />
-      {fromAir && (
+      {fromAir && spawn && (
         <mesh
           ref={telegraphRef}
-          position={[targetPosition.x, 0.05, targetPosition.z]}
+          position={[spawn.tx, 0.05, spawn.tz]}
           rotation={[-Math.PI / 2, 0, 0]}
           material={telegraphMat}
         >
           <ringGeometry args={[0.55, 1.15, 28]} />
         </mesh>
       )}
-      <group ref={groupRef} position={startPosition.clone()}>
+      {/* No declarative position — parent burst re-renders must not snap flight back to muzzle. */}
+      <group ref={setGroupRef}>
         <group ref={spinRef}>
           <mesh ref={coreRef} material={coreMat}>
             <sphereGeometry args={[coreRadius, 10, 10]} />

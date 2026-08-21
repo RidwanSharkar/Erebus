@@ -18,6 +18,10 @@ interface EntropicBoltTrailProps {
   /** When set, global opacity is multiplied by (1 − eased(elapsed / duration)) using R3F clock elapsed time. */
   trailFadeOutStartElapsed?: number | null;
   trailFadeOutDuration?: number;
+  /** Cap simulated trail points (buffers stay TRAIL_LENGTH). Default: full trail. */
+  pointCount?: number;
+  /** Bump to rewind the ring buffer (replay without remount). */
+  resetSeq?: number;
 }
 
 const TRAIL_LENGTH = 45;
@@ -82,6 +86,8 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
   flightDirectionRef = null,
   trailFadeOutStartElapsed = null,
   trailFadeOutDuration = ENTROPIC_TRAIL_FADE_OUT_DURATION,
+  pointCount = TRAIL_LENGTH,
+  resetSeq = 0,
 }) => {
   const trailRef = useRef<Points>(null);
   const dustRef = useRef<Points>(null);
@@ -111,6 +117,8 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
   const dustSeeds = useRef<Float32Array>(
     Float32Array.from({ length: TRAIL_LENGTH }, (_, i) => (i * 0.618 + 0.13) % 1),
   );
+
+  const liveCount = Math.max(1, Math.min(TRAIL_LENGTH, pointCount));
 
   const uniforms = useMemo(
     () => ({
@@ -142,10 +150,23 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
   }, []);
 
   useEffect(() => {
-    if (meshRef.current && !isInitialized.current) {
+    if (resetSeq === 0) return;
+    isInitialized.current = false;
+    ringFill.current = 0;
+    ringHead.current = 0;
+    for (let i = 0; i < TRAIL_LENGTH; i++) {
+      opa.current[i] = 0;
+      dustOpa.current[i] = 0;
+    }
+  }, [resetSeq]);
+
+  useFrame((state) => {
+    if (!meshRef.current || !trailRef.current?.parent || !dustRef.current?.parent) return;
+    if (opacity <= 0) return;
+
+    if (!isInitialized.current) {
       meshRef.current.getWorldPosition(_wpEB);
       lastKnownPosition.current.copy(_wpEB);
-
       for (let i = 0; i < TRAIL_LENGTH; i++) {
         posRing.current[i].copy(_wpEB);
         pos.current[i * 3] = _wpEB.x;
@@ -162,14 +183,9 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
         dustAge.current[i] = 0;
       }
       ringHead.current = 0;
-      ringFill.current = TRAIL_LENGTH;
+      ringFill.current = liveCount;
       isInitialized.current = true;
     }
-  }, [meshRef]);
-
-  useFrame((state) => {
-    if (!meshRef.current || !isInitialized.current) return;
-    if (!trailRef.current?.parent || !dustRef.current?.parent) return;
 
     let fadeOutFactor = 1;
     if (trailFadeOutStartElapsed != null && trailFadeOutDuration > 1e-6) {
@@ -185,7 +201,7 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
       // Ring-buffer write: decrement head and copy into the vacated slot.
       ringHead.current = (ringHead.current + TRAIL_LENGTH - 1) % TRAIL_LENGTH;
       posRing.current[ringHead.current].copy(_wpEB);
-      if (ringFill.current < TRAIL_LENGTH) ringFill.current++;
+      if (ringFill.current < liveCount) ringFill.current++;
     }
 
     const count = ringFill.current;
@@ -195,7 +211,7 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
     const flightDir = flightDirectionRef?.current ?? _flightFallback;
 
     for (let i = 0; i < TRAIL_LENGTH; i++) {
-      if (i >= count) {
+      if (i >= count || i >= liveCount) {
         opa.current[i] = 0;
         dustOpa.current[i] = 0;
         scl.current[i] = 0;

@@ -675,6 +675,8 @@ export class PhysicsSystem extends BasePhysicsSystem {
   private readonly meshWalkableMinNy = 0.55;
   private readonly meshMaxStepUp = 1.15;
   private readonly meshMaxStepDown = 2.4;
+  /** Land only when descending onto the mesh — must stay below coop jump apex (~0.84). */
+  private readonly meshLandingSlop = 0.08;
   private readonly meshDashMaxStepUp = 4.5;
   private readonly meshDashMaxStepDown = 2.4;
   private readonly meshMoveSubstep = 0.4;
@@ -874,21 +876,31 @@ export class PhysicsSystem extends BasePhysicsSystem {
       feetY,
     );
     if (groundY == null) {
-      groundY = this.probeHighestWalkableGroundY(transform.position.x, transform.position.z);
-    }
-    if (groundY == null) {
-      if (this.hasLastMeshGround) {
-        transform.setPosition(this.lastMeshGroundX, this.lastMeshGroundY, this.lastMeshGroundZ);
-        movement.velocity.y = 0;
-        movement.isGrounded = true;
+      // Mid-jump / mid-fall: do not yank to a distant floor or last stand point.
+      if (!movement.isGrounded) {
         return;
       }
-      movement.isGrounded = false;
-      return;
+      groundY = this.probeHighestWalkableGroundY(transform.position.x, transform.position.z);
+      if (groundY == null) {
+        if (this.hasLastMeshGround) {
+          transform.setPosition(this.lastMeshGroundX, this.lastMeshGroundY, this.lastMeshGroundZ);
+          movement.velocity.y = 0;
+          movement.isGrounded = true;
+          return;
+        }
+        movement.isGrounded = false;
+        return;
+      }
     }
     const desiredY = groundY + sphereRadius;
     const above = transform.position.y - desiredY;
-    if (movement.velocity.y <= 0.2 && above <= Math.max(this.meshMaxStepUp, 8)) {
+    if (movement.isGrounded) {
+      transform.position.y = desiredY;
+      movement.velocity.y = 0;
+      this.rememberMeshGround(transform.position.x, desiredY, transform.position.z);
+      return;
+    }
+    if (movement.velocity.y <= 0 && above <= this.meshLandingSlop) {
       transform.position.y = desiredY;
       movement.velocity.y = 0;
       movement.isGrounded = true;

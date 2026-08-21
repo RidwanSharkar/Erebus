@@ -38,18 +38,18 @@ export const EXPLORE_BUILDING_FIRE_PIT_RANGE = 20;
 export const EXPLORE_MAX_TOWERS = 5;
 
 /** Collision / placement disc — slightly tighter than the visual fireplace footprint. */
-export const FIRE_PIT_HULL_RADIUS = 0.85;
+export const FIRE_PIT_HULL_RADIUS = 0.6375;
 
 /** Matches defense tower hull — keep in sync with `DEFENSE_TOWER_HULL_RADIUS`. */
 export const EXPLORE_TOWER_HULL_RADIUS = 1.4;
 
 export const RESEARCH_STATION_HULL_RADIUS = 1.6;
 
-/** Native shrine XZ ≈ 3.82 scaled to a 3.2-unit footprint. */
-export const SHRINE_HULL_RADIUS = 1.6;
+/** Native shrine XZ ≈ 3.82 scaled to a ~1.92-unit footprint. */
+export const SHRINE_HULL_RADIUS = 0.96;
 
-/** Native obelisk XZ ≈ 3.12 scaled to a 3.0-unit footprint. */
-export const OBELISK_HULL_RADIUS = 1.5;
+/** Native obelisk XZ ≈ 3.12 scaled to a ~1.95-unit footprint. */
+export const OBELISK_HULL_RADIUS = 0.975;
 
 /** Matches fire-pit collision — small utility structure. */
 export const SHIELD_BATTERY_HULL_RADIUS = FIRE_PIT_HULL_RADIUS;
@@ -171,7 +171,7 @@ export const EXPLORE_BUILDING_DEFS: Readonly<Record<ExploreBuildingKind, Explore
     label: 'Cathedral',
     hotkey: 'N',
     woodCost: 100,
-    stoneCost: 400,
+    stoneCost: 325,
     flowCost: 15,
     maxHp: 1000,
     hullRadius: CATHEDRAL_HULL_RADIUS,

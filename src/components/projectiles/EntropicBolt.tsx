@@ -10,7 +10,7 @@ import {
   Mesh,
   MeshStandardMaterial,
 } from '@/utils/three-exports';
-import { useDynamicLight } from '@/components/effects/DynamicLightPool';
+import { acquireDynamicLight, type DynamicLightHandle } from '@/utils/dynamicLights';
 import {
   applyWeaponItemGlow,
   useDisposeClonedMaterials,
@@ -40,6 +40,10 @@ interface EntropicBoltProps {
   ecsDriven?: boolean;
   /** R3F clock time when ECS despawn trail fade began; visual-only. */
   trailFadeOutStartElapsed?: number;
+  /** When false, hide and skip per-frame work (persistent tower bolts). */
+  active?: boolean;
+  trailPointCount?: number;
+  trailResetSeq?: number;
 }
 
 const AXIS_Y = new Vector3(0, 1, 0);
@@ -72,6 +76,9 @@ function EntropicBolt({
   themeOverride,
   ecsDriven = true,
   trailFadeOutStartElapsed,
+  active = true,
+  trailPointCount,
+  trailResetSeq,
 }: EntropicBoltProps) {
   const boltRef = useRef<Group>(null);
   const orientRef = useRef<Group>(null);
@@ -91,7 +98,25 @@ function EntropicBolt({
   const primaryColor = useMemo(() => new Color(theme.primary), [theme.primary]);
   const secondaryColor = useMemo(() => new Color(theme.secondary), [theme.secondary]);
 
-  const boltLight = useDynamicLight({ color: theme.light, distance: 7, decay: 2, priority: 2 });
+  const boltLight = useRef<DynamicLightHandle | null>(null);
+
+  useEffect(() => {
+    if (!active) {
+      boltLight.current?.release();
+      boltLight.current = null;
+      return;
+    }
+    boltLight.current = acquireDynamicLight({
+      color: theme.light,
+      distance: 7,
+      decay: 2,
+      priority: 2,
+    });
+    return () => {
+      boltLight.current?.release();
+      boltLight.current = null;
+    };
+  }, [active, theme.light]);
 
   const { scene } = useGLTF(ENTROPIC_BOLT_MODEL_PATH);
 
@@ -148,6 +173,10 @@ function EntropicBolt({
 
   useFrame((state, delta) => {
     if (!boltRef.current) return;
+    if (!active) {
+      boltLight.current?.setIntensity(0);
+      return;
+    }
 
     if (isTrailFading) {
       const fadeElapsed = state.clock.elapsedTime - trailFadeOutStartElapsed!;
@@ -231,14 +260,16 @@ function EntropicBolt({
         accentColor={trailAccent}
         size={0.07}
         meshRef={boltRef}
-        opacity={1}
+        opacity={active ? 1 : 0}
         isCryoflame={isCryoflame}
         flightDirectionRef={flightDirectionRef}
         trailFadeOutStartElapsed={trailFadeOutStartElapsed ?? null}
         trailFadeOutDuration={ENTROPIC_TRAIL_FADE_OUT_DURATION}
+        pointCount={trailPointCount}
+        resetSeq={trailResetSeq}
       />
 
-      <group ref={boltRef} position={position.toArray()}>
+      <group ref={boltRef} position={position.toArray()} visible={active && !hideBoltBody}>
         {!hideBoltBody ? (
           <group ref={orientRef}>
             <group ref={wobbleRef}>

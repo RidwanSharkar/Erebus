@@ -29,8 +29,14 @@ import {
 import type { ExploreBuildingKind, ExploreCathedralOfferEntry, ExploreFirePitHealAction, ExploreResearchState, ExploreResearchUpgradeId, ExploreShrineGiftId } from '@/utils/exploreBuildings';
 import { EMPTY_EXPLORE_RESEARCH, normalizeExploreResearch } from '@/utils/exploreBuildings';
 
-import { patchEnemyRef, patchPlayerRef } from '@/utils/multiplayerRefPatch';
+import {
+  applyExploreHarvestHealth,
+  applyExploreMushroomHealth,
+  patchEnemyRef,
+  patchPlayerRef,
+} from '@/utils/multiplayerRefPatch';
 import { MUSHROOM_COUNT, buildMushroomInstances, getMushroomColliderCenter } from '@/utils/mushroomLayout';
+import { consumeLocalHarvestDamageFloat } from '@/utils/exploreHarvestDamageFloats';
 import { exploreFog, type ExploreFogChunkDTO } from '@/utils/exploreFogOfWar';
 import { clearKnightBlock } from '@/utils/knightBlockState';
 import { installWebGlDiagnostics, recordMultiplayerDisconnect } from '@/utils/webglDiagnostics';
@@ -3086,9 +3092,22 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         && !!data.combatArenaActive
         && normalizeCoopRoomKind((data as { coopCurrentRoomKind?: unknown }).coopCurrentRoomKind) === 'explore';
 
-      // Explore reclaim / late join must not bump enterSeq (that remounts the
+      const joinRoomKind = normalizeCoopRoomKind(
+        (data as { coopCurrentRoomKind?: unknown }).coopCurrentRoomKind,
+      );
+      const isMeshRoomJoin =
+        !!data.gameStarted
+        && !!data.combatArenaActive
+        && (
+          joinRoomKind === 'dungeon'
+          || joinRoomKind === 'sky_temple'
+          || !!(data as { coopDungeonActive?: boolean }).coopDungeonActive
+          || !!(data as { coopSkyTempleActive?: boolean }).coopSkyTempleActive
+        );
+
+      // Explore / mesh-room reclaim / late join must not bump enterSeq (that remounts the
       // follower ground + chunk streamer) and must not start the portal overlay.
-      if (isExploreJoin) {
+      if (isExploreJoin || isMeshRoomJoin) {
         coopTransitionOverlayRef.current = false;
         coopPendingPortalSnapRef.current = false;
         setCoopTransitionOverlay(false);
@@ -3395,29 +3414,25 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           if (data.index >= 0 && data.index < h.length) h[data.index] = data.newHealth;
           return { health: h, maxHealth, exploreHealth: prev?.exploreHealth };
         }
-        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
-        exploreHealth[data.index] = data.newHealth;
-        return {
-          health: prev?.health ?? [],
-          maxHealth,
-          exploreHealth,
-        };
+        return applyExploreMushroomHealth(prev, data.index, data.newHealth, 30, data.maxHealth);
       });
 
       if (typeof data.damage === 'number' && data.damage > 0) {
-        const mgr = (window as any).damageNumberManager;
-        if (mgr?.addDamageNumber) {
-          let pos: Vector3 | null = null;
-          if (data.position) {
-            pos = new Vector3(data.position.x, (data.position.y ?? 0.1) + 1.0, data.position.z);
-          } else {
-            const inst = buildMushroomInstances()[data.index];
-            if (inst) {
-              const c = getMushroomColliderCenter(inst);
-              pos = new Vector3(c.x, c.y + 1.0, c.z);
+        if (!consumeLocalHarvestDamageFloat('mushroom', data.index)) {
+          const mgr = (window as any).damageNumberManager;
+          if (mgr?.addDamageNumber) {
+            let pos: Vector3 | null = null;
+            if (data.position) {
+              pos = new Vector3(data.position.x, (data.position.y ?? 0.1) + 1.0, data.position.z);
+            } else {
+              const inst = buildMushroomInstances()[data.index];
+              if (inst) {
+                const c = getMushroomColliderCenter(inst);
+                pos = new Vector3(c.x, c.y + 1.0, c.z);
+              }
             }
+            if (pos) mgr.addDamageNumber(data.damage, false, pos, 'mushroom');
           }
-          if (pos) mgr.addDamageNumber(data.damage, false, pos, 'mushroom');
         }
       }
     });
@@ -3433,13 +3448,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
           if (data.index >= 0 && data.index < h.length) h[data.index] = 0;
           return { ...prev, health: h };
         }
-        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
-        exploreHealth[data.index] = 0;
-        return {
-          health: prev?.health ?? [],
-          maxHealth: prev?.maxHealth ?? 30,
-          exploreHealth,
-        };
+        return applyExploreMushroomHealth(prev, data.index, 0, 30);
       });
     });
 
@@ -3450,20 +3459,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       damage?: number;
       position?: { x: number; y: number; z: number };
     }) => {
-      setTreeState((prev) => {
-        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
-        exploreHealth[data.index] = data.newHealth;
-        return {
-          maxHealth: data.maxHealth ?? prev?.maxHealth ?? 150,
-          exploreHealth,
-        };
-      });
+      setTreeState((prev) =>
+        applyExploreHarvestHealth(prev, data.index, data.newHealth, 150, data.maxHealth),
+      );
 
       if (typeof data.damage === 'number' && data.damage > 0) {
-        const mgr = (window as any).damageNumberManager;
-        if (mgr?.addDamageNumber && data.position) {
-          const pos = new Vector3(data.position.x, (data.position.y ?? 1.2) + 1.0, data.position.z);
-          mgr.addDamageNumber(data.damage, false, pos, 'mushroom');
+        if (!consumeLocalHarvestDamageFloat('tree', data.index)) {
+          const mgr = (window as any).damageNumberManager;
+          if (mgr?.addDamageNumber && data.position) {
+            const pos = new Vector3(data.position.x, (data.position.y ?? 1.2) + 1.0, data.position.z);
+            mgr.addDamageNumber(data.damage, false, pos, 'mushroom');
+          }
         }
       }
 
@@ -3479,14 +3485,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       index: number;
       position?: { x: number; y: number; z: number };
     }) => {
-      setTreeState((prev) => {
-        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
-        exploreHealth[data.index] = 0;
-        return {
-          maxHealth: prev?.maxHealth ?? 150,
-          exploreHealth,
-        };
-      });
+      setTreeState((prev) => applyExploreHarvestHealth(prev, data.index, 0, 150));
 
       if (data.position) {
         const pos = new Vector3(data.position.x, data.position.y ?? 1.2, data.position.z);
@@ -3501,20 +3500,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       damage?: number;
       position?: { x: number; y: number; z: number };
     }) => {
-      setRootState((prev) => {
-        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
-        exploreHealth[data.index] = data.newHealth;
-        return {
-          maxHealth: data.maxHealth ?? prev?.maxHealth ?? 750,
-          exploreHealth,
-        };
-      });
+      setRootState((prev) =>
+        applyExploreHarvestHealth(prev, data.index, data.newHealth, 750, data.maxHealth),
+      );
 
       if (typeof data.damage === 'number' && data.damage > 0) {
-        const mgr = (window as any).damageNumberManager;
-        if (mgr?.addDamageNumber && data.position) {
-          const pos = new Vector3(data.position.x, (data.position.y ?? 0.8) + 1.0, data.position.z);
-          mgr.addDamageNumber(data.damage, false, pos, 'mushroom');
+        if (!consumeLocalHarvestDamageFloat('root', data.index)) {
+          const mgr = (window as any).damageNumberManager;
+          if (mgr?.addDamageNumber && data.position) {
+            const pos = new Vector3(data.position.x, (data.position.y ?? 0.8) + 1.0, data.position.z);
+            mgr.addDamageNumber(data.damage, false, pos, 'mushroom');
+          }
         }
       }
 
@@ -3530,14 +3526,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       index: number;
       position?: { x: number; y: number; z: number };
     }) => {
-      setRootState((prev) => {
-        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
-        exploreHealth[data.index] = 0;
-        return {
-          maxHealth: prev?.maxHealth ?? 750,
-          exploreHealth,
-        };
-      });
+      setRootState((prev) => applyExploreHarvestHealth(prev, data.index, 0, 750));
 
       if (data.position) {
         const pos = new Vector3(data.position.x, data.position.y ?? 0.8, data.position.z);
@@ -3552,20 +3541,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       damage?: number;
       position?: { x: number; y: number; z: number };
     }) => {
-      setRockState((prev) => {
-        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
-        exploreHealth[data.index] = data.newHealth;
-        return {
-          maxHealth: data.maxHealth ?? prev?.maxHealth ?? 3000,
-          exploreHealth,
-        };
-      });
+      setRockState((prev) =>
+        applyExploreHarvestHealth(prev, data.index, data.newHealth, 3000, data.maxHealth),
+      );
 
       if (typeof data.damage === 'number' && data.damage > 0) {
-        const mgr = (window as any).damageNumberManager;
-        if (mgr?.addDamageNumber && data.position) {
-          const pos = new Vector3(data.position.x, (data.position.y ?? 0.85) + 1.0, data.position.z);
-          mgr.addDamageNumber(data.damage, false, pos, 'mushroom');
+        if (!consumeLocalHarvestDamageFloat('rock', data.index)) {
+          const mgr = (window as any).damageNumberManager;
+          if (mgr?.addDamageNumber && data.position) {
+            const pos = new Vector3(data.position.x, (data.position.y ?? 0.85) + 1.0, data.position.z);
+            mgr.addDamageNumber(data.damage, false, pos, 'mushroom');
+          }
         }
       }
 
@@ -3579,14 +3565,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       index: number;
       position?: { x: number; y: number; z: number };
     }) => {
-      setRockState((prev) => {
-        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
-        exploreHealth[data.index] = 0;
-        return {
-          maxHealth: prev?.maxHealth ?? 3000,
-          exploreHealth,
-        };
-      });
+      setRockState((prev) => applyExploreHarvestHealth(prev, data.index, 0, 3000));
 
       if (data.position) {
         const pos = new Vector3(data.position.x, data.position.y ?? 0.85, data.position.z);
@@ -3601,20 +3580,17 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       damage?: number;
       position?: { x: number; y: number; z: number };
     }) => {
-      setSpineState((prev) => {
-        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
-        exploreHealth[data.index] = data.newHealth;
-        return {
-          maxHealth: data.maxHealth ?? prev?.maxHealth ?? 1000,
-          exploreHealth,
-        };
-      });
+      setSpineState((prev) =>
+        applyExploreHarvestHealth(prev, data.index, data.newHealth, 1000, data.maxHealth),
+      );
 
       if (typeof data.damage === 'number' && data.damage > 0) {
-        const mgr = (window as any).damageNumberManager;
-        if (mgr?.addDamageNumber && data.position) {
-          const pos = new Vector3(data.position.x, (data.position.y ?? 1.6) + 1.0, data.position.z);
-          mgr.addDamageNumber(data.damage, false, pos, 'mushroom');
+        if (!consumeLocalHarvestDamageFloat('spine', data.index)) {
+          const mgr = (window as any).damageNumberManager;
+          if (mgr?.addDamageNumber && data.position) {
+            const pos = new Vector3(data.position.x, (data.position.y ?? 1.6) + 1.0, data.position.z);
+            mgr.addDamageNumber(data.damage, false, pos, 'mushroom');
+          }
         }
       }
 
@@ -3629,14 +3605,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       position?: { x: number; y: number; z: number };
       flow?: number;
     }) => {
-      setSpineState((prev) => {
-        const exploreHealth = { ...(prev?.exploreHealth ?? {}) };
-        exploreHealth[data.index] = 0;
-        return {
-          maxHealth: prev?.maxHealth ?? 1000,
-          exploreHealth,
-        };
-      });
+      setSpineState((prev) => applyExploreHarvestHealth(prev, data.index, 0, 1000));
 
       if (data.position) {
         const pos = new Vector3(data.position.x, data.position.y ?? 1.6, data.position.z);
@@ -4116,6 +4085,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     addEventHandler('gold-expired', (data: { dropId: string }) => {
       if (!data?.dropId) return;
       setGoldDrops(prev => {
+        const next = new Map(prev);
+        next.delete(data.dropId);
+        return next;
+      });
+    });
+
+    addEventHandler('meat-expired', (data: { dropId: string }) => {
+      if (!data?.dropId) return;
+      setMeatDrops(prev => {
         const next = new Map(prev);
         next.delete(data.dropId);
         return next;

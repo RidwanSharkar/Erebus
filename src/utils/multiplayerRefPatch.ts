@@ -37,3 +37,63 @@ export function clonePlayerRosterFromRef(
 ): Map<string, Player> {
   return new Map(playersRef.current);
 }
+
+export type ExploreHarvestHealth = {
+  maxHealth: number;
+  exploreHealth: Record<number, number>;
+};
+
+/** Mutate HP in place on hit; copy the record only when health reaches 0. */
+export function applyExploreHarvestHealth(
+  prev: ExploreHarvestHealth | null,
+  index: number,
+  newHealth: number,
+  fallbackMaxHealth: number,
+  incomingMaxHealth?: number,
+): ExploreHarvestHealth {
+  const maxHealth = incomingMaxHealth ?? prev?.maxHealth ?? fallbackMaxHealth;
+  if (newHealth <= 0) {
+    return {
+      maxHealth,
+      exploreHealth: { ...(prev?.exploreHealth ?? {}), [index]: 0 },
+    };
+  }
+  if (prev) {
+    if (!prev.exploreHealth) prev.exploreHealth = {};
+    prev.exploreHealth[index] = newHealth;
+    if (incomingMaxHealth != null && incomingMaxHealth !== prev.maxHealth) {
+      return { maxHealth: incomingMaxHealth, exploreHealth: prev.exploreHealth };
+    }
+    return prev;
+  }
+  return { maxHealth, exploreHealth: { [index]: newHealth } };
+}
+
+export type ExploreMushroomHealthState = {
+  health: number[];
+  maxHealth: number;
+  exploreHealth?: Record<number, number>;
+};
+
+export function applyExploreMushroomHealth(
+  prev: ExploreMushroomHealthState | null,
+  index: number,
+  newHealth: number,
+  fallbackMaxHealth: number,
+  incomingMaxHealth?: number,
+): ExploreMushroomHealthState {
+  const maxHealth = incomingMaxHealth ?? prev?.maxHealth ?? fallbackMaxHealth;
+  if (newHealth <= 0) {
+    return {
+      health: prev?.health ?? [],
+      maxHealth,
+      exploreHealth: { ...(prev?.exploreHealth ?? {}), [index]: 0 },
+    };
+  }
+  if (prev) {
+    if (!prev.exploreHealth) prev.exploreHealth = {};
+    prev.exploreHealth[index] = newHealth;
+    return prev;
+  }
+  return { health: [], maxHealth, exploreHealth: { [index]: newHealth } };
+}
