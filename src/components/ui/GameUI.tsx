@@ -8,6 +8,7 @@ import type { TalentId, TalentLoadout } from '@/utils/talents';
 import { isSelectableArchetype, type Archetype } from '@/utils/archetypes';
 import type { CoopAllyKind } from '@/utils/coopAllyTargeting';
 import { EMPTY_EXPLORE_RESEARCH, type ExploreBuildMenuView, type ExploreCathedralOfferEntry, type ExploreFirePitHealAction, type ExploreResearchState, type ExploreResearchUpgradeId, type ExploreShrineGiftId } from '@/utils/exploreBuildings';
+import type { PetCompanionUpgradeId } from '@/utils/petCompanionUpgrades';
 import type { FaeBeastCompanionKind } from '@/utils/faeBeastCompanion';
 import {
   isBeastmasterBowAspect,
@@ -19,6 +20,8 @@ import InteractHintPanel from './InteractHintPanel';
 import BuildMenuPanel from './BuildMenuPanel';
 import BarracksRecruitPanel from './BarracksRecruitPanel';
 import ResearchStationPanel from './ResearchStationPanel';
+import BeastTemplePanel, { type BeastTempleOwnedCompanion } from './BeastTemplePanel';
+import AltarOfWarPanel from './AltarOfWarPanel';
 import ShrineGiftPanel from './ShrineGiftPanel';
 import CathedralLegendaryPanel from './CathedralLegendaryPanel';
 import ObeliskShopPanel from './ObeliskShopPanel';
@@ -41,7 +44,9 @@ interface GameUIProps {
   buildMenuOpen?: boolean;
   buildMenuView?: ExploreBuildMenuView;
   hasLiveSpiritLounge?: boolean;
+  hasLiveResearchStation?: boolean;
   hasLiveShrineOrObelisk?: boolean;
+  hasLiveCathedral?: boolean;
   barracksRecruitOpen?: boolean;
   playerWood?: number;
   playerFlow?: number;
@@ -50,6 +55,13 @@ interface GameUIProps {
   researchPanelOpen?: boolean;
   exploreResearch?: ExploreResearchState;
   onResearchPurchase?: (id: ExploreResearchUpgradeId) => void;
+  beastTemplePanelOpen?: boolean;
+  beastTempleCompanions?: readonly BeastTempleOwnedCompanion[];
+  onBeastTemplePurchase?: (id: PetCompanionUpgradeId) => void;
+  onBeastTempleSummonSiegeWyrm?: () => void;
+  siegeWyrmAlive?: boolean;
+  altarOfWarPanelOpen?: boolean;
+  onAltarSummonSiegeGolem?: () => void;
   shrinePanelOpen?: boolean;
   onShrineGift?: (id: ExploreShrineGiftId) => void;
   cathedralPanelOpen?: boolean;
@@ -93,7 +105,9 @@ export default function GameUI({
   buildMenuOpen = false,
   buildMenuView = 'root',
   hasLiveSpiritLounge = false,
+  hasLiveResearchStation = false,
   hasLiveShrineOrObelisk = false,
+  hasLiveCathedral = false,
   barracksRecruitOpen = false,
   playerWood = 0,
   playerFlow = 0,
@@ -102,6 +116,13 @@ export default function GameUI({
   researchPanelOpen = false,
   exploreResearch = EMPTY_EXPLORE_RESEARCH,
   onResearchPurchase,
+  beastTemplePanelOpen = false,
+  beastTempleCompanions = [],
+  onBeastTemplePurchase,
+  onBeastTempleSummonSiegeWyrm,
+  siegeWyrmAlive = false,
+  altarOfWarPanelOpen = false,
+  onAltarSummonSiegeGolem,
   shrinePanelOpen = false,
   onShrineGift,
   cathedralPanelOpen = false,
@@ -191,46 +212,64 @@ export default function GameUI({
         data-block-game-input
       >
         <div className="pointer-events-auto select-none inline-flex w-max flex-col items-stretch gap-2">
-          <BuildMenuPanel open={buildMenuOpen} view={buildMenuView} wood={playerWood} flow={playerFlow} stone={playerStone} hasLiveSpiritLounge={hasLiveSpiritLounge} hasLiveShrineOrObelisk={hasLiveShrineOrObelisk} exploreResearch={exploreResearch} />
+          <BuildMenuPanel open={buildMenuOpen} view={buildMenuView} wood={playerWood} flow={playerFlow} stone={playerStone} hasLiveSpiritLounge={hasLiveSpiritLounge} hasLiveResearchStation={hasLiveResearchStation} hasLiveShrineOrObelisk={hasLiveShrineOrObelisk} hasLiveCathedral={hasLiveCathedral} exploreResearch={exploreResearch} />
           <BarracksRecruitPanel
-            open={barracksRecruitOpen && !buildMenuOpen && !researchPanelOpen && !shrinePanelOpen && !cathedralPanelOpen && !obeliskPanelOpen && !firePitHealOpen}
+            open={barracksRecruitOpen && !buildMenuOpen && !researchPanelOpen && !beastTemplePanelOpen && !altarOfWarPanelOpen && !shrinePanelOpen && !cathedralPanelOpen && !obeliskPanelOpen && !firePitHealOpen}
             gold={playerGold}
             allyCount={exploreAllyCount}
             allyCap={exploreAllyCap}
             onRecruit={(kind) => onBarracksRecruit?.(kind)}
           />
           <ResearchStationPanel
-            open={researchPanelOpen && !buildMenuOpen && !barracksRecruitOpen && !shrinePanelOpen && !cathedralPanelOpen && !obeliskPanelOpen && !firePitHealOpen}
+            open={researchPanelOpen && !buildMenuOpen && !barracksRecruitOpen && !beastTemplePanelOpen && !altarOfWarPanelOpen && !shrinePanelOpen && !cathedralPanelOpen && !obeliskPanelOpen && !firePitHealOpen}
             flow={playerFlow}
             gold={playerGold}
             research={exploreResearch}
+            hasLiveCathedral={hasLiveCathedral}
             onPurchase={(id) => onResearchPurchase?.(id)}
           />
+          <BeastTemplePanel
+            open={beastTemplePanelOpen && !buildMenuOpen && !barracksRecruitOpen && !researchPanelOpen && !altarOfWarPanelOpen && !shrinePanelOpen && !cathedralPanelOpen && !obeliskPanelOpen && !firePitHealOpen}
+            wood={playerWood}
+            gold={playerGold}
+            meat={playerMeat}
+            hasLiveCathedral={hasLiveCathedral}
+            siegeWyrmAlive={siegeWyrmAlive}
+            companions={beastTempleCompanions}
+            onPurchase={(id) => onBeastTemplePurchase?.(id)}
+            onSummonSiegeWyrm={() => onBeastTempleSummonSiegeWyrm?.()}
+          />
+          <AltarOfWarPanel
+            open={altarOfWarPanelOpen && !buildMenuOpen && !barracksRecruitOpen && !researchPanelOpen && !beastTemplePanelOpen && !shrinePanelOpen && !cathedralPanelOpen && !obeliskPanelOpen && !firePitHealOpen}
+            stone={playerStone}
+            gold={playerGold}
+            onSummon={() => onAltarSummonSiegeGolem?.()}
+          />
           <ShrineGiftPanel
-            open={shrinePanelOpen && !buildMenuOpen && !barracksRecruitOpen && !researchPanelOpen && !cathedralPanelOpen && !obeliskPanelOpen && !firePitHealOpen}
+            open={shrinePanelOpen && !buildMenuOpen && !barracksRecruitOpen && !researchPanelOpen && !beastTemplePanelOpen && !altarOfWarPanelOpen && !cathedralPanelOpen && !obeliskPanelOpen && !firePitHealOpen}
             onSelect={(id) => onShrineGift?.(id)}
           />
           <CathedralLegendaryPanel
-            open={cathedralPanelOpen && !buildMenuOpen && !barracksRecruitOpen && !researchPanelOpen && !shrinePanelOpen && !obeliskPanelOpen && !firePitHealOpen}
+            open={cathedralPanelOpen && !buildMenuOpen && !barracksRecruitOpen && !researchPanelOpen && !beastTemplePanelOpen && !altarOfWarPanelOpen && !shrinePanelOpen && !obeliskPanelOpen && !firePitHealOpen}
             options={cathedralOffer}
             onSelect={(itemType) => onCathedralClaim?.(itemType)}
           />
           <ObeliskShopPanel
-            open={obeliskPanelOpen && !buildMenuOpen && !barracksRecruitOpen && !researchPanelOpen && !shrinePanelOpen && !cathedralPanelOpen && !firePitHealOpen}
+            open={obeliskPanelOpen && !buildMenuOpen && !barracksRecruitOpen && !researchPanelOpen && !beastTemplePanelOpen && !altarOfWarPanelOpen && !shrinePanelOpen && !cathedralPanelOpen && !firePitHealOpen}
             gold={playerGold}
             currentWeapon={currentWeapon}
             talentLoadout={talentLoadout ?? null}
             onPurchase={(id) => onObeliskPurchase?.(id)}
           />
           <FirePitHealPanel
-            open={firePitHealOpen && !buildMenuOpen && !barracksRecruitOpen && !researchPanelOpen && !shrinePanelOpen && !cathedralPanelOpen && !obeliskPanelOpen}
+            open={firePitHealOpen && !buildMenuOpen && !barracksRecruitOpen && !researchPanelOpen && !beastTemplePanelOpen && !altarOfWarPanelOpen && !shrinePanelOpen && !cathedralPanelOpen && !obeliskPanelOpen}
             meat={playerMeat}
             hunger={playerHunger}
             playerAtFullHp={playerAtFullHp}
             allyCount={exploreAllyCount}
             onHeal={(action) => onFirePitHeal?.(action)}
           />
-          <InteractHintPanel hint={buildMenuOpen || barracksRecruitOpen || researchPanelOpen || shrinePanelOpen || cathedralPanelOpen || obeliskPanelOpen || firePitHealOpen ? null : interactHint} />
+          <InteractHintPanel hint={buildMenuOpen || barracksRecruitOpen || researchPanelOpen || beastTemplePanelOpen || altarOfWarPanelOpen || shrinePanelOpen || cathedralPanelOpen || obeliskPanelOpen || firePitHealOpen ? null : interactHint} />
           <HotkeyPanel
           embedded
           currentWeapon={currentWeapon}

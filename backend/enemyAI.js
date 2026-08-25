@@ -134,7 +134,7 @@ const ASSASSIN_DREAMSHROUD_CAST_LOCK_MS = 400;
 const ASSASSIN_DREAMSHROUD_CENTER_RADIUS = 6;
 
 // Knight / templar / ghoul / martyr / titan: ring goals + peer separation (radii match client CoopGameScene hit spheres).
-const MELEE_SURROUND_TYPES = new Set(['knight', 'templar', 'spectre', 'serpent', 'boss-serpent', 'wyvern', 'destiny', 'tiger', 'boss-tiger', 'wolf', 'boss-wolf', 'bear', 'boss-bear', 'skyray', 'terrorhawk', 'bone-spider', 'death-knight', 'shaman', 'assassin', 'ghoul', 'martyr', 'titan', 'nemesis', 'stone-giant', 'eternal-oak', 'colossus', 'allied-knight', 'allied-huntress', 'allied-demon', 'allied-tiger', 'allied-wolf', 'allied-bear', 'allied-serpent', 'allied-spider']);
+const MELEE_SURROUND_TYPES = new Set(['knight', 'templar', 'spectre', 'serpent', 'boss-serpent', 'wyvern', 'wyrm', 'destiny', 'tiger', 'boss-tiger', 'wolf', 'boss-wolf', 'bear', 'boss-bear', 'skyray', 'terrorhawk', 'bone-spider', 'death-knight', 'shaman', 'assassin', 'ghoul', 'martyr', 'titan', 'nemesis', 'stone-giant', 'eternal-oak', 'colossus', 'allied-knight', 'allied-huntress', 'allied-demon', 'allied-tiger', 'allied-wolf', 'allied-bear', 'allied-serpent', 'allied-spider', 'allied-siege-golem', 'allied-siege-wyrm']);
 const MELEE_PEER_SEP_PADDING = 0.05;
 // ~0.75×attackRange (~1.95m for knights): inside attack range, outside body-radius overlap.
 const MELEE_SURROUND_STANDOFF_FRAC = 0.75;
@@ -317,6 +317,13 @@ const TIGER_BASE_DAMAGE = 23;
 const TIGER_WANDER_RADIUS = 7;
 const TIGER_WANDER_REPICK_MS = 3500;
 const TIGER_WANDER_REACH = 1.0;
+/** Explore knights / purple warlocks / vipers / shades / weavers stroll less often than tigers. */
+const EXPLORE_HUMANOID_WANDER_RADIUS = 6;
+const EXPLORE_HUMANOID_WANDER_REPICK_MS = 5000;
+const EXPLORE_HUMANOID_WANDER_REACH = 1.0;
+const EXPLORE_HUMANOID_WANDER_SPEED = 1.25;
+const EXPLORE_HUMANOID_IDLE_PAUSE_MIN_MS = 8000;
+const EXPLORE_HUMANOID_IDLE_PAUSE_MAX_MS = 16000;
 const TIGER_POUNCE_MAX_TRAVEL = 5.875;
 const TIGER_POUNCE_COOLDOWN_MS = 5_000;
 const TIGER_POUNCE_DAMAGE = 19;
@@ -328,6 +335,7 @@ const TIGER_POUNCE_MIN_RANGE = 2.7;
 const WOLF_MELEE_RANGE = 2.6;
 const WOLF_AGGRO_RADIUS = 17;
 const WOLF_MOVE_SPEED = 3.25;
+const WOLF_WALK_SPEED = 1.55;
 const WOLF_SWING_LOCK_MS = 1100;
 const WOLF_HIT_DELAY_MS = 650;
 const WOLF_BASE_DAMAGE = 14;
@@ -338,6 +346,7 @@ const WOLF_HOWL_DURATION_MS = 2000;
 const BEAR_MELEE_RANGE = 2.75;
 const BEAR_AGGRO_RADIUS = 17;
 const BEAR_MOVE_SPEED = 3.125;
+const BEAR_WALK_SPEED = 1.5;
 const BEAR_SWING_LOCK_MS = 1500;
 const BEAR_HIT_DELAY_MS = 750;
 const BEAR_BASE_DAMAGE = 38;
@@ -376,6 +385,7 @@ const WYVERN_SWING_LOCK_MS = 1250;
 const WYVERN_HIT_DELAY_MS = 775;
 const WYVERN_BASE_DAMAGE = 42;
 const WYVERN_BASE_MOVE_SPEED = 2.95;
+const WYVERN_WALK_SPEED = 1.4;
 const WYVERN_BREATH_COOLDOWN_MS = 5000;
 const WYVERN_BREATH_CAST_LOCK_MS = 1500;
 const WYVERN_BREATH_ROAR_CAST_LOCK_MS = 2000; // +500ms over base cast (drake_roar)
@@ -385,6 +395,37 @@ const WYVERN_BREATH_SPECIAL_BURST_GAP_MS = 125;
 const WYVERN_BREATH_DAMAGE = 36;
 const WYVERN_BREATH_CAST_RANGE = 10;
 const WYVERN_BREATH_MAX_RANGE = WYVERN_BREATH_CAST_RANGE; // bolt always travels full cast range
+
+// Wilderness Wyrm — fast melee + Destiny-style bilateral flame pillars (1 per side)
+const WYRM_MELEE_RANGE = 2.6;
+const WYRM_AGGRO_RADIUS = 10;
+const WYRM_WALK_SPEED = 1.45;
+const WYRM_RUN_SPEED = 3.195;
+const WYRM_SPELL_COOLDOWN_MS = 8000;
+const WYRM_SPELL_CAST_LOCK_MS = 2000;
+const WYRM_SPELL_PILLAR_DAMAGE = 40;
+const WYRM_SPELL_PILLAR_RADIUS = 2.25;
+const WYRM_SPELL_PILLAR_DELAY_MS = 500;
+const WYRM_SPELL_PILLAR_OFFSET = 2.0;
+const WYRM_SPELL_CAST_RANGE = 8;
+
+/** Allied Siege Wyrm (Beast Temple) — tiger follow + wyvern melee timings + pierce firebolt. */
+const ALLIED_SIEGE_WYRM_MAX_HP = 2150;
+const ALLIED_SIEGE_WYRM_DAMAGE = 98;
+const ALLIED_SIEGE_WYRM_FOLLOW_DISTANCE = 3.0;
+const ALLIED_SIEGE_WYRM_WALK_SPEED = 2.25;
+const ALLIED_SIEGE_WYRM_RUN_SPEED = 2.95;
+const ALLIED_SIEGE_WYRM_ATTACK_RANGE = WYVERN_MELEE_RANGE;
+const ALLIED_SIEGE_WYRM_ATTACK_COOLDOWN_MS = 2100;
+const ALLIED_SIEGE_WYRM_SWING_LOCK_MS = WYVERN_SWING_LOCK_MS;
+const ALLIED_SIEGE_WYRM_HIT_DELAY_MS = WYVERN_HIT_DELAY_MS;
+const ALLIED_SIEGE_WYRM_AGGRO_RADIUS = 12; // match BEASTMASTER_TIGER_AGGRO_RADIUS
+const ALLIED_SIEGE_WYRM_BREATH_DAMAGE = 210;
+const ALLIED_SIEGE_WYRM_BREATH_COOLDOWN_MS = 6000;
+const ALLIED_SIEGE_WYRM_BREATH_CAST_RANGE = WYVERN_BREATH_CAST_RANGE;
+const ALLIED_SIEGE_WYRM_BREATH_MAX_RANGE = WYVERN_BREATH_MAX_RANGE;
+const ALLIED_SIEGE_WYRM_BREATH_CAST_LOCK_MS = WYVERN_BREATH_CAST_LOCK_MS;
+const ALLIED_SIEGE_WYRM_BREATH_LAUNCH_EARLY_MS = WYVERN_BREATH_LAUNCH_EARLY_MS;
 
 // Terrorhawk — fly / dive / ground-melee (Fae Realm II)
 const TERRORHAWK_HOVER_Y = 9.0; // keep in sync with client terrorhawkCoopConstants
@@ -613,6 +654,10 @@ const EXPLORE_BASE_DEFENDER_SLOT_RADIUS = 2.8;
 const EXPLORE_BASE_DEFENDER_SLOT_ARRIVE = 0.6;
 /** Explore defenders drop chase past this distance from the camp. */
 const EXPLORE_BASE_DEFENDER_LEASH_RADIUS = 16;
+/** Enemy-town extras drop chase past this distance from the town camp centroid. */
+const EXPLORE_TOWN_GUARD_LEASH_RADIUS = 25;
+/** Stop walking once this close to a town-guard spawn post. */
+const EXPLORE_TOWN_GUARD_HOME_ARRIVE = 0.6;
 const ALLIED_KNIGHT_PROTECTIVE_THREAT_TTL_MS = 15000;
 const ALLIED_TRAP_THREAT_TTL_MS = 15000;
 const ALLIED_KNIGHT_PROTECTIVE_THREAT_DECAY_PER_SEC = 0.85;
@@ -1456,6 +1501,12 @@ class EnemyAI {
     /** id -> timestamp when next ground special (breath/wing) may start */
     this.destinyGroundSpecialReadyAt = new Map();
 
+    // Wilderness Wyrm flame spell (bilateral pillars)
+    this.wyrmSpellCooldown = new Map();
+    this.wyrmSpellEndTimeout = new Map();
+    /** @type {Map<string, ReturnType<typeof setTimeout>[]>} */
+    this.wyrmSpellPillarTimeouts = new Map();
+
     // Red / Green: Death Grasp (independent 15s CD from knightAbilityCooldown)
     this.knightDeathGraspCooldown = new Map(); // enemyId -> lastCastMs
     /** @type {Map<string, ReturnType<typeof setTimeout>[]>} */
@@ -1907,6 +1958,13 @@ class EnemyAI {
     this.destinyWingPillarTimeouts.clear();
     this.destinyWingCooldown.clear();
     this.destinyGroundSpecialReadyAt.clear();
+    this.wyrmSpellEndTimeout.forEach((t) => clearTimeout(t));
+    this.wyrmSpellEndTimeout.clear();
+    this.wyrmSpellPillarTimeouts.forEach((handles) => {
+      for (const t of handles) clearTimeout(t);
+    });
+    this.wyrmSpellPillarTimeouts.clear();
+    this.wyrmSpellCooldown.clear();
     this.enemyPaths.clear();
     this.templarBlinkSmiteNextAt.clear();
     this.templarLeapCooldown.clear();
@@ -2168,6 +2226,11 @@ class EnemyAI {
       return;
     }
 
+    if (enemy.type === 'wyrm') {
+      this.updateWyrmAI(enemy, players);
+      return;
+    }
+
     if (enemy.type === 'bone-spider') {
       this.updateBoneSpiderAI(enemy, players);
       return;
@@ -2195,6 +2258,16 @@ class EnemyAI {
 
     if (enemy.type === 'allied-knight') {
       this.updateAlliedKnightAI(enemy, players);
+      return;
+    }
+
+    if (enemy.type === 'allied-siege-golem') {
+      this.updateAlliedSiegeGolemAI(enemy, players);
+      return;
+    }
+
+    if (enemy.type === 'allied-siege-wyrm') {
+      this.updateAlliedSiegeWyrmAI(enemy, players);
       return;
     }
 
@@ -2232,8 +2305,13 @@ class EnemyAI {
       return;
     }
 
-    if (enemy.type === 'allied-tower' || exploreBuildings.isExploreTowerType(enemy.type)) {
+    if (enemy.type === 'allied-tower' || (exploreBuildings.isExploreTowerType(enemy.type) && enemy.alliedUnit === true)) {
       this.updateDefenseTowerAI(enemy);
+      return;
+    }
+
+    if (exploreBuildings.isExploreTowerType(enemy.type)) {
+      this.updateHostileTownTowerAI(enemy);
       return;
     }
 
@@ -3015,7 +3093,10 @@ class EnemyAI {
     let aggroData = this.enemyAggro.get(knight.id);
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(knight, players);
-      if (!closestPlayer) return;
+      if (!closestPlayer) {
+        this._idleWanderOrReturnHome(knight);
+        return;
+      }
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
@@ -3027,7 +3108,10 @@ class EnemyAI {
     }
 
     const resolved = this.resolveAggroCombatTarget(aggroData, knight, players);
-    if (!resolved) return;
+    if (!resolved) {
+      this._idleWanderOrReturnHome(knight);
+      return;
+    }
 
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
@@ -3048,7 +3132,11 @@ class EnemyAI {
     }
     this._maybeClearForcedEdgeSpawn(aggroData, distance, aggroRadius);
 
+    // Town extras: hard camp leash + return to spawn post when idle / leashed out.
+    if (this._tickExploreTownGuardLeash(knight, aggroData, tpos)) return;
+
     if (!aggroData.isAggroed) {
+      this._idleWanderOrReturnHome(knight);
       return;
     }
 
@@ -4146,7 +4234,10 @@ class EnemyAI {
     let aggroData = this.enemyAggro.get(shade.id);
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(shade, players);
-      if (!closestPlayer) return;
+      if (!closestPlayer) {
+        this._tryIdleWanderExploreHumanoid(shade);
+        return;
+      }
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
@@ -4158,7 +4249,10 @@ class EnemyAI {
     }
 
     const resolved = this.resolveAggroCombatTarget(aggroData, shade, players);
-    if (!resolved) return;
+    if (!resolved) {
+      this._tryIdleWanderExploreHumanoid(shade);
+      return;
+    }
 
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
@@ -4175,7 +4269,10 @@ class EnemyAI {
     }
     this._maybeClearForcedEdgeSpawn(aggroData, distance, aggroRadius);
 
-    if (!aggroData.isAggroed) return;
+    if (!aggroData.isAggroed) {
+      this._tryIdleWanderExploreHumanoid(shade);
+      return;
+    }
 
     const dx = tpos.x - shade.position.x;
     const dz = tpos.z - shade.position.z;
@@ -4615,7 +4712,10 @@ class EnemyAI {
     let aggroData = this.enemyAggro.get(warlock.id);
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(warlock, players);
-      if (!closestPlayer) return;
+      if (!closestPlayer) {
+        this._idleWanderOrReturnHome(warlock);
+        return;
+      }
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
@@ -4627,7 +4727,10 @@ class EnemyAI {
     }
 
     const resolved = this.resolveAggroCombatTarget(aggroData, warlock, players);
-    if (!resolved) return;
+    if (!resolved) {
+      this._idleWanderOrReturnHome(warlock);
+      return;
+    }
 
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
@@ -4643,7 +4746,12 @@ class EnemyAI {
     }
     this._maybeClearForcedEdgeSpawn(aggroData, distance, aggroRadius);
 
-    if (!aggroData.isAggroed) return;
+    if (this._tickExploreTownGuardLeash(warlock, aggroData, tpos)) return;
+
+    if (!aggroData.isAggroed) {
+      this._idleWanderOrReturnHome(warlock);
+      return;
+    }
 
     const dx = tpos.x - warlock.position.x;
     const dz = tpos.z - warlock.position.z;
@@ -6254,7 +6362,10 @@ class EnemyAI {
     let aggroData = this.enemyAggro.get(viper.id);
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(viper, players);
-      if (!closestPlayer) return;
+      if (!closestPlayer) {
+        this._tryIdleWanderExploreHumanoid(viper);
+        return;
+      }
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
@@ -6266,7 +6377,10 @@ class EnemyAI {
     }
 
     const resolved = this.resolveAggroCombatTarget(aggroData, viper, players);
-    if (!resolved) return;
+    if (!resolved) {
+      this._tryIdleWanderExploreHumanoid(viper);
+      return;
+    }
 
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
@@ -6283,7 +6397,10 @@ class EnemyAI {
     }
     this._maybeClearForcedEdgeSpawn(aggroData, distance, aggroRadius);
 
-    if (!aggroData.isAggroed) return;
+    if (!aggroData.isAggroed) {
+      this._tryIdleWanderExploreHumanoid(viper);
+      return;
+    }
 
     const dx = tpos.x - viper.position.x;
     const dz = tpos.z - viper.position.z;
@@ -6501,7 +6618,10 @@ class EnemyAI {
     let aggroData = this.enemyAggro.get(weaver.id);
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(weaver, players);
-      if (!closestPlayer) return;
+      if (!closestPlayer) {
+        this._idleWanderOrReturnHome(weaver);
+        return;
+      }
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
@@ -6513,7 +6633,10 @@ class EnemyAI {
     }
 
     const resolved = this.resolveAggroCombatTarget(aggroData, weaver, players);
-    if (!resolved) return;
+    if (!resolved) {
+      this._idleWanderOrReturnHome(weaver);
+      return;
+    }
 
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
@@ -6529,7 +6652,12 @@ class EnemyAI {
     }
     this._maybeClearForcedEdgeSpawn(aggroData, distance, aggroRadius);
 
-    if (!aggroData.isAggroed) return;
+    if (this._tickExploreTownGuardLeash(weaver, aggroData, tpos)) return;
+
+    if (!aggroData.isAggroed) {
+      this._idleWanderOrReturnHome(weaver);
+      return;
+    }
 
     const now = Date.now();
     const lockUntil = this.weaverCastLockUntil.get(weaver.id) || 0;
@@ -7322,14 +7450,22 @@ class EnemyAI {
     }
 
     if (!aggroData.isAggroed) {
-      this._moveTitanTowardsPatrolWaypoint(titan);
+      if (this._isExploreTownGuard(titan)) {
+        this._returnExploreTownGuardHome(titan);
+      } else {
+        this._moveTitanTowardsPatrolWaypoint(titan);
+      }
       return;
     }
 
     const resolved = this.resolveAggroCombatTarget(aggroData, titan, players);
     if (!resolved) {
       aggroData.isAggroed = false;
-      this._moveTitanTowardsPatrolWaypoint(titan);
+      if (this._isExploreTownGuard(titan)) {
+        this._returnExploreTownGuardHome(titan);
+      } else {
+        this._moveTitanTowardsPatrolWaypoint(titan);
+      }
       return;
     }
 
@@ -7337,10 +7473,16 @@ class EnemyAI {
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(titan.position, tpos);
 
+    if (this._tickExploreTownGuardLeash(titan, aggroData, tpos)) return;
+
     if (aggroData.isAggroed && distance > leashRadius && !aggroData.threatFromDamage && !aggroData.directPlayerDamageAggroed) {
       aggroData.isAggroed = false;
       aggroData.threatFromDamage = false;
-      this._moveTitanTowardsPatrolWaypoint(titan);
+      if (this._isExploreTownGuard(titan)) {
+        this._returnExploreTownGuardHome(titan);
+      } else {
+        this._moveTitanTowardsPatrolWaypoint(titan);
+      }
       return;
     }
 
@@ -7912,6 +8054,11 @@ class EnemyAI {
     }
 
     if (!aggroData.isAggroed) {
+      // Town-guard colossus: hold spawn post (skip 26-radius patrol).
+      if (this._isExploreTownGuard(enemy)) {
+        this._returnExploreTownGuardHome(enemy);
+        return;
+      }
       // Dungeon: hold spawn pose (patrol walks heavies off lair ledges).
       if (!this.room?.coopDungeonActive) {
         this._moveTitanTowardsPatrolWaypoint(enemy);
@@ -7934,7 +8081,9 @@ class EnemyAI {
     const resolved = this.resolveAggroCombatTarget(aggroData, enemy, players);
     if (!resolved) {
       aggroData.isAggroed = false;
-      if (!this.room?.coopDungeonActive) {
+      if (this._isExploreTownGuard(enemy)) {
+        this._returnExploreTownGuardHome(enemy);
+      } else if (!this.room?.coopDungeonActive) {
         this._moveTitanTowardsPatrolWaypoint(enemy);
       }
       return;
@@ -7944,10 +8093,14 @@ class EnemyAI {
     const tpos = this.combatTargetPosition(resolved);
     const distance = this.calculateDistance(enemy.position, tpos);
 
+    if (this._tickExploreTownGuardLeash(enemy, aggroData, tpos)) return;
+
     if (aggroData.isAggroed && distance > leashRadius && !aggroData.threatFromDamage && !aggroData.directPlayerDamageAggroed) {
       aggroData.isAggroed = false;
       aggroData.threatFromDamage = false;
-      if (!this.room?.coopDungeonActive) {
+      if (this._isExploreTownGuard(enemy)) {
+        this._returnExploreTownGuardHome(enemy);
+      } else if (!this.room?.coopDungeonActive) {
         this._moveTitanTowardsPatrolWaypoint(enemy);
       }
       return;
@@ -10182,11 +10335,20 @@ class EnemyAI {
       case 'research-station':
         return 1.6;
       case 'shrine':
+      case 'beast-temple':
         return 0.96;
       case 'obelisk':
         return 0.975;
-      case 'allied-demon':
-        return 0.85;
+      case 'altar-of-war':
+        return 0.6375;
+      case 'allied-siege-golem':
+      case 'stone-giant':
+        return 1.2;
+      case 'wyvern':
+      case 'allied-siege-wyrm':
+        return 1.05;
+      case 'wyrm':
+        return 1.05;
       case 'allied-tiger':
         return 0.9;
       case 'allied-wolf':
@@ -10220,8 +10382,6 @@ class EnemyAI {
         return 0.76;
       case 'boss-serpent':
         return 0.95 * 1.4;
-      case 'wyvern':
-        return 1.05;
       case 'destiny':
         return 1.8;
       case 'bone-spider':
@@ -10496,7 +10656,9 @@ class EnemyAI {
     }
 
     const distanceToGoal = this.calculateDistance(enemy.position, moveTarget.position);
-    const baseSpeed = enemy.moveSpeed ?? this.getEnemyMoveSpeed(enemy.type);
+    const baseSpeed = options.overrideSpeed != null
+      ? options.overrideSpeed
+      : (enemy.moveSpeed ?? this.getEnemyMoveSpeed(enemy.type));
     const moveSpeed = this.getModifiedMovementSpeed(enemy.id, baseSpeed);
     const speedMultiplier = options?.speedMultiplier ?? 1;
 
@@ -10653,6 +10815,7 @@ class EnemyAI {
       case 'frost-queen': return 0.0; // Stationary — moves only via teleport
       case 'medusa': return 0.0; // Stationary caster
       case 'wyvern': return WYVERN_BASE_MOVE_SPEED;
+      case 'wyrm': return WYRM_WALK_SPEED;
       case 'bone-spider': return BONE_SPIDER_MOVE_SPEED;
       case 'sentinel': return 2.0;
       case 'nemesis': return 2.5;
@@ -11325,6 +11488,8 @@ class EnemyAI {
         || ally.type === 'allied-bear'
         || ally.type === 'allied-serpent'
         || ally.type === 'allied-spider'
+        || ally.type === 'allied-siege-golem'
+        || ally.type === 'allied-siege-wyrm'
         || ally.type === 'allied-tower'
         || exploreBuildings.isPlayerExploreBuildingType(ally.type)
       );
@@ -11398,6 +11563,7 @@ class EnemyAI {
 
   _isExploreBaseDefender(ally) {
     if (!this.room?.coopExploreActive) return false;
+    if (ally?.type === 'allied-siege-golem') return true;
     if (this._isExploreBaseGarrisonBeast(ally)) return true;
     if (!ally?.exploreBarracksPurchased) return false;
     return ally.type === 'allied-knight'
@@ -11405,10 +11571,37 @@ class EnemyAI {
       || ally.type === 'allied-enchantress';
   }
 
+  _getNearestLiveSiegeGolem(fromPos) {
+    if (!this.room?.enemies || !fromPos) return null;
+    const ax = fromPos.x ?? 0;
+    const az = fromPos.z ?? 0;
+    let best = null;
+    let bestDist = Infinity;
+    for (const enemy of this.room.enemies.values()) {
+      if (!enemy || enemy.type !== 'allied-siege-golem') continue;
+      if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+      const dx = (enemy.position?.x ?? 0) - ax;
+      const dz = (enemy.position?.z ?? 0) - az;
+      const distSq = dx * dx + dz * dz;
+      if (distSq < bestDist) {
+        bestDist = distSq;
+        best = enemy;
+      }
+    }
+    return best;
+  }
+
   _getExploreBaseAnchor(ally) {
     if (!this.room?.enemies) return null;
     const ax = ally?.position?.x ?? 0;
     const az = ally?.position?.z ?? 0;
+    // When a Siege Golem is active, garrison units follow the nearest golem.
+    if (ally?.type !== 'allied-siege-golem') {
+      const golem = this._getNearestLiveSiegeGolem({ x: ax, z: az });
+      if (golem?.position) {
+        return { x: golem.position.x, y: golem.position.y ?? 0, z: golem.position.z };
+      }
+    }
     let bestPit = null;
     let bestPitDist = Infinity;
     let bestLounge = null;
@@ -11435,6 +11628,39 @@ class EnemyAI {
     return { x: pos.x, y: pos.y ?? 0, z: pos.z };
   }
 
+  _findNearestExploreTownStructure(fromPos) {
+    if (!this.room?.enemies || !fromPos) return null;
+    const ax = fromPos.x ?? 0;
+    const az = fromPos.z ?? 0;
+    let best = null;
+    let bestDist = Infinity;
+    for (const enemy of this.room.enemies.values()) {
+      if (!enemy || enemy.alliedUnit === true) continue;
+      if (!enemy.exploreTown) continue;
+      if (!enemy.isStructure) continue;
+      if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+      const dx = (enemy.position?.x ?? 0) - ax;
+      const dz = (enemy.position?.z ?? 0) - az;
+      const distSq = dx * dx + dz * dz;
+      if (distSq < bestDist) {
+        bestDist = distSq;
+        best = enemy;
+      }
+    }
+    return best;
+  }
+
+  _hasLiveExploreTown() {
+    if (!this.room?.enemies) return false;
+    for (const enemy of this.room.enemies.values()) {
+      if (!enemy || enemy.alliedUnit === true) continue;
+      if (!enemy.exploreTown) continue;
+      if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+      return true;
+    }
+    return false;
+  }
+
   _isWithinExploreBaseLeash(ally, position) {
     const home = this._getExploreBaseAnchor(ally);
     if (!home || !position) return true;
@@ -11448,6 +11674,7 @@ class EnemyAI {
     if (!this.room?.enemies) return list;
     for (const enemy of this.room.enemies.values()) {
       if (!this._isExploreBaseDefender(enemy)) continue;
+      if (enemy.type === 'allied-siege-golem') continue;
       if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
       list.push(enemy);
     }
@@ -11481,6 +11708,145 @@ class EnemyAI {
       return true;
     }
     return false;
+  }
+
+  // ─── Explore town guards (extras posted at enemy towns) ─────────────────────
+
+  _isExploreTownGuard(enemy) {
+    return !!(enemy && enemy.exploreTownGuard && enemy.exploreCampId);
+  }
+
+  _getExploreTownGuardCamp(enemy) {
+    if (!this._isExploreTownGuard(enemy) || !this.room?.exploreCamps) return null;
+    return this.room.exploreCamps.get(enemy.exploreCampId) || null;
+  }
+
+  /**
+   * True if the guard or the combat target is farther than the camp leash.
+   * Used to force town extras to drop chase and return to posts.
+   */
+  _isExploreTownGuardLeashedOut(enemy, targetPosition = null) {
+    const camp = this._getExploreTownGuardCamp(enemy);
+    if (!camp) return false;
+    const leashSq = EXPLORE_TOWN_GUARD_LEASH_RADIUS * EXPLORE_TOWN_GUARD_LEASH_RADIUS;
+    const gx = (enemy.position?.x ?? 0) - camp.x;
+    const gz = (enemy.position?.z ?? 0) - camp.z;
+    if (gx * gx + gz * gz > leashSq) return true;
+    if (targetPosition) {
+      const tx = (targetPosition.x ?? 0) - camp.x;
+      const tz = (targetPosition.z ?? 0) - camp.z;
+      if (tx * tx + tz * tz > leashSq) return true;
+    }
+    return false;
+  }
+
+  _clearExploreTownGuardAggro(aggroData) {
+    if (!aggroData) return;
+    aggroData.isAggroed = false;
+    aggroData.threatFromDamage = false;
+    aggroData.directPlayerDamageAggroed = false;
+    aggroData.targetZombieId = null;
+    aggroData.targetTrapId = null;
+    aggroData.targetHostileEnemyId = null;
+  }
+
+  /** Walk a town guard back to its spawn post, then idle-wander around it. */
+  _returnExploreTownGuardHome(enemy) {
+    const home = enemy?.guardHomePosition;
+    if (!home) return;
+    const d = this.calculateDistance(enemy.position, home);
+    if (d > EXPLORE_TOWN_GUARD_HOME_ARRIVE) {
+      this.moveEnemyTowardsTarget(enemy, { position: home }, {
+        stopThreshold: EXPLORE_TOWN_GUARD_HOME_ARRIVE,
+      });
+      return;
+    }
+    this._tryIdleWanderExploreHumanoid(enemy, home);
+  }
+
+  /**
+   * If this is a town guard that should drop chase, clear aggro and walk home.
+   * Returns true when the caller should skip further combat AI this tick.
+   */
+  _tickExploreTownGuardLeash(enemy, aggroData, targetPosition = null) {
+    if (!this._isExploreTownGuard(enemy)) return false;
+    if (aggroData?.isAggroed && !this._isExploreTownGuardLeashedOut(enemy, targetPosition)) {
+      return false;
+    }
+    if (aggroData?.isAggroed) {
+      this._clearExploreTownGuardAggro(aggroData);
+    }
+    this._returnExploreTownGuardHome(enemy);
+    return true;
+  }
+
+  /**
+   * Building-hit pull: aggro all exploreTownGuard extras in the same town camp.
+   * Does not set directPlayerDamageAggroed (would grant infinite leash).
+   */
+  alertExploreTownGuards(building, fromPlayerId = null, hitMeta = null) {
+    if (!building?.exploreCampId || !this.room?.exploreCamps || !this.room?.enemies) return;
+    const camp = this.room.exploreCamps.get(building.exploreCampId);
+    if (!camp || camp.kind !== 'town' || !camp.memberIds) return;
+
+    const sourceAlliedUnitId = hitMeta?.sourceAlliedUnitId || null;
+    const sourceZombieId = hitMeta?.sourceZombieId || null;
+    const sourceTrapId = hitMeta?.sourceTrapId || null;
+
+    for (const memberId of camp.memberIds) {
+      const guard = this.room.enemies.get(memberId);
+      if (!guard || !guard.exploreTownGuard) continue;
+      if (guard.isStructure || guard.isDying || (guard.health ?? 0) <= 0) continue;
+
+      if (sourceAlliedUnitId) {
+        this.applyAlliedUnitThreat(guard.id, sourceAlliedUnitId, 200);
+        continue;
+      }
+      if (sourceZombieId) {
+        this.applyZombieThreat(guard.id, sourceZombieId, 200);
+        continue;
+      }
+      if (sourceTrapId) {
+        this.applyTrapThreat(guard.id, sourceTrapId, 200);
+        continue;
+      }
+      if (fromPlayerId) {
+        this._alertExploreTownGuardOnPlayer(guard, fromPlayerId);
+      }
+    }
+  }
+
+  /** Focus a town guard on a player without granting infinite damage-leash. */
+  _alertExploreTownGuardOnPlayer(guard, playerId) {
+    const players = this.room?.getPlayers?.();
+    if (!players || !playerId) return;
+    const attacker = players.find((p) => p.id === playerId && p.health > 0);
+    if (!attacker) return;
+
+    let aggroData = this.enemyAggro.get(guard.id);
+    if (!aggroData) {
+      aggroData = {
+        targetPlayerId: playerId,
+        targetZombieId: null,
+        targetTrapId: null,
+        lastUpdate: Date.now(),
+        aggro: 100,
+      };
+      this.enemyAggro.set(guard.id, aggroData);
+    }
+
+    aggroData.targetPlayerId = playerId;
+    aggroData.targetZombieId = null;
+    aggroData.targetTrapId = null;
+    aggroData.targetHostileEnemyId = null;
+    aggroData.aggro = Math.max(aggroData.aggro || 0, 100) + 50;
+    aggroData.lastUpdate = Date.now();
+    aggroData.isAggroed = true;
+    // Keep finite camp leash — do not set directPlayerDamageAggroed / threatFromDamage.
+    aggroData.threatFromDamage = false;
+    aggroData.directPlayerDamageAggroed = false;
+    this.emitBeastAggroSfx(guard);
+    _enemyAiLog(`🏕️ Town guard alert: ${guard.id} → ${playerId}`);
   }
 
   findAlliedKnightTarget(ally) {
@@ -11809,6 +12175,418 @@ class EnemyAI {
         combatTargetId: target.id,
       });
     }
+  }
+
+  updateAlliedSiegeGolemAI(ally, players) {
+    if (!this.room || ally.isDying || ally.health <= 0) return;
+    if (this._shouldAlliesDisengageForDreamshroud()) {
+      this._followOwnerDuringDreamshroud(ally, players);
+      return;
+    }
+    if (this.room.isEnemyAffectedBy(ally.id, 'hostileFreeze')) return;
+    const now = Date.now();
+    const lockUntil = this.meleeLockUntil.get(ally.id) || 0;
+    if (now < lockUntil) return;
+
+    const ATTACK_RANGE = 3.0;
+    const SWING_LOCK_MS = 1940;
+    const HIT_DELAY_MS = 825;
+    const COOLDOWN_MS = ally.attackCooldown ?? 2250;
+
+    const townActive = this._hasLiveExploreTown();
+    let target = null;
+    if (townActive) {
+      target = this._findNearestExploreTownStructure(ally.position);
+    } else {
+      target = this.findAlliedKnightTarget(ally);
+      if (target && !this._isWithinExploreBaseLeash(ally, target.position)) {
+        ally.alliedTargetEnemyId = null;
+        ally.combatInitiated = false;
+        target = null;
+      }
+    }
+
+    if (!target) {
+      if (!townActive) {
+        this._followExploreBase(ally);
+      }
+      return;
+    }
+
+    ally.alliedTargetEnemyId = target.id;
+    ally.combatInitiated = true;
+    const distance = this.calculateDistance(ally.position, target.position);
+    const dx = target.position.x - ally.position.x;
+    const dz = target.position.z - ally.position.z;
+    ally.rotation = Math.atan2(dx, dz);
+    this._queueMoveIfChanged(ally.id, ally.position, ally.rotation);
+
+    const meleePressDistance = ATTACK_RANGE - MELEE_CLOSE_INSET;
+    if (distance <= ATTACK_RANGE) {
+      if (!this.ghoulAttackCooldown.has(ally.id)) {
+        this.ghoulAttackCooldown.set(ally.id, 0);
+      }
+      const lastAttackTime = this.ghoulAttackCooldown.get(ally.id);
+      if (now - lastAttackTime >= COOLDOWN_MS) {
+        this.ghoulAttackCooldown.set(ally.id, now);
+        this.meleeLockUntil.set(ally.id, now + SWING_LOCK_MS);
+        const nextVariant = ally.attackVariant === 2 ? 1 : 2;
+        ally.attackVariant = nextVariant;
+        if (this.io) {
+          this.io.to(this.roomId).emit('allied-siege-golem-attack-telegraph', {
+            siegeGolemId: ally.id,
+            targetEnemyId: target.id,
+            attackVariant: nextVariant,
+            hitDelayMs: HIT_DELAY_MS,
+            swingLockMs: SWING_LOCK_MS,
+            attackRange: ATTACK_RANGE,
+            facing: ally.rotation,
+            position: { ...ally.position },
+            timestamp: now,
+          });
+        }
+        const targetId = target.id;
+        const allyId = ally.id;
+        this._scheduleTimeout(() => {
+          if (!this.room?.getGameStarted()) return;
+          const liveAlly = this.room?.getEnemy(allyId);
+          if (!liveAlly || liveAlly.isDying || liveAlly.health <= 0) return;
+          if (this.room?.isEnemyAffectedBy(allyId, 'stun')) return;
+          const liveTarget = this.room?.getEnemy(targetId);
+          if (!liveTarget || liveTarget.isDying || liveTarget.health <= 0) return;
+          if (this.isFriendlyCombatUnit(liveTarget)) return;
+          const currentDist = this.calculateDistance(liveAlly.position, liveTarget.position);
+          if (currentDist <= ATTACK_RANGE + 0.5) {
+            const damage = liveAlly.damage || 100;
+            this.room.damageEnemy(liveTarget.id, damage, null, null, {
+              sourceAlliedUnitId: liveAlly.id,
+              damageType: 'allied_siege_golem_melee',
+            });
+          } else if (this.io) {
+            this.io.to(this.roomId).emit('allied-siege-golem-attack-whiff', {
+              siegeGolemId: allyId,
+              timestamp: Date.now(),
+            });
+          }
+        }, HIT_DELAY_MS);
+      } else if (distance > meleePressDistance) {
+        this.moveEnemyTowardsTarget(ally, { id: target.id, position: target.position }, {
+          meleeSurroundAttackRange: ATTACK_RANGE,
+          combatTargetId: target.id,
+        });
+      }
+    } else {
+      this.moveEnemyTowardsTarget(ally, { id: target.id, position: target.position }, {
+        meleeSurroundAttackRange: ATTACK_RANGE,
+        combatTargetId: target.id,
+      });
+    }
+  }
+
+  updateAlliedSiegeWyrmAI(ally, players) {
+    if (!this.room || ally.isDying || ally.health <= 0) return;
+    if (this._shouldAlliesDisengageForDreamshroud()) {
+      this._followOwnerDuringDreamshroud(ally, players);
+      return;
+    }
+    if (this.room.isEnemyAffectedBy(ally.id, 'hostileFreeze')) return;
+    const now = Date.now();
+
+    if (ally.breathActive) {
+      const owner = this.findAlliedBeastOwner(ally, players);
+      const locked = this.getAlliedKnightLockedTarget(ally)
+        || this._findNearestHostileForBeast(ally, ALLIED_SIEGE_WYRM_AGGRO_RADIUS);
+      if (locked?.position) {
+        this._smoothRotateEnemyTowardPoint(ally, locked.position);
+        this._queueMoveIfChanged(ally.id, ally.position, ally.rotation);
+      } else if (owner?.position) {
+        this._smoothRotateEnemyTowardPoint(ally, owner.position);
+        this._queueMoveIfChanged(ally.id, ally.position, ally.rotation);
+      }
+      return;
+    }
+
+    const lockUntil = this.meleeLockUntil.get(ally.id) || 0;
+    if (now < lockUntil) return;
+
+    const owner = this.findAlliedBeastOwner(ally, players);
+    let target = this.getAlliedKnightLockedTarget(ally);
+    if (!target) {
+      target = this._findNearestHostileForBeast(ally, ALLIED_SIEGE_WYRM_AGGRO_RADIUS);
+      if (target) {
+        ally.alliedTargetEnemyId = target.id;
+        ally.combatInitiated = true;
+      }
+    }
+
+    if (!target) {
+      ally.alliedTargetEnemyId = null;
+      ally.combatInitiated = false;
+      ally.moveSpeed = ALLIED_SIEGE_WYRM_WALK_SPEED;
+      if (owner) {
+        const followPos = {
+          x: (owner.position?.x ?? 0) - 2.2,
+          y: 0,
+          z: (owner.position?.z ?? 0) - 1.5,
+        };
+        const d = this.calculateDistance(ally.position, followPos);
+        if (d > ALLIED_SIEGE_WYRM_FOLLOW_DISTANCE) {
+          this.moveEnemyTowardsTarget(ally, { id: `follow-${owner.id}-wyrm`, position: followPos }, {
+            stopThreshold: 0.6,
+          });
+        } else {
+          this._queueMoveIfChanged(ally.id, ally.position, ally.rotation);
+        }
+      }
+      return;
+    }
+
+    const distance = this.calculateDistance(ally.position, target.position);
+    ally.moveSpeed = ALLIED_SIEGE_WYRM_RUN_SPEED;
+
+    if (this.tryAlliedSiegeWyrmBreath(ally, target, distance, now)) return;
+
+    const attackRange = ALLIED_SIEGE_WYRM_ATTACK_RANGE;
+    const meleePressDistance = attackRange - MELEE_CLOSE_INSET;
+    const dx = target.position.x - ally.position.x;
+    const dz = target.position.z - ally.position.z;
+    ally.rotation = Math.atan2(dx, dz);
+    this._queueMoveIfChanged(ally.id, ally.position, ally.rotation);
+
+    if (distance <= attackRange) {
+      if (!this.ghoulAttackCooldown.has(ally.id)) {
+        this.ghoulAttackCooldown.set(ally.id, 0);
+      }
+      const lastAttackTime = this.ghoulAttackCooldown.get(ally.id);
+      const cooldown = ally.attackCooldown ?? ALLIED_SIEGE_WYRM_ATTACK_COOLDOWN_MS;
+      if (now - lastAttackTime >= cooldown) {
+        this.ghoulAttackCooldown.set(ally.id, now);
+        this.meleeLockUntil.set(ally.id, now + ALLIED_SIEGE_WYRM_SWING_LOCK_MS);
+        if (this.io) {
+          this.io.to(this.roomId).emit('wyvern-attack-telegraph', {
+            wyvernId: ally.id,
+            targetEnemyId: target.id,
+            hitDelayMs: ALLIED_SIEGE_WYRM_HIT_DELAY_MS,
+            swingLockMs: ALLIED_SIEGE_WYRM_SWING_LOCK_MS,
+            attackRange,
+            facing: ally.rotation,
+            weightClass: 'large-beast',
+            position: { ...ally.position },
+            timestamp: now,
+          });
+        }
+        const targetId = target.id;
+        const allyId = ally.id;
+        this._scheduleTimeout(() => {
+          if (!this.room?.getGameStarted()) return;
+          const liveAlly = this.room?.getEnemy(allyId);
+          if (!liveAlly || liveAlly.isDying || liveAlly.health <= 0) return;
+          if (this.room?.isEnemyAffectedBy(allyId, 'stun')) return;
+          const liveTarget = this.room?.getEnemy(targetId);
+          if (!this.isValidAlliedKnightTarget(liveTarget, liveAlly)) return;
+          const currentDist = this.calculateDistance(liveAlly.position, liveTarget.position);
+          if (currentDist <= attackRange + 0.5) {
+            const damage = liveAlly.damage || ALLIED_SIEGE_WYRM_DAMAGE;
+            this.room.damageEnemy(liveTarget.id, damage, null, null, {
+              sourceAlliedUnitId: liveAlly.id,
+              damageType: 'allied_siege_wyrm_melee',
+            });
+            this.maybeEmitBeastMeleeHitSfx(liveAlly);
+          } else if (this.io) {
+            this.io.to(this.roomId).emit('wyvern-attack-whiff', {
+              wyvernId: allyId,
+              timestamp: Date.now(),
+            });
+          }
+        }, ALLIED_SIEGE_WYRM_HIT_DELAY_MS);
+      } else if (distance > meleePressDistance) {
+        this.moveEnemyTowardsTarget(ally, { id: target.id, position: target.position }, {
+          meleeSurroundAttackRange: attackRange,
+          combatTargetId: target.id,
+        });
+      }
+    } else {
+      this.moveEnemyTowardsTarget(ally, { id: target.id, position: target.position }, {
+        meleeSurroundAttackRange: attackRange,
+        combatTargetId: target.id,
+      });
+    }
+  }
+
+  tryAlliedSiegeWyrmBreath(ally, target, distance, now) {
+    if (!ally || ally.isDying || ally.health <= 0) return false;
+    if (ally.breathActive) return false;
+    if (this.room?.isEnemyAffectedBy(ally.id, 'freeze')) return false;
+    if (this.room?.isEnemyAffectedBy(ally.id, 'stun')) return false;
+    if (distance > ALLIED_SIEGE_WYRM_BREATH_CAST_RANGE) return false;
+
+    const last = this.wyvernBreathCooldown.get(ally.id) || 0;
+    if (now - last < ALLIED_SIEGE_WYRM_BREATH_COOLDOWN_MS) return false;
+
+    this.startAlliedSiegeWyrmBreath(ally, target);
+    return true;
+  }
+
+  startAlliedSiegeWyrmBreath(ally, target) {
+    const now = Date.now();
+    const wid = ally.id;
+    if (ally.breathActive) return;
+
+    const staleEnd = this.wyvernBreathEndTimeout.get(wid);
+    if (staleEnd) clearTimeout(staleEnd);
+    const staleLaunches = this.wyvernBreathLaunchTimeout.get(wid);
+    if (staleLaunches) {
+      for (const h of staleLaunches) clearTimeout(h);
+      this.wyvernBreathLaunchTimeout.delete(wid);
+    }
+
+    ally.breathActive = true;
+    this.wyvernBreathCooldown.set(wid, now);
+    const castLockMs = ALLIED_SIEGE_WYRM_BREATH_CAST_LOCK_MS;
+    this.meleeLockUntil.set(wid, now + castLockMs);
+
+    if (target?.position) {
+      this._smoothRotateEnemyTowardPoint(ally, target.position, { instant: true });
+      if (this.io) this._queueMove(ally.id, ally.position, ally.rotation);
+    }
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('wyvern-breath-telegraph', {
+        wyvernId: wid,
+        breathVariant: 1,
+        durationMs: castLockMs,
+        position: ally.position,
+        timestamp: now,
+      });
+    }
+
+    const launchAtMs = Math.max(0, castLockMs - ALLIED_SIEGE_WYRM_BREATH_LAUNCH_EARLY_MS);
+    const targetId = target?.id;
+    const launchHandle = this._scheduleTimeout(() => {
+      const liveAlly = this.room?.getEnemy(wid);
+      if (!liveAlly || liveAlly.isDying || liveAlly.health <= 0 || !liveAlly.breathActive) return;
+      const liveTarget = targetId ? this.room?.getEnemy(targetId) : null;
+      if (!this.isValidAlliedKnightTarget(liveTarget, liveAlly)) return;
+      this.alliedSiegeWyrmLaunchFirebolt(liveAlly, liveTarget);
+    }, launchAtMs);
+    this.wyvernBreathLaunchTimeout.set(wid, [launchHandle]);
+
+    const endHandle = this._scheduleTimeout(() => {
+      this.endAlliedSiegeWyrmBreath(wid);
+    }, castLockMs);
+    this.wyvernBreathEndTimeout.set(wid, endHandle);
+  }
+
+  endAlliedSiegeWyrmBreath(wyvernId) {
+    const ally = this.room?.getEnemy(wyvernId);
+    if (ally) ally.breathActive = false;
+    const launchHandles = this.wyvernBreathLaunchTimeout.get(wyvernId);
+    if (launchHandles) {
+      for (const h of launchHandles) clearTimeout(h);
+      this.wyvernBreathLaunchTimeout.delete(wyvernId);
+    }
+    this.wyvernBreathEndTimeout.delete(wyvernId);
+    if (this.io) {
+      this.io.to(this.roomId).emit('wyvern-breath-end', {
+        wyvernId,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  alliedSiegeWyrmLaunchFirebolt(ally, target) {
+    if (!ally?.position || !target?.position) return;
+    const muzzleYOffset = 1.4;
+    const start = {
+      x: ally.position.x,
+      y: (ally.position.y ?? 0) + muzzleYOffset,
+      z: ally.position.z,
+    };
+    const aimY = (target.position.y ?? 0) + 1.0;
+    const aimDx = target.position.x - start.x;
+    const aimDz = target.position.z - start.z;
+    const aimLen = Math.hypot(aimDx, aimDz) || 1;
+    const baseDir = { x: aimDx / aimLen, z: aimDz / aimLen };
+    const dirLen = ALLIED_SIEGE_WYRM_BREATH_MAX_RANGE;
+    const boltTarget = {
+      x: start.x + baseDir.x * dirLen,
+      y: aimY,
+      z: start.z + baseDir.z * dirLen,
+    };
+    if (aimDx || aimDz) ally.rotation = Math.atan2(aimDx, aimDz);
+    this._queueMove(ally.id, ally.position, ally.rotation);
+    this._simulateAlliedWyrmFirebolt(
+      ally.id,
+      start,
+      boltTarget,
+      `${ally.id}-breath-${Date.now()}`,
+    );
+  }
+
+  /** Allied Siege Wyrm pierce firebolt — damages hostiles only; reuses wyvern breath VFX events. */
+  _simulateAlliedWyrmFirebolt(wid, start, target, fireboltId) {
+    if (this.io) {
+      this.io.to(this.roomId).emit('wyvern-breath-firebolt', {
+        wyvernId: wid,
+        fireboltId,
+        breathVariant: 1,
+        startPosition: start,
+        targetPosition: target,
+        damage: ALLIED_SIEGE_WYRM_BREATH_DAMAGE,
+        timestamp: Date.now(),
+      });
+    }
+
+    const dirLen = Math.hypot(target.x - start.x, target.z - start.z) || 1;
+    const dir = { x: (target.x - start.x) / dirLen, z: (target.z - start.z) / dirLen };
+    const pos = { x: start.x, z: start.z };
+    const STEP_MS = 50;
+    const maxSteps = Math.ceil((dirLen / GREED_FIREBALL_SPEED) * (1000 / STEP_MS)) + 4;
+    let steps = 0;
+    const hitRadiusSq = GREED_FIREBALL_HIT_RADIUS * GREED_FIREBALL_HIT_RADIUS;
+    const hitEnemyIds = new Set();
+    const hitMeta = {
+      sourceAlliedUnitId: wid,
+      damageType: 'allied_siege_wyrm_breath',
+    };
+    const ally = this.room?.getEnemy(wid) || { id: wid, type: 'allied-siege-wyrm', alliedUnit: true };
+
+    const intervalId = setInterval(() => {
+      if (!this.room?.getGameStarted()) {
+        clearInterval(intervalId);
+        this._removeEnemyHazardInterval(wid, intervalId);
+        return;
+      }
+      steps++;
+      pos.x += dir.x * GREED_FIREBALL_SPEED * (STEP_MS / 1000);
+      pos.z += dir.z * GREED_FIREBALL_SPEED * (STEP_MS / 1000);
+
+      const enemyMap = this.room?.enemies;
+      if (enemyMap) {
+        for (const enemy of enemyMap.values()) {
+          if (!enemy || hitEnemyIds.has(enemy.id)) continue;
+          if (!this.isValidAlliedKnightTarget(enemy, ally)) continue;
+          const hdx = (enemy.position?.x ?? 0) - pos.x;
+          const hdz = (enemy.position?.z ?? 0) - pos.z;
+          if (hdx * hdx + hdz * hdz > hitRadiusSq) continue;
+          hitEnemyIds.add(enemy.id);
+          this.room.damageEnemy(enemy.id, ALLIED_SIEGE_WYRM_BREATH_DAMAGE, null, null, hitMeta);
+        }
+      }
+
+      if (steps >= maxSteps) {
+        clearInterval(intervalId);
+        this._removeEnemyHazardInterval(wid, intervalId);
+        this.io?.to(this.roomId).emit('wyvern-breath-impact', {
+          wyvernId: wid,
+          fireboltId,
+          position: pos,
+          hit: hitEnemyIds.size > 0,
+          timestamp: Date.now(),
+        });
+      }
+    }, STEP_MS);
+    this._addEnemyHazardInterval(wid, intervalId);
   }
 
   telegraphAlliedKnightAttack(ally, targetEnemy) {
@@ -13517,8 +14295,10 @@ class EnemyAI {
 
     const range = tower.attackRange || 8;
     let damage = tower.damage || 150;
-    if (tower.type === 'watch-tower' && this.room?.exploreResearch) {
-      damage = exploreBuildings.getExploreWatchTowerArrowDamage(this.room.exploreResearch.towerDamage);
+    if (tower.type === 'watch-tower') {
+      damage = exploreBuildings.getExploreWatchTowerArrowDamage(
+        this.room?.exploreResearch?.towerDamage,
+      );
     }
     const best = this._findDefenseTowerNearestHostile(tower, range);
     if (!best) return;
@@ -13574,6 +14354,96 @@ class EnemyAI {
           ? 'siege_tower_arrow'
           : attackKind === 'arrow' ? 'watch_tower_arrow' : 'defense_tower_bolt',
       });
+    }, impactDelayMs);
+  }
+
+  updateHostileTownTowerAI(tower) {
+    if (!this.room || tower.isDying || (tower.health ?? 0) <= 0) return;
+    const now = Date.now();
+    if ((tower.attackReadyAt || 0) > now) return;
+
+    const range = tower.attackRange || 10;
+    const damage = tower.damage || 59;
+    const players = typeof this.room.getPlayers === 'function' ? this.room.getPlayers() : [];
+    const tx = tower.position?.x ?? 0;
+    const tz = tower.position?.z ?? 0;
+    const range2 = range * range;
+    let best = null;
+    let bestD2 = Infinity;
+    for (const p of players) {
+      if (!p || (p.health ?? 0) <= 0) continue;
+      const dx = (p.position?.x ?? 0) - tx;
+      const dz = (p.position?.z ?? 0) - tz;
+      const d2 = dx * dx + dz * dz;
+      if (d2 <= range2 && d2 < bestD2) {
+        best = p;
+        bestD2 = d2;
+      }
+    }
+    if (!best) return;
+
+    tower.attackReadyAt = now + (tower.attackCooldown || 1350);
+    const dx = (best.position?.x ?? 0) - tx;
+    const dz = (best.position?.z ?? 0) - tz;
+    const len = Math.hypot(dx, dz) || 1e-6;
+    if (dx * dx + dz * dz > 1e-8) {
+      tower.rotation = Math.atan2(dx, dz);
+      this._queueMove(tower.id, tower.position, tower.rotation);
+    }
+
+    const attackKind = tower.attackKind || 'arrow';
+    const muzzleY = tower.attackMuzzleY || 4.08;
+    const impactY = tower.attackImpactY || 1.0;
+    const origin = { x: tx, y: muzzleY, z: tz };
+    const impact = {
+      x: best.position?.x ?? tx,
+      y: (best.position?.y ?? 0) + impactY,
+      z: best.position?.z ?? tz,
+    };
+    const speed = tower.attackArrowSpeed || 25;
+    const dist = Math.hypot(
+      impact.x - origin.x,
+      impact.y - origin.y,
+      impact.z - origin.z,
+    );
+    const impactDelayMs = Math.max(80, Math.round((dist / speed) * 1000));
+    const endX = tx + (dx / len) * range;
+    const endZ = tz + (dz / len) * range;
+    const towerId = tower.id;
+    if (this.io) {
+      this.io.to(this.roomId).emit('defense-tower-attack', {
+        towerId,
+        kind: attackKind,
+        targetId: best.id,
+        origin,
+        impact,
+        damage,
+        timestamp: now,
+      });
+    }
+    this._scheduleTimeout(() => {
+      if (!this.room?.getGameStarted?.()) return;
+      const liveTower = this.room.getEnemy(towerId);
+      if (!liveTower || liveTower.isDying || (liveTower.health ?? 0) <= 0) return;
+      this.room.damagePlayersInLineSegment?.(
+        tx,
+        tz,
+        endX,
+        endZ,
+        1.05,
+        damage,
+        tower.type === 'siege-tower' ? 'siege_tower_arrow' : 'viper_arrow',
+        { sourceEnemyId: towerId },
+      );
+      this.damageAlliedUnitsAlongSegmentXZ?.(
+        tx,
+        tz,
+        endX,
+        endZ,
+        3.5 * 3.5,
+        damage,
+        { sourceEnemyId: towerId, damageType: tower.type === 'siege-tower' ? 'siege_tower_arrow' : 'viper_arrow' },
+      );
     }, impactDelayMs);
   }
 
@@ -16689,7 +17559,10 @@ class EnemyAI {
     let aggroData = this.enemyAggro.get(wolf.id);
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(wolf, players);
-      if (!closestPlayer) return;
+      if (!closestPlayer) {
+        this._wanderBeastLocally(wolf);
+        return;
+      }
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
@@ -16701,7 +17574,10 @@ class EnemyAI {
     }
 
     const resolved = this.resolveAggroCombatTarget(aggroData, wolf, players);
-    if (!resolved) return;
+    if (!resolved) {
+      this._wanderBeastLocally(wolf);
+      return;
+    }
 
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
@@ -16718,7 +17594,10 @@ class EnemyAI {
     }
     this._maybeClearForcedEdgeSpawn(aggroData, distance, aggroRadius);
 
-    if (!aggroData.isAggroed) return;
+    if (!aggroData.isAggroed) {
+      this._wanderBeastLocally(wolf);
+      return;
+    }
 
     const lockUntil = this.meleeLockUntil.get(wolf.id) || 0;
     if (now < lockUntil) {
@@ -16738,7 +17617,10 @@ class EnemyAI {
     let aggroData = this.enemyAggro.get(bear.id);
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(bear, players);
-      if (!closestPlayer) return;
+      if (!closestPlayer) {
+        this._wanderBeastLocally(bear);
+        return;
+      }
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
@@ -16750,7 +17632,10 @@ class EnemyAI {
     }
 
     const resolved = this.resolveAggroCombatTarget(aggroData, bear, players);
-    if (!resolved) return;
+    if (!resolved) {
+      this._wanderBeastLocally(bear);
+      return;
+    }
 
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
@@ -16769,7 +17654,10 @@ class EnemyAI {
     }
     this._maybeClearForcedEdgeSpawn(aggroData, distance, aggroRadius);
 
-    if (!aggroData.isAggroed) return;
+    if (!aggroData.isAggroed) {
+      this._wanderBeastLocally(bear);
+      return;
+    }
 
     const lockUntil = this.meleeLockUntil.get(bear.id) || 0;
     if (now < lockUntil) {
@@ -16789,6 +17677,104 @@ class EnemyAI {
     const rawX = anchorX + Math.cos(angle) * dist;
     const rawZ = anchorZ + Math.sin(angle) * dist;
     return this.clampToArenaXZ(rawX, rawZ);
+  }
+
+  /**
+   * Local idle stroll around a spawn/home anchor.
+   * `idlePauseMaxMs > 0` stands still between short walks (explore humanoids).
+   */
+  _wanderLocally(enemy, config, anchorOverride = null) {
+    if (!enemy?.position) return;
+    const radius = config.radius ?? TIGER_WANDER_RADIUS;
+    const reach = config.reach ?? TIGER_WANDER_REACH;
+    const speed = config.speed;
+    const repickMs = config.repickMs ?? TIGER_WANDER_REPICK_MS;
+    const idlePauseMinMs = config.idlePauseMinMs ?? 0;
+    const idlePauseMaxMs = config.idlePauseMaxMs ?? 0;
+    const moveId = config.moveId || 'wander';
+
+    const now = Date.now();
+    if (!enemy.wanderAnchor) {
+      const src = anchorOverride || enemy.position;
+      enemy.wanderAnchor = { x: src.x, z: src.z };
+    }
+    const anchor = anchorOverride || enemy.wanderAnchor;
+
+    if (idlePauseMaxMs > 0) {
+      if (enemy.wanderIdleUntil == null) {
+        const span = Math.max(0, idlePauseMaxMs - idlePauseMinMs);
+        enemy.wanderIdleUntil = now + idlePauseMinMs + Math.random() * span;
+      }
+      if (now < enemy.wanderIdleUntil) return;
+    }
+
+    const target = enemy.wanderTarget;
+    const reachedTarget = target
+      ? Math.hypot(target.x - enemy.position.x, target.z - enemy.position.z) <= reach
+      : false;
+
+    if (!target || reachedTarget || now >= (enemy.nextWanderPickAt || 0)) {
+      if (idlePauseMaxMs > 0 && target) {
+        const span = Math.max(0, idlePauseMaxMs - idlePauseMinMs);
+        enemy.wanderIdleUntil = now + idlePauseMinMs + Math.random() * span;
+        enemy.wanderTarget = null;
+        return;
+      }
+      enemy.wanderTarget = this._pickLocalWanderTarget(anchor.x, anchor.z, radius);
+      enemy.nextWanderPickAt = now + repickMs;
+    }
+
+    if (enemy.wanderTarget) {
+      const moveOpts = { stopThreshold: reach };
+      if (speed != null) moveOpts.overrideSpeed = speed;
+      this.moveEnemyTowardsTarget(enemy, { id: moveId, position: enemy.wanderTarget }, moveOpts);
+    }
+  }
+
+  _wanderBeastLocally(enemy) {
+    const type = enemy?.type;
+    let speed = TIGER_WALK_SPEED;
+    if (type === 'wolf' || type === 'boss-wolf') speed = WOLF_WALK_SPEED;
+    else if (type === 'bear' || type === 'boss-bear') speed = BEAR_WALK_SPEED;
+    else if (type === 'wyvern') speed = WYVERN_WALK_SPEED;
+    else if (type === 'wyrm') speed = WYRM_WALK_SPEED;
+    this._wanderLocally(enemy, {
+      radius: TIGER_WANDER_RADIUS,
+      reach: TIGER_WANDER_REACH,
+      repickMs: TIGER_WANDER_REPICK_MS,
+      speed,
+      moveId: `${type || 'beast'}-wander`,
+    });
+  }
+
+  _isExploreIdleWanderHumanoid(enemy) {
+    if (!enemy || !this.room?.coopExploreActive) return false;
+    const t = enemy.type;
+    if (t === 'knight' || t === 'viper' || t === 'shade' || t === 'weaver') return true;
+    if (t === 'warlock' && enemy.soulType === 'purple') return true;
+    return false;
+  }
+
+  _tryIdleWanderExploreHumanoid(enemy, anchorOverride = null) {
+    if (!this._isExploreIdleWanderHumanoid(enemy)) return false;
+    this._wanderLocally(enemy, {
+      radius: EXPLORE_HUMANOID_WANDER_RADIUS,
+      reach: EXPLORE_HUMANOID_WANDER_REACH,
+      repickMs: EXPLORE_HUMANOID_WANDER_REPICK_MS,
+      speed: EXPLORE_HUMANOID_WANDER_SPEED,
+      idlePauseMinMs: EXPLORE_HUMANOID_IDLE_PAUSE_MIN_MS,
+      idlePauseMaxMs: EXPLORE_HUMANOID_IDLE_PAUSE_MAX_MS,
+      moveId: 'explore-idle-wander',
+    }, anchorOverride);
+    return true;
+  }
+
+  _idleWanderOrReturnHome(enemy) {
+    if (this._isExploreTownGuard(enemy)) {
+      this._returnExploreTownGuardHome(enemy);
+      return;
+    }
+    this._tryIdleWanderExploreHumanoid(enemy);
   }
 
   _wanderTigerLocally(tiger) {
@@ -16978,7 +17964,10 @@ class EnemyAI {
     let aggroData = this.enemyAggro.get(wyvern.id);
     if (!aggroData) {
       const closestPlayer = this.findClosestPlayer(wyvern, players);
-      if (!closestPlayer) return;
+      if (!closestPlayer) {
+        this._wanderBeastLocally(wyvern);
+        return;
+      }
       aggroData = {
         targetPlayerId: closestPlayer.id,
         targetZombieId: null,
@@ -16990,7 +17979,10 @@ class EnemyAI {
     }
 
     const resolved = this.resolveAggroCombatTarget(aggroData, wyvern, players);
-    if (!resolved) return;
+    if (!resolved) {
+      this._wanderBeastLocally(wyvern);
+      return;
+    }
 
     const moveTarget = this.aggroTargetToMoveTarget(resolved);
     const tpos = this.combatTargetPosition(resolved);
@@ -17009,7 +18001,10 @@ class EnemyAI {
     }
     this._maybeClearForcedEdgeSpawn(aggroData, distance, aggroRadius);
 
-    if (!aggroData.isAggroed) return;
+    if (!aggroData.isAggroed) {
+      this._wanderBeastLocally(wyvern);
+      return;
+    }
 
     const now = Date.now();
 
@@ -17032,6 +18027,212 @@ class EnemyAI {
 
     const profile = getMeleeProfile('wyvern');
     this.tryMeleeEngage(wyvern, resolved, moveTarget, profile, { now, distance });
+  }
+
+  updateWyrmAI(wyrm, players) {
+    let aggroData = this.enemyAggro.get(wyrm.id);
+    if (!aggroData) {
+      const closestPlayer = this.findClosestPlayer(wyrm, players);
+      if (!closestPlayer) {
+        this._wanderBeastLocally(wyrm);
+        return;
+      }
+      aggroData = {
+        targetPlayerId: closestPlayer.id,
+        targetZombieId: null,
+        targetTrapId: null,
+        lastUpdate: Date.now(),
+        aggro: 100,
+      };
+      this.enemyAggro.set(wyrm.id, aggroData);
+    }
+
+    const resolved = this.resolveAggroCombatTarget(aggroData, wyrm, players);
+    if (!resolved) {
+      this._wanderBeastLocally(wyrm);
+      return;
+    }
+
+    const moveTarget = this.aggroTargetToMoveTarget(resolved);
+    const tpos = this.combatTargetPosition(resolved);
+    const distance = this.calculateDistance(wyrm.position, tpos);
+    const aggroRadius = this.resolveAggroRadius(WYRM_AGGRO_RADIUS);
+    const leashRadius = this.getCombatLeashRadius(aggroData, aggroRadius);
+    const losOk = this.hasLineOfSight(wyrm.position, tpos);
+
+    if (!aggroData.isAggroed && distance <= aggroRadius && losOk) {
+      aggroData.isAggroed = true;
+      this.emitBeastAggroSfx(wyrm);
+    } else if (aggroData.isAggroed && distance > leashRadius) {
+      aggroData.isAggroed = false;
+      aggroData.threatFromDamage = false;
+      this.clearBeastAggroSfx(wyrm.id);
+    }
+    this._maybeClearForcedEdgeSpawn(aggroData, distance, aggroRadius);
+
+    if (!aggroData.isAggroed) {
+      this._wanderBeastLocally(wyrm);
+      return;
+    }
+
+    const now = Date.now();
+
+    if (wyrm.spellActive) {
+      if (tpos) {
+        this._smoothRotateEnemyTowardPoint(wyrm, tpos);
+        this._queueMoveIfChanged(wyrm.id, wyrm.position, wyrm.rotation);
+      }
+      return;
+    }
+
+    const lockUntil = this.meleeLockUntil.get(wyrm.id) || 0;
+    if (now < lockUntil) {
+      this.tickMeleeSwingWindup(wyrm, resolved);
+      return;
+    }
+
+    // Airborne player: hold calm idle — no chase underneath.
+    if (resolved.kind === 'player' && this._isTargetAirborne(resolved.player)) {
+      wyrm.moveSpeed = 0;
+      const profile = getMeleeProfile('wyrm');
+      this.tryMeleeEngage(wyrm, resolved, moveTarget, profile, { now, distance });
+      return;
+    }
+
+    if (this.tryWyrmFlameSpell(wyrm, resolved, distance, now)) return;
+
+    wyrm.moveSpeed = WYRM_RUN_SPEED;
+
+    const profile = getMeleeProfile('wyrm');
+    this.tryMeleeEngage(wyrm, resolved, moveTarget, profile, { now, distance });
+  }
+
+  canWyrmFlameSpell(wyrm, distance, now) {
+    if (!wyrm || wyrm.isDying || wyrm.health <= 0) return false;
+    if (wyrm.spellActive) return false;
+    if (this.room?.isEnemyAffectedBy(wyrm.id, 'freeze')) return false;
+    if (this.room?.isEnemyAffectedBy(wyrm.id, 'stun')) return false;
+    if (distance > WYRM_SPELL_CAST_RANGE) return false;
+    const last = this.wyrmSpellCooldown.get(wyrm.id) || 0;
+    if (now - last < WYRM_SPELL_COOLDOWN_MS) return false;
+    return true;
+  }
+
+  tryWyrmFlameSpell(wyrm, resolved, distance, now) {
+    if (!this.canWyrmFlameSpell(wyrm, distance, now)) return false;
+    this.startWyrmFlameSpell(wyrm, resolved);
+    return true;
+  }
+
+  clearWyrmSpellPillarTimers(wyrmId) {
+    const arr = this.wyrmSpellPillarTimeouts.get(wyrmId);
+    if (arr) {
+      for (const h of arr) clearTimeout(h);
+    }
+    this.wyrmSpellPillarTimeouts.delete(wyrmId);
+  }
+
+  addWyrmSpellPillarTimeout(wyrmId, handle) {
+    const arr = this.wyrmSpellPillarTimeouts.get(wyrmId) || [];
+    arr.push(handle);
+    this.wyrmSpellPillarTimeouts.set(wyrmId, arr);
+  }
+
+  startWyrmFlameSpell(wyrm, resolved) {
+    const now = Date.now();
+    const wid = wyrm.id;
+    if (wyrm.spellActive) return;
+
+    const staleEnd = this.wyrmSpellEndTimeout.get(wid);
+    if (staleEnd) clearTimeout(staleEnd);
+    this.clearWyrmSpellPillarTimers(wid);
+
+    wyrm.spellActive = true;
+    this.wyrmSpellCooldown.set(wid, now);
+
+    const castLockMs = WYRM_SPELL_CAST_LOCK_MS;
+    this.meleeLockUntil.set(wid, now + castLockMs);
+
+    const aimPos = this.combatTargetPosition(resolved);
+    if (aimPos) {
+      this._smoothRotateEnemyTowardPoint(wyrm, aimPos, { instant: true });
+      if (this.io) this._queueMove(wyrm.id, wyrm.position, wyrm.rotation);
+    }
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('wyrm-spell-telegraph', {
+        wyrmId: wid,
+        durationMs: castLockMs,
+        position: wyrm.position,
+        timestamp: now,
+      });
+    }
+
+    const r = wyrm.rotation || 0;
+    const lx = Math.cos(r);
+    const lz = -Math.sin(r);
+    const py = wyrm.position.y ?? 0;
+    const ox = wyrm.position.x;
+    const oz = wyrm.position.z;
+    const spellCastId = now;
+    wyrm.spellCastId = spellCastId;
+
+    const erupt = (center) => {
+      const live = this.room?.getEnemy?.(wid);
+      if (!this.room?.getGameStarted() || !live || live.isDying || live.health <= 0) return;
+      if (live.type !== 'wyrm' || live.spellCastId !== spellCastId) return;
+      if (this.io) {
+        this.io.to(this.roomId).emit('wyrm-spell-pillar', {
+          wyrmId: wid,
+          position: { x: center.x, y: center.y, z: center.z },
+          timestamp: Date.now(),
+        });
+      }
+      this.room.damagePlayersInHorizontalRing(
+        center,
+        WYRM_SPELL_PILLAR_RADIUS,
+        WYRM_SPELL_PILLAR_DAMAGE,
+        'wyrm_flame_pillar',
+      );
+    };
+
+    for (const side of [-1, 1]) {
+      const center = {
+        x: ox + lx * side * WYRM_SPELL_PILLAR_OFFSET,
+        y: py,
+        z: oz + lz * side * WYRM_SPELL_PILLAR_OFFSET,
+      };
+      const h = this._scheduleTimeout(() => erupt(center), WYRM_SPELL_PILLAR_DELAY_MS);
+      this.addWyrmSpellPillarTimeout(wid, h);
+    }
+
+    const endHandle = this._scheduleTimeout(() => {
+      this.wyrmSpellEndTimeout.delete(wid);
+      this.endWyrmFlameSpell(wid);
+    }, castLockMs);
+    this.wyrmSpellEndTimeout.set(wid, endHandle);
+
+    _enemyAiLog(`🔥 Wyrm ${wid} casting flame spell (${castLockMs}ms).`);
+  }
+
+  endWyrmFlameSpell(wyrmId) {
+    const endHandle = this.wyrmSpellEndTimeout.get(wyrmId);
+    if (endHandle) {
+      clearTimeout(endHandle);
+      this.wyrmSpellEndTimeout.delete(wyrmId);
+    }
+
+    const wyrm = this.room?.getEnemy?.(wyrmId);
+    if (wyrm) {
+      wyrm.spellActive = false;
+    }
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('wyrm-spell-end', {
+        wyrmId,
+        timestamp: Date.now(),
+      });
+    }
   }
 
   _terrorhawkHorizontalDistance(a, b) {
@@ -20646,6 +21847,24 @@ class EnemyAI {
       dyingDestiny.wingActive = false;
       dyingDestiny.wingCastId = null;
     }
+    const wyrmSpellEndT = this.wyrmSpellEndTimeout.get(enemyId);
+    if (wyrmSpellEndT) {
+      clearTimeout(wyrmSpellEndT);
+      this.wyrmSpellEndTimeout.delete(enemyId);
+      if (this.io) {
+        this.io.to(this.roomId).emit('wyrm-spell-end', {
+          wyrmId: enemyId,
+          timestamp: Date.now(),
+        });
+      }
+    }
+    this.clearWyrmSpellPillarTimers(enemyId);
+    this.wyrmSpellCooldown.delete(enemyId);
+    const dyingWyrm = this.room?.getEnemy?.(enemyId);
+    if (dyingWyrm && dyingWyrm.type === 'wyrm') {
+      dyingWyrm.spellActive = false;
+      dyingWyrm.spellCastId = null;
+    }
     const destinyFlyAttackEndT = this.destinyFlyAttackEndTimeout.get(enemyId);
     if (destinyFlyAttackEndT) {
       clearTimeout(destinyFlyAttackEndT);
@@ -21518,6 +22737,8 @@ class EnemyAI {
     if (type === 'tiger' || type === 'boss-tiger' || type === 'allied-tiger') return 'tiger';
     if (type === 'serpent' || type === 'boss-serpent' || type === 'allied-serpent') return 'serpent';
     if (type === 'wyvern') return 'wyvern';
+    if (type === 'wyrm') return 'wyvern';
+    if (type === 'allied-siege-wyrm') return 'wyvern';
     if (type === 'bear' || type === 'boss-bear' || type === 'allied-bear') return 'bear';
     return null;
   }
@@ -21558,6 +22779,9 @@ class EnemyAI {
     } else if (type === 'bear' || type === 'boss-bear' || type === 'allied-bear') {
       if (Math.random() >= 0.3) return;
       soundId = 'beast_bear_attack1';
+    } else if (type === 'wyvern' || type === 'allied-siege-wyrm' || type === 'wyrm') {
+      if (Math.random() >= 0.2) return;
+      soundId = 'beast_wyvern_attack';
     } else {
       return;
     }
@@ -21569,7 +22793,8 @@ class EnemyAI {
         type === 'allied-tiger' ||
         type === 'allied-wolf' ||
         type === 'allied-bear' ||
-        type === 'allied-serpent',
+        type === 'allied-serpent' ||
+        type === 'allied-siege-wyrm',
       timestamp: Date.now(),
     });
   }

@@ -43,6 +43,8 @@ const DEFAULT_BUILDINGS = [
   'shrine.glb',
   'obelisk.glb',
   'shieldBattery.glb',
+  'beastTemple.glb',
+  'altarofWar.glb',
 ];
 
 const STRIP_SEMANTICS = new Set(['JOINTS_0', 'WEIGHTS_0', 'TEXCOORD_1']);

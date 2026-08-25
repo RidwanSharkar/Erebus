@@ -256,17 +256,20 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
 
     for (const ref of [trailRef, dustRef]) {
       if (ref.current) {
-        ref.current.geometry.attributes.position.needsUpdate = true;
-        ref.current.geometry.attributes.opacity.needsUpdate = true;
-        ref.current.geometry.attributes.scale.needsUpdate = true;
-        ref.current.geometry.attributes.age.needsUpdate = true;
+        const geometry = ref.current.geometry;
+        geometry.attributes.position.needsUpdate = true;
+        geometry.attributes.opacity.needsUpdate = true;
+        geometry.attributes.scale.needsUpdate = true;
+        geometry.attributes.age.needsUpdate = true;
+        // World-space ring buffer moves far from the initial (0,0,0) bounds.
+        geometry.boundingSphere = null;
       }
     }
   });
 
   return (
     <>
-      <points ref={dustRef}>
+      <points ref={dustRef} frustumCulled={false}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" count={TRAIL_LENGTH} array={dustPos.current} itemSize={3} />
           <bufferAttribute attach="attributes-opacity" count={TRAIL_LENGTH} array={dustOpa.current} itemSize={1} />
@@ -283,7 +286,7 @@ const EntropicBoltTrail: React.FC<EntropicBoltTrailProps> = ({
         />
       </points>
 
-      <points ref={trailRef}>
+      <points ref={trailRef} frustumCulled={false}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" count={TRAIL_LENGTH} array={pos.current} itemSize={3} />
           <bufferAttribute attach="attributes-opacity" count={TRAIL_LENGTH} array={opa.current} itemSize={1} />

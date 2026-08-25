@@ -18,6 +18,7 @@ interface BarracksRendererProps {
   isDying?: boolean;
   powered?: boolean;
   hideMesh?: boolean;
+  hostile?: boolean;
 }
 
 const FADE_DURATION = 1.4;
@@ -31,8 +32,9 @@ function BarracksRenderer({
   isDying = false,
   powered = true,
   hideMesh = false,
+  hostile = false,
 }: BarracksRendererProps) {
-  const theme = campHpTheme('ally-green');
+  const theme = campHpTheme(hostile ? 'red' : 'ally-green');
   const { enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);

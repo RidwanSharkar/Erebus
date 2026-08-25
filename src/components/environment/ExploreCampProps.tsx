@@ -18,7 +18,7 @@ import { useMultiplayerActions, useMultiplayerRoom } from '@/contexts/Multiplaye
 
 /** Re-evaluate stream radius after this much player XZ travel (matches building cull step). */
 const CAMP_PROP_CULL_STEP2 = 8 * 8;
-const CAMP_AURA_COLOR: Record<ExploreCampKind, string> = {
+const CAMP_AURA_COLOR: Record<Exclude<ExploreCampKind, 'town'>, string> = {
   gold: '#eab308',
   stat: '#f97316',
   tempest: '#3b82f6',
@@ -74,7 +74,7 @@ function bakeCampPropScene(scene: Object3D): { root: Group; groundY: number; sca
   return { root, groundY, scale };
 }
 
-function CampPropMesh({ kind }: { kind: ExploreCampKind }) {
+function CampPropMesh({ kind }: { kind: Exclude<ExploreCampKind, 'town'> }) {
   const url = EXPLORE_CAMP_PROP_URL[kind];
   const { scene } = useGLTF(url);
   const prepared = useMemo(() => bakeCampPropScene(scene), [scene]);
@@ -168,12 +168,12 @@ function ExploreCampProp({
   camp: ExploreCampPublic;
   auraIntensity: number;
 }) {
-  const auraColor = CAMP_AURA_COLOR[camp.kind];
+  const auraColor = CAMP_AURA_COLOR[camp.kind as Exclude<ExploreCampKind, 'town'>];
 
   return (
     <group position={[camp.x, 0, camp.z]} name={`explore-camp-${camp.id}`}>
       <Suspense fallback={<CampFallbackBeacon color={auraColor} />}>
-        <CampPropMesh kind={camp.kind} />
+        <CampPropMesh kind={camp.kind as Exclude<ExploreCampKind, 'town'>} />
       </Suspense>
       {auraIntensity > 0 && <CampAura color={auraColor} intensity={auraIntensity} />}
     </group>
@@ -208,6 +208,7 @@ export default function ExploreCampProps() {
     if (!exploreCamps?.length) return [];
     const viewer = exploreFog.getViewer();
     return exploreCamps.filter((c) => {
+      if (c.kind === 'town') return false;
       if (localId && c.claimedBy.includes(localId)) return false;
       return exploreFog.isExploreEntityInRenderRange(c.x, c.z, viewer.x, viewer.z);
     });

@@ -33,6 +33,8 @@ interface WyvernRendererProps {
   isDying?: boolean;
   campType?: string;
   staggerBuildup?: number;
+  /** Ally (Siege Wyrm) vs hostile enemy wyvern. */
+  variant?: 'ally' | 'enemy';
 }
 
 const ATTACK_DURATION = 1500; // ms — matches backend WYVERN_SWING_LOCK_MS
@@ -51,8 +53,10 @@ function WyvernRenderer({
   isDying = false,
   campType,
   staggerBuildup = 0,
+  variant = 'enemy',
 }: WyvernRendererProps) {
-  const theme = campHpTheme(campType);
+  const theme = campHpTheme(variant === 'ally' ? (campType || 'ally-green') : campType);
+  const displayName = variant === 'ally' ? getEnemyDisplayName('allied-siege-wyrm') : getEnemyDisplayName('wyvern');
   const { socket, enemyTransformsRef, enemyVisualRotationsRef, enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
@@ -315,14 +319,14 @@ function WyvernRenderer({
           <>
             <EnemyHpBarPlanes fillRef={hpFillRef} backgroundColor={theme.background} fillColor={theme.fill} />
             <EnemyHealthBarTextLabel
-              name={getEnemyDisplayName('wyvern')}
+              name={displayName}
               numericRef={hpTextRef}
               health={health}
               maxHealth={maxHealth}
               fontSize={0.16}
               color={theme.text}
             />
-            <EnemyStaggerBar enemyId={id} stagger={staggerBuildup} />
+            {variant !== 'ally' && <EnemyStaggerBar enemyId={id} stagger={staggerBuildup} />}
           </>
         )}
       </Billboard>

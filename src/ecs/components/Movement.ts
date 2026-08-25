@@ -7,6 +7,12 @@ import type { WeaponAspect } from '@/utils/weaponAspects';
 /** Per-charge dash recharge delay (matches existing setTimeout behavior). */
 const DASH_CHARGE_RECHARGE_MS = 8000;
 
+/** Explorer sabretooth mount — faster than Shift-sprint (~7.04). */
+export const EXPLORE_MOUNT_SPEED = 8.0;
+
+/** Seconds after dismount before T can remount. */
+export const EXPLORE_MOUNT_COOLDOWN_SEC = 4;
+
 type DashChargeSlot = {
   isAvailable: boolean;
   cooldownStartTime: number | null;
@@ -75,6 +81,9 @@ export class Movement extends Component {
 
   // Hold-Shift sprint (any locomotion except backward)
   public isSprinting: boolean;
+
+  /** Explorer sabretooth mount — sit locomotion; synced via movementDirection. */
+  public isMounted: boolean;
 
   // Input-based movement
   public moveDirection: Vector3;
@@ -178,6 +187,9 @@ export class Movement extends Component {
 
     // Initialize sprint state
     this.isSprinting = false;
+
+    // Explorer sabretooth mount
+    this.isMounted = false;
     
     this.moveDirection = new Vector3(0, 0, 0);
     this.inputStrength = 0;
@@ -306,6 +318,24 @@ export class Movement extends Component {
   public getEffectiveMaxSpeed(): number {
     if (this.isFrozen || this.isEntangled) {
       return 0; // Completely frozen or rooted
+    }
+
+    // Explorer mount — absolute speed above sprint; does not stack with Shift sprint.
+    if (this.isMounted) {
+      let mountSpeed = EXPLORE_MOUNT_SPEED * this.movementSpeedMultiplier;
+      if (this.isCorrupted) {
+        const currentTimeSeconds = Date.now() / 1000;
+        const elapsed = currentTimeSeconds - this.corruptedStartTime;
+        const currentSlowPercent = Math.max(
+          0,
+          this.corruptedInitialSlowPercent - (elapsed * this.corruptedRecoveryRate),
+        );
+        mountSpeed *= (1 - currentSlowPercent);
+      }
+      if (this.isIcebeaming) {
+        mountSpeed *= 0.2;
+      }
+      return mountSpeed;
     }
 
     // Persistence Hunter: raise walk/run to 4.0, but keep sprint absolute speed unchanged
@@ -573,6 +603,7 @@ export class Movement extends Component {
   public haltLocomotion(): void {
     this.stop();
     this.isSprinting = false;
+    this.isMounted = false;
     this.cancelDash();
     this.cancelCharge();
     this.cancelKnockback();
@@ -797,6 +828,7 @@ export class Movement extends Component {
     this.isAttackSlowed = false;
     // Keep attackSlowMultiplier / hexmetalWalkSpeedActive — item ownership, not combat state.
     this.isSprinting = false;
+    this.isMounted = false;
 
     // Reset dash properties
     this.isDashing = false;

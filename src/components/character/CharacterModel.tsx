@@ -16,6 +16,7 @@ export type AnimState =
   | 'Jump' | 'JumpFront' | 'JumpBack'
   | 'Cast' | 'CastSingle' | 'SwordCast' | 'DrawBow' | 'ReleaseBow'
   | 'Block'
+  | 'Sit'
   | 'Death';
 
 interface CharacterModelProps {
@@ -51,6 +52,7 @@ const CHARACTER_DEFERRED_MODEL_PATHS = {
   DrawBow: '/models/character_drawBow.glb',
   ReleaseBow: '/models/character_releaseBow.glb',
   Block: '/models/character_block.glb',
+  Sit: '/models/character_sit.glb',
   Death: '/models/character_death.glb',
 } as const satisfies Partial<Record<AnimState, string>>;
 
@@ -312,6 +314,7 @@ function CharacterModelRig({
       ...rename(deferredAnimationClips.DrawBow,    'DrawBow'    ).map(stripRootMotionXZ),
       ...rename(deferredAnimationClips.ReleaseBow, 'ReleaseBow' ).map(stripRootMotionXZ),
       ...blockClips.map(stripRootMotionXZ),
+      ...rename(deferredAnimationClips.Sit,        'Sit'        ).map(stripRootMotionXZ),
       ...rename(deferredAnimationClips.Death,      'Death'      ).map(stripRootMotionXZ),
     ];
   }, [idleAnims, runAnims, sprintAnims, sprintUsesFallback, blockUsesFallback, walkAnims, walkBackAnims, walkLeftAnims, walkRightAnims, backAnims, leftAnims, rightAnims, deferredAnimationClips]);

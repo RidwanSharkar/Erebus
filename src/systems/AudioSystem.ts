@@ -250,6 +250,13 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'ui_rock_damage', file: 'ui/ROCKDAMAGE1.mp3' },
   { id: 'ui_rock_damage_2', file: 'ui/ROCKDAMAGE2.mp3' },
   { id: 'ui_rock_destroy', file: 'ui/ROCKDESTROY.mp3' },
+  { id: 'tower_watch_1', file: 'tower/WATCH1.mp3' },
+  { id: 'tower_watch_2', file: 'tower/WATCH2.mp3' },
+  { id: 'tower_watch_3', file: 'tower/WATCH3.mp3' },
+  { id: 'tower_mage_1', file: 'tower/MAGE1.mp3' },
+  { id: 'tower_mage_2', file: 'tower/MAGE2.mp3' },
+  { id: 'tower_mage_3', file: 'tower/MAGE3.mp3' },
+  { id: 'tower_siege', file: 'tower/SIEGE.mp3' },
 ];
 
 const STARTUP_SOUND_IDS = new Set([
@@ -426,6 +433,10 @@ export class AudioSystem extends System {
   private loopingSfxInstances = new Map<string, number>();
   /** Cycles scythe hit-confirm SFX across scythe_impact1/2/3. */
   private scytheHitboxVariant: 1 | 2 | 3 = 1;
+  /** Cycles watch-tower attack SFX across WATCH1/2/3. */
+  private watchTowerAttackVariant: 1 | 2 | 3 = 1;
+  /** Cycles mage-tower attack SFX across MAGE1/2/3. */
+  private mageTowerAttackVariant: 1 | 2 | 3 = 1;
 
   constructor() {
     super();
@@ -1179,6 +1190,7 @@ export class AudioSystem extends System {
         return 'enemy_death';
       case 'colossus':
       case 'stone-giant':
+      case 'allied-siege-golem':
       case 'eternal-oak':
       case 'titan':
         return 'enemy_death_heavy';
@@ -1193,6 +1205,8 @@ export class AudioSystem extends System {
       case 'boss-tiger':
       case 'allied-tiger':
       case 'wyvern':
+      case 'wyrm':
+      case 'allied-siege-wyrm':
       case 'terrorhawk':
       case 'skyray':
         return 'beast_death_wyverntiger';
@@ -1561,6 +1575,35 @@ export class AudioSystem extends System {
   /** Explore rock/spine death — no throttle. */
   public playRockDestroySound(position: Vector3) {
     return this.playWeaponSound('ui_rock_destroy', position, { volume: 1.25 });
+  }
+
+  private nextWatchTowerAttackSoundId(): string {
+    const soundId = `tower_watch_${this.watchTowerAttackVariant}`;
+    this.watchTowerAttackVariant =
+      this.watchTowerAttackVariant === 3 ? 1 : ((this.watchTowerAttackVariant + 1) as 1 | 2 | 3);
+    return soundId;
+  }
+
+  private nextMageTowerAttackSoundId(): string {
+    const soundId = `tower_mage_${this.mageTowerAttackVariant}`;
+    this.mageTowerAttackVariant =
+      this.mageTowerAttackVariant === 3 ? 1 : ((this.mageTowerAttackVariant + 1) as 1 | 2 | 3);
+    return soundId;
+  }
+
+  /** Explore / allied watch tower projectile fire — cycles WATCH1/2/3. */
+  public playWatchTowerAttackSound(position: Vector3) {
+    return this.playWeaponSound(this.nextWatchTowerAttackSoundId(), position, { volume: 0.65 });
+  }
+
+  /** Explore / allied mage tower bolt fire — cycles MAGE1/2/3. */
+  public playMageTowerAttackSound(position: Vector3) {
+    return this.playWeaponSound(this.nextMageTowerAttackSoundId(), position, { volume: 0.65 });
+  }
+
+  /** Explore / allied siege tower attack. */
+  public playSiegeTowerAttackSound(position: Vector3) {
+    return this.playWeaponSound('tower_siege', position, { volume: 0.65 });
   }
 
   public playLesserHealSound(position?: Vector3) {

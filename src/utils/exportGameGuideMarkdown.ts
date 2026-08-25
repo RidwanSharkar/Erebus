@@ -436,6 +436,7 @@ function sectionEnemies(): string {
     'boss-serpent',
     'bone-spider',
     'wyvern',
+    'wyrm',
     'terrorhawk',
   ]);
   const eliteKeys = new Set([

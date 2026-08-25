@@ -23,6 +23,7 @@ interface WatchTowerRendererProps {
   powered?: boolean;
   /** When true, GLB is drawn by ExploreInstancedBuildingGlb instead. */
   hideMesh?: boolean;
+  hostile?: boolean;
 }
 
 type WatchTowerArrowShot = {
@@ -45,8 +46,9 @@ function WatchTowerRenderer({
   isDying = false,
   powered = true,
   hideMesh = false,
+  hostile = false,
 }: WatchTowerRendererProps) {
-  const theme = campHpTheme('ally-green');
+  const theme = campHpTheme(hostile ? 'red' : 'ally-green');
   const { enemiesRef, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
@@ -90,6 +92,9 @@ function WatchTowerRenderer({
         damage: data.damage ?? 50,
         maxRange: Math.max(0.5, from.distanceTo(to)),
       });
+      const audio = (window as unknown as { audioSystem?: { playWatchTowerAttackSound?: (p: Vector3) => void } })
+        .audioSystem;
+      audio?.playWatchTowerAttackSound?.(from.clone());
     });
   }, [id, powered]);
 

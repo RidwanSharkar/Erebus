@@ -56,8 +56,8 @@ function worldToMinimap(wx: number, wz: number, viewerX: number, viewerZ: number
   };
 }
 
-function drawBuildingIcon(ctx: CanvasRenderingContext2D, type: string, px: number, py: number) {
-  ctx.fillStyle = BUILDING_GREEN;
+function drawBuildingIcon(ctx: CanvasRenderingContext2D, type: string, px: number, py: number, color: string) {
+  ctx.fillStyle = color;
   if (type === 'barracks') {
     ctx.fillRect(px - 3.2, py - 3.2, 6.4, 6.4);
     return;
@@ -98,6 +98,27 @@ function drawBuildingIcon(ctx: CanvasRenderingContext2D, type: string, px: numbe
     ctx.lineTo(px + 2.4, py + 4.0);
     ctx.lineTo(px - 2.4, py + 4.0);
     ctx.lineTo(px - 2.4, py - 1.4);
+    ctx.closePath();
+    ctx.fill();
+    return;
+  }
+  if (type === 'beast-temple') {
+    ctx.beginPath();
+    ctx.moveTo(px, py - 4.4);
+    ctx.lineTo(px + 3.6, py - 0.6);
+    ctx.lineTo(px + 2.2, py + 4.0);
+    ctx.lineTo(px - 2.2, py + 4.0);
+    ctx.lineTo(px - 3.6, py - 0.6);
+    ctx.closePath();
+    ctx.fill();
+    return;
+  }
+  if (type === 'altar-of-war') {
+    ctx.fillRect(px - 3.2, py + 1.2, 6.4, 2.8);
+    ctx.beginPath();
+    ctx.moveTo(px, py - 4.4);
+    ctx.lineTo(px + 2.4, py + 1.2);
+    ctx.lineTo(px - 2.4, py + 1.2);
     ctx.closePath();
     ctx.fill();
     return;
@@ -226,7 +247,8 @@ export default function ExploreMinimap() {
         }
         if (isPlayerExploreBuildingType(enemy.type)) {
           const { px, py } = worldToMinimap(ex, ez, viewer.x, viewer.z, scale);
-          drawBuildingIcon(ctx, enemy.type, px, py);
+          const color = enemy.alliedUnit === true ? BUILDING_GREEN : HOSTILE_RED;
+          drawBuildingIcon(ctx, enemy.type, px, py, color);
           continue;
         }
         if (enemy.alliedUnit === true && enemy.isStructure !== true) {

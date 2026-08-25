@@ -39,5 +39,7 @@ export function isCoopPlayerAllyEntity(entity: {
     || t === 'allied-wolf'
     || t === 'allied-bear'
     || t === 'allied-serpent'
-    || t === 'allied-spider';
+    || t === 'allied-spider'
+    || t === 'allied-siege-golem'
+    || t === 'allied-siege-wyrm';
 }

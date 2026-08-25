@@ -89,6 +89,8 @@ import {
   PET_UPGRADE_EVASION_CHANCE,
   PET_UPGRADE_EVASION_RANGE,
   PET_UPGRADE_PERSISTENCE_HUNTER_RANGE,
+  getPetCompanionUpgradeDefinition,
+  getPetCompanionUpgradeOptionsForKind,
 } from '@/utils/petCompanionUpgrades';
 import { resolveFaeBeastCompanionId } from '@/utils/faeBeastCompanion';
 import {
@@ -156,6 +158,14 @@ import {
   EXPLORE_MEAT_STACK_CAP,
   EXPLORE_RESEARCH_INTERACT_RADIUS,
   EXPLORE_RESEARCH_UPGRADES,
+  EXPLORE_BEAST_TEMPLE_INTERACT_RADIUS,
+  EXPLORE_ALTAR_OF_WAR_INTERACT_RADIUS,
+  EXPLORE_BEAST_TEMPLE_UPGRADE_WOOD,
+  EXPLORE_BEAST_TEMPLE_UPGRADE_GOLD,
+  EXPLORE_SIEGE_GOLEM_STONE,
+  EXPLORE_SIEGE_GOLEM_GOLD,
+  EXPLORE_SIEGE_WYRM_GOLD,
+  EXPLORE_SIEGE_WYRM_MEAT,
   EXPLORE_SHRINE_INTERACT_RADIUS,
   EXPLORE_OBELISK_INTERACT_RADIUS,
   EXPLORE_CATHEDRAL_INTERACT_RADIUS,
@@ -166,15 +176,20 @@ import {
   SHRINE_HULL_RADIUS,
   OBELISK_HULL_RADIUS,
   CATHEDRAL_HULL_RADIUS,
+  BEAST_TEMPLE_HULL_RADIUS,
+  ALTAR_OF_WAR_HULL_RADIUS,
   EXPLORE_OBELISK_TALENT_GOLD_COST,
   EXPLORE_TOWER_EFFICIENCY_GOLD_COST,
   exploreBuildingRequiresSpiritLounge,
+  exploreBuildingRequiresResearchStation,
   exploreBuildingRequiresShrineOrObelisk,
+  exploreBuildingRequiresCathedral,
   getExploreBuildingWoodCost,
   getExploreResearchFlowCost,
   getSpiritLineageNextCost,
   getTowerDamageNextCost,
   isExploreResearchPurchased,
+  towerDamageRequiresCathedral,
   getExploreLowHungerMaxEnergyBonus,
   isExploreTowerType,
   isPlayerExploreBuildingType,
@@ -392,7 +407,7 @@ const ZERO_PLAYER_STATS: PlayerStats = { strength: 0, stamina: 0, agility: 0, in
 import { Engine } from '@/core/Engine';
 import { World } from '@/ecs/World';
 import { Transform } from '@/ecs/components/Transform';
-import { Movement } from '@/ecs/components/Movement';
+import { Movement, EXPLORE_MOUNT_COOLDOWN_SEC } from '@/ecs/components/Movement';
 import { Health } from '@/ecs/components/Health';
 import { DestructibleMushroom } from '@/ecs/components/DestructibleMushroom';
 import { DestructibleTree } from '@/ecs/components/DestructibleTree';
@@ -1407,6 +1422,12 @@ function preloadEnemyModelsForTypes(types: Iterable<string>): void {
         case 'cathedral':
           void import('./environment/Cathedral').then(mod => mod.preloadCathedral());
           break;
+        case 'beast-temple':
+          void import('./environment/BeastTemple').then(mod => mod.preloadBeastTemple());
+          break;
+        case 'altar-of-war':
+          void import('./environment/AltarOfWar').then(mod => mod.preloadAltarOfWar());
+          break;
         case 'allied-demon':
         case 'ghoul':
           void import('./enemies/GhoulModel').then(mod => mod.preloadGhoulModels());
@@ -1425,6 +1446,17 @@ function preloadEnemyModelsForTypes(types: Iterable<string>): void {
           break;
         case 'allied-spider':
           void import('./enemies/BoneSpiderModel').then(mod => mod.preloadBoneSpiderModels());
+          break;
+        case 'allied-siege-golem':
+        case 'stone-giant':
+          void import('./enemies/StoneGiantModel').then(mod => mod.preloadStoneGiantModels());
+          break;
+        case 'allied-siege-wyrm':
+        case 'wyvern':
+          void import('./enemies/WyvernModel').then(mod => mod.preloadWyvernModels());
+          break;
+        case 'wyrm':
+          void import('./enemies/WyrmModel').then(mod => mod.preloadWyrmModels());
           break;
         case 'allied-enchantress':
         case 'greed':
@@ -1501,6 +1533,9 @@ function preloadEnemyModelsForTypes(types: Iterable<string>): void {
         case 'wyvern':
           void import('./enemies/WyvernModel').then(mod => mod.preloadWyvernModels());
           break;
+        case 'wyrm':
+          void import('./enemies/WyrmModel').then(mod => mod.preloadWyrmModels());
+          break;
         case 'destiny':
           void import('./enemies/DestinyModel').then(mod => mod.preloadDestinyModels());
           break;
@@ -1512,9 +1547,6 @@ function preloadEnemyModelsForTypes(types: Iterable<string>): void {
           break;
         case 'nemesis':
           void import('./enemies/NemesisModel').then(mod => mod.preloadNemesisModels());
-          break;
-        case 'stone-giant':
-          void import('./enemies/StoneGiantModel').then(mod => mod.preloadStoneGiantModels());
           break;
         case 'eternal-oak':
           void import('./enemies/EternalOakModel').then(mod => mod.preloadEternalOakModels());
@@ -1711,6 +1743,10 @@ interface CoopGameSceneProps {
   onBarracksRecruitOpenChange?: (open: boolean) => void;
   /** Explore research station panel visibility. */
   onResearchPanelOpenChange?: (open: boolean) => void;
+  /** Explore Beast Temple pet upgrade panel visibility. */
+  onBeastTemplePanelOpenChange?: (open: boolean) => void;
+  /** Explore Altar of War summon panel visibility. */
+  onAltarOfWarPanelOpenChange?: (open: boolean) => void;
   /** Explore shrine gift panel visibility. */
   onShrinePanelOpenChange?: (open: boolean) => void;
   /** Explore cathedral legendary panel visibility. */
@@ -1966,6 +2002,7 @@ function buildPlayerMovementDirectionPayload(
     isIncinerationArmed: movement.isIncinerationArmed,
     isLocustChanneling: movement.isLocustChanneling,
     isSprinting: immobilized ? false : movement.isSprinting,
+    isMounted: immobilized ? false : movement.isMounted,
     isStunned,
     isFrozen: movement.isFrozen,
     isEntangled: movement.isEntangled,
@@ -1992,6 +2029,7 @@ const ZERO_PLAYER_MOVEMENT_DIRECTION: PlayerMovementDirection = {
   isIncinerationArmed: false,
   isLocustChanneling: false,
   isSprinting: false,
+  isMounted: false,
   isStunned: false,
   isFrozen: false,
   isEntangled: false,
@@ -2021,6 +2059,7 @@ function syncRemoteMovementForHumanoidAnimations(
     movement.isIncinerationArmed = false;
     movement.isLocustChanneling = false;
     movement.isSprinting = false;
+    movement.isMounted = false;
     return;
   }
   const immobilized = Boolean(md.isStunned || md.isFrozen || md.isEntangled);
@@ -2033,6 +2072,7 @@ function syncRemoteMovementForHumanoidAnimations(
   movement.isIncinerationArmed = Boolean(md.isIncinerationArmed);
   movement.isLocustChanneling = Boolean(md.isLocustChanneling);
   movement.isSprinting = immobilized ? false : Boolean(md.isSprinting);
+  movement.isMounted = immobilized ? false : Boolean(md.isMounted);
 
   const dd = md.dashDirection;
   if (!immobilized && dd) {
@@ -2106,6 +2146,8 @@ export function CoopGameScene({
   onBuildMenuChange,
   onBarracksRecruitOpenChange,
   onResearchPanelOpenChange,
+  onBeastTemplePanelOpenChange,
+  onAltarOfWarPanelOpenChange,
   onShrinePanelOpenChange,
   onCathedralPanelOpenChange,
   onObeliskPanelOpenChange,
@@ -2153,6 +2195,9 @@ export function CoopGameScene({
     placeBuilding,
     barracksRecruitAlly,
     researchPurchase,
+    beastTemplePurchaseUpgrade,
+    beastTempleSummonSiegeWyrm,
+    altarSummonSiegeGolem,
     shrineClaim,
     cathedralClaim,
     obeliskBuyTalent,
@@ -2248,6 +2293,7 @@ export function CoopGameScene({
     coopEternityLootClaimedPlayerIds,
     coopEternityLootPhaseComplete,
     coopPetCompanionUpgrade,
+    explorePetCompanionUpgrades,
     coopEternityCompleted,
     coopEternityActive,
     coopEternityRoomIndex,
@@ -3191,6 +3237,9 @@ export function CoopGameScene({
   const buildModeRef = useRef<'idle' | 'menu' | 'tower-pick' | 'placing'>('idle');
   const buildKeyPrevRef = useRef(false);
   const buildEscKeyPrevRef = useRef(false);
+  const mountKeyPrevRef = useRef(false);
+  /** performance.now() when local player last dismounted (remount gated by EXPLORE_MOUNT_COOLDOWN_SEC). */
+  const lastExploreDismountAtRef = useRef(0);
   const buildMenuShownAtRef = useRef(0);
   const buildFKeyPrevRef = useRef(false);
   const buildPlacementPosRef = useRef({ x: 0, z: 0, valid: false });
@@ -3202,6 +3251,12 @@ export function CoopGameScene({
   barracksRecruitAllyRef.current = barracksRecruitAlly;
   const researchPurchaseRef = useRef(researchPurchase);
   researchPurchaseRef.current = researchPurchase;
+  const beastTemplePurchaseUpgradeRef = useRef(beastTemplePurchaseUpgrade);
+  beastTemplePurchaseUpgradeRef.current = beastTemplePurchaseUpgrade;
+  const beastTempleSummonSiegeWyrmRef = useRef(beastTempleSummonSiegeWyrm);
+  beastTempleSummonSiegeWyrmRef.current = beastTempleSummonSiegeWyrm;
+  const altarSummonSiegeGolemRef = useRef(altarSummonSiegeGolem);
+  altarSummonSiegeGolemRef.current = altarSummonSiegeGolem;
   const exploreResearchRef = useRef(exploreResearch);
   exploreResearchRef.current = exploreResearch;
   const shrineClaimRef = useRef(shrineClaim);
@@ -3216,6 +3271,10 @@ export function CoopGameScene({
   onBarracksRecruitOpenChangeRef.current = onBarracksRecruitOpenChange;
   const onResearchPanelOpenChangeRef = useRef(onResearchPanelOpenChange);
   onResearchPanelOpenChangeRef.current = onResearchPanelOpenChange;
+  const onBeastTemplePanelOpenChangeRef = useRef(onBeastTemplePanelOpenChange);
+  onBeastTemplePanelOpenChangeRef.current = onBeastTemplePanelOpenChange;
+  const onAltarOfWarPanelOpenChangeRef = useRef(onAltarOfWarPanelOpenChange);
+  onAltarOfWarPanelOpenChangeRef.current = onAltarOfWarPanelOpenChange;
   const onShrinePanelOpenChangeRef = useRef(onShrinePanelOpenChange);
   onShrinePanelOpenChangeRef.current = onShrinePanelOpenChange;
   const onCathedralPanelOpenChangeRef = useRef(onCathedralPanelOpenChange);
@@ -3226,6 +3285,8 @@ export function CoopGameScene({
   onFirePitHealOpenChangeRef.current = onFirePitHealOpenChange;
   const nearBarracksRef = useRef(false);
   const nearResearchRef = useRef(false);
+  const nearBeastTempleRef = useRef(false);
+  const nearAltarOfWarRef = useRef(false);
   const nearShrineRef = useRef(false);
   const nearCathedralRef = useRef(false);
   const nearCathedralOfferRef = useRef<ExploreCathedralOfferEntry[]>([]);
@@ -3237,7 +3298,14 @@ export function CoopGameScene({
   buildPlacementKindRef.current = buildPlacementKind;
   const exploreChunkDiscsRef = useRef<Array<{ x: number; z: number; radius: number }>>([]);
   const buildPlacementExtraDiscsRef = useRef<ExploreObstacleDisc[]>([]);
-  const buildPlacementRulesRef = useRef<ExploreBuildingPlacementRules>({ firePits: [], liveTowerCount: 0, hasLiveSpiritLounge: false, hasLiveShrineOrObelisk: false });
+  const buildPlacementRulesRef = useRef<ExploreBuildingPlacementRules>({
+    firePits: [],
+    liveTowerCount: 0,
+    hasLiveSpiritLounge: false,
+    hasLiveResearchStation: false,
+    hasLiveShrineOrObelisk: false,
+    hasLiveCathedral: false,
+  });
   const lastInteractHintRef = useRef<string | null>(null);
   const initialWeaponsForEngineRef = useRef(
     selectedWeapons ?? { primary: WeaponType.NONE, secondary: WeaponType.NONE },
@@ -3291,6 +3359,8 @@ export function CoopGameScene({
   coopEternityLootPhaseCompleteRef.current = coopEternityLootPhaseComplete;
   const coopPetCompanionUpgradeRef = useRef(coopPetCompanionUpgrade);
   coopPetCompanionUpgradeRef.current = coopPetCompanionUpgrade;
+  const explorePetCompanionUpgradesRef = useRef(explorePetCompanionUpgrades);
+  explorePetCompanionUpgradesRef.current = explorePetCompanionUpgrades;
   const coopEternityLootClaimedPlayerIdsRef = useRef(coopEternityLootClaimedPlayerIds);
   coopEternityLootClaimedPlayerIdsRef.current = coopEternityLootClaimedPlayerIds;
   const coopVoidPortalOfferedRef = useRef(coopVoidPortalOffered);
@@ -3393,6 +3463,12 @@ export function CoopGameScene({
     });
     void import('./environment/Cathedral').then((mod) => {
       mod.preloadCathedral();
+    });
+    void import('./environment/BeastTemple').then((mod) => {
+      mod.preloadBeastTemple();
+    });
+    void import('./environment/AltarOfWar').then((mod) => {
+      mod.preloadAltarOfWar();
     });
   }, [isExplore]);
 
@@ -3670,15 +3746,26 @@ export function CoopGameScene({
       const firePits: Array<{ x: number; z: number }> = [];
       let liveTowerCount = 0;
       let hasLiveSpiritLounge = false;
+      let hasLiveResearchStation = false;
       let hasLiveShrineOrObelisk = false;
+      let hasLiveCathedral = false;
       for (const enemy of enemiesRef.current.values()) {
         if (!isPlayerExploreBuildingType(enemy.type)) continue;
         if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
         const radius = typeof enemy.hullRadius === 'number' ? enemy.hullRadius : FIRE_PIT_HULL_RADIUS;
-        buildingDiscs.push({ x: enemy.position.x, z: enemy.position.z, radius, kind: enemy.type });
+        buildingDiscs.push({
+          x: enemy.position.x,
+          z: enemy.position.z,
+          radius,
+          kind: enemy.type,
+          allied: enemy.alliedUnit === true,
+        });
+        if (enemy.alliedUnit !== true) continue;
         if (enemy.type === 'fire-pit') firePits.push({ x: enemy.position.x, z: enemy.position.z });
         if (enemy.type === 'barracks') hasLiveSpiritLounge = true;
+        if (enemy.type === 'research-station') hasLiveResearchStation = true;
         if (enemy.type === 'shrine' || enemy.type === 'obelisk') hasLiveShrineOrObelisk = true;
+        if (enemy.type === 'cathedral') hasLiveCathedral = true;
         if (isExploreTowerType(enemy.type)) liveTowerCount += 1;
       }
       const merged = [
@@ -3687,7 +3774,14 @@ export function CoopGameScene({
         ...buildingDiscs,
       ];
       buildPlacementExtraDiscsRef.current = merged;
-      buildPlacementRulesRef.current = { firePits, liveTowerCount, hasLiveSpiritLounge, hasLiveShrineOrObelisk };
+      buildPlacementRulesRef.current = {
+        firePits,
+        liveTowerCount,
+        hasLiveSpiritLounge,
+        hasLiveResearchStation,
+        hasLiveShrineOrObelisk,
+        hasLiveCathedral,
+      };
       engineRef.current?.getWorld().getSystem(PhysicsSystem)?.setStreamedObstacles(merged);
       controlSystemRef.current?.setStreamedObstacles(merged);
     };
@@ -4230,7 +4324,7 @@ export function CoopGameScene({
             health: p.health,
           }))),
       ...Array.from(enemies.values())
-        .filter((e) => !e.isDying && e.health > 0 && e.alliedUnit !== true && e.type !== 'allied-knight' && e.type !== 'allied-huntress' && e.type !== 'allied-phantom' && e.type !== 'allied-demon' && e.type !== 'allied-enchantress' && e.type !== 'allied-healer' && e.type !== 'allied-tiger' && e.type !== 'allied-wolf' && e.type !== 'allied-bear' && e.type !== 'allied-serpent' && e.type !== 'allied-spider' && e.type !== 'player-zombie' && e.type !== 'vengeful-spirit')
+        .filter((e) => !e.isDying && e.health > 0 && e.alliedUnit !== true && e.type !== 'allied-knight' && e.type !== 'allied-huntress' && e.type !== 'allied-phantom' && e.type !== 'allied-demon' && e.type !== 'allied-enchantress' && e.type !== 'allied-healer' && e.type !== 'allied-tiger' && e.type !== 'allied-wolf' && e.type !== 'allied-bear' && e.type !== 'allied-serpent' && e.type !== 'allied-spider' && e.type !== 'allied-siege-golem' && e.type !== 'allied-siege-wyrm' && e.type !== 'player-zombie' && e.type !== 'vengeful-spirit')
         .map((e) => {
           const live = enemyTransformsRef.current.get(e.id);
           const p = live?.position ?? e.position;
@@ -4246,7 +4340,7 @@ export function CoopGameScene({
 
   const getLiveCoopEnemyData = useCallback(() => {
     return Array.from(enemiesRef.current.values())
-      .filter((e) => !e.isDying && e.health > 0 && e.alliedUnit !== true && e.type !== 'allied-knight' && e.type !== 'allied-huntress' && e.type !== 'allied-phantom' && e.type !== 'allied-demon' && e.type !== 'allied-enchantress' && e.type !== 'allied-healer' && e.type !== 'allied-tiger' && e.type !== 'allied-wolf' && e.type !== 'allied-bear' && e.type !== 'allied-serpent' && e.type !== 'allied-spider' && e.type !== 'player-zombie' && e.type !== 'vengeful-spirit')
+      .filter((e) => !e.isDying && e.health > 0 && e.alliedUnit !== true && e.type !== 'allied-knight' && e.type !== 'allied-huntress' && e.type !== 'allied-phantom' && e.type !== 'allied-demon' && e.type !== 'allied-enchantress' && e.type !== 'allied-healer' && e.type !== 'allied-tiger' && e.type !== 'allied-wolf' && e.type !== 'allied-bear' && e.type !== 'allied-serpent' && e.type !== 'allied-spider' && e.type !== 'allied-siege-golem' && e.type !== 'allied-siege-wyrm' && e.type !== 'player-zombie' && e.type !== 'vengeful-spirit')
       .map((e) => {
         const live = enemyTransformsRef.current.get(e.id);
         const p = live?.position ?? e.position;
@@ -7199,22 +7293,53 @@ export function CoopGameScene({
 
   // Pet companion upgrades: Tiger Evasion chance provider + Persistence Hunter walk buff.
   useEffect(() => {
-    const isNearFaeBeast = (range: number): boolean => {
+    const isNearOwnedBeastWithUpgrade = (upgradeId: string, range: number): boolean => {
       const localId = socket?.id;
       if (!localId || playerEntityRef.current == null || !engineRef.current) return false;
       const entity = engineRef.current.getWorld().getEntity(playerEntityRef.current);
       const transform = entity?.getComponent(Transform);
       if (!transform) return false;
-      const beast = enemiesRef.current.get(resolveFaeBeastCompanionId(localId));
-      if (!beast || beast.isDying || (beast.health ?? 0) <= 0) return false;
-      const dx = transform.position.x - (beast.position?.x ?? 0);
-      const dz = transform.position.z - (beast.position?.z ?? 0);
-      return dx * dx + dz * dz <= range * range;
+      const r2 = range * range;
+      const px = transform.position.x;
+      const pz = transform.position.z;
+
+      if (coopPetCompanionUpgradeRef.current === upgradeId) {
+        const beast = enemiesRef.current.get(resolveFaeBeastCompanionId(localId));
+        if (beast && !beast.isDying && (beast.health ?? 0) > 0) {
+          const dx = px - (beast.position?.x ?? 0);
+          const dz = pz - (beast.position?.z ?? 0);
+          if (dx * dx + dz * dz <= r2) return true;
+        }
+      }
+
+      const exploreMap = explorePetCompanionUpgradesRef.current;
+      if (exploreMap) {
+        for (const [kind, id] of Object.entries(exploreMap)) {
+          if (id !== upgradeId) continue;
+          for (const beast of enemiesRef.current.values()) {
+            if (beast.companionSlot !== 'explore') continue;
+            if (beast.ownerPlayerId !== localId) continue;
+            if (beast.beastCompanionKind !== kind) continue;
+            if (beast.isDying || (beast.health ?? 0) <= 0) continue;
+            const dx = px - (beast.position?.x ?? 0);
+            const dz = pz - (beast.position?.z ?? 0);
+            if (dx * dx + dz * dz <= r2) return true;
+          }
+        }
+      }
+      return false;
     };
 
     setPetEvasionChanceProvider(() => {
-      if (coopPetCompanionUpgradeRef.current !== 'tiger_evasion') return 0;
-      return isNearFaeBeast(PET_UPGRADE_EVASION_RANGE) ? PET_UPGRADE_EVASION_CHANCE : 0;
+      if (
+        coopPetCompanionUpgradeRef.current !== 'tiger_evasion'
+        && explorePetCompanionUpgradesRef.current?.tiger !== 'tiger_evasion'
+      ) {
+        return 0;
+      }
+      return isNearOwnedBeastWithUpgrade('tiger_evasion', PET_UPGRADE_EVASION_RANGE)
+        ? PET_UPGRADE_EVASION_CHANCE
+        : 0;
     });
 
     const tickId = window.setInterval(() => {
@@ -7222,9 +7347,12 @@ export function CoopGameScene({
       const entity = engineRef.current.getWorld().getEntity(playerEntityRef.current);
       const movement = entity?.getComponent(Movement);
       if (!movement) return;
-      const active =
+      const ownsPersistence =
         coopPetCompanionUpgradeRef.current === 'wolf_persistence_hunter'
-        && isNearFaeBeast(PET_UPGRADE_PERSISTENCE_HUNTER_RANGE);
+        || explorePetCompanionUpgradesRef.current?.wolf === 'wolf_persistence_hunter';
+      const active =
+        ownsPersistence
+        && isNearOwnedBeastWithUpgrade('wolf_persistence_hunter', PET_UPGRADE_PERSISTENCE_HUNTER_RANGE);
       if (movement.persistenceHunterActive !== active) {
         movement.persistenceHunterActive = active;
       }
@@ -13910,6 +14038,22 @@ export function CoopGameScene({
 
     socket.on('destiny-wing-pillar', handleDestinyWingPillar);
 
+    const handleWyrmSpellPillar = (data: {
+      wyrmId: string;
+      position: { x: number; y: number; z: number };
+      timestamp?: number;
+    }) => {
+      if (!coopServerEnemyLiving(data.wyrmId)) return;
+      const strikePos = new Vector3(data.position.x, data.position.y, data.position.z);
+      (window as any).audioSystem?.playWarlockImmolateSound(strikePos);
+      bossTelegraphLayerRef.current?.addWarlockFlameStrike({
+        id: `wyrm-spell-pillar-${data.wyrmId}-${data.timestamp ?? Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        position: strikePos.clone(),
+      });
+    };
+
+    socket.on('wyrm-spell-pillar', handleWyrmSpellPillar);
+
     const handleDeathKnightFrostPillar = (data: {
       deathKnightId: string;
       position: { x: number; y: number; z: number };
@@ -14612,6 +14756,7 @@ export function CoopGameScene({
       socket.off('warlock-flame-strike', handleWarlockFlameStrike);
       socket.off('boss2-flame-pillar', handleBoss2FlamePillar);
       socket.off('destiny-wing-pillar', handleDestinyWingPillar);
+      socket.off('wyrm-spell-pillar', handleWyrmSpellPillar);
       socket.off('death-knight-frost-pillar', handleDeathKnightFrostPillar);
       socket.off('archmage-flame-pillar', handleArchmageFlamePillar);
       socket.off('ghoul-attack', handleGhoulAttack);
@@ -14747,6 +14892,8 @@ export function CoopGameScene({
         serverEnemy.type === 'allied-bear' ||
         serverEnemy.type === 'allied-serpent' ||
         serverEnemy.type === 'allied-spider' ||
+        serverEnemy.type === 'allied-siege-golem' ||
+        serverEnemy.type === 'allied-siege-wyrm' ||
         serverEnemy.type === 'player-zombie' ||
         serverEnemy.type === 'vengeful-spirit';
 
@@ -14784,6 +14931,8 @@ export function CoopGameScene({
         : serverEnemy.type === 'obelisk' ? OBELISK_HULL_RADIUS
         : serverEnemy.type === 'shield-battery' ? FIRE_PIT_HULL_RADIUS
         : serverEnemy.type === 'cathedral' ? CATHEDRAL_HULL_RADIUS
+        : serverEnemy.type === 'beast-temple' ? BEAST_TEMPLE_HULL_RADIUS
+        : serverEnemy.type === 'altar-of-war' ? ALTAR_OF_WAR_HULL_RADIUS
         : serverEnemy.type === 'allied-knight' ? 0.85
         : serverEnemy.type === 'allied-huntress' ? 0.75
         : serverEnemy.type === 'allied-phantom' ? 0.75
@@ -14794,6 +14943,8 @@ export function CoopGameScene({
         : serverEnemy.type === 'allied-bear' || serverEnemy.type === 'bear' || serverEnemy.type === 'boss-bear' ? 1.0 * (serverEnemy.visualScale ?? 1)
         : serverEnemy.type === 'allied-serpent' ? 0.7 * (serverEnemy.visualScale ?? 1)
         : serverEnemy.type === 'allied-spider' ? 0.55 * (serverEnemy.visualScale ?? 1)
+        : serverEnemy.type === 'allied-siege-wyrm' || serverEnemy.type === 'wyvern' || serverEnemy.type === 'wyrm' ? 1.05
+        : serverEnemy.type === 'allied-siege-golem' || serverEnemy.type === 'stone-giant' ? 1.2
         : serverEnemy.type === 'knight' ? 0.85 * (serverEnemy.visualScale ?? 1)
         : serverEnemy.type === 'templar' || serverEnemy.type === 'ghoul' || serverEnemy.type === 'skyray' ? 0.95
         : serverEnemy.type === 'terrorhawk' ? 0.76
@@ -15429,6 +15580,8 @@ export function CoopGameScene({
         serverEnemy.type === 'allied-bear' ||
         serverEnemy.type === 'allied-serpent' ||
         serverEnemy.type === 'allied-spider' ||
+        serverEnemy.type === 'allied-siege-golem' ||
+        serverEnemy.type === 'allied-siege-wyrm' ||
         serverEnemy.type === 'player-zombie' ||
         serverEnemy.type === 'vengeful-spirit';
       const dyingNonDummy =
@@ -16128,9 +16281,48 @@ export function CoopGameScene({
         const bEdge = bDown && !buildKeyPrevRef.current;
         const escDown = cs.isKeyPressed('escape');
         const escEdge = escDown && !buildEscKeyPrevRef.current;
+        const tDown = cs.isKeyPressed('t');
+        const tEdge = tDown && !mountKeyPrevRef.current;
         const localWood = playersRef.current.get(socket?.id || '')?.wood ?? 0;
         const localFlow = playersRef.current.get(socket?.id || '')?.flow ?? 0;
         const localStone = playersRef.current.get(socket?.id || '')?.stone ?? 0;
+
+        // Explorer sabretooth mount toggle (T). Requires a live Beast Temple.
+        // Dismount is instant; remount has a 4s cooldown.
+        if (tEdge && playerEntity && engineRef.current) {
+          const localDeath = playerDeathStatesRef.current.get(socket?.id ?? '');
+          if (!localDeath?.isDead) {
+            const movement = playerEntity.getComponent(Movement);
+            if (movement) {
+              if (movement.isMounted) {
+                movement.isMounted = false;
+                movement.isSprinting = false;
+                lastExploreDismountAtRef.current = performance.now();
+              } else {
+                let hasLiveBeastTemple = false;
+                for (const enemy of enemiesRef.current.values()) {
+                  if (enemy.type !== 'beast-temple') continue;
+                  if (enemy.alliedUnit !== true) continue;
+                  if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+                  hasLiveBeastTemple = true;
+                  break;
+                }
+                if (hasLiveBeastTemple) {
+                  const sinceDismount =
+                    (performance.now() - lastExploreDismountAtRef.current) / 1000;
+                  if (
+                    lastExploreDismountAtRef.current === 0 ||
+                    sinceDismount >= EXPLORE_MOUNT_COOLDOWN_SEC
+                  ) {
+                    movement.isMounted = true;
+                    movement.isSprinting = false;
+                  }
+                }
+              }
+            }
+          }
+        }
+        mountKeyPrevRef.current = tDown;
 
         const closeBuildMenu = () => {
           buildModeRef.current = 'idle';
@@ -16202,7 +16394,13 @@ export function CoopGameScene({
               if (exploreBuildingRequiresSpiritLounge(kind) && !buildPlacementRulesRef.current.hasLiveSpiritLounge) {
                 continue;
               }
+              if (exploreBuildingRequiresResearchStation(kind) && !buildPlacementRulesRef.current.hasLiveResearchStation) {
+                continue;
+              }
               if (exploreBuildingRequiresShrineOrObelisk(kind) && !buildPlacementRulesRef.current.hasLiveShrineOrObelisk) {
+                continue;
+              }
+              if (exploreBuildingRequiresCathedral(kind) && !buildPlacementRulesRef.current.hasLiveCathedral) {
                 continue;
               }
               enterPlacing(kind);
@@ -16301,6 +16499,75 @@ export function CoopGameScene({
             obeliskBuyTalentRef.current(entry.id);
             break;
           }
+        } else if (nearBeastTempleRef.current && buildModeRef.current === 'idle') {
+          const localId = socket?.id || '';
+          const localGold = playersRef.current.get(localId)?.gold ?? 0;
+          const localMeat = contextPlayersRef.current.get(localId)?.meat ?? 0;
+          const ownedKinds = new Map<string, string | null>();
+          for (const enemy of enemiesRef.current.values()) {
+            if (enemy.companionSlot !== 'explore') continue;
+            if (enemy.ownerPlayerId !== localId) continue;
+            if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+            const kind = enemy.beastCompanionKind;
+            if (!kind || ownedKinds.has(kind)) continue;
+            ownedKinds.set(kind, explorePetCompanionUpgradesRef.current?.[kind] ?? null);
+          }
+          const KIND_ORDER = ['tiger', 'wolf', 'bear', 'serpent', 'spider'] as const;
+          const options: string[] = [];
+          for (const kind of KIND_ORDER) {
+            if (!ownedKinds.has(kind)) continue;
+            const pool = getPetCompanionUpgradeOptionsForKind(kind);
+            for (const id of pool) options.push(id);
+          }
+          let handled = false;
+          for (let i = 0; i < options.length; i += 1) {
+            const digit = String(i + 1);
+            const digitDown = cs.isKeyPressed(digit);
+            const prev = buildHotkeyPrevRef.current[`beast-temple-${digit}`] ?? false;
+            const digitEdge = digitDown && !prev;
+            buildHotkeyPrevRef.current[`beast-temple-${digit}`] = digitDown;
+            if (!digitEdge) continue;
+            const upgradeId = options[i]!;
+            const kind = getPetCompanionUpgradeDefinition(upgradeId as any).beastKind;
+            if (ownedKinds.get(kind)) break;
+            if (localWood < EXPLORE_BEAST_TEMPLE_UPGRADE_WOOD || localGold < EXPLORE_BEAST_TEMPLE_UPGRADE_GOLD) break;
+            beastTemplePurchaseUpgradeRef.current(upgradeId);
+            handled = true;
+            break;
+          }
+          if (!handled) {
+            const wyrmDigit = String(options.length + 1);
+            const digitDown = cs.isKeyPressed(wyrmDigit);
+            const prev = buildHotkeyPrevRef.current[`beast-temple-${wyrmDigit}`] ?? false;
+            const digitEdge = digitDown && !prev;
+            buildHotkeyPrevRef.current[`beast-temple-${wyrmDigit}`] = digitDown;
+            if (digitEdge) {
+              let hasCathedral = false;
+              let wyrmAlive = false;
+              for (const enemy of enemiesRef.current.values()) {
+                if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+                if (enemy.type === 'cathedral' && enemy.alliedUnit === true) hasCathedral = true;
+                if (enemy.type === 'allied-siege-wyrm') wyrmAlive = true;
+              }
+              if (
+                hasCathedral
+                && !wyrmAlive
+                && localGold >= EXPLORE_SIEGE_WYRM_GOLD
+                && localMeat >= EXPLORE_SIEGE_WYRM_MEAT
+              ) {
+                beastTempleSummonSiegeWyrmRef.current();
+              }
+            }
+          }
+        } else if (nearAltarOfWarRef.current && buildModeRef.current === 'idle') {
+          const localGold = playersRef.current.get(socket?.id || '')?.gold ?? 0;
+          const digitDown = cs.isKeyPressed('1');
+          const prev = buildHotkeyPrevRef.current['altar-1'] ?? false;
+          const digitEdge = digitDown && !prev;
+          buildHotkeyPrevRef.current['altar-1'] = digitDown;
+          if (digitEdge && localStone >= EXPLORE_SIEGE_GOLEM_STONE && localGold >= EXPLORE_SIEGE_GOLEM_GOLD) {
+            altarSummonSiegeGolemRef.current();
+          }
         } else if (nearResearchRef.current && buildModeRef.current === 'idle') {
           const localGold = playersRef.current.get(socket?.id || '')?.gold ?? 0;
           const research = exploreResearchRef.current;
@@ -16315,8 +16582,15 @@ export function CoopGameScene({
               const cost = getSpiritLineageNextCost(research.spiritLineage ?? 0);
               if (cost == null || localFlow < cost) break;
             } else if (upgrade.id === 'tower-damage') {
-              const cost = getTowerDamageNextCost(research.towerDamage ?? 0);
+              const rank = research.towerDamage ?? 0;
+              const cost = getTowerDamageNextCost(rank);
               if (cost == null || localGold < cost) break;
+              if (
+                towerDamageRequiresCathedral(rank)
+                && !buildPlacementRulesRef.current.hasLiveCathedral
+              ) {
+                break;
+              }
             } else if (upgrade.id === 'tower-efficiency') {
               if (research.towerEfficiency || localGold < EXPLORE_TOWER_EFFICIENCY_GOLD_COST) break;
             } else if (isExploreResearchPurchased(upgrade.id, research)) {
@@ -16348,7 +16622,30 @@ export function CoopGameScene({
       } else {
         buildKeyPrevRef.current = false;
         buildEscKeyPrevRef.current = false;
+        mountKeyPrevRef.current = false;
         buildHotkeyPrevRef.current = {};
+      }
+
+      // Auto-dismount when leaving explore, on local death, or when no Beast Temple remains.
+      if (playerEntity) {
+        const movement = playerEntity.getComponent(Movement);
+        if (movement?.isMounted) {
+          const localDeath = playerDeathStatesRef.current.get(socket?.id ?? '');
+          let hasLiveBeastTemple = false;
+          if (isExplore) {
+            for (const enemy of enemiesRef.current.values()) {
+              if (enemy.type !== 'beast-temple') continue;
+              if (enemy.alliedUnit !== true) continue;
+              if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+              hasLiveBeastTemple = true;
+              break;
+            }
+          }
+          if (!isExplore || localDeath?.isDead || !hasLiveBeastTemple) {
+            movement.isMounted = false;
+            lastExploreDismountAtRef.current = performance.now();
+          }
+        }
       }
 
       if (inThroneRoom && playerEntity && controlSystemRef.current && !isChatOpen) {
@@ -17119,6 +17416,7 @@ export function CoopGameScene({
             const r2 = EXPLORE_CAMP_INTERACT_RADIUS * EXPLORE_CAMP_INTERACT_RADIUS;
             let best: { camp: ExploreCampPublic; d2: number } | null = null;
             for (const camp of exploreCampsRef.current) {
+              if (camp.kind === 'town') continue;
               if (!camp.cleared) continue;
               if (localId && camp.claimedBy.includes(localId)) continue;
               const dx = px - camp.x;
@@ -18210,12 +18508,14 @@ export function CoopGameScene({
                 const localId = socket?.id ?? null;
                 const barracksR2 = EXPLORE_BARRACKS_INTERACT_RADIUS * EXPLORE_BARRACKS_INTERACT_RADIUS;
                 const researchR2 = EXPLORE_RESEARCH_INTERACT_RADIUS * EXPLORE_RESEARCH_INTERACT_RADIUS;
+                const beastTempleR2 = EXPLORE_BEAST_TEMPLE_INTERACT_RADIUS * EXPLORE_BEAST_TEMPLE_INTERACT_RADIUS;
+                const altarR2 = EXPLORE_ALTAR_OF_WAR_INTERACT_RADIUS * EXPLORE_ALTAR_OF_WAR_INTERACT_RADIUS;
                 const shrineR2 = EXPLORE_SHRINE_INTERACT_RADIUS * EXPLORE_SHRINE_INTERACT_RADIUS;
                 const cathedralR2 = EXPLORE_CATHEDRAL_INTERACT_RADIUS * EXPLORE_CATHEDRAL_INTERACT_RADIUS;
                 const obeliskR2 = EXPLORE_OBELISK_INTERACT_RADIUS * EXPLORE_OBELISK_INTERACT_RADIUS;
                 const firePitR2 = EXPLORE_FIRE_PIT_INTERACT_RADIUS * EXPLORE_FIRE_PIT_INTERACT_RADIUS;
                 type NearInteract = {
-                  kind: 'barracks' | 'research' | 'shrine' | 'cathedral' | 'obelisk' | 'fire-pit';
+                  kind: 'barracks' | 'research' | 'beast-temple' | 'altar-of-war' | 'shrine' | 'cathedral' | 'obelisk' | 'fire-pit';
                   distSq: number;
                   offer?: ExploreCathedralOfferEntry[];
                 };
@@ -18223,6 +18523,7 @@ export function CoopGameScene({
                 let nearUnpowered = false;
                 for (const enemy of enemiesRef.current.values()) {
                   if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+                  if (enemy.alliedUnit !== true) continue;
                   const dx = px - enemy.position.x;
                   const dz = pz - enemy.position.z;
                   const distSq = dx * dx + dz * dz;
@@ -18245,6 +18546,28 @@ export function CoopGameScene({
                     }
                     if (!bestInteract || distSq < bestInteract.distSq) {
                       bestInteract = { kind: 'research', distSq };
+                    }
+                    continue;
+                  }
+                  if (enemy.type === 'beast-temple') {
+                    if (distSq > beastTempleR2) continue;
+                    if (enemy.powered === false) {
+                      nearUnpowered = true;
+                      continue;
+                    }
+                    if (!bestInteract || distSq < bestInteract.distSq) {
+                      bestInteract = { kind: 'beast-temple', distSq };
+                    }
+                    continue;
+                  }
+                  if (enemy.type === 'altar-of-war') {
+                    if (distSq > altarR2) continue;
+                    if (enemy.powered === false) {
+                      nearUnpowered = true;
+                      continue;
+                    }
+                    if (!bestInteract || distSq < bestInteract.distSq) {
+                      bestInteract = { kind: 'altar-of-war', distSq };
                     }
                     continue;
                   }
@@ -18293,12 +18616,16 @@ export function CoopGameScene({
                 }
                 const nearBarracks = bestInteract?.kind === 'barracks';
                 const nearResearch = bestInteract?.kind === 'research';
+                const nearBeastTemple = bestInteract?.kind === 'beast-temple';
+                const nearAltarOfWar = bestInteract?.kind === 'altar-of-war';
                 const nearShrine = bestInteract?.kind === 'shrine';
                 const nearCathedral = bestInteract?.kind === 'cathedral';
                 const nearObelisk = bestInteract?.kind === 'obelisk';
                 const nearFirePit = bestInteract?.kind === 'fire-pit';
                 nearBarracksRef.current = nearBarracks;
                 nearResearchRef.current = nearResearch;
+                nearBeastTempleRef.current = nearBeastTemple;
+                nearAltarOfWarRef.current = nearAltarOfWar;
                 nearShrineRef.current = nearShrine;
                 nearCathedralRef.current = nearCathedral;
                 nearCathedralOfferRef.current = nearCathedral ? (bestInteract?.offer ?? []) : [];
@@ -18306,12 +18633,18 @@ export function CoopGameScene({
                 nearFirePitRef.current = nearFirePit;
                 onBarracksRecruitOpenChangeRef.current?.(nearBarracks);
                 onResearchPanelOpenChangeRef.current?.(nearResearch);
+                onBeastTemplePanelOpenChangeRef.current?.(nearBeastTemple);
+                onAltarOfWarPanelOpenChangeRef.current?.(nearAltarOfWar);
                 onShrinePanelOpenChangeRef.current?.(nearShrine);
                 onCathedralPanelOpenChangeRef.current?.(nearCathedral, nearCathedral ? nearCathedralOfferRef.current : undefined);
                 onObeliskPanelOpenChangeRef.current?.(nearObelisk);
                 onFirePitHealOpenChangeRef.current?.(nearFirePit);
                 if (nearBarracks) {
                   nextHint = 'Recruit an ancestor — press 1–5 or use the panel';
+                } else if (nearBeastTemple) {
+                  nextHint = 'Beast Temple — upgrades & Siege Wyrm — press 1–N or use the panel';
+                } else if (nearAltarOfWar) {
+                  nextHint = 'Summon a Siege Golem — press 1 or use the panel';
                 } else if (nearShrine) {
                   nextHint = 'Choose a shrine gift — press 1–4 or use the panel';
                 } else if (nearCathedral) {
@@ -18328,6 +18661,7 @@ export function CoopGameScene({
                   const r2 = EXPLORE_CAMP_INTERACT_RADIUS * EXPLORE_CAMP_INTERACT_RADIUS;
                   let nearCamp = false;
                   for (const camp of exploreCampsRef.current) {
+                    if (camp.kind === 'town') continue;
                     if (!camp.cleared) continue;
                     if (localId && camp.claimedBy.includes(localId)) continue;
                     const dx = px - camp.x;
@@ -19019,6 +19353,8 @@ export function CoopGameScene({
             enemy.type === 'allied-bear' ||
             enemy.type === 'allied-serpent' ||
             enemy.type === 'allied-spider' ||
+            enemy.type === 'allied-siege-golem' ||
+            enemy.type === 'allied-siege-wyrm' ||
             enemy.type === 'player-zombie' || enemy.type === 'vengeful-spirit') return false;
         const ePos = new Vector3(enemy.position.x, enemy.position.y, enemy.position.z);
         return ePos.distanceTo(position) <= lightningRange;

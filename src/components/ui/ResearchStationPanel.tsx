@@ -20,6 +20,7 @@ import {
   getTowerDamageLabel,
   getTowerDamageNextCost,
   isExploreResearchPurchased,
+  towerDamageRequiresCathedral,
   type ExploreResearchState,
   type ExploreResearchUpgradeId,
 } from '@/utils/exploreBuildings';
@@ -29,6 +30,7 @@ interface ResearchStationPanelProps {
   flow: number;
   gold: number;
   research: ExploreResearchState;
+  hasLiveCathedral?: boolean;
   onPurchase: (id: ExploreResearchUpgradeId) => void;
   widthPercent?: number;
 }
@@ -40,6 +42,7 @@ export default function ResearchStationPanel({
   flow,
   gold,
   research,
+  hasLiveCathedral = false,
   onPurchase,
   widthPercent = DEFAULT_WIDTH_PERCENT,
 }: ResearchStationPanelProps) {
@@ -127,11 +130,13 @@ export default function ResearchStationPanel({
             const rank = research.towerDamage ?? 0;
             const maxed = rank >= EXPLORE_TOWER_DAMAGE_MAX_RANK;
             const cost = getTowerDamageNextCost(rank);
+            const needsCathedral = towerDamageRequiresCathedral(rank);
+            const cathedralBlocked = needsCathedral && !hasLiveCathedral;
             const label = maxed ? 'Tower Damage Level III' : getTowerDamageLabel(rank);
             const description = maxed
               ? 'Max Watch Tower arrow damage (200)'
               : getTowerDamageDescription(rank);
-            const selectable = !maxed && cost != null && gold >= cost;
+            const selectable = !maxed && cost != null && gold >= cost && !cathedralBlocked;
             const dimmed = maxed || !selectable;
             return (
               <button
@@ -159,7 +164,11 @@ export default function ResearchStationPanel({
                   <span style={{ opacity: 0.7, fontWeight: 400 }}>— {description}</span>
                 </span>
                 <span style={{ opacity: 0.85 }}>
-                  {maxed ? 'Researched' : `${cost} gold`}
+                  {maxed
+                    ? 'Researched'
+                    : cathedralBlocked
+                      ? 'Requires Cathedral'
+                      : `${cost} gold`}
                 </span>
               </button>
             );

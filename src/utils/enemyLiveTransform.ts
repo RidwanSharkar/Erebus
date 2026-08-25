@@ -169,6 +169,8 @@ function isTotemValidEnemy(enemy: TotemTargetEnemy): boolean {
     enemy.type !== 'allied-bear' &&
     enemy.type !== 'allied-serpent' &&
     enemy.type !== 'allied-spider' &&
+    enemy.type !== 'allied-siege-golem' &&
+    enemy.type !== 'allied-siege-wyrm' &&
     enemy.type !== 'player-zombie' &&
     enemy.type !== 'vengeful-spirit'
   );

@@ -7,7 +7,8 @@ export type ExploreCampKind =
   | 'eldritch'
   | 'infernal'
   | 'abyssal'
-  | 'boss';
+  | 'boss'
+  | 'town';
 
 export type ExploreCampBoonColor = 'blue' | 'green' | 'red' | 'purple';
 
@@ -42,7 +43,7 @@ export const EXPLORE_CAMP_BOON_COLOR: Readonly<
   abyssal: 'purple',
 });
 
-export const EXPLORE_CAMP_PROP_URL: Readonly<Record<ExploreCampKind, string>> = Object.freeze({
+export const EXPLORE_CAMP_PROP_URL: Readonly<Record<Exclude<ExploreCampKind, 'town'>, string>> = Object.freeze({
   gold: '/models/trinket/shardGoldcluster.glb',
   stat: '/models/trinket/pylons/redProp.glb', // blueProp.glb
   tempest: '/models/trinket/pylons/statProp.glb',
@@ -96,6 +97,104 @@ export const EXPLORE_REWARD_CAMP_KINDS = Object.freeze([
 
 export type ExploreRewardCampKind = (typeof EXPLORE_REWARD_CAMP_KINDS)[number];
 
+/** Chance a wilderness pack becomes an enemy town (independent of reward-camp roll). */
+export const EXPLORE_TOWN_CHANCE_BY_LEVEL: Readonly<Record<1 | 2 | 3 | 4, number>> = Object.freeze({
+  1: 0.05,
+  2: 0.10,
+  3: 0.15,
+  4: 0.20,
+});
+
+export const EXPLORE_TOWN_RESEARCH_HP = 1250;
+export const EXPLORE_TOWN_WATCH_HP = 1500;
+export const EXPLORE_TOWN_LOUNGE_HP = 1500;
+export const EXPLORE_TOWN_SIEGE_HP = 4500;
+export const EXPLORE_TOWN_CATHEDRAL_HP = 8500;
+export const EXPLORE_TOWN_SIEGE_DAMAGE = 109;
+
+export const EXPLORE_TOWN_WATCH_DAMAGE_BY_LEVEL: Readonly<Record<1 | 2 | 3 | 4, number>> = Object.freeze({
+  1: 59,
+  2: 69,
+  3: 79,
+  4: 79,
+});
+
+export const EXPLORE_TOWN_LOOT_BY_LEVEL: Readonly<
+  Record<1 | 2 | 3 | 4, Readonly<{ wood: number; stone: number; gold: number; flow: number }>>
+> = Object.freeze({
+  1: Object.freeze({ wood: 200, stone: 150, gold: 150, flow: 10 }),
+  2: Object.freeze({ wood: 300, stone: 225, gold: 225, flow: 20 }),
+  3: Object.freeze({ wood: 400, stone: 325, gold: 350, flow: 30 }),
+  4: Object.freeze({ wood: 575, stone: 450, gold: 500, flow: 40 }),
+});
+
+export type ExploreTownBuildingKind =
+  | 'research-station'
+  | 'barracks'
+  | 'watch-tower'
+  | 'siege-tower'
+  | 'cathedral';
+
+export type ExploreTownBuildingSpec = {
+  type: ExploreTownBuildingKind;
+  hp: number;
+  damage?: number;
+};
+
+export type ExploreTownSpec = {
+  buildings: ExploreTownBuildingSpec[];
+  extras: string[];
+};
+
+/** Mirrored in backend/gameRoom.js. Level 4 rolls research vs spirit lounge. */
+export function getExploreTownSpec(level: number, rng: () => number = Math.random): ExploreTownSpec {
+  const tableLevel = (Math.min(Math.max(level | 0, 1), 4) as 1 | 2 | 3 | 4);
+  const watchDmg = EXPLORE_TOWN_WATCH_DAMAGE_BY_LEVEL[tableLevel];
+  if (tableLevel === 1) {
+    return {
+      buildings: [
+        { type: 'research-station', hp: EXPLORE_TOWN_RESEARCH_HP },
+        { type: 'watch-tower', hp: EXPLORE_TOWN_WATCH_HP, damage: watchDmg },
+      ],
+      extras: [],
+    };
+  }
+  if (tableLevel === 2) {
+    return {
+      buildings: [
+        { type: 'research-station', hp: EXPLORE_TOWN_RESEARCH_HP },
+        { type: 'barracks', hp: EXPLORE_TOWN_LOUNGE_HP },
+        { type: 'watch-tower', hp: EXPLORE_TOWN_WATCH_HP, damage: watchDmg },
+        { type: 'watch-tower', hp: EXPLORE_TOWN_WATCH_HP, damage: watchDmg },
+      ],
+      extras: ['knight', 'knight', 'knight'],
+    };
+  }
+  if (tableLevel === 3) {
+    return {
+      buildings: [
+        { type: 'research-station', hp: EXPLORE_TOWN_RESEARCH_HP },
+        { type: 'barracks', hp: EXPLORE_TOWN_LOUNGE_HP },
+        { type: 'watch-tower', hp: EXPLORE_TOWN_WATCH_HP, damage: watchDmg },
+        { type: 'watch-tower', hp: EXPLORE_TOWN_WATCH_HP, damage: watchDmg },
+        { type: 'siege-tower', hp: EXPLORE_TOWN_SIEGE_HP, damage: EXPLORE_TOWN_SIEGE_DAMAGE },
+      ],
+      extras: ['weaver', 'warlock', 'knight', 'knight'],
+    };
+  }
+  const civic: ExploreTownBuildingKind = rng() < 0.5 ? 'research-station' : 'barracks';
+  return {
+    buildings: [
+      { type: civic, hp: civic === 'barracks' ? EXPLORE_TOWN_LOUNGE_HP : EXPLORE_TOWN_RESEARCH_HP },
+      { type: 'cathedral', hp: EXPLORE_TOWN_CATHEDRAL_HP },
+      { type: 'siege-tower', hp: EXPLORE_TOWN_SIEGE_HP, damage: EXPLORE_TOWN_SIEGE_DAMAGE },
+      { type: 'siege-tower', hp: EXPLORE_TOWN_SIEGE_HP, damage: EXPLORE_TOWN_SIEGE_DAMAGE },
+      { type: 'siege-tower', hp: EXPLORE_TOWN_SIEGE_HP, damage: EXPLORE_TOWN_SIEGE_DAMAGE },
+    ],
+    extras: ['colossus', 'titan'],
+  };
+}
+
 /** Weighted reward-camp kinds by wilderness level. Level 1 has no stat camps. Mirrored in backend/gameRoom.js. */
 export const EXPLORE_REWARD_CAMP_WEIGHTS_BY_LEVEL: Readonly<
   Record<1 | 2 | 3 | 4, Readonly<Partial<Record<ExploreRewardCampKind, number>>>>
@@ -126,9 +225,21 @@ export function isExploreCampKind(value: unknown): value is ExploreCampKind {
     || value === 'infernal'
     || value === 'abyssal'
     || value === 'boss'
+    || value === 'town'
+  );
+}
+
+export function isExploreRewardCampKind(value: unknown): value is ExploreRewardCampKind {
+  return (
+    value === 'gold'
+    || value === 'stat'
+    || value === 'tempest'
+    || value === 'eldritch'
+    || value === 'infernal'
+    || value === 'abyssal'
   );
 }
 
 export function exploreCampCollideRadius(kind: ExploreCampKind): number {
-  return kind === 'boss' ? 0 : EXPLORE_CAMP_COLLIDE_RADIUS;
+  return kind === 'boss' || kind === 'town' ? 0 : EXPLORE_CAMP_COLLIDE_RADIUS;
 }

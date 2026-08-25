@@ -14,6 +14,8 @@ import {
   EXPLORE_BUILDING_ROOT_ORDER,
   EXPLORE_TOWER_CATEGORY_HOTKEY,
   EXPLORE_TOWER_PICK_ORDER,
+  exploreBuildingRequiresCathedral,
+  exploreBuildingRequiresResearchStation,
   exploreBuildingRequiresSpiritLounge,
   exploreBuildingRequiresShrineOrObelisk,
   getExploreBuildingDef,
@@ -32,7 +34,9 @@ interface BuildMenuPanelProps {
   stone?: number;
   view?: ExploreBuildMenuView;
   hasLiveSpiritLounge?: boolean;
+  hasLiveResearchStation?: boolean;
   hasLiveShrineOrObelisk?: boolean;
+  hasLiveCathedral?: boolean;
   exploreResearch?: ExploreResearchState;
 }
 
@@ -148,7 +152,9 @@ export default function BuildMenuPanel({
   stone = 0,
   view = 'root',
   hasLiveSpiritLounge = false,
+  hasLiveResearchStation = false,
   hasLiveShrineOrObelisk = false,
+  hasLiveCathedral = false,
   exploreResearch = EMPTY_EXPLORE_RESEARCH,
 }: BuildMenuPanelProps) {
   const [tooltipContent, setTooltipContent] = useState<TooltipContent | null>(null);
@@ -202,13 +208,19 @@ export default function BuildMenuPanel({
           const affordable = canAffordBuilding(wood, flow, stone, kind, exploreResearch);
           const needsLounge = exploreBuildingRequiresSpiritLounge(kind);
           const loungeBlocked = needsLounge && !hasLiveSpiritLounge;
+          const needsResearch = exploreBuildingRequiresResearchStation(kind);
+          const researchBlocked = needsResearch && !hasLiveResearchStation;
           const needsShrineOrObelisk = exploreBuildingRequiresShrineOrObelisk(kind);
           const shrineBlocked = needsShrineOrObelisk && !hasLiveShrineOrObelisk;
-          const selectable = def.enabled && affordable && !loungeBlocked && !shrineBlocked;
+          const needsCathedral = exploreBuildingRequiresCathedral(kind);
+          const cathedralBlocked = needsCathedral && !hasLiveCathedral;
+          const selectable = def.enabled && affordable && !loungeBlocked && !researchBlocked && !shrineBlocked && !cathedralBlocked;
           const notes: string[] = [];
           if (!def.enabled) notes.push('Coming soon');
           else if (loungeBlocked) notes.push('Requires Spirit Lounge');
+          else if (researchBlocked) notes.push('Requires Research Station');
           else if (shrineBlocked) notes.push('Requires Shrine or Obelisk');
+          else if (cathedralBlocked) notes.push('Requires Cathedral');
           else if (!affordable) notes.push('Cannot afford');
           const buildingSlot: BuildSlotProps = {
             hotkey: def.hotkey,
@@ -216,7 +228,7 @@ export default function BuildMenuPanel({
             iconId: kind,
             description: joinTooltipLines([formatBuildingCost(kind, exploreResearch), ...notes]),
             selectable,
-            dimmed: !def.enabled || !affordable || loungeBlocked || shrineBlocked,
+            dimmed: !def.enabled || !affordable || loungeBlocked || researchBlocked || shrineBlocked || cathedralBlocked,
             onHover: handleHover,
             onLeave: handleLeave,
           };

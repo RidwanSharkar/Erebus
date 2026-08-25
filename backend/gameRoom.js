@@ -327,6 +327,14 @@ function isValidPetCompanionUpgradeId(upgradeId, kind) {
   return !!options && options.includes(upgradeId);
 }
 
+function getBeastKindForPetUpgradeId(upgradeId) {
+  if (!upgradeId) return null;
+  for (const [kind, options] of Object.entries(PET_COMPANION_UPGRADE_OPTIONS)) {
+    if (options.includes(upgradeId)) return kind;
+  }
+  return null;
+}
+
 function isMendingSporesUpgrade(upgradeId) {
   return upgradeId === 'bear_mending_spores'
     || upgradeId === 'serpent_mending_spores'
@@ -547,6 +555,24 @@ const EXPLORE_REWARD_CAMP_WEIGHTS_BY_LEVEL = Object.freeze({
   3: Object.freeze({ gold: 50, stat: 32, tempest: 4.5, eldritch: 4.5, infernal: 4.5, abyssal: 4.5 }),
   4: Object.freeze({ gold: 40, stat: 40, tempest: 5, eldritch: 5, infernal: 5, abyssal: 5 }),
 });
+/** Chance a wilderness pack becomes an enemy town (independent of reward-camp roll). */
+const EXPLORE_TOWN_CHANCE_BY_LEVEL = Object.freeze({ 1: 0.05, 2: 0.10, 3: 0.15, 4: 0.20 });
+const EXPLORE_TOWN_RESEARCH_HP = 1250;
+const EXPLORE_TOWN_WATCH_HP = 1500;
+const EXPLORE_TOWN_LOUNGE_HP = 1500;
+const EXPLORE_TOWN_SIEGE_HP = 4500;
+const EXPLORE_TOWN_CATHEDRAL_HP = 8500;
+const EXPLORE_TOWN_SIEGE_DAMAGE = 109;
+const EXPLORE_TOWN_WATCH_DAMAGE_BY_LEVEL = Object.freeze({ 1: 59, 2: 69, 3: 79, 4: 79 });
+const EXPLORE_TOWN_LOOT_BY_LEVEL = Object.freeze({
+  1: Object.freeze({ wood: 200, stone: 150, gold: 150, flow: 10 }),
+  2: Object.freeze({ wood: 300, stone: 225, gold: 225, flow: 20 }),
+  3: Object.freeze({ wood: 400, stone: 325, gold: 350, flow: 30 }),
+  4: Object.freeze({ wood: 575, stone: 450, gold: 500, flow: 40 }),
+});
+const EXPLORE_TOWN_BUILDING_RING_MIN = 7;
+const EXPLORE_TOWN_BUILDING_RING_MAX = 12;
+const EXPLORE_TOWN_BUILDING_MIN_SEPARATION = 6;
 const EXPLORE_CAMP_COLLIDE_RADIUS = 1.4;
 const EXPLORE_CAMP_MAX_ACTIVE = 3;
 const EXPLORE_CAMP_PROP_OFFSET_MIN = 4;
@@ -592,6 +618,9 @@ const EXPLORE_WILDERNESS_PACKS = Object.freeze({
     Object.freeze(['knight', 'knight', 'tiger', 'tiger']),
     Object.freeze(['wyvern']),
     Object.freeze(['wyvern', 'wyvern']),
+    Object.freeze(['wyrm']),
+    Object.freeze(['wyrm', 'viper']),
+    Object.freeze(['wyrm', 'tiger']),
     Object.freeze(['assassin', 'spectre']),
     Object.freeze(['assassin', 'death-knight']),
     Object.freeze(['shaman', 'death-knight']),
@@ -609,6 +638,9 @@ const EXPLORE_WILDERNESS_PACKS = Object.freeze({
     Object.freeze(['colossus', 'knight', 'knight']),
     Object.freeze(['eternal-oak', 'wolf', 'wolf']),
     Object.freeze(['eternal-oak', 'tiger']),
+    Object.freeze(['eternal-oak', 'wyrm']),
+    Object.freeze(['wyrm']),
+    Object.freeze(['wyrm', 'wyvern']),
     Object.freeze(['valkyrie', 'death-knight']),
     Object.freeze(['valkyrie', 'valkyrie']),
     Object.freeze(['boss-tiger', 'boss-wolf']),
@@ -891,6 +923,7 @@ const MEAT_DROP_RANGES = Object.freeze({
   'boss-bear': Object.freeze({ min: 3, max: 5 }),
   terrorhawk: Object.freeze({ min: 4, max: 6 }),
   wyvern: Object.freeze({ min: 5, max: 10 }),
+  wyrm: Object.freeze({ min: 5, max: 10 }),
 });
 const MERCHANT_HEAL_COST = 60;
 const MERCHANT_HEAL_AMOUNT = 125;
@@ -1005,6 +1038,7 @@ const GOLD_REWARD_TABLE = Object.freeze({
   'boss-serpent': { min: 0, max: 0 },
   'frost-queen': { min: 16, max: 22 },
   'wyvern': { min: 0, max: 0 },
+  'wyrm': { min: 0, max: 0 },
   'terrorhawk': { min: 0, max: 0 },
   'tiger': { min: 0, max: 0 },
   'boss-tiger': { min: 0, max: 0 },
@@ -2052,6 +2086,7 @@ class GameRoom {
       };
       player.coopRedRoomBoons = { fission: false };
       player.coopPetCompanionUpgrade = null;
+      player.explorePetCompanionUpgrades = {};
       player.dreamLayerHealPurchasedThisVisit = false;
       player.dreamLayerWardingPurchasedThisVisit = false;
       player.dreamLayerLegendaryAPurchasedThisVisit = false;
@@ -2602,7 +2637,51 @@ class GameRoom {
   }
 
   _playerOwnsPetUpgrade(player, upgradeId) {
-    return !!player && player.coopPetCompanionUpgrade === upgradeId;
+    if (!player || !upgradeId) return false;
+    if (player.coopPetCompanionUpgrade === upgradeId) return true;
+    const exploreMap = player.explorePetCompanionUpgrades;
+    if (!exploreMap || typeof exploreMap !== 'object') return false;
+    return Object.values(exploreMap).includes(upgradeId);
+  }
+
+  _getExplorePetUpgradeId(player, kind) {
+    if (!player || !kind) return null;
+    const map = player.explorePetCompanionUpgrades;
+    if (!map || typeof map !== 'object') return null;
+    const id = map[kind];
+    return typeof id === 'string' ? id : null;
+  }
+
+  _listLivingExploreBeastsForPlayer(playerId, kind = null) {
+    const out = [];
+    for (const enemy of this.enemies.values()) {
+      if (!enemy || enemy.companionSlot !== 'explore') continue;
+      if (enemy.ownerPlayerId !== playerId) continue;
+      if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+      if (kind && enemy.beastCompanionKind !== kind) continue;
+      out.push(enemy);
+    }
+    return out;
+  }
+
+  _isPlayerNearOwnedBeastWithUpgrade(player, upgradeId, range) {
+    if (!player || !upgradeId) return false;
+    if (player.coopPetCompanionUpgrade === upgradeId) {
+      return this._isPlayerNearOwnedFaeBeast(player, range);
+    }
+    const kind = getBeastKindForPetUpgradeId(upgradeId);
+    if (!kind || this._getExplorePetUpgradeId(player, kind) !== upgradeId) return false;
+    const beasts = this._listLivingExploreBeastsForPlayer(player.id, kind);
+    if (beasts.length === 0) return false;
+    const r2 = range * range;
+    const px = player.position?.x ?? 0;
+    const pz = player.position?.z ?? 0;
+    for (const beast of beasts) {
+      const dx = px - (beast.position?.x ?? 0);
+      const dz = pz - (beast.position?.z ?? 0);
+      if (dx * dx + dz * dz <= r2) return true;
+    }
+    return false;
   }
 
   _isPlayerNearOwnedFaeBeast(player, range) {
@@ -3157,6 +3236,16 @@ class GameRoom {
       this.addEnemy(beast);
       if (this.io) {
         this.io.to(this.roomId).emit('enemy-spawned', { enemy: beast, timestamp: Date.now() });
+      }
+      const exploreUpgrade = this._getExplorePetUpgradeId(player, companionKind);
+      if (exploreUpgrade) {
+        this._applyPetCompanionUpgradeStats(beast, exploreUpgrade);
+        if (this.io) {
+          this.io.to(this.roomId).emit('enemy-spawned', { enemy: beast, timestamp: Date.now() });
+        }
+        if (exploreUpgrade === 'wolf_pack_expansion') {
+          this._spawnExplorePackWolfForPlayer(player.id);
+        }
       }
     }
     this.startCompanionAI();
@@ -3732,10 +3821,64 @@ class GameRoom {
   _countActiveExploreCamps() {
     let n = 0;
     for (const camp of this.exploreCamps.values()) {
-      if (camp.kind === 'boss') continue;
+      if (camp.kind === 'boss' || camp.kind === 'town') continue;
       n += 1;
     }
     return n;
+  }
+
+  _getExploreTownSpec(level) {
+    const tableLevel = Math.min(Math.max(level | 0, 1), 4);
+    const watchDmg = EXPLORE_TOWN_WATCH_DAMAGE_BY_LEVEL[tableLevel] || 59;
+    if (tableLevel === 1) {
+      return {
+        buildings: [
+          { type: 'research-station', hp: EXPLORE_TOWN_RESEARCH_HP },
+          { type: 'watch-tower', hp: EXPLORE_TOWN_WATCH_HP, damage: watchDmg },
+        ],
+        extras: [],
+      };
+    }
+    if (tableLevel === 2) {
+      return {
+        buildings: [
+          { type: 'research-station', hp: EXPLORE_TOWN_RESEARCH_HP },
+          { type: 'barracks', hp: EXPLORE_TOWN_LOUNGE_HP },
+          { type: 'watch-tower', hp: EXPLORE_TOWN_WATCH_HP, damage: watchDmg },
+          { type: 'watch-tower', hp: EXPLORE_TOWN_WATCH_HP, damage: watchDmg },
+        ],
+        extras: ['knight', 'knight', 'knight'],
+      };
+    }
+    if (tableLevel === 3) {
+      return {
+        buildings: [
+          { type: 'research-station', hp: EXPLORE_TOWN_RESEARCH_HP },
+          { type: 'barracks', hp: EXPLORE_TOWN_LOUNGE_HP },
+          { type: 'watch-tower', hp: EXPLORE_TOWN_WATCH_HP, damage: watchDmg },
+          { type: 'watch-tower', hp: EXPLORE_TOWN_WATCH_HP, damage: watchDmg },
+          { type: 'siege-tower', hp: EXPLORE_TOWN_SIEGE_HP, damage: EXPLORE_TOWN_SIEGE_DAMAGE },
+        ],
+        extras: ['weaver', 'warlock', 'knight', 'knight'],
+      };
+    }
+    const civic = Math.random() < 0.5 ? 'research-station' : 'barracks';
+    return {
+      buildings: [
+        { type: civic, hp: civic === 'barracks' ? EXPLORE_TOWN_LOUNGE_HP : EXPLORE_TOWN_RESEARCH_HP },
+        { type: 'cathedral', hp: EXPLORE_TOWN_CATHEDRAL_HP },
+        { type: 'siege-tower', hp: EXPLORE_TOWN_SIEGE_HP, damage: EXPLORE_TOWN_SIEGE_DAMAGE },
+        { type: 'siege-tower', hp: EXPLORE_TOWN_SIEGE_HP, damage: EXPLORE_TOWN_SIEGE_DAMAGE },
+        { type: 'siege-tower', hp: EXPLORE_TOWN_SIEGE_HP, damage: EXPLORE_TOWN_SIEGE_DAMAGE },
+      ],
+      extras: ['colossus', 'titan'],
+    };
+  }
+
+  _filterExploreTownExtras(extras) {
+    const banned = this.bannedEnemyTypes;
+    if (!banned || banned.size === 0) return extras.slice();
+    return extras.filter((type) => !banned.has(type));
   }
 
   _pickExploreRewardCampKind(level) {
@@ -3802,7 +3945,7 @@ class GameRoom {
       memberIds: new Set(),
       cleared: !!cleared,
       claimedBy: new Set(),
-      collides: kind === 'boss' ? false : !!collides,
+      collides: kind === 'boss' || kind === 'town' ? false : !!collides,
       // Server-only leave-despawn state (not sent in getExploreCampState).
       approached: false,
       farSince: 0,
@@ -6727,7 +6870,7 @@ class GameRoom {
     const structures = [];
     for (const enemy of this.enemies.values()) {
       if (!enemy || enemy.isDying || (enemy.health ?? 0) <= 0) continue;
-      if (!exploreBuildings.isPlayerExploreBuildingType(enemy.type)) continue;
+      if (!exploreBuildings.isAlliedExploreBuilding(enemy)) continue;
       structures.push(enemy);
       if (enemy.type === 'shield-battery' && enemy.powered !== false) {
         batteries.push(enemy);
@@ -6935,6 +7078,152 @@ class GameRoom {
     return enemy;
   }
 
+  _pickExploreTownBuildingPositions(buildings, centroid, packPositions = []) {
+    const specs = Array.isArray(buildings) ? buildings : [];
+    if (specs.length === 0 || !centroid) return [];
+    const seed = this.coopExploreSeed || 1;
+    const players = this._getExplorePlayers();
+    const placed = [];
+    const ringSpan = EXPLORE_TOWN_BUILDING_RING_MAX - EXPLORE_TOWN_BUILDING_RING_MIN;
+    for (let i = 0; i < specs.length; i++) {
+      const def = exploreBuildings.getExploreBuildingDef(specs[i].type);
+      const hull = def?.hullRadius || 1.6;
+      let found = null;
+      const baseAng = (Math.PI * 2 * i) / specs.length;
+      for (let attempt = 0; attempt < 28; attempt++) {
+        const ang = baseAng + (attempt * 0.37) + (Math.random() - 0.5) * 0.4;
+        const dist = EXPLORE_TOWN_BUILDING_RING_MIN + Math.random() * ringSpan + attempt * 0.15;
+        const x = centroid.x + Math.cos(ang) * dist;
+        const z = centroid.z + Math.sin(ang) * dist;
+        if (exploreWorldGen.isExploreBlocked(
+          seed, x, z, hull, this.exploreTreeHealth, this.exploreRootHealth, this.exploreRockHealth, this.exploreSpineHealth,
+        )) continue;
+        let blocked = false;
+        for (const p of players) {
+          if (Math.hypot((p.position?.x || 0) - x, (p.position?.z || 0) - z) < EXPLORE_SPAWN_MIN_PLAYER_DIST) {
+            blocked = true;
+            break;
+          }
+        }
+        if (blocked) continue;
+        for (const pos of packPositions) {
+          if (Math.hypot(pos.x - x, pos.z - z) < hull + 1.4) {
+            blocked = true;
+            break;
+          }
+        }
+        if (blocked) continue;
+        for (const other of placed) {
+          const minSep = Math.max(EXPLORE_TOWN_BUILDING_MIN_SEPARATION, hull + other.hull + 1.2);
+          if (Math.hypot(other.x - x, other.z - z) < minSep) {
+            blocked = true;
+            break;
+          }
+        }
+        if (blocked) continue;
+        found = { x, z, hull };
+        break;
+      }
+      if (!found) {
+        const ang = baseAng;
+        const dist = EXPLORE_TOWN_BUILDING_RING_MAX + i * 1.4;
+        found = {
+          x: centroid.x + Math.cos(ang) * dist,
+          z: centroid.z + Math.sin(ang) * dist,
+          hull,
+        };
+      }
+      placed.push(found);
+    }
+    return placed;
+  }
+
+  _spawnExploreTownBuilding(spec, pos, campId, level) {
+    const def = exploreBuildings.getExploreBuildingDef(spec.type);
+    if (!def) return null;
+    const hull = def.hullRadius;
+    const id = `town-${spec.type}-${++this._exploreBuildingSeq}-${Date.now().toString(36)}`;
+    const hp = Math.max(1, spec.hp | 0);
+    const building = {
+      id,
+      type: spec.type,
+      position: { x: pos.x, y: 0, z: pos.z },
+      rotation: Math.random() * Math.PI * 2,
+      health: hp,
+      maxHealth: hp,
+      isDying: false,
+      moveSpeed: 0,
+      alliedUnit: false,
+      isStructure: true,
+      hullRadius: hull,
+      powered: true,
+      exploreCampId: campId,
+      exploreTown: true,
+      exploreTownLevel: Math.min(Math.max(level | 0, 1), 4),
+    };
+    if (spec.type === 'watch-tower') {
+      const profile = EXPLORE_WATCH_TOWER_ARROW_PROFILE;
+      building.damage = spec.damage || profile.damage;
+      building.attackCooldown = profile.cooldownMs;
+      building.attackRange = profile.range;
+      building.attackKind = profile.kind;
+      building.attackImpactDelayMs = profile.impactDelayMs;
+      building.attackMuzzleY = WATCH_TOWER_MUZZLE_Y;
+      building.attackImpactY = DEFENSE_TOWER_IMPACT_Y;
+      building.attackArrowSpeed = WATCH_TOWER_ARROW_SPEED;
+    } else if (spec.type === 'siege-tower') {
+      const profile = EXPLORE_SIEGE_TOWER_ARROW_PROFILE;
+      building.damage = spec.damage || EXPLORE_TOWN_SIEGE_DAMAGE;
+      building.attackCooldown = profile.cooldownMs;
+      building.attackRange = profile.range;
+      building.attackKind = profile.kind;
+      building.attackImpactDelayMs = profile.impactDelayMs;
+      building.attackMuzzleY = SIEGE_TOWER_MUZZLE_Y;
+      building.attackImpactY = DEFENSE_TOWER_IMPACT_Y;
+      building.attackArrowSpeed = SIEGE_TOWER_ARROW_SPEED;
+    }
+    if (campId) {
+      const camp = this.exploreCamps.get(campId);
+      if (camp) camp.memberIds.add(id);
+    }
+    this.enemies.set(id, building);
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-spawned', { enemy: building, timestamp: Date.now() });
+    }
+    return building;
+  }
+
+  _grantExploreTownBuildingLoot(enemy) {
+    const level = Math.min(Math.max((enemy?.exploreTownLevel | 0) || 1, 1), 4);
+    const table = EXPLORE_TOWN_LOOT_BY_LEVEL[level] || EXPLORE_TOWN_LOOT_BY_LEVEL[1];
+    const roll = Math.random();
+    const pos = {
+      x: enemy?.position?.x || 0,
+      y: 0.25,
+      z: enemy?.position?.z || 0,
+    };
+    if (roll < 0.25) {
+      this.spawnWoodDrop(pos, table.wood);
+      return;
+    }
+    if (roll < 0.5) {
+      this.spawnStoneDrop(pos, table.stone);
+      return;
+    }
+    if (roll < 0.75) {
+      this.spawnGoldDrop(pos, table.gold, enemy);
+      return;
+    }
+    const flow = table.flow | 0;
+    if (flow > 0 && this.io) {
+      this.io.to(this.roomId).emit('explore-town-flow-reward', {
+        position: { x: pos.x, y: 0.85, z: pos.z },
+        flow,
+        timestamp: Date.now(),
+      });
+    }
+  }
+
   _despawnExploreFarEnemies() {
     const players = this._getExplorePlayers();
     if (players.length === 0) return;
@@ -6989,34 +7278,92 @@ class GameRoom {
         const level = exploreWildernessLevel(anchor.position.x, anchor.position.z);
         const tableLevel = Math.min(Math.max(level | 0, 1), 4);
         const recipe = this._pickExploreWildernessRecipe(level);
-        if (recipe && live + recipe.length <= EXPLORE_LIVE_CAP) {
-          const positions = this._pickExplorePackPositions(recipe.length, anchor);
-          if (positions && positions.length === recipe.length) {
-            let campId = null;
-            const chance = EXPLORE_CAMP_CHANCE_BY_LEVEL[tableLevel] ?? 0.5;
-            if (
-              this._countActiveExploreCamps() < EXPLORE_CAMP_MAX_ACTIVE
-              && Math.random() < chance
-            ) {
-              const propPos = this._pickExploreCampPropPosition(positions);
-              if (propPos) {
-                const kind = this._pickExploreRewardCampKind(tableLevel);
+        if (recipe) {
+          const townChance = EXPLORE_TOWN_CHANCE_BY_LEVEL[tableLevel] ?? 0.05;
+          let townSpec = Math.random() < townChance ? this._getExploreTownSpec(tableLevel) : null;
+          if (townSpec) {
+            townSpec = {
+              buildings: townSpec.buildings,
+              extras: this._filterExploreTownExtras(townSpec.extras),
+            };
+          }
+          const extraCount = townSpec ? townSpec.extras.length : 0;
+          const buildingCount = townSpec ? townSpec.buildings.length : 0;
+          let packSize = recipe.length + extraCount;
+          if (live + packSize + buildingCount > EXPLORE_LIVE_CAP) {
+            if (townSpec && live + recipe.length <= EXPLORE_LIVE_CAP) {
+              townSpec = null;
+              packSize = recipe.length;
+            }
+          }
+          if (live + packSize + (townSpec ? buildingCount : 0) <= EXPLORE_LIVE_CAP) {
+            const members = townSpec ? [...recipe, ...townSpec.extras] : recipe;
+            const positions = this._pickExplorePackPositions(members.length, anchor);
+            if (positions && positions.length === members.length) {
+              let campId = null;
+              if (townSpec) {
+                let sx = 0;
+                let sz = 0;
+                for (const p of positions) {
+                  sx += p.x;
+                  sz += p.z;
+                }
+                const centroid = { x: sx / positions.length, z: sz / positions.length };
                 const camp = this._createExploreCamp({
-                  kind,
+                  kind: 'town',
                   level: tableLevel,
-                  x: propPos.x,
-                  z: propPos.z,
+                  x: centroid.x,
+                  z: centroid.z,
                   cleared: false,
-                  collides: true,
+                  collides: false,
                 });
                 campId = camp.id;
+                const buildingPos = this._pickExploreTownBuildingPositions(
+                  townSpec.buildings,
+                  centroid,
+                  positions,
+                );
+                for (let b = 0; b < townSpec.buildings.length; b++) {
+                  const pos = buildingPos[b] || centroid;
+                  this._spawnExploreTownBuilding(townSpec.buildings[b], pos, campId, tableLevel);
+                }
+              } else {
+                const chance = EXPLORE_CAMP_CHANCE_BY_LEVEL[tableLevel] ?? 0.5;
+                if (
+                  this._countActiveExploreCamps() < EXPLORE_CAMP_MAX_ACTIVE
+                  && Math.random() < chance
+                ) {
+                  const propPos = this._pickExploreCampPropPosition(positions);
+                  if (propPos) {
+                    const kind = this._pickExploreRewardCampKind(tableLevel);
+                    const camp = this._createExploreCamp({
+                      kind,
+                      level: tableLevel,
+                      x: propPos.x,
+                      z: propPos.z,
+                      cleared: false,
+                      collides: true,
+                    });
+                    campId = camp.id;
+                  }
+                }
               }
+              const recipeLen = recipe.length;
+              for (let i = 0; i < members.length; i++) {
+                const enemy = this._spawnExplorePackMember(members[i], positions[i], campId);
+                // Town extras (tail of members) are camp guards — not the base wilderness recipe.
+                if (townSpec && enemy && i >= recipeLen) {
+                  enemy.exploreTownGuard = true;
+                  enemy.guardHomePosition = {
+                    x: positions[i].x,
+                    y: positions[i].y ?? 0,
+                    z: positions[i].z,
+                  };
+                }
+              }
+              // Explore streams packs outside spawnEnemyWave — wake AI if it idle-paused.
+              this.startEnemyAI();
             }
-            for (let i = 0; i < recipe.length; i++) {
-              this._spawnExplorePackMember(recipe[i], positions[i], campId);
-            }
-            // Explore streams packs outside spawnEnemyWave — wake AI if it idle-paused.
-            this.startEnemyAI();
           }
         }
       }
@@ -7052,14 +7399,20 @@ class GameRoom {
       if (camp && camp.memberIds.has(enemy.id)) {
         camp.memberIds.delete(enemy.id);
         if (camp.memberIds.size === 0 && !camp.cleared) {
-          camp.cleared = true;
-          this._broadcastExploreCamps();
+          if (camp.kind === 'town') {
+            this.exploreCamps.delete(campId);
+            this._broadcastExploreCamps();
+          } else {
+            camp.cleared = true;
+            this._broadcastExploreCamps();
+          }
         }
       }
     }
 
-    // Boss encounter progress: pack members only (exclude tentacles, allies, bosses).
+    // Boss encounter progress: pack members only (exclude tentacles, allies, bosses, structures).
     if (this.isAlliedUnitEnemy(enemy)) return;
+    if (enemy.isStructure === true) return;
     if (enemy.type === 'tentacle-spine') return;
     if (COOP_BOSS_TYPES.has(enemy.type)) return;
     if (enemy.isBoss1EliteKnight) return;
@@ -7178,6 +7531,7 @@ class GameRoom {
     if (!this.coopExploreActive || !this.players.get(playerId)) return false;
     const camp = this.exploreCamps.get(campId);
     if (!camp || !camp.cleared) return false;
+    if (camp.kind === 'town') return false;
     if (camp.claimedBy.has(playerId)) return false;
 
     const level = Math.min(Math.max((camp.level | 0) || 1, 1), 4);
@@ -8501,9 +8855,26 @@ class GameRoom {
     if (this.gameMode !== 'coop' || !this.gameStarted) return;
     for (const [playerId, player] of this.players) {
       if (!player || player.health <= 0) continue;
-      const upgradeId = player.coopPetCompanionUpgrade;
-      if (!isMendingSporesUpgrade(upgradeId)) continue;
-      if (!this._isPlayerNearOwnedFaeBeast(player, PET_UPGRADE_MENDING_SPORES_RANGE)) continue;
+      const upgradeIds = [];
+      if (isMendingSporesUpgrade(player.coopPetCompanionUpgrade)) {
+        upgradeIds.push(player.coopPetCompanionUpgrade);
+      }
+      const exploreMap = player.explorePetCompanionUpgrades;
+      if (exploreMap && typeof exploreMap === 'object') {
+        for (const id of Object.values(exploreMap)) {
+          if (isMendingSporesUpgrade(id) && !upgradeIds.includes(id)) upgradeIds.push(id);
+        }
+      }
+      if (upgradeIds.length === 0) continue;
+
+      let near = false;
+      for (const upgradeId of upgradeIds) {
+        if (this._isPlayerNearOwnedBeastWithUpgrade(player, upgradeId, PET_UPGRADE_MENDING_SPORES_RANGE)) {
+          near = true;
+          break;
+        }
+      }
+      if (!near) continue;
 
       const last = player._mendingSporesLastHealAt || 0;
       if (now - last < 1000) continue;
@@ -8525,12 +8896,15 @@ class GameRoom {
   }
 
   /**
-   * Tiger Evasion: 20% chance to negate incoming damage while within 6 of Fae tiger.
+   * Tiger Evasion: 20% chance to negate incoming damage while within 6 of owned tiger.
    * @returns {boolean}
    */
   _rollTigerEvasion(player) {
-    if (!player || player.coopPetCompanionUpgrade !== 'tiger_evasion') return false;
-    if (!this._isPlayerNearOwnedFaeBeast(player, PET_UPGRADE_EVASION_RANGE)) return false;
+    if (!player) return false;
+    if (!this._playerOwnsPetUpgrade(player, 'tiger_evasion')) return false;
+    if (!this._isPlayerNearOwnedBeastWithUpgrade(player, 'tiger_evasion', PET_UPGRADE_EVASION_RANGE)) {
+      return false;
+    }
     return Math.random() < PET_UPGRADE_EVASION_CHANCE;
   }
 
@@ -10446,6 +10820,9 @@ class GameRoom {
       coopAlliedKnightBoons: player.coopAlliedKnightBoons || null,
       coopRedRoomBoons: player.coopRedRoomBoons || null,
       coopPetCompanionUpgrade: player.coopPetCompanionUpgrade ?? null,
+      explorePetCompanionUpgrades: player.explorePetCompanionUpgrades
+        ? { ...player.explorePetCompanionUpgrades }
+        : {},
       ownedUniqueItemTypes: uniqueTypes,
       bossRelicRarities: player.bossRelicRarities || {},
       merchantDashChargePurchased: !!player.merchantDashChargePurchased,
@@ -10568,6 +10945,8 @@ class GameRoom {
       },
       /** Co-op: Eternity Palace III Fae pet companion upgrade id. */
       coopPetCompanionUpgrade: null,
+      /** Explore: Beast Temple pet companion upgrades by kind. */
+      explorePetCompanionUpgrades: {},
       merchantDashChargePurchased: false,
       merchantWeaponTalentPurchases: 0,
       merchantOxygenPurchases: 0,
@@ -11988,6 +12367,7 @@ class GameRoom {
     let n = 0;
     for (const enemy of this.enemies.values()) {
       if (!enemy || enemy.type !== type) continue;
+      if (enemy.alliedUnit !== true) continue;
       if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
       n += 1;
     }
@@ -12017,7 +12397,7 @@ class GameRoom {
     const updates = [];
     for (const enemy of this.enemies.values()) {
       if (!enemy || enemy.id === excludeId) continue;
-      if (!exploreBuildings.isPlayerExploreBuildingType(enemy.type)) continue;
+      if (!exploreBuildings.isAlliedExploreBuilding(enemy)) continue;
       if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
       const prevMax = enemy.maxHealth ?? 0;
       const nextMax = Math.max(1, prevMax + delta);
@@ -12082,6 +12462,7 @@ class GameRoom {
     const updates = [];
     for (const enemy of this.enemies.values()) {
       if (!enemy || !exploreBuildings.exploreBuildingRequiresFirePit(enemy.type)) continue;
+      if (enemy.alliedUnit !== true) continue;
       if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
       const powered = this._isLiveExploreFirePitNearby(enemy.position?.x ?? 0, enemy.position?.z ?? 0);
       if (enemy.powered !== powered) {
@@ -12356,6 +12737,7 @@ class GameRoom {
     const pz = player.position.z;
     for (const enemy of this.enemies.values()) {
       if (!enemy || enemy.type !== 'barracks') continue;
+      if (enemy.alliedUnit !== true) continue;
       if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
       if (enemy.powered === false) continue;
       const dx = enemy.position.x - px;
@@ -12494,6 +12876,7 @@ class GameRoom {
     const pz = player.position.z;
     for (const enemy of this.enemies.values()) {
       if (!enemy || enemy.type !== 'research-station') continue;
+      if (enemy.alliedUnit !== true) continue;
       if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
       if (enemy.powered === false) continue;
       const dx = enemy.position.x - px;
@@ -12553,6 +12936,10 @@ class GameRoom {
       const rank = Math.max(0, Math.floor(Number(this.exploreResearch.towerDamage) || 0));
       const cost = exploreBuildings.getTowerDamageNextCost(rank);
       if (cost == null) return { ok: false, reason: 'already_purchased' };
+      if (exploreBuildings.towerDamageRequiresCathedral(rank)
+        && this._countLiveExploreBuildingsOfType('cathedral') < 1) {
+        return { ok: false, reason: 'no_cathedral' };
+      }
       if ((player.gold || 0) < cost) return { ok: false, reason: 'not_enough_gold' };
       player.gold = (player.gold || 0) - cost;
       this.exploreResearch.towerDamage = rank + 1;
@@ -12628,6 +13015,7 @@ class GameRoom {
     const pz = player.position.z;
     for (const enemy of this.enemies.values()) {
       if (!enemy || enemy.type !== 'shrine') continue;
+      if (enemy.alliedUnit !== true) continue;
       if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
       if (enemy.powered === false) continue;
       if (unusedOnly && enemy.shrineUsed) continue;
@@ -12650,6 +13038,7 @@ class GameRoom {
     const pz = player.position.z;
     for (const enemy of this.enemies.values()) {
       if (!enemy || enemy.type !== 'obelisk') continue;
+      if (enemy.alliedUnit !== true) continue;
       if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
       if (enemy.powered === false) continue;
       const dx = enemy.position.x - px;
@@ -12709,6 +13098,7 @@ class GameRoom {
     const pz = player.position.z;
     for (const enemy of this.enemies.values()) {
       if (!enemy || enemy.type !== 'cathedral') continue;
+      if (enemy.alliedUnit !== true) continue;
       if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
       if (enemy.powered === false) continue;
       if (unusedOnly && enemy.cathedralUsed) continue;
@@ -12884,6 +13274,350 @@ class GameRoom {
     return { ok: true };
   }
 
+  _findNearestLiveBeastTemple(player) {
+    if (!player?.position) return null;
+    let best = null;
+    let bestDistSq = exploreBuildings.EXPLORE_BEAST_TEMPLE_INTERACT_RADIUS ** 2;
+    const px = player.position.x;
+    const pz = player.position.z;
+    for (const enemy of this.enemies.values()) {
+      if (!enemy || enemy.type !== 'beast-temple') continue;
+      if (enemy.alliedUnit !== true) continue;
+      if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+      if (enemy.powered === false) continue;
+      const dx = enemy.position.x - px;
+      const dz = enemy.position.z - pz;
+      const distSq = dx * dx + dz * dz;
+      if (distSq <= bestDistSq) {
+        bestDistSq = distSq;
+        best = enemy;
+      }
+    }
+    return best;
+  }
+
+  _findNearestLiveAltarOfWar(player) {
+    if (!player?.position) return null;
+    let best = null;
+    let bestDistSq = exploreBuildings.EXPLORE_ALTAR_OF_WAR_INTERACT_RADIUS ** 2;
+    const px = player.position.x;
+    const pz = player.position.z;
+    for (const enemy of this.enemies.values()) {
+      if (!enemy || enemy.type !== 'altar-of-war') continue;
+      if (enemy.alliedUnit !== true) continue;
+      if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+      if (enemy.powered === false) continue;
+      const dx = enemy.position.x - px;
+      const dz = enemy.position.z - pz;
+      const distSq = dx * dx + dz * dz;
+      if (distSq <= bestDistSq) {
+        bestDistSq = distSq;
+        best = enemy;
+      }
+    }
+    return best;
+  }
+
+  _applyExplorePetUpgradeToPlayerBeasts(playerId, kind, upgradeId) {
+    const beasts = this._listLivingExploreBeastsForPlayer(playerId, kind);
+    for (const beast of beasts) {
+      const prevMax = beast.maxHealth ?? 0;
+      const prevHp = beast.health ?? 0;
+      this._applyPetCompanionUpgradeStats(beast, upgradeId);
+      const maxDelta = Math.max(0, (beast.maxHealth ?? 0) - prevMax);
+      if (maxDelta > 0) {
+        beast.health = Math.min(beast.maxHealth, prevHp + maxDelta);
+      }
+      if (this.io) {
+        this.io.to(this.roomId).emit('enemy-spawned', { enemy: beast, timestamp: Date.now() });
+      }
+    }
+  }
+
+  _spawnExplorePackWolfForPlayer(playerId) {
+    const player = this.players.get(playerId);
+    if (!player) return null;
+    const existing = this._listLivingExploreBeastsForPlayer(playerId, 'wolf');
+    if (existing.length >= 2) return existing[1] || existing[0];
+    const stats = FAE_BEAST_STATS.wolf;
+    if (!stats) return null;
+    const idx = this._countLiveExploreCompanionsForPlayer(playerId);
+    const pos = this.getCompanionFollowPosition(player, 'explore', idx);
+    this._exploreCompanionSeq = (this._exploreCompanionSeq || 0) + 1;
+    const beastId = `explore-beast-pack-${playerId}-${this._exploreCompanionSeq}`;
+    const beast = {
+      id: beastId,
+      type: stats.enemyType,
+      position: { x: pos.x, y: 0, z: pos.z },
+      rotation: player.rotation?.y ?? 0,
+      health: stats.maxHp,
+      maxHealth: stats.maxHp,
+      isDying: false,
+      damage: stats.damage,
+      attackCooldown: stats.attackCooldownMs,
+      moveSpeed: stats.walkSpeed,
+      alliedUnit: true,
+      ownerPlayerId: playerId,
+      combatInitiated: false,
+      alliedTargetEnemyId: null,
+      attackVariant: 1,
+      tigerLocomotion: 'walk',
+      beastCompanionPhase: 'active',
+      beastCompanionKind: 'wolf',
+      companionSlot: 'explore',
+      exploreCompanionIndex: idx,
+      visualScale: stats.visualScale,
+      staggerBuildup: 0,
+      isPackWolf: true,
+    };
+    this.addEnemy(beast);
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-spawned', { enemy: beast, timestamp: Date.now() });
+    }
+    this.startCompanionAI();
+    return beast;
+  }
+
+  /**
+   * Purchase a Beast Temple pet companion upgrade (one per owned explore beast kind).
+   * @param {string} playerId
+   * @param {{ upgradeId: string }} payload
+   */
+  beastTemplePurchaseUpgrade(playerId, payload) {
+    if (!this.coopExploreActive || !this.gameStarted || !this.combatArenaActive) {
+      return { ok: false, reason: 'not_explore' };
+    }
+    const player = this.players.get(playerId);
+    if (!player || player.health <= 0) return { ok: false, reason: 'invalid_player' };
+
+    const temple = this._findNearestLiveBeastTemple(player);
+    if (!temple) return { ok: false, reason: 'no_beast_temple' };
+
+    const upgradeId = typeof payload?.upgradeId === 'string' ? payload.upgradeId : '';
+    const kind = getBeastKindForPetUpgradeId(upgradeId);
+    if (!kind || !isValidPetCompanionUpgradeId(upgradeId, kind)) {
+      return { ok: false, reason: 'invalid_upgrade' };
+    }
+
+    const living = this._listLivingExploreBeastsForPlayer(playerId, kind);
+    if (living.length === 0) return { ok: false, reason: 'no_companion' };
+
+    if (!player.explorePetCompanionUpgrades || typeof player.explorePetCompanionUpgrades !== 'object') {
+      player.explorePetCompanionUpgrades = {};
+    }
+    if (player.explorePetCompanionUpgrades[kind]) {
+      return { ok: false, reason: 'already_purchased' };
+    }
+
+    const woodCost = exploreBuildings.EXPLORE_BEAST_TEMPLE_UPGRADE_WOOD;
+    const goldCost = exploreBuildings.EXPLORE_BEAST_TEMPLE_UPGRADE_GOLD;
+    if ((player.wood || 0) < woodCost) return { ok: false, reason: 'not_enough_wood' };
+    if ((player.gold || 0) < goldCost) return { ok: false, reason: 'not_enough_gold' };
+
+    player.wood = (player.wood || 0) - woodCost;
+    player.gold = (player.gold || 0) - goldCost;
+    player.explorePetCompanionUpgrades[kind] = upgradeId;
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('player-wood-changed', {
+        playerId: player.id,
+        wood: player.wood,
+        timestamp: Date.now(),
+      });
+      this.io.to(this.roomId).emit('player-gold-changed', {
+        playerId: player.id,
+        gold: player.gold,
+        timestamp: Date.now(),
+      });
+    }
+
+    this._applyExplorePetUpgradeToPlayerBeasts(playerId, kind, upgradeId);
+    if (upgradeId === 'wolf_pack_expansion') {
+      this._spawnExplorePackWolfForPlayer(playerId);
+    }
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('explore-pet-companion-upgrade-synced', {
+        playerId,
+        explorePetCompanionUpgrades: { ...player.explorePetCompanionUpgrades },
+        timestamp: Date.now(),
+      });
+    }
+    return { ok: true };
+  }
+
+  /**
+   * Summon a Siege Wyrm from a nearby Beast Temple (requires live cathedral; 1 at a time).
+   * @param {string} playerId
+   */
+  beastTempleSummonSiegeWyrm(playerId) {
+    if (!this.coopExploreActive || !this.gameStarted || !this.combatArenaActive) {
+      return { ok: false, reason: 'not_explore' };
+    }
+    const player = this.players.get(playerId);
+    if (!player || player.health <= 0) return { ok: false, reason: 'invalid_player' };
+
+    const temple = this._findNearestLiveBeastTemple(player);
+    if (!temple) return { ok: false, reason: 'no_beast_temple' };
+
+    if (this._countLiveExploreBuildingsOfType('cathedral') < 1) {
+      return { ok: false, reason: 'no_cathedral' };
+    }
+
+    for (const enemy of this.enemies.values()) {
+      if (!enemy || enemy.type !== 'allied-siege-wyrm') continue;
+      if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+      return { ok: false, reason: 'wyrm_alive' };
+    }
+
+    const goldCost = exploreBuildings.EXPLORE_SIEGE_WYRM_GOLD;
+    const meatCost = exploreBuildings.EXPLORE_SIEGE_WYRM_MEAT;
+    if ((player.gold || 0) < goldCost) return { ok: false, reason: 'not_enough_gold' };
+    if ((player.meat || 0) < meatCost) return { ok: false, reason: 'not_enough_meat' };
+
+    player.gold = (player.gold || 0) - goldCost;
+    player.meat = (player.meat || 0) - meatCost;
+    if (this.io) {
+      this.io.to(this.roomId).emit('player-gold-changed', {
+        playerId: player.id,
+        gold: player.gold,
+        timestamp: Date.now(),
+      });
+      this.io.to(this.roomId).emit('player-meat-changed', {
+        playerId: player.id,
+        meat: player.meat,
+        timestamp: Date.now(),
+      });
+    }
+
+    const tx = temple.position?.x ?? 0;
+    const tz = temple.position?.z ?? 0;
+    this._exploreSiegeWyrmSeq = (this._exploreSiegeWyrmSeq || 0) + 1;
+    const angle = Math.atan2(tx, tz) + Math.PI + this._exploreSiegeWyrmSeq * 0.7;
+    const spawnX = tx + Math.sin(angle) * 3.2;
+    const spawnZ = tz + Math.cos(angle) * 3.2;
+    const wyrmId = `explore-siege-wyrm-${this._exploreSiegeWyrmSeq}`;
+    const wyrm = {
+      id: wyrmId,
+      type: 'allied-siege-wyrm',
+      position: { x: spawnX, y: 0, z: spawnZ },
+      rotation: Math.atan2(tx - spawnX, tz - spawnZ),
+      health: 2150,
+      maxHealth: 2150,
+      isDying: false,
+      damage: 98,
+      attackCooldown: 2100,
+      moveSpeed: 2.25,
+      patrolSpeed: 2.25,
+      alliedUnit: true,
+      ownerPlayerId: playerId,
+      combatInitiated: false,
+      alliedTargetEnemyId: null,
+      attackVariant: 1,
+      exploreSiegeWyrm: true,
+      exploreBarracksPurchased: false,
+      staggerBuildup: 0,
+      breathActive: false,
+      breathVariant: 1,
+      spawnedAt: Date.now(),
+    };
+    this.enemies.set(wyrm.id, wyrm);
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-spawned', {
+        enemy: wyrm,
+        timestamp: Date.now(),
+      });
+      this.io.to(this.roomId).emit('explore-siege-wyrm-summoned', {
+        playerId,
+        wyrmId,
+        templeId: temple.id,
+        timestamp: Date.now(),
+      });
+    }
+    this.startEnemyAI();
+    return { ok: true, id: wyrmId };
+  }
+
+  /**
+   * Summon a Siege Golem from a nearby Altar of War.
+   * @param {string} playerId
+   */
+  altarSummonSiegeGolem(playerId) {
+    if (!this.coopExploreActive || !this.gameStarted || !this.combatArenaActive) {
+      return { ok: false, reason: 'not_explore' };
+    }
+    const player = this.players.get(playerId);
+    if (!player || player.health <= 0) return { ok: false, reason: 'invalid_player' };
+
+    const altar = this._findNearestLiveAltarOfWar(player);
+    if (!altar) return { ok: false, reason: 'no_altar' };
+
+    const stoneCost = exploreBuildings.EXPLORE_SIEGE_GOLEM_STONE;
+    const goldCost = exploreBuildings.EXPLORE_SIEGE_GOLEM_GOLD;
+    if ((player.stone || 0) < stoneCost) return { ok: false, reason: 'not_enough_stone' };
+    if ((player.gold || 0) < goldCost) return { ok: false, reason: 'not_enough_gold' };
+
+    player.stone = (player.stone || 0) - stoneCost;
+    player.gold = (player.gold || 0) - goldCost;
+    if (this.io) {
+      this.io.to(this.roomId).emit('player-stone-changed', {
+        playerId: player.id,
+        stone: player.stone,
+        timestamp: Date.now(),
+      });
+      this.io.to(this.roomId).emit('player-gold-changed', {
+        playerId: player.id,
+        gold: player.gold,
+        timestamp: Date.now(),
+      });
+    }
+
+    const ax = altar.position?.x ?? 0;
+    const az = altar.position?.z ?? 0;
+    this._exploreSiegeGolemSeq = (this._exploreSiegeGolemSeq || 0) + 1;
+    const angle = Math.atan2(ax, az) + Math.PI + this._exploreSiegeGolemSeq * 0.7;
+    const spawnX = ax + Math.sin(angle) * 3.2;
+    const spawnZ = az + Math.cos(angle) * 3.2;
+    const golemId = `explore-siege-golem-${this._exploreSiegeGolemSeq}`;
+    const golem = {
+      id: golemId,
+      type: 'allied-siege-golem',
+      position: { x: spawnX, y: 0, z: spawnZ },
+      rotation: Math.atan2(ax - spawnX, az - spawnZ),
+      health: 7500,
+      maxHealth: 7500,
+      isDying: false,
+      damage: 100,
+      attackCooldown: 2250,
+      moveSpeed: 1.5,
+      patrolSpeed: 1.5,
+      alliedUnit: true,
+      ownerPlayerId: playerId,
+      combatInitiated: false,
+      alliedTargetEnemyId: null,
+      attackVariant: 1,
+      exploreSiegeGolem: true,
+      exploreBarracksPurchased: false,
+      staggerBuildup: 0,
+      spawnedAt: Date.now(),
+    };
+    this.enemies.set(golem.id, golem);
+    if (this.io) {
+      this.io.to(this.roomId).emit('enemy-spawned', {
+        enemy: golem,
+        timestamp: Date.now(),
+      });
+      this.io.to(this.roomId).emit('explore-siege-golem-summoned', {
+        playerId,
+        golemId,
+        altarId: altar.id,
+        timestamp: Date.now(),
+      });
+    }
+    this.startEnemyAI();
+    return { ok: true, id: golemId };
+  }
+
   /**
    * Place a player-built structure in explore mode (server-authoritative wood spend + spawn).
    * @param {string} playerId
@@ -12925,8 +13659,16 @@ class GameRoom {
       && this._countLiveExploreBuildingsOfType('barracks') < 1) {
       return { ok: false };
     }
+    if (exploreBuildings.exploreBuildingRequiresResearchStation(kind)
+      && this._countLiveExploreBuildingsOfType('research-station') < 1) {
+      return { ok: false };
+    }
     if (exploreBuildings.exploreBuildingRequiresShrineOrObelisk(kind)
       && this._countLiveExploreShrinesOrObelisks() < 1) {
+      return { ok: false };
+    }
+    if (exploreBuildings.exploreBuildingRequiresCathedral(kind)
+      && this._countLiveExploreBuildingsOfType('cathedral') < 1) {
       return { ok: false };
     }
     if (exploreBuildings.isExploreTowerType(kind)
@@ -12953,7 +13695,7 @@ class GameRoom {
 
     for (const enemy of this.enemies.values()) {
       if (!exploreBuildings.isPlayerExploreBuildingType(enemy.type)) continue;
-      if (exploreBuildings.isExploreUniqueReplaceKind(kind) && enemy.type === kind) continue;
+      if (exploreBuildings.isExploreUniqueReplaceKind(kind) && enemy.type === kind && enemy.alliedUnit === true) continue;
       if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
       const er = typeof enemy.hullRadius === 'number' ? enemy.hullRadius : hull;
       const edx = enemy.position.x - px;
@@ -12965,6 +13707,7 @@ class GameRoom {
       const stale = [];
       for (const enemy of this.enemies.values()) {
         if (!enemy || enemy.type !== kind) continue;
+        if (enemy.alliedUnit !== true) continue;
         if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
         stale.push(enemy);
       }
@@ -13258,6 +14001,8 @@ class GameRoom {
       'training-dummy',
       'allied-knight', 'allied-healer', 'allied-tiger',
       'allied-wolf', 'allied-bear', 'allied-serpent', 'allied-spider',
+      'allied-siege-golem',
+      'allied-siege-wyrm',
       'allied-tower',
     ]);
     if (NO_SUMMON_TYPES.has(enemy.type)) return false;
@@ -13295,6 +14040,7 @@ class GameRoom {
   _tryScheduleColossusResurrection(enemy) {
     if (!enemy || !enemy.type || !enemy.position) return false;
     if (this.isAlliedUnitEnemy(enemy)) return false;
+    if (enemy.isStructure === true) return false;
     if (COOP_BOSS_TYPES.has(enemy.type)) return false;
     const EXCLUDED = new Set([
       'training-dummy',
@@ -13530,6 +14276,14 @@ class GameRoom {
         health: 4660 + hpBonus, maxHealth: 4660 + hpBonus,
         damage: 42, attackCooldown: 1700, moveSpeed: 2.85,
         soulType: campDef.knightSoulType, attackVariant: 1, breathVariant: 1 };
+    }
+    if (type === 'wyrm') {
+      return { id: `wyrm-${campIndex}-${slotIndex}-${ts}`, type: 'wyrm', ...base,
+        health: 5200 + hpBonus, maxHealth: 5200 + hpBonus,
+        damage: 43, attackCooldown: 850, moveSpeed: 1.75,
+        soulType: campDef.knightSoulType, attackVariant: 1,
+        wanderAnchor: { x: pos.x, z: pos.z },
+        spawnedAt: ts };
     }
     if (type === 'terrorhawk') {
       return { id: `terrorhawk-${campIndex}-${slotIndex}-${ts}`, type: 'terrorhawk', ...base,
@@ -14792,6 +15546,15 @@ class GameRoom {
           this.enemyAI.updateAggro(enemyId, fromPlayerId, aggroAmount);
         }
       }
+
+      // Enemy-town buildings: immediately pull that camp's posted extras (guards).
+      if (
+        appliedDamage > 0
+        && exploreBuildings.isHostileExploreTownBuilding(enemy)
+        && !enemy.isDying
+      ) {
+        this.enemyAI.alertExploreTownGuards(enemy, fromPlayerId, hitMeta);
+      }
     }
 
     if (
@@ -15744,7 +16507,11 @@ class GameRoom {
         this._clearBossSummonedAdds(enemyId);
       }
 
-      if (this.isAlliedUnitEnemy(enemy)) {
+      if (this.isAlliedUnitEnemy(enemy) || exploreBuildings.isHostileExploreTownBuilding(enemy)) {
+        if (exploreBuildings.isHostileExploreTownBuilding(enemy)) {
+          this._grantExploreTownBuildingLoot(enemy);
+          if (this.coopExploreActive) this._registerExploreEnemyDeath(enemy);
+        }
         if (this.enemyAI) {
           this.enemyAI.clearZombieAsAggroTarget(enemyId);
           this.enemyAI.removeEnemyAggro(enemyId);
@@ -15752,7 +16519,7 @@ class GameRoom {
         if (enemy.type === 'fire-pit' && this.coopExploreActive) {
           this._onExploreFirePitDestroyed();
         }
-        if (enemy.type === 'cathedral' && this.coopExploreActive) {
+        if (enemy.type === 'cathedral' && this.coopExploreActive && this.isAlliedUnitEnemy(enemy)) {
           this._applyExploreCathedralHpDelta(-exploreBuildings.EXPLORE_CATHEDRAL_HP_BONUS, enemyId);
         }
         if (
@@ -17037,6 +17804,26 @@ class GameRoom {
           });
         }
         this._registerCoopWaveKill('🐉 Wyvern killed');
+        if (Math.random() < 0.12) this.spawnItemDrop(enemy.position, enemy);
+        if (this.enemyAI) this.enemyAI.removeEnemyAggro(enemyId);
+        this._scheduleTimeout(() => {
+          this._pruneEnemyMaps(enemyId);
+          this.enemies.delete(enemyId);
+          if (this.io) this.io.to(this.roomId).emit('enemy-removed', { enemyId, timestamp: Date.now() });
+        }, 2500);
+        return result;
+
+      } else if (enemy.type === 'wyrm') {
+        if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
+          this.io.to(this.roomId).emit('player-experience-gained', {
+            playerId: fromPlayerId,
+            experienceGained: 90,
+            source: 'wyrm_kill',
+            enemyId,
+            timestamp: Date.now(),
+          });
+        }
+        this._registerCoopWaveKill('🔥 Wyrm killed');
         if (Math.random() < 0.12) this.spawnItemDrop(enemy.position, enemy);
         if (this.enemyAI) this.enemyAI.removeEnemyAggro(enemyId);
         this._scheduleTimeout(() => {

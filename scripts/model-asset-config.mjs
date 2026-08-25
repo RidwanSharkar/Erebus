@@ -48,9 +48,11 @@ export const BASE_SCENE_REL_PATHS = new Set([
   'spider/BoneSpider_idle.glb',
   'spine/tentacle_death.glb',
   'tiger/Tiger_idle.glb',
+  'tiger/sabreTooth_idle.glb',
   'treant/AncientofWar_idle.glb',
   'wolf/wolf_idle.glb',
   'wyvern/drake_idle.glb',
+  'wyrm/wyrmIdle_Stand.glb',
   // Static environment skydomes (must keep meshes + textures)
   'environ/SKY.glb',
   'environ/SKY2.glb',
@@ -87,6 +89,7 @@ export const WOW_MODEL_DIR_PREFIXES = [
   'treant/',
   'wolf/',
   'wyvern/',
+  'wyrm/',
 ];
 
 export const WOW_TOP_LEVEL_PREFIXES = ['paladin_', 'SkyRay_', 'basilisk_'];

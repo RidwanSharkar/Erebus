@@ -27,7 +27,7 @@ import {
   type ExploreCampPublic,
 } from '@/utils/exploreCamps';
 import type { ExploreBuildingKind, ExploreCathedralOfferEntry, ExploreFirePitHealAction, ExploreResearchState, ExploreResearchUpgradeId, ExploreShrineGiftId } from '@/utils/exploreBuildings';
-import { EMPTY_EXPLORE_RESEARCH, normalizeExploreResearch } from '@/utils/exploreBuildings';
+import { EMPTY_EXPLORE_RESEARCH, isPlayerExploreBuildingType, normalizeExploreResearch } from '@/utils/exploreBuildings';
 
 import {
   applyExploreHarvestHealth,
@@ -103,6 +103,7 @@ export interface PlayerMovementDirection {
   isIncinerationArmed?: boolean;
   isLocustChanneling?: boolean;
   isSprinting?: boolean;
+  isMounted?: boolean;
   isStunned?: boolean;
   isFrozen?: boolean;
   isEntangled?: boolean;
@@ -150,6 +151,8 @@ export interface Player {
   stats?: PlayerStats;
   /** Eternity Palace III Fae pet companion upgrade id. */
   coopPetCompanionUpgrade?: string | null;
+  /** Explore Beast Temple pet companion upgrades by beast kind. */
+  explorePetCompanionUpgrades?: Record<string, string>;
 }
 
 /** Optional metadata for co-op `enemy-damage` (Wraith Strike + Infested Strike spawn rules). */
@@ -271,7 +274,8 @@ export interface Enemy {
   /** Fae beast walk-in phase (`entering` until meet, then `active`). */
   beastCompanionPhase?: 'entering' | 'active';
   beastCompanionKind?: FaeBeastCompanionKind;
-  companionSlot?: 'beastmaster' | 'fae' | 'fae_pack';
+  companionSlot?: 'beastmaster' | 'fae' | 'fae_pack' | 'explore';
+  exploreCompanionIndex?: number;
   /** Wolf pack howl intro window (server-authoritative ms timestamps). */
   howlStartsAt?: number;
   howlEndsAt?: number;
@@ -718,6 +722,8 @@ interface MultiplayerContextType {
   coopEternityLootPhaseComplete: boolean;
   /** Local player's chosen Eternity III pet companion upgrade id. */
   coopPetCompanionUpgrade: string | null;
+  /** Local player's Explore Beast Temple upgrades by beast kind. */
+  explorePetCompanionUpgrades: Record<string, string>;
   coopEternityCompleted: boolean;
   /** Chosen co-op ally for the rest of the run after intro room IV. */
   coopAllyKind: CoopAllyKind;
@@ -898,6 +904,9 @@ interface MultiplayerContextType {
   placeBuilding: (kind: ExploreBuildingKind, x: number, z: number) => void;
   barracksRecruitAlly: (kind: CoopAllyKind) => void;
   researchPurchase: (id: ExploreResearchUpgradeId) => void;
+  beastTemplePurchaseUpgrade: (upgradeId: string) => void;
+  beastTempleSummonSiegeWyrm: () => void;
+  altarSummonSiegeGolem: () => void;
   shrineClaim: (gift: ExploreShrineGiftId) => void;
   cathedralClaim: (itemType: string) => void;
   obeliskBuyTalent: (talentId: string) => void;
@@ -1080,6 +1089,9 @@ export type MultiplayerActionsContextType = Pick<
   | 'placeBuilding'
   | 'barracksRecruitAlly'
   | 'researchPurchase'
+  | 'beastTemplePurchaseUpgrade'
+  | 'beastTempleSummonSiegeWyrm'
+  | 'altarSummonSiegeGolem'
   | 'shrineClaim'
   | 'cathedralClaim'
   | 'obeliskBuyTalent'
@@ -1416,6 +1428,7 @@ export interface ReclaimedPlayerState {
   shield?: number;
   maxShield?: number;
   coopPetCompanionUpgrade?: string | null;
+  explorePetCompanionUpgrades?: Record<string, string>;
   ownedUniqueItemTypes?: string[];
 }
 
@@ -2458,6 +2471,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const [coopEternityLootClaimedPlayerIds, setCoopEternityLootClaimedPlayerIds] = useState<string[]>([]);
   const [coopEternityLootPhaseComplete, setCoopEternityLootPhaseComplete] = useState(false);
   const [coopPetCompanionUpgrade, setCoopPetCompanionUpgrade] = useState<string | null>(null);
+  const [explorePetCompanionUpgrades, setExplorePetCompanionUpgrades] = useState<Record<string, string>>({});
   const [coopEternityCompleted, setCoopEternityCompleted] = useState(false);
   const [coopAllyKind, setCoopAllyKind] = useState<CoopAllyKind>('knight');
   const [coopAllyOffer, setCoopAllyOffer] = useState<CoopAllyKind[]>([]);
@@ -2630,6 +2644,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     isIncinerationCharging: false,
     isIncinerationArmed: false,
     isLocustChanneling: false,
+    isMounted: false,
   });
   const lastPlayerHealthUpdate = useRef<{ [playerId: string]: number }>({});
   const lastEnemyMoveUpdate = useRef<{ [enemyId: string]: number }>({});
@@ -3030,6 +3045,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         }
         if (typeof reclaimedState.coopPetCompanionUpgrade === 'string') {
           setCoopPetCompanionUpgrade(reclaimedState.coopPetCompanionUpgrade);
+        }
+        if (reclaimedState.explorePetCompanionUpgrades && typeof reclaimedState.explorePetCompanionUpgrades === 'object') {
+          setExplorePetCompanionUpgrades({ ...reclaimedState.explorePetCompanionUpgrades });
         }
       } else {
         setReclaimedPlayerState(null);
@@ -3623,6 +3641,21 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       }
     });
 
+    addEventHandler('explore-town-flow-reward', (data: {
+      position?: { x: number; y: number; z: number };
+      flow?: number;
+    }) => {
+      if (data.position && typeof data.flow === 'number' && data.flow > 0) {
+        window.dispatchEvent(new CustomEvent('explore-spine-flow-reward', {
+          detail: {
+            position: data.position,
+            flow: data.flow,
+            index: Date.now(),
+          },
+        }));
+      }
+    });
+
     addEventHandler('explore-research-changed', (data: {
       research?: ExploreResearchState;
     }) => {
@@ -3808,7 +3841,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         const enemy = enemiesRef.current.get(data.enemyId);
         if (enemy) {
           const killPos = data.position ?? enemy.position;
-          (window as any).audioSystem?.playEnemyKillFeedback(killPos, enemy.type);
+          if (isPlayerExploreBuildingType(enemy.type)) {
+            if (enemy.type !== 'fire-pit' && killPos) {
+              const pos = new Vector3(killPos.x, killPos.y ?? 0, killPos.z);
+              (window as any).audioSystem?.playRockDestroySound?.(pos);
+            }
+          } else {
+            (window as any).audioSystem?.playEnemyKillFeedback(killPos, enemy.type);
+          }
         }
       }
 
@@ -4575,6 +4615,16 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }) => {
       if (data?.playerId && data.playerId === socket?.id && typeof data.upgradeId === 'string') {
         setCoopPetCompanionUpgrade(data.upgradeId);
+      }
+    });
+
+    addEventHandler('explore-pet-companion-upgrade-synced', (data: {
+      playerId?: string;
+      explorePetCompanionUpgrades?: Record<string, string>;
+    }) => {
+      if (data?.playerId && data.playerId === socket?.id && data.explorePetCompanionUpgrades
+        && typeof data.explorePetCompanionUpgrades === 'object') {
+        setExplorePetCompanionUpgrades({ ...data.explorePetCompanionUpgrades });
       }
     });
 
@@ -5651,6 +5701,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       isIncinerationCharging: false,
       isIncinerationArmed: false,
       isLocustChanneling: false,
+      isMounted: false,
     };
   }, []);
 
@@ -5678,13 +5729,15 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     const nextIncinerationCharging = Boolean(movementDirection?.isIncinerationCharging);
     const nextIncinerationArmed = Boolean(movementDirection?.isIncinerationArmed);
     const nextLocustChanneling = Boolean(movementDirection?.isLocustChanneling);
+    const nextMounted = Boolean(movementDirection?.isMounted);
     const locomotionChanged =
       Math.abs(nextInputStrength - last.inputStrength) > 0.05 ||
       nextImmobilized !== last.immobilized ||
       nextPrimeMateria !== last.isPrimeMateriaActive ||
       nextIncinerationCharging !== last.isIncinerationCharging ||
       nextIncinerationArmed !== last.isIncinerationArmed ||
-      nextLocustChanneling !== last.isLocustChanneling;
+      nextLocustChanneling !== last.isLocustChanneling ||
+      nextMounted !== last.isMounted;
     const elapsed = now - last.time;
     if (!options?.force && elapsed < 33 && !movedEnough && !locomotionChanged) return;
 
@@ -5700,6 +5753,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       isIncinerationCharging: nextIncinerationCharging,
       isIncinerationArmed: nextIncinerationArmed,
       isLocustChanneling: nextLocustChanneling,
+      isMounted: nextMounted,
     };
 
     socket.emit('player-update', {
@@ -5872,6 +5926,31 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       socket.emit('research-purchase', {
         roomId: currentRoomId,
         id,
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const beastTemplePurchaseUpgrade = useCallback((upgradeId: string) => {
+    if (socket && currentRoomId) {
+      socket.emit('beast-temple-purchase-upgrade', {
+        roomId: currentRoomId,
+        upgradeId,
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const beastTempleSummonSiegeWyrm = useCallback(() => {
+    if (socket && currentRoomId) {
+      socket.emit('beast-temple-summon-siege-wyrm', {
+        roomId: currentRoomId,
+      });
+    }
+  }, [socket, currentRoomId]);
+
+  const altarSummonSiegeGolem = useCallback(() => {
+    if (socket && currentRoomId) {
+      socket.emit('altar-summon-siege-golem', {
+        roomId: currentRoomId,
       });
     }
   }, [socket, currentRoomId]);
@@ -6791,6 +6870,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     coopEternityLootClaimedPlayerIds,
     coopEternityLootPhaseComplete,
     coopPetCompanionUpgrade,
+    explorePetCompanionUpgrades,
     coopEternityCompleted,
     coopAllyKind,
     coopAllyOffer,
@@ -6869,6 +6949,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     placeBuilding,
     barracksRecruitAlly,
     researchPurchase,
+    beastTemplePurchaseUpgrade,
+    beastTempleSummonSiegeWyrm,
+    altarSummonSiegeGolem,
     shrineClaim,
     cathedralClaim,
     obeliskBuyTalent,
@@ -7013,6 +7096,9 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       placeBuilding,
       barracksRecruitAlly,
       researchPurchase,
+      beastTemplePurchaseUpgrade,
+      beastTempleSummonSiegeWyrm,
+      altarSummonSiegeGolem,
       shrineClaim,
       cathedralClaim,
       obeliskBuyTalent,
@@ -7127,6 +7213,10 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       damageRoot,
       placeBuilding,
       barracksRecruitAlly,
+      researchPurchase,
+      beastTemplePurchaseUpgrade,
+      beastTempleSummonSiegeWyrm,
+      altarSummonSiegeGolem,
       shrineClaim,
       cathedralClaim,
       obeliskBuyTalent,
@@ -7281,6 +7371,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopEternityLootClaimedPlayerIds,
       coopEternityLootPhaseComplete,
     coopPetCompanionUpgrade,
+    explorePetCompanionUpgrades,
       coopEternityCompleted,
       coopAllyKind,
       coopAllyOffer,
@@ -7397,6 +7488,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopDungeonActive,
       coopSkyTempleActive,
       coopPetCompanionUpgrade,
+      explorePetCompanionUpgrades,
       coopEdenFountainUsed,
       coopEdenResumeKind,
       coopEdenIntermissionSeq,

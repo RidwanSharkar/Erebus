@@ -10,6 +10,8 @@ const SHRINE_HULL_RADIUS = 0.96;
 const OBELISK_HULL_RADIUS = 0.975;
 const SHIELD_BATTERY_HULL_RADIUS = FIRE_PIT_HULL_RADIUS;
 const CATHEDRAL_HULL_RADIUS = 2.0;
+const BEAST_TEMPLE_HULL_RADIUS = SHRINE_HULL_RADIUS;
+const ALTAR_OF_WAR_HULL_RADIUS = SHIELD_BATTERY_HULL_RADIUS;
 const EXPLORE_SHIELD_BATTERY_HEAL_RANGE = 5;
 const EXPLORE_SHIELD_BATTERY_HEAL_PER_SEC = 1;
 const EXPLORE_CATHEDRAL_HP_BONUS = 250;
@@ -49,8 +51,8 @@ const EXPLORE_BUILDING_DEFS = Object.freeze({
     kind: 'tower',
     label: 'Mage Tower',
     hotkey: '2',
-    woodCost: 150,
-    flowCost: 10,
+    woodCost: 125,
+    flowCost: 5,
     maxHp: 500,
     hullRadius: EXPLORE_TOWER_HULL_RADIUS,
     enabled: true,
@@ -117,10 +119,37 @@ const EXPLORE_BUILDING_DEFS = Object.freeze({
     hullRadius: CATHEDRAL_HULL_RADIUS,
     enabled: true,
   }),
+  'beast-temple': Object.freeze({
+    kind: 'beast-temple',
+    label: 'Beast Temple',
+    hotkey: 'O',
+    woodCost: 100,
+    stoneCost: 150,
+    maxHp: 600,
+    hullRadius: BEAST_TEMPLE_HULL_RADIUS,
+    enabled: true,
+  }),
+  'altar-of-war': Object.freeze({
+    kind: 'altar-of-war',
+    label: 'Altar of War',
+    hotkey: 'P',
+    woodCost: 0,
+    maxHp: 450,
+    hullRadius: ALTAR_OF_WAR_HULL_RADIUS,
+    enabled: true,
+  }),
 });
 
 const EXPLORE_BARRACKS_ALLY_GOLD_COST = 50;
+const EXPLORE_BEAST_TEMPLE_UPGRADE_WOOD = 100;
+const EXPLORE_BEAST_TEMPLE_UPGRADE_GOLD = 25;
+const EXPLORE_SIEGE_GOLEM_STONE = 250;
+const EXPLORE_SIEGE_GOLEM_GOLD = 100;
+const EXPLORE_SIEGE_WYRM_GOLD = 100;
+const EXPLORE_SIEGE_WYRM_MEAT = 15;
 const EXPLORE_BARRACKS_INTERACT_RADIUS = 3.5;
+const EXPLORE_BEAST_TEMPLE_INTERACT_RADIUS = 3.5;
+const EXPLORE_ALTAR_OF_WAR_INTERACT_RADIUS = 3.5;
 const EXPLORE_FIRE_PIT_INTERACT_RADIUS = 3.5;
 const EXPLORE_FIRE_PIT_HEAL_MEAT_COST = 5;
 const EXPLORE_FIRE_PIT_HEAL_SELF_HP = 80;
@@ -140,8 +169,10 @@ const EXPLORE_TOWER_EFFICIENCY_GOLD_COST = 100;
 const EXPLORE_WATCH_TOWER_EFFICIENT_WOOD_COST = 50;
 const EXPLORE_TOWER_DAMAGE_MAX_RANK = 3;
 const EXPLORE_TOWER_DAMAGE_COSTS = Object.freeze([100, 200, 300]);
+/** Watch Tower arrow damage by research rank: 50 → 100 → 150 → 200. */
+const EXPLORE_WATCH_TOWER_DAMAGE_BY_RANK = Object.freeze([50, 100, 150, 200]);
+const EXPLORE_WATCH_TOWER_BASE_DAMAGE = EXPLORE_WATCH_TOWER_DAMAGE_BY_RANK[0];
 const EXPLORE_WATCH_TOWER_DAMAGE_PER_RANK = 50;
-const EXPLORE_WATCH_TOWER_BASE_DAMAGE = 50;
 
 function getExploreAllyCap(spiritLineageRank) {
   const rank = Math.max(0, Math.min(EXPLORE_SPIRIT_LINEAGE_MAX_RANK, Math.floor(Number(spiritLineageRank) || 0)));
@@ -160,12 +191,18 @@ function getTowerDamageNextCost(towerDamageRank) {
   return EXPLORE_TOWER_DAMAGE_COSTS[rank] ?? null;
 }
 
+/** True when the next Tower Damage purchase (from currentRank) requires a live Cathedral. */
+function towerDamageRequiresCathedral(currentRank) {
+  const rank = Math.max(0, Math.floor(Number(currentRank) || 0));
+  return rank === EXPLORE_TOWER_DAMAGE_MAX_RANK - 1;
+}
+
 function getExploreWatchTowerArrowDamage(towerDamageRank) {
   const rank = Math.max(
     0,
     Math.min(EXPLORE_TOWER_DAMAGE_MAX_RANK, Math.floor(Number(towerDamageRank) || 0)),
   );
-  return EXPLORE_WATCH_TOWER_BASE_DAMAGE + EXPLORE_WATCH_TOWER_DAMAGE_PER_RANK * rank;
+  return EXPLORE_WATCH_TOWER_DAMAGE_BY_RANK[rank] ?? EXPLORE_WATCH_TOWER_BASE_DAMAGE;
 }
 
 function getExploreWatchTowerWoodCost(exploreResearch) {
@@ -244,7 +281,20 @@ function isPlayerExploreBuildingType(type) {
     || type === 'shrine'
     || type === 'obelisk'
     || type === 'shield-battery'
-    || type === 'cathedral';
+    || type === 'cathedral'
+    || type === 'beast-temple'
+    || type === 'altar-of-war';
+}
+
+function isAlliedExploreBuilding(enemy) {
+  return !!enemy && enemy.alliedUnit === true && isPlayerExploreBuildingType(enemy.type);
+}
+
+function isHostileExploreTownBuilding(enemy) {
+  return !!enemy
+    && enemy.alliedUnit !== true
+    && enemy.isStructure === true
+    && isPlayerExploreBuildingType(enemy.type);
 }
 
 function isExploreTowerType(type) {
@@ -264,15 +314,25 @@ function exploreBuildingRequiresFirePit(kind) {
     || kind === 'shrine'
     || kind === 'obelisk'
     || kind === 'shield-battery'
-    || kind === 'cathedral';
+    || kind === 'cathedral'
+    || kind === 'beast-temple'
+    || kind === 'altar-of-war';
 }
 
 function exploreBuildingRequiresSpiritLounge(kind) {
-  return kind === 'shrine' || kind === 'obelisk';
+  return kind === 'shrine' || kind === 'obelisk' || kind === 'beast-temple';
+}
+
+function exploreBuildingRequiresResearchStation(kind) {
+  return kind === 'beast-temple';
 }
 
 function exploreBuildingRequiresShrineOrObelisk(kind) {
   return kind === 'cathedral';
+}
+
+function exploreBuildingRequiresCathedral(kind) {
+  return kind === 'altar-of-war';
 }
 
 function isExploreShrineGiftId(value) {
@@ -294,6 +354,8 @@ module.exports = {
   OBELISK_HULL_RADIUS,
   SHIELD_BATTERY_HULL_RADIUS,
   CATHEDRAL_HULL_RADIUS,
+  BEAST_TEMPLE_HULL_RADIUS,
+  ALTAR_OF_WAR_HULL_RADIUS,
   EXPLORE_SHIELD_BATTERY_HEAL_RANGE,
   EXPLORE_SHIELD_BATTERY_HEAL_PER_SEC,
   EXPLORE_CATHEDRAL_HP_BONUS,
@@ -302,7 +364,15 @@ module.exports = {
   EXPLORE_CATHEDRAL_OFFER_COUNT,
   EXPLORE_BUILDING_DEFS,
   EXPLORE_BARRACKS_ALLY_GOLD_COST,
+  EXPLORE_BEAST_TEMPLE_UPGRADE_WOOD,
+  EXPLORE_BEAST_TEMPLE_UPGRADE_GOLD,
+  EXPLORE_SIEGE_GOLEM_STONE,
+  EXPLORE_SIEGE_GOLEM_GOLD,
+  EXPLORE_SIEGE_WYRM_GOLD,
+  EXPLORE_SIEGE_WYRM_MEAT,
   EXPLORE_BARRACKS_INTERACT_RADIUS,
+  EXPLORE_BEAST_TEMPLE_INTERACT_RADIUS,
+  EXPLORE_ALTAR_OF_WAR_INTERACT_RADIUS,
   EXPLORE_FIRE_PIT_INTERACT_RADIUS,
   EXPLORE_FIRE_PIT_HEAL_MEAT_COST,
   EXPLORE_FIRE_PIT_HEAL_SELF_HP,
@@ -322,6 +392,7 @@ module.exports = {
   EXPLORE_WATCH_TOWER_EFFICIENT_WOOD_COST,
   EXPLORE_TOWER_DAMAGE_MAX_RANK,
   EXPLORE_TOWER_DAMAGE_COSTS,
+  EXPLORE_WATCH_TOWER_DAMAGE_BY_RANK,
   EXPLORE_WATCH_TOWER_DAMAGE_PER_RANK,
   EXPLORE_WATCH_TOWER_BASE_DAMAGE,
   EXPLORE_SHRINE_INTERACT_RADIUS,
@@ -330,14 +401,19 @@ module.exports = {
   EXPLORE_OBELISK_TALENT_GOLD_COST,
   getExploreBuildingDef,
   isPlayerExploreBuildingType,
+  isAlliedExploreBuilding,
+  isHostileExploreTownBuilding,
   isExploreTowerType,
   isExploreUniqueReplaceKind,
   exploreBuildingRequiresFirePit,
   exploreBuildingRequiresSpiritLounge,
+  exploreBuildingRequiresResearchStation,
   exploreBuildingRequiresShrineOrObelisk,
+  exploreBuildingRequiresCathedral,
   getExploreAllyCap,
   getSpiritLineageNextCost,
   getTowerDamageNextCost,
+  towerDamageRequiresCathedral,
   getExploreWatchTowerArrowDamage,
   getExploreWatchTowerWoodCost,
   isExploreShrineGiftId,

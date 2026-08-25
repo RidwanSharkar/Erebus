@@ -28,15 +28,14 @@ function DefenseTowerBolt({ shot, onComplete }: DefenseTowerBoltProps) {
   const elapsed = useRef(0);
   const completed = useRef(true);
   const durationRef = useRef(0.2);
+  const appliedSeqRef = useRef(0);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
   const theme = shot?.theme;
 
-  useEffect(() => {
-    if (!shot) {
-      completed.current = true;
-      return;
-    }
+  // Apply muzzle/impact before first paint so the trail never seeds at world origin.
+  if (shot && shot.seq !== appliedSeqRef.current) {
+    appliedSeqRef.current = shot.seq;
     elapsed.current = 0;
     completed.current = false;
     start.copy(shot.from);
@@ -46,9 +45,15 @@ function DefenseTowerBolt({ shot, onComplete }: DefenseTowerBoltProps) {
     if (direction.lengthSq() > 1e-8) direction.normalize();
     else direction.set(0, 1, 0);
     durationRef.current = Math.max(0.11, Math.min(0.38, start.distanceTo(end) / 34));
-    const audio = (window as unknown as { audioSystem?: { playEnemyEntropicBoltSound?: (p: Vector3) => void } })
+  } else if (!shot) {
+    completed.current = true;
+  }
+
+  useEffect(() => {
+    if (!shot) return;
+    const audio = (window as unknown as { audioSystem?: { playMageTowerAttackSound?: (p: Vector3) => void } })
       .audioSystem;
-    audio?.playEnemyEntropicBoltSound?.(start.clone());
+    audio?.playMageTowerAttackSound?.(shot.from.clone());
   }, [shot]);
 
   useFrame((_, delta) => {

@@ -24,6 +24,7 @@ import SerpentRenderer from '@/components/enemies/SerpentRenderer';
 import FrostQueenRenderer from '@/components/enemies/FrostQueenRenderer';
 import MedusaRenderer from '@/components/enemies/MedusaRenderer';
 import WyvernRenderer from '@/components/enemies/WyvernRenderer';
+import WyrmRenderer from '@/components/enemies/WyrmRenderer';
 import TerrorhawkRenderer from '@/components/enemies/TerrorhawkRenderer';
 import EnemyTigerRenderer from '@/components/enemies/EnemyTigerRenderer';
 import WolfRenderer from '@/components/enemies/WolfRenderer';
@@ -33,6 +34,8 @@ import BoneSpiderRenderer from '@/components/enemies/BoneSpiderRenderer';
 import SentinelRenderer from '@/components/enemies/SentinelRenderer';
 import NemesisRenderer from '@/components/enemies/NemesisRenderer';
 import StoneGiantRenderer from '@/components/enemies/StoneGiantRenderer';
+import AlliedSiegeGolemRenderer from '@/components/enemies/AlliedSiegeGolemRenderer';
+import AlliedSiegeWyrmRenderer from '@/components/enemies/AlliedSiegeWyrmRenderer';
 import EternalOakRenderer from '@/components/enemies/EternalOakRenderer';
 import ColossusRenderer from '@/components/enemies/ColossusRenderer';
 import ValkyrieRenderer from '@/components/enemies/ValkyrieRenderer';
@@ -50,6 +53,8 @@ import ShrineRenderer from '@/components/enemies/ShrineRenderer';
 import ObeliskRenderer from '@/components/enemies/ObeliskRenderer';
 import ShieldBatteryRenderer from '@/components/enemies/ShieldBatteryRenderer';
 import CathedralRenderer from '@/components/enemies/CathedralRenderer';
+import BeastTempleRenderer from '@/components/enemies/BeastTempleRenderer';
+import AltarOfWarRenderer from '@/components/enemies/AltarOfWarRenderer';
 import ExploreInstancedBuildingGlb from '@/components/environment/ExploreInstancedBuildingGlb';
 import {
   SPIRIT_LOUNGE_PATH,
@@ -347,6 +352,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
             isDying={enemy.isDying}
             powered={enemy.powered !== false}
             hideMesh={!enemy.isDying}
+            hostile={enemy.alliedUnit !== true}
           />
         );
       })}
@@ -381,6 +387,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
             powered={enemy.powered !== false}
+            hostile={enemy.alliedUnit !== true}
           />
         );
       })}
@@ -398,6 +405,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
             maxHealth={enemy.maxHealth}
             isDying={enemy.isDying}
             powered={enemy.powered !== false}
+            hostile={enemy.alliedUnit !== true}
           />
         );
       })}
@@ -416,6 +424,7 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
             isDying={enemy.isDying}
             powered={enemy.powered !== false}
             hideMesh={!enemy.isDying}
+            hostile={enemy.alliedUnit !== true}
           />
         );
       })}
@@ -486,6 +495,41 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
             isDying={enemy.isDying}
             powered={enemy.powered !== false}
             cathedralUsed={enemy.cathedralUsed === true}
+            hostile={enemy.alliedUnit !== true}
+          />
+        );
+      })}
+
+      {(enemiesByType.get('beast-temple') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isVisible(enemy)) return null;
+        return (
+          <BeastTempleRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={enemy.position}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+            powered={enemy.powered !== false}
+          />
+        );
+      })}
+
+      {(enemiesByType.get('altar-of-war') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isVisible(enemy)) return null;
+        return (
+          <AltarOfWarRenderer
+            key={enemy.id}
+            id={enemy.id}
+            position={enemy.position}
+            rotation={enemy.rotation || 0}
+            health={enemy.health}
+            maxHealth={enemy.maxHealth}
+            isDying={enemy.isDying}
+            powered={enemy.powered !== false}
           />
         );
       })}
@@ -945,6 +989,26 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
         );
       })}
 
+      {(enemiesByType.get('wyrm') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isVisible(enemy)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <WyrmRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+              campType={enemy.campType}
+              staggerBuildup={enemy.staggerBuildup ?? 0}
+              visualScale={enemy.visualScale ?? 1}
+            />
+          </React.Suspense>
+        );
+      })}
+
       {(enemiesByType.get('terrorhawk') ?? []).map((enemy) => {
         if (!shouldRenderCoopEnemy(enemy)) return null;
         if (!isVisible(enemy)) return null;
@@ -1117,6 +1181,40 @@ const CoopEnemyRenderLayer = memo(function CoopEnemyRenderLayer({
               isDying={enemy.isDying}
               campType={enemy.campType}
               staggerBuildup={enemy.staggerBuildup ?? 0}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('allied-siege-golem') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isVisible(enemy)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <AlliedSiegeGolemRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
+            />
+          </React.Suspense>
+        );
+      })}
+
+      {(enemiesByType.get('allied-siege-wyrm') ?? []).map((enemy) => {
+        if (!shouldRenderCoopEnemy(enemy)) return null;
+        if (!isVisible(enemy)) return null;
+        return (
+          <React.Suspense key={enemy.id} fallback={null}>
+            <AlliedSiegeWyrmRenderer
+              id={enemy.id}
+              position={enemy.position}
+              rotation={enemy.rotation || 0}
+              health={enemy.health}
+              maxHealth={enemy.maxHealth}
+              isDying={enemy.isDying}
             />
           </React.Suspense>
         );

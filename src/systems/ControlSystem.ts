@@ -1414,10 +1414,12 @@ export class ControlSystem extends System {
     if (!playerTransform) return;
 
     // Check for double-tap dashes first (before processing regular movement)
-    this.checkForDashInput(movement, playerTransform);
+    if (!movement.isMounted) {
+      this.checkForDashInput(movement, playerTransform);
+    }
 
     const { inputDirection, hasInput } = this.getMovementInputDirection();
-    const desiredSprint = this.isSprintInputActive(hasInput);
+    const desiredSprint = !movement.isMounted && this.isSprintInputActive(hasInput);
     const energy = this.playerEntity?.getComponent(Energy);
     movement.isSprinting = desiredSprint && (!energy || energy.canSprint());
 
@@ -1452,8 +1454,8 @@ export class ControlSystem extends System {
       movement.setMoveDirection(this.movementZeroDirection, 0);
     }
 
-    // Handle jumping
-    if (this.inputManager.isKeyPressed(' ')) { // Spacebar
+    // Handle jumping (disabled while mounted)
+    if (!movement.isMounted && this.inputManager.isKeyPressed(' ')) { // Spacebar
       movement.jump();
     }
   }
@@ -2748,6 +2750,12 @@ export class ControlSystem extends System {
     }
 
     if (this.buildPlacementActive) {
+      this.leftMouseWasPressedLastFrame = this.inputManager.isMouseButtonPressed(0);
+      return;
+    }
+
+    const mountedMovement = this.playerEntity?.getComponent(Movement);
+    if (mountedMovement?.isMounted) {
       this.leftMouseWasPressedLastFrame = this.inputManager.isMouseButtonPressed(0);
       return;
     }
@@ -8731,6 +8739,10 @@ export class ControlSystem extends System {
   private checkForDashInput(movement: Movement, transform: Transform): void {
     // Prevent dashing while dead and waiting to respawn
     if (this.isPlayerDead) {
+      return;
+    }
+
+    if (movement.isMounted) {
       return;
     }
 

@@ -2,7 +2,9 @@ import { isExploreBlocked } from '@/utils/exploreWorldGen';
 import type { ExploreBuildingKind } from '@/utils/exploreBuildings';
 import {
   EXPLORE_MAX_TOWERS,
+  exploreBuildingRequiresCathedral,
   exploreBuildingRequiresFirePit,
+  exploreBuildingRequiresResearchStation,
   exploreBuildingRequiresShrineOrObelisk,
   exploreBuildingRequiresSpiritLounge,
   getExploreBuildingDef,
@@ -16,13 +18,16 @@ export interface ExploreObstacleDisc {
   z: number;
   radius: number;
   kind?: string;
+  allied?: boolean;
 }
 
 export interface ExploreBuildingPlacementRules {
   firePits: readonly { x: number; z: number }[];
   liveTowerCount: number;
   hasLiveSpiritLounge: boolean;
+  hasLiveResearchStation: boolean;
   hasLiveShrineOrObelisk: boolean;
+  hasLiveCathedral: boolean;
 }
 
 export function isExploreBuildingPlacementBlocked(
@@ -43,7 +48,13 @@ export function isExploreBuildingPlacementBlocked(
   if (exploreBuildingRequiresSpiritLounge(kind) && !rules?.hasLiveSpiritLounge) {
     return true;
   }
+  if (exploreBuildingRequiresResearchStation(kind) && !rules?.hasLiveResearchStation) {
+    return true;
+  }
   if (exploreBuildingRequiresShrineOrObelisk(kind) && !rules?.hasLiveShrineOrObelisk) {
+    return true;
+  }
+  if (exploreBuildingRequiresCathedral(kind) && !rules?.hasLiveCathedral) {
     return true;
   }
   if (isExploreTowerType(kind) && (rules?.liveTowerCount ?? 0) >= EXPLORE_MAX_TOWERS) {
@@ -51,7 +62,7 @@ export function isExploreBuildingPlacementBlocked(
   }
   if (isExploreBlocked(seed, x, z, hull, destroyedTreeHealth, destroyedRootHealth)) return true;
   for (const disc of extraDiscs) {
-    if (isExploreUniqueReplaceKind(kind) && disc.kind === kind) continue;
+    if (isExploreUniqueReplaceKind(kind) && disc.kind === kind && disc.allied) continue;
     const dx = disc.x - x;
     const dz = disc.z - z;
     const minDist = hull + disc.radius;

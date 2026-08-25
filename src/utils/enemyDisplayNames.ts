@@ -9,6 +9,8 @@ export const ENEMY_DISPLAY_NAMES: Record<string, string> = {
   viper: 'VIPER',
   colossus: 'COLOSSUS',
   'stone-giant': 'STONE GIANT',
+  'allied-siege-golem': 'SIEGE GOLEM',
+  'allied-siege-wyrm': 'SIEGE WYRM',
   'eternal-oak': 'ETERNAL OAK',
   spectre: 'SPECTRE',
   assassin: 'ASSASSIN',
@@ -26,6 +28,7 @@ export const ENEMY_DISPLAY_NAMES: Record<string, string> = {
   'boss-serpent': 'SERPENT',
   'bone-spider': 'RECLUSE',
   wyvern: 'WYVERN',
+  wyrm: 'WYRM',
   terrorhawk: 'TERRORHAWK',
   // Bosses / elites
   boss: 'HATE',

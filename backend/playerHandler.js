@@ -31,6 +31,7 @@ function handlePlayerEvents(socket, gameRooms) {
     isIncinerationArmed: false,
     isLocustChanneling: false,
     isSprinting: false,
+    isMounted: false,
     isStunned: false,
     isFrozen: false,
     isEntangled: false,
@@ -82,6 +83,8 @@ function handlePlayerEvents(socket, gameRooms) {
       'allied-bear',
       'allied-serpent',
       'allied-spider',
+      'allied-siege-golem',
+      'allied-siege-wyrm',
       'player-zombie',
       'vengeful-spirit',
     ]);
@@ -122,6 +125,7 @@ function handlePlayerEvents(socket, gameRooms) {
   const MOVEMENT_DIRECTION_FLAGS = [
     'isDashing',
     'isSprinting',
+    'isMounted',
     'isAttackSlowed',
     'isIcebeaming',
     'isPrimeMateriaActive',
@@ -155,6 +159,7 @@ function handlePlayerEvents(socket, gameRooms) {
       isIncinerationArmed: !!md.isIncinerationArmed,
       isLocustChanneling: !!md.isLocustChanneling,
       isSprinting: !!md.isSprinting,
+      isMounted: !!md.isMounted,
       isStunned: !!md.isStunned,
       isFrozen: !!md.isFrozen,
       isEntangled: !!md.isEntangled,

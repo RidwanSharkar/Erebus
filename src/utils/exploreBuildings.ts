@@ -10,7 +10,9 @@ export type ExploreBuildingKind =
   | 'shrine'
   | 'obelisk'
   | 'shield-battery'
-  | 'cathedral';
+  | 'cathedral'
+  | 'beast-temple'
+  | 'altar-of-war';
 
 export type ExploreBuildMenuView = 'root' | 'towers';
 
@@ -56,6 +58,12 @@ export const SHIELD_BATTERY_HULL_RADIUS = FIRE_PIT_HULL_RADIUS;
 
 /** Original Spirit Lounge footprint — 4-unit visual diameter. */
 export const CATHEDRAL_HULL_RADIUS = 2.0;
+
+/** Matches shrine collision. */
+export const BEAST_TEMPLE_HULL_RADIUS = SHRINE_HULL_RADIUS;
+
+/** Matches shield-battery / fire-pit collision. */
+export const ALTAR_OF_WAR_HULL_RADIUS = SHIELD_BATTERY_HULL_RADIUS;
 
 /** XZ range of a live shield battery's structure heal aura. */
 export const EXPLORE_SHIELD_BATTERY_HEAL_RANGE = 5;
@@ -109,8 +117,8 @@ export const EXPLORE_BUILDING_DEFS: Readonly<Record<ExploreBuildingKind, Explore
     kind: 'tower',
     label: 'Mage Tower',
     hotkey: '2',
-    woodCost: 150,
-    flowCost: 10,
+    woodCost: 125,
+    flowCost: 5,
     maxHp: 500,
     hullRadius: EXPLORE_TOWER_HULL_RADIUS,
     enabled: true,
@@ -177,6 +185,25 @@ export const EXPLORE_BUILDING_DEFS: Readonly<Record<ExploreBuildingKind, Explore
     hullRadius: CATHEDRAL_HULL_RADIUS,
     enabled: true,
   },
+  'beast-temple': {
+    kind: 'beast-temple',
+    label: 'Beast Temple',
+    hotkey: 'O',
+    woodCost: 100,
+    stoneCost: 150,
+    maxHp: 600,
+    hullRadius: BEAST_TEMPLE_HULL_RADIUS,
+    enabled: true,
+  },
+  'altar-of-war': {
+    kind: 'altar-of-war',
+    label: 'Altar of War',
+    hotkey: 'P',
+    woodCost: 0,
+    maxHp: 450,
+    hullRadius: ALTAR_OF_WAR_HULL_RADIUS,
+    enabled: true,
+  },
 });
 
 /** Root build-menu rows that place immediately (Tower is a category, not a kind). */
@@ -188,6 +215,8 @@ export const EXPLORE_BUILDING_ROOT_ORDER: readonly ExploreBuildingKind[] = [
   'obelisk',
   'shield-battery',
   'cathedral',
+  'beast-temple',
+  'altar-of-war',
 ];
 
 export const EXPLORE_TOWER_PICK_ORDER: readonly ExploreBuildingKind[] = [
@@ -213,6 +242,8 @@ const EXPLORE_BUILDING_ICON_SRC: Record<ExploreBuildMenuIconId, string> = {
   obelisk: '/icons/buildings/obelisk.svg',
   'shield-battery': '/icons/buildings/shield-battery.svg',
   cathedral: '/icons/buildings/cathedral.svg',
+  'beast-temple': '/icons/buildings/beast-temple.svg',
+  'altar-of-war': '/icons/buildings/altar-of-war.svg',
   'tower-category': '/icons/buildings/tower.svg',
 };
 
@@ -231,7 +262,24 @@ export function isPlayerExploreBuildingType(type: string | undefined | null): bo
     || type === 'shrine'
     || type === 'obelisk'
     || type === 'shield-battery'
-    || type === 'cathedral';
+    || type === 'cathedral'
+    || type === 'beast-temple'
+    || type === 'altar-of-war';
+}
+
+export function isAlliedExploreBuilding(enemy: { type?: string; alliedUnit?: boolean } | null | undefined): boolean {
+  return !!enemy && enemy.alliedUnit === true && isPlayerExploreBuildingType(enemy.type);
+}
+
+export function isHostileExploreTownBuilding(enemy: {
+  type?: string;
+  alliedUnit?: boolean;
+  isStructure?: boolean;
+} | null | undefined): boolean {
+  return !!enemy
+    && enemy.alliedUnit !== true
+    && enemy.isStructure === true
+    && isPlayerExploreBuildingType(enemy.type);
 }
 
 export function isExploreTowerType(type: string | undefined | null): boolean {
@@ -251,15 +299,25 @@ export function exploreBuildingRequiresFirePit(kind: ExploreBuildingKind): boole
     || kind === 'shrine'
     || kind === 'obelisk'
     || kind === 'shield-battery'
-    || kind === 'cathedral';
+    || kind === 'cathedral'
+    || kind === 'beast-temple'
+    || kind === 'altar-of-war';
 }
 
 export function exploreBuildingRequiresSpiritLounge(kind: ExploreBuildingKind): boolean {
-  return kind === 'shrine' || kind === 'obelisk';
+  return kind === 'shrine' || kind === 'obelisk' || kind === 'beast-temple';
+}
+
+export function exploreBuildingRequiresResearchStation(kind: ExploreBuildingKind): boolean {
+  return kind === 'beast-temple';
 }
 
 export function exploreBuildingRequiresShrineOrObelisk(kind: ExploreBuildingKind): boolean {
   return kind === 'cathedral';
+}
+
+export function exploreBuildingRequiresCathedral(kind: ExploreBuildingKind): boolean {
+  return kind === 'altar-of-war';
 }
 
 export function isWithinExploreFirePitRange(
@@ -280,8 +338,26 @@ export function isWithinExploreFirePitRange(
 /** Gold cost to recruit one ally at a barracks in explore mode. */
 export const EXPLORE_BARRACKS_ALLY_GOLD_COST = 50;
 
+/** Beast Temple pet companion upgrade costs. */
+export const EXPLORE_BEAST_TEMPLE_UPGRADE_WOOD = 100;
+export const EXPLORE_BEAST_TEMPLE_UPGRADE_GOLD = 25;
+
+/** Altar of War Siege Golem summon costs. */
+export const EXPLORE_SIEGE_GOLEM_STONE = 250;
+export const EXPLORE_SIEGE_GOLEM_GOLD = 100;
+
+/** Beast Temple Siege Wyrm summon costs (requires live cathedral). */
+export const EXPLORE_SIEGE_WYRM_GOLD = 100;
+export const EXPLORE_SIEGE_WYRM_MEAT = 15;
+
 /** Interact radius to open barracks recruit UI. */
 export const EXPLORE_BARRACKS_INTERACT_RADIUS = 3.5;
+
+/** Interact radius to open Beast Temple pet upgrade UI. */
+export const EXPLORE_BEAST_TEMPLE_INTERACT_RADIUS = 3.5;
+
+/** Interact radius to open Altar of War summon UI. */
+export const EXPLORE_ALTAR_OF_WAR_INTERACT_RADIUS = 3.5;
 
 /** Interact radius to open fire-pit cook UI. */
 export const EXPLORE_FIRE_PIT_INTERACT_RADIUS = 3.5;
@@ -428,11 +504,14 @@ export const EXPLORE_TOWER_DAMAGE_MAX_RANK = 3;
 /** Gold cost to buy the next Tower Damage rank, indexed by current rank. */
 export const EXPLORE_TOWER_DAMAGE_COSTS: readonly number[] = [100, 200, 300];
 
-/** Damage added per Tower Damage rank (+50 per rank). */
-export const EXPLORE_WATCH_TOWER_DAMAGE_PER_RANK = 50;
+/** Watch Tower arrow damage by research rank: 50 → 100 → 150 → 200. */
+export const EXPLORE_WATCH_TOWER_DAMAGE_BY_RANK: readonly number[] = [50, 100, 150, 200];
 
-/** Base watch tower arrow damage before research. */
-export const EXPLORE_WATCH_TOWER_BASE_DAMAGE = 50;
+/** Base watch tower arrow damage before research (rank 0). */
+export const EXPLORE_WATCH_TOWER_BASE_DAMAGE = EXPLORE_WATCH_TOWER_DAMAGE_BY_RANK[0]!;
+
+/** Step between consecutive ranks (for docs / callers). */
+export const EXPLORE_WATCH_TOWER_DAMAGE_PER_RANK = 50;
 
 export function getExploreAllyCap(spiritLineageRank: number): number {
   const rank = Math.max(0, Math.min(EXPLORE_SPIRIT_LINEAGE_MAX_RANK, Math.floor(Number(spiritLineageRank) || 0)));
@@ -464,12 +543,18 @@ export function getTowerDamageNextCost(towerDamageRank: number): number | null {
   return EXPLORE_TOWER_DAMAGE_COSTS[rank] ?? null;
 }
 
+/** True when the next Tower Damage purchase (from currentRank) requires a live Cathedral. */
+export function towerDamageRequiresCathedral(currentRank: number): boolean {
+  const rank = Math.max(0, Math.floor(Number(currentRank) || 0));
+  return rank === EXPLORE_TOWER_DAMAGE_MAX_RANK - 1;
+}
+
 export function getExploreWatchTowerArrowDamage(towerDamageRank: number): number {
   const rank = Math.max(
     0,
     Math.min(EXPLORE_TOWER_DAMAGE_MAX_RANK, Math.floor(Number(towerDamageRank) || 0)),
   );
-  return EXPLORE_WATCH_TOWER_BASE_DAMAGE + EXPLORE_WATCH_TOWER_DAMAGE_PER_RANK * rank;
+  return EXPLORE_WATCH_TOWER_DAMAGE_BY_RANK[rank] ?? EXPLORE_WATCH_TOWER_BASE_DAMAGE;
 }
 
 export function getTowerDamageLabel(towerDamageRank: number): string {

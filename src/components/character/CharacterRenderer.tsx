@@ -4,6 +4,10 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Group, Vector3 } from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import CharacterModel, { AnimState, preloadCharacterModels } from './CharacterModel';
+import SabreToothMountModel, {
+  preloadSabreToothMountModels,
+  type SabreToothMountLocomotion,
+} from './SabreToothMountModel';
 import { World } from '@/ecs/World';
 import { Movement } from '@/ecs/components/Movement';
 import { Transform } from '@/ecs/components/Transform';
@@ -39,6 +43,8 @@ interface CharacterRendererProps {
 
 const LERP_SPEED      = 15;  // snappy but smooth position interpolation
 const WALK_STOP_DELAY = 120; // ms before switching to Idle after movement stops
+/** Extra Y so the sit pose sits visibly on the sabretooth (physics Y stays grounded). */
+const MOUNTED_RIDER_Y_OFFSET = 0.63;
 const YAW_OFFSET_FACTOR = 1.6;         // fraction of residual angle applied (keeps strafe posture readable)
 const _facingScratch = new Vector3(0, 0, -1);
 const _cameraDirScratch = new Vector3();
@@ -51,6 +57,7 @@ const YAW_OFFSET_FACTOR_SPRINT = 1;        // full residual for sprint diagonals
 
 // The controllable player must never wait behind enemy/boss asset staging.
 preloadCharacterModels();
+preloadSabreToothMountModels();
 
 // Return the animation state based on the signed angle (radians) between
 // the character's facing direction and the movement direction.
@@ -147,6 +154,42 @@ function computeModelYawOffset(
   return Math.max(-maxOffset, Math.min(maxOffset, -residual * factor));
 }
 
+/**
+ * Same cutoff as ControlSystem backwards-walk (A+S / D+S, > 112.5° from camera forward).
+ * Pure A/D is 90° — must stay in Run, not flicker onto WalkBack at the 90° hemisphere edge.
+ */
+const MOUNT_WALK_BACK_ABS = (5 * Math.PI) / 8;
+
+/**
+ * Mount facing: camera stays behind the rider; tiger + sit pose yaw toward WASD.
+ * |angle| ≤ 112.5° (W, W+A/D, A, D) → Run + full yaw.
+ * |angle| > 112.5° (S, S+A/S+D) → WalkBack + residual after ±180°.
+ */
+function computeMountYawAndLocomotion(
+  moveDir: Vector3 | null,
+  facingDir: Vector3,
+  inputStrength: number,
+): { yaw: number; locomotion: SabreToothMountLocomotion } {
+  if (!moveDir || inputStrength <= 0.05) {
+    return { yaw: 0, locomotion: 'idle' };
+  }
+
+  const dot = facingDir.dot(moveDir);
+  const crossY = facingDir.x * moveDir.z - facingDir.z * moveDir.x;
+  const angle = Math.atan2(crossY, dot);
+  const abs = Math.abs(angle);
+
+  if (abs <= MOUNT_WALK_BACK_ABS) {
+    return { yaw: -angle, locomotion: 'run' };
+  }
+
+  const cardinal = angle >= 0 ? Math.PI : -Math.PI;
+  let residual = angle - cardinal;
+  while (residual > Math.PI) residual -= Math.PI * 2;
+  while (residual < -Math.PI) residual += Math.PI * 2;
+  return { yaw: -residual, locomotion: 'walkBack' };
+}
+
 export default function CharacterRenderer({
   entityId,
   position,
@@ -171,11 +214,15 @@ export default function CharacterRenderer({
   const [runAnimTimeScale, setRunAnimTimeScale] = useState(1);
   const [dashJetsActive, setDashJetsActive] = useState(false);
   const [dashBurstId, setDashBurstId] = useState(0);
+  const [isMountedVisual, setIsMountedVisual] = useState(false);
+  const [mountedLocomotion, setMountedLocomotion] =
+    useState<SabreToothMountLocomotion>('idle');
   const dashFlagsRef = useRef({ isBackward: false, isLeft: false, isRight: false });
   const lastIsDashingRef = useRef(false);
   const dashFireWorldPosRef = useRef(new Vector3());
   const isDashingRef = useRef(false);
   const modelYawGroupRef = useRef<Group | null>(null);
+  const mountedRiderGroupRef = useRef<Group | null>(null);
   const modelYawOffset = useRef(0);
 
   const targetPosition    = useRef(position.clone());
@@ -442,6 +489,54 @@ export default function CharacterRenderer({
     }
     portalFallAnimRef.current.active = false;
 
+    // Explore sabretooth mount — hold Sit while mounted (overrides locomotion / combat poses).
+    // Camera/character facing stays orbit-behind; tiger + sit rider yaw toward WASD.
+    if (movement.isMounted && !isDead) {
+      if (walkStopTimer.current) {
+        clearTimeout(walkStopTimer.current);
+        walkStopTimer.current = null;
+      }
+      isCastingAbility.current = false;
+      isBlockCasting.current = false;
+      next = 'Sit';
+      if (next !== prevAnimState.current) {
+        prevAnimState.current = next;
+        setAnimState(next);
+      }
+
+      let mountMoveDir: Vector3 | null = null;
+      if (movement.inputStrength > 0.05) {
+        const md = _moveDirScratch.copy(movement.moveDirection);
+        md.y = 0;
+        if (md.length() > 0.01) {
+          md.normalize();
+          mountMoveDir = md;
+        }
+      }
+      const { yaw: mountYaw, locomotion } = computeMountYawAndLocomotion(
+        mountMoveDir,
+        facingDir,
+        movement.inputStrength,
+      );
+      modelYawOffset.current +=
+        (mountYaw - modelYawOffset.current) * Math.min(1, delta * YAW_OFFSET_LERP);
+      if (modelYawGroupRef.current) {
+        modelYawGroupRef.current.rotation.y = modelYawOffset.current;
+      }
+      setMountedLocomotion((prev) => (prev === locomotion ? prev : locomotion));
+      setIsMountedVisual((prev) => (prev ? prev : true));
+      if (mountedRiderGroupRef.current) {
+        mountedRiderGroupRef.current.position.y = MOUNTED_RIDER_Y_OFFSET;
+      }
+      return;
+    }
+
+    setIsMountedVisual((prev) => (prev ? false : prev));
+    setMountedLocomotion((prev) => (prev === 'idle' ? prev : 'idle'));
+    if (mountedRiderGroupRef.current && mountedRiderGroupRef.current.position.y !== 0) {
+      mountedRiderGroupRef.current.position.y = 0;
+    }
+
     if (!movement.isGrounded) {
       // Capture the jump direction at take-off so it stays consistent mid-air.
       if (wasGrounded.current) {
@@ -629,12 +724,17 @@ export default function CharacterRenderer({
     <>
       <group ref={setGroupRef}>
         <group ref={modelYawGroupRef}>
-          <CharacterModel
-            animState={animState}
-            isDead={isDead}
-            portalFallRef={portalFallAnimRef}
-            runAnimTimeScale={runAnimTimeScale}
-          />
+          {isMountedVisual && (
+            <SabreToothMountModel locomotion={mountedLocomotion} />
+          )}
+          <group ref={mountedRiderGroupRef}>
+            <CharacterModel
+              animState={animState}
+              isDead={isDead}
+              portalFallRef={portalFallAnimRef}
+              runAnimTimeScale={runAnimTimeScale}
+            />
+          </group>
         </group>
         <group position={[0, 1.0, -0.12]}>
           <DraconicWingJets

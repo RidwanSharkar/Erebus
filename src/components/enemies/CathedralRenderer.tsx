@@ -18,6 +18,7 @@ interface CathedralRendererProps {
   isDying?: boolean;
   powered?: boolean;
   cathedralUsed?: boolean;
+  hostile?: boolean;
 }
 
 const FADE_DURATION = 1.4;
@@ -30,8 +31,9 @@ function CathedralRenderer({
   maxHealth,
   isDying = false,
   powered = true,
+  hostile = false,
 }: CathedralRendererProps) {
-  const theme = campHpTheme('ally-green');
+  const theme = campHpTheme(hostile ? 'red' : 'ally-green');
   const { enemiesRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);

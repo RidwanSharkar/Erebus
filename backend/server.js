@@ -447,6 +447,30 @@ io.on('connection', (socket) => {
     room.researchPurchase(socket.id, { id });
   });
 
+  socket.on('beast-temple-purchase-upgrade', (data) => {
+    const { roomId, upgradeId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.beastTemplePurchaseUpgrade !== 'function') return;
+    room.beastTemplePurchaseUpgrade(socket.id, { upgradeId });
+  });
+
+  socket.on('beast-temple-summon-siege-wyrm', (data) => {
+    const { roomId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.beastTempleSummonSiegeWyrm !== 'function') return;
+    room.beastTempleSummonSiegeWyrm(socket.id);
+  });
+
+  socket.on('altar-summon-siege-golem', (data) => {
+    const { roomId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+    const room = gameRooms.get(roomId);
+    if (typeof room.altarSummonSiegeGolem !== 'function') return;
+    room.altarSummonSiegeGolem(socket.id);
+  });
+
   socket.on('shrine-claim', (data) => {
     const { roomId, gift } = data || {};
     if (!roomId || !gameRooms.has(roomId)) return;

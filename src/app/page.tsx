@@ -301,6 +301,9 @@ function HomeContent() {
     claimExploreCamp,
     barracksRecruitAlly,
     researchPurchase,
+    beastTemplePurchaseUpgrade,
+    beastTempleSummonSiegeWyrm,
+    altarSummonSiegeGolem,
     shrineClaim,
     cathedralClaim,
     obeliskBuyTalent,
@@ -358,6 +361,7 @@ function HomeContent() {
     coopEternityLootClaimedPlayerIds,
     coopEternityLootPhaseComplete,
     coopPetCompanionUpgrade,
+    explorePetCompanionUpgrades,
     coopAllyKind,
     coopVoidPortalOffered,
     coopDeepSanctumLevel,
@@ -467,6 +471,14 @@ function HomeContent() {
   const [researchPanelOpen, setResearchPanelOpen] = useState(false);
   const onResearchPanelOpenChange = useCallback((open: boolean) => {
     setResearchPanelOpen(open);
+  }, []);
+  const [beastTemplePanelOpen, setBeastTemplePanelOpen] = useState(false);
+  const onBeastTemplePanelOpenChange = useCallback((open: boolean) => {
+    setBeastTemplePanelOpen(open);
+  }, []);
+  const [altarOfWarPanelOpen, setAltarOfWarPanelOpen] = useState(false);
+  const onAltarOfWarPanelOpenChange = useCallback((open: boolean) => {
+    setAltarOfWarPanelOpen(open);
   }, []);
   const [shrinePanelOpen, setShrinePanelOpen] = useState(false);
   const onShrinePanelOpenChange = useCallback((open: boolean) => {
@@ -1642,6 +1654,7 @@ function HomeContent() {
 
   const handleExploreCampInteract = useCallback((camp: ExploreCampPublic) => {
     if (gameMode !== 'coop' || !camp?.cleared) return;
+    if (camp.kind === 'town') return;
     if (exploreCampClaimedRef.current.has(camp.id)) return;
     if (socket?.id && camp.claimedBy.includes(socket.id)) return;
     if (coopBoon !== null) return;
@@ -2304,20 +2317,32 @@ function HomeContent() {
 
   const [exploreAllyCount, setExploreAllyCount] = useState(0);
   const [hasLiveSpiritLounge, setHasLiveSpiritLounge] = useState(false);
+  const [hasLiveResearchStation, setHasLiveResearchStation] = useState(false);
   const [hasLiveShrineOrObelisk, setHasLiveShrineOrObelisk] = useState(false);
+  const [hasLiveCathedral, setHasLiveCathedral] = useState(false);
+  const [siegeWyrmAlive, setSiegeWyrmAlive] = useState(false);
   const refreshExploreAllyAlive = useCallback(() => {
     let count = 0;
     let lounge = false;
+    let research = false;
     let shrineOrObelisk = false;
+    let cathedral = false;
+    let wyrm = false;
     for (const enemy of enemiesRef.current.values()) {
       if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
       if (enemy.type === 'barracks') lounge = true;
+      if (enemy.type === 'research-station') research = true;
       if (enemy.type === 'shrine' || enemy.type === 'obelisk') shrineOrObelisk = true;
+      if (enemy.type === 'cathedral' && enemy.alliedUnit === true) cathedral = true;
+      if (enemy.type === 'allied-siege-wyrm') wyrm = true;
       if (isExplorePurchasedAllyType(enemy.type)) count += 1;
     }
     setExploreAllyCount(count);
     setHasLiveSpiritLounge(lounge);
+    setHasLiveResearchStation(research);
     setHasLiveShrineOrObelisk(shrineOrObelisk);
+    setHasLiveCathedral(cathedral);
+    setSiegeWyrmAlive(wyrm);
   }, [enemiesRef]);
 
   // Sync localPurchasedItems from ref — avoids re-rendering on every player map update.
@@ -2676,6 +2701,8 @@ function HomeContent() {
                   onBuildMenuChange={onBuildMenuChange}
                   onBarracksRecruitOpenChange={onBarracksRecruitOpenChange}
                   onResearchPanelOpenChange={onResearchPanelOpenChange}
+                  onBeastTemplePanelOpenChange={onBeastTemplePanelOpenChange}
+                  onAltarOfWarPanelOpenChange={onAltarOfWarPanelOpenChange}
                   onShrinePanelOpenChange={onShrinePanelOpenChange}
                   onCathedralPanelOpenChange={onCathedralPanelOpenChange}
                   onObeliskPanelOpenChange={onObeliskPanelOpenChange}
@@ -2771,7 +2798,9 @@ function HomeContent() {
                 buildMenuOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && buildMenuOpen}
                 buildMenuView={buildMenuView}
                 hasLiveSpiritLounge={hasLiveSpiritLounge}
+                hasLiveResearchStation={hasLiveResearchStation}
                 hasLiveShrineOrObelisk={hasLiveShrineOrObelisk}
+                hasLiveCathedral={hasLiveCathedral}
                 barracksRecruitOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && barracksRecruitOpen}
                 playerWood={playerWood}
                 playerFlow={playerFlow}
@@ -2779,6 +2808,29 @@ function HomeContent() {
                 researchPanelOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && researchPanelOpen}
                 exploreResearch={exploreResearch}
                 onResearchPurchase={researchPurchase}
+                beastTemplePanelOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && beastTemplePanelOpen}
+                beastTempleCompanions={(() => {
+                  const localId = socket?.id;
+                  if (!localId) return [];
+                  const byKind = new Map<string, { kind: any; upgradeId: any }>();
+                  for (const enemy of enemiesRef.current.values()) {
+                    if (enemy.companionSlot !== 'explore') continue;
+                    if (enemy.ownerPlayerId !== localId) continue;
+                    if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
+                    const kind = enemy.beastCompanionKind;
+                    if (!kind || byKind.has(kind)) continue;
+                    byKind.set(kind, {
+                      kind,
+                      upgradeId: (explorePetCompanionUpgrades?.[kind] as any) ?? null,
+                    });
+                  }
+                  return Array.from(byKind.values());
+                })()}
+                onBeastTemplePurchase={beastTemplePurchaseUpgrade as any}
+                onBeastTempleSummonSiegeWyrm={beastTempleSummonSiegeWyrm}
+                siegeWyrmAlive={siegeWyrmAlive}
+                altarOfWarPanelOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && altarOfWarPanelOpen}
+                onAltarSummonSiegeGolem={altarSummonSiegeGolem}
                 shrinePanelOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && shrinePanelOpen}
                 onShrineGift={shrineClaim}
                 cathedralPanelOpen={gameMode === 'coop' && coopCurrentRoomKind === 'explore' && cathedralPanelOpen}
@@ -2802,7 +2854,10 @@ function HomeContent() {
                 coopAllyKind={coopAllyKind}
                 coopFaeBeastCompanionGranted={coopFaeBeastCompanionGranted}
                 coopFaeBeastCompanionKind={coopFaeBeastCompanionKind}
-                coopPetPackWolfActive={coopPetCompanionUpgrade === 'wolf_pack_expansion'}
+                coopPetPackWolfActive={
+                  coopPetCompanionUpgrade === 'wolf_pack_expansion'
+                  || explorePetCompanionUpgrades?.wolf === 'wolf_pack_expansion'
+                }
               />
             </div>
 

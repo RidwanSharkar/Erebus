@@ -26,6 +26,7 @@ interface SiegeTowerRendererProps {
   maxHealth: number;
   isDying?: boolean;
   powered?: boolean;
+  hostile?: boolean;
 }
 
 type SiegeTowerArrowShot = {
@@ -48,8 +49,9 @@ function SiegeTowerRenderer({
   maxHealth,
   isDying = false,
   powered = true,
+  hostile = false,
 }: SiegeTowerRendererProps) {
-  const theme = campHpTheme('ally-green');
+  const theme = campHpTheme(hostile ? 'red' : 'ally-green');
   const { enemiesRef, enemyTransformsRef } = useMultiplayerActions();
   const groupRef = useRef<Group | null>(null);
   const hpFillRef = useRef<Mesh>(null);
@@ -100,6 +102,9 @@ function SiegeTowerRenderer({
       };
       setArrowShot(shot);
       setBeamShot(shot);
+      const audio = (window as unknown as { audioSystem?: { playSiegeTowerAttackSound?: (p: Vector3) => void } })
+        .audioSystem;
+      audio?.playSiegeTowerAttackSound?.(from.clone());
     });
   }, [id, powered]);
 
