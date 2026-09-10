@@ -1,5 +1,6 @@
 import type { Entity } from '@/ecs/Entity';
 import type { World } from '@/ecs/World';
+import { DestructibleMushroom } from '@/ecs/components/DestructibleMushroom';
 import { DestructibleRock } from '@/ecs/components/DestructibleRock';
 import { DestructibleRoot } from '@/ecs/components/DestructibleRoot';
 import { DestructibleSpine } from '@/ecs/components/DestructibleSpine';
@@ -17,6 +18,22 @@ export function isWeaponHittableEntity(entity: Entity): boolean {
   if (entity.getComponent(DestructibleRock)) return true;
   if (entity.getComponent(DestructibleSpine)) return true;
   if (entity.getComponent(Enemy)) return true;
+  return false;
+}
+
+/**
+ * Warlord Poison Dart — targets that refund 1 dash charge on first hit
+ * (enemies incl. tentacle-spine, mushrooms, harvest spines/trees/rocks/roots).
+ */
+export function isPoisonDartDashRefundTarget(entity: Entity): boolean {
+  if (isCoopPlayerAllyEntity(entity)) return false;
+  if (entity.userData?.isPlayer === true) return false;
+  if (entity.getComponent(Enemy)) return true;
+  if (entity.getComponent(DestructibleMushroom)) return true;
+  if (entity.getComponent(DestructibleSpine)) return true;
+  if (entity.getComponent(DestructibleTree)) return true;
+  if (entity.getComponent(DestructibleRock)) return true;
+  if (entity.getComponent(DestructibleRoot)) return true;
   return false;
 }
 

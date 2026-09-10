@@ -138,7 +138,7 @@ export const WEAPON_ASPECT_DISPLAY: Record<WeaponAspect, WeaponAspectDisplayMeta
     label: 'Aspect of Cruelty',
     shortLabel: 'Warlord',
     description:
-      'Poison Dart: after each dash, the next primary attack fires a dart dealing 20 + 5 per AGILITY and applying 1 stack of Concentrated Venom. Backstab (Q) applies 1 stack ofConcentrated Venom. Dash distance is doubled.',
+      'Poison Dart: after each dash, the next primary attack fires a dart dealing 20 + 5 per AGILITY and applying 1 stack of Concentrated Venom. Hitting an enemy, mushroom, tentacle spine, or environment prop with the dart restores 1 dash charge. Backstab (Q) applies 1 stack of Concentrated Venom. Dash distance is doubled.',
   },
   SNIPER: {
     id: 'SNIPER',

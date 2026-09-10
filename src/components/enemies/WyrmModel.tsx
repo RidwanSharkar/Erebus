@@ -8,8 +8,6 @@ import { applySelfIllumination, UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClon
 import { cloneEnemySceneWithSharedMaterials } from '@/utils/sharedEnemyMaterials';
 import { loadGltfAnimationClips, preloadSkinnedIdleAndAnimationClips } from '@/utils/gltfAnimationLoader';
 import { filterAnimationTracksForRoot, getCachedProcessedClips } from '@/utils/enemyAnimationClipCache';
-import { hideStrayGlowShellMeshes } from '@/utils/hideStrayGlowShellMeshes';
-
 interface WyrmModelProps {
   isWalking: boolean;
   isAttacking: boolean;
@@ -104,7 +102,8 @@ export default React.memo(function WyrmModel({
       castShadow: false,
       receiveShadow: false,
     });
-    hideStrayGlowShellMeshes(clone);
+    // Body is split across drakedarkshade_GeosetN materials — do not call
+    // hideStrayGlowShellMeshes (it keeps only the largest geoset and hides head/neck/body).
     applySelfIllumination(clone, { intensity: UNIT_SELF_ILLUMINATION_INTENSITY });
     return clone;
   }, [scene]);

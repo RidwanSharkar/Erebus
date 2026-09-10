@@ -247,7 +247,26 @@ export default function CharacterRenderer({
   /** Shift-tap Deflect-Block — plays regardless of movement state (unlike CastSingle's stationary-only gate). */
   const isBlockCasting       = useRef(false);
   const blockAnimTimer       = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Previous frame incineration armed — falling edge (armed→false while not charging) = detonate. */
+  const prevIncinerationArmed = useRef(false);
   const portalFallAnimRef    = useRef({ active: false, phase: 'rise' as 'rise' | 'fall', progress: 0 });
+
+  /** Shared one-shot for Q/E/R abilities and Incineration detonate (`character_castSingle.glb`). */
+  const startCastSingle = useCallback(() => {
+    if (abilityAnimTimer.current) clearTimeout(abilityAnimTimer.current);
+    isCastingAbility.current = true;
+    setAnimState('CastSingle');
+    prevAnimState.current = 'CastSingle';
+    // Clip is ~1.1 s; 1200 ms buffer. Next frame resumes LMB Cast/SwordCast if still held.
+    abilityAnimTimer.current = setTimeout(() => {
+      abilityAnimTimer.current = null;
+      isCastingAbility.current = false;
+      if (prevAnimState.current === 'CastSingle') {
+        setAnimState('Idle');
+        prevAnimState.current = 'Idle';
+      }
+    }, 1200);
+  }, []);
 
   // Snap to spawn position before first paint so the character never flashes at origin.
   const setGroupRef = useCallback((group: Group | null) => {
@@ -312,27 +331,12 @@ export default function CharacterRenderer({
       const entity = world.getEntity(entityId);
       const movement = entity?.getComponent(Movement);
       if (movement && movement.inputStrength > 0.05) return;
-
-      // Clear any pending timer so rapid casts restart the clip.
-      if (abilityAnimTimer.current) clearTimeout(abilityAnimTimer.current);
-
-      isCastingAbility.current = true;
-      setAnimState('CastSingle');
-      prevAnimState.current = 'CastSingle';
-
-      // After the clip duration, return to Idle (clip is ~1.1 s; 1200 ms gives a
-      // small buffer so the animation always finishes before we switch back).
-      abilityAnimTimer.current = setTimeout(() => {
-        abilityAnimTimer.current = null;
-        isCastingAbility.current = false;
-        setAnimState('Idle');
-        prevAnimState.current = 'Idle';
-      }, 1200);
+      startCastSingle();
     };
 
     window.addEventListener('character-ability-cast', handleAbilityCast);
     return () => { window.removeEventListener('character-ability-cast', handleAbilityCast); };
-  }, [isLocalPlayer, world, entityId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isLocalPlayer, world, entityId, startCastSingle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Listen for Shift-tap Deflect-Block and play the Block animation immediately, regardless of
   // movement state (Deflect can be tapped while moving, unlike CastSingle's stationary-only gate).
@@ -432,6 +436,23 @@ export default function CharacterRenderer({
 
     const movement = entity.getComponent(Movement);
     if (!movement) return;
+
+    // Incineration LMB detonate — falling edge of armed while not charging (local + remote).
+    const incinerationArmed = movement.isIncinerationArmed;
+    const incinerationDetonated =
+      prevIncinerationArmed.current &&
+      !incinerationArmed &&
+      !movement.isIncinerationCharging;
+    prevIncinerationArmed.current = incinerationArmed;
+    if (
+      incinerationDetonated &&
+      !isDead &&
+      movement.isGrounded &&
+      !movement.isMounted &&
+      movement.inputStrength <= 0.05
+    ) {
+      startCastSingle();
+    }
 
     const nextRunScale = movement.persistenceHunterActive && !movement.isSprinting ? 1.12 : 1;
     setRunAnimTimeScale((prev) => (prev === nextRunScale ? prev : nextRunScale));
@@ -621,7 +642,16 @@ export default function CharacterRenderer({
           walkStopTimer.current = null;
         }
         next = 'DrawBow';
+      } else if (isCastingAbility.current) {
+        // Keep CastSingle — do not let LMB or Locust looping override mid one-shot.
+        if (walkStopTimer.current) {
+          clearTimeout(walkStopTimer.current);
+          walkStopTimer.current = null;
+        }
+        applyModelYawOffset(prevAnimState.current, null);
+        return;
       } else if (
+        movement.isLocustChanneling ||
         (isLocalPlayer &&
           isLeftMouseHeld.current &&
           currentWeapon != null &&
@@ -632,7 +662,8 @@ export default function CharacterRenderer({
           currentWeapon !== WeaponType.NONE &&
           currentWeapon !== WeaponType.BOW)
       ) {
-        // Stationary + holding primary or replicated co-op melee/channel pose.
+        // Stationary + Locust channel, LMB primary, or replicated co-op melee/channel pose.
+        // Locust also plays Cast when no weapon is equipped (LMB does not).
         if (walkStopTimer.current) {
           clearTimeout(walkStopTimer.current);
           walkStopTimer.current = null;
@@ -640,20 +671,20 @@ export default function CharacterRenderer({
         if (currentWeapon === WeaponType.SWORD) {
           next = 'SwordCast';
         } else {
-          next = 'Cast'; // SCYTHE, SPEAR, SABRES, RUNEBLADE, Bow generic cast fallback, etc.
+          next = 'Cast'; // SCYTHE, SPEAR, SABRES, RUNEBLADE, NONE (locust), Bow fallback, etc.
         }
       } else {
         // No input, not casting.
         const isCastVariant = (s: AnimState) =>
           s === 'Cast' || s === 'SwordCast' || s === 'DrawBow';
 
-        // Let CastSingle play out on its own (driven by the ability-cast effect).
+        // Let CastSingle play out on its own (Q/E ability / incineration).
         if (prevAnimState.current === 'CastSingle') {
           applyModelYawOffset(prevAnimState.current, null);
           return;
         }
 
-        // If an ability cast is in progress, keep CastSingle running.
+        // If an ability cast is in progress, keep the one-shot running.
         if (isCastingAbility.current) {
           applyModelYawOffset(prevAnimState.current, null);
           return;

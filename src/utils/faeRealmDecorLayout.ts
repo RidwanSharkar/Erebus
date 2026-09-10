@@ -1,12 +1,14 @@
 /**
  * Fae Realm décor: GIANTSPINE, pinkTree centerpiece, two barkRoot flanks,
- * plus numbered 1 / 3 / 6 / 13.glb pylons. Deterministic — stable for MP.
+ * numbered 1 / 3 / 6 / 13.glb pylons, and two explore-style deadtree.glb props.
+ * Deterministic — stable for MP.
  */
 
 export type FaeRealmDecorModel =
   | 'giantSpine'
   | 'pinkTree'
   | 'barkRoot'
+  | 'deadTree'
   | 'pylon1'
   | 'pylon3'
   | 'pylon6'
@@ -16,6 +18,7 @@ export const FAE_REALM_DECOR_PATHS: Record<FaeRealmDecorModel, string> = {
   giantSpine: '/models/trinket/pylons/GIANTSPINE.glb',
   pinkTree: '/models/environ/pinkTree.glb',
   barkRoot: '/models/environ/barkRoot.glb',
+  deadTree: '/models/environ/deadtree.glb',
   pylon1: '/models/trinket/pylons/1.glb',
   pylon3: '/models/trinket/pylons/3.glb',
   pylon6: '/models/trinket/pylons/6.glb',
@@ -36,6 +39,8 @@ export type FaeRealmDecorModelMeta = {
   defaultScale: number;
   /** WoW-export SkinnedMesh props need per-instance SkeletonUtils.clone. */
   skinned?: boolean;
+  /** Explore-style InstancedMesh (baked geo, no per-instance Clone). */
+  instanced?: boolean;
 };
 
 /**
@@ -44,11 +49,13 @@ export type FaeRealmDecorModelMeta = {
  * 1 ≈ 4.65m, 3 ≈ 6.85m, 6 ≈ 6.05m, 13 ≈ 0.89m.
  * Numbered pylons target ~2.8–3.5m (rim 5.glb ≈ 3.5m); 13 is a shorter accent (~1.4m).
  * pinkTree targets ~7.6m; barkRoot targets ~2.4m tall / ~3.6m wide.
+ * deadTree uses Explore variant-0 scale (0.123) × Explore visual multiplier (1.475) ≈ 0.181.
  */
 export const FAE_REALM_DECOR_MODEL_META: Record<FaeRealmDecorModel, FaeRealmDecorModelMeta> = {
   giantSpine: { groundY: 2.385, defaultScale: 0.1 },
   pinkTree: { groundY: 0.53, defaultScale: 0.22, skinned: true },
   barkRoot: { groundY: 2.02, defaultScale: 0.22, skinned: true },
+  deadTree: { groundY: 0, defaultScale: 0.123 * 1.475, instanced: true },
   pylon1: { groundY: 0.1937, defaultScale: 0.645 },
   pylon3: { groundY: 0.0789, defaultScale: 0.467 },
   pylon6: { groundY: 0.0403, defaultScale: 0.529 },
@@ -72,9 +79,9 @@ const NUMBERED_FAE_PYLONS = new Set<FaeRealmDecorModel>([
 ]);
 
 /**
- * 1× GIANTSPINE north of center, 1× pinkTree south of the seal, 2× barkRoot
- * on opposite flanks. Clears center combat/portal (r ≥ 6.75), the tree
- * at [0, −8.5], GIANTSPINE at [4.2, 11.2], and rim pylons (r ≤ 15).
+ * 1× GIANTSPINE north of center, 2× deadtree on outer grass flanks.
+ * Clears center combat/portal (r ≥ 6.75), GIANTSPINE at [4.2, 11.2],
+ * and south entry.
  */
 export const FAE_REALM_DECOR_LAYOUT: readonly FaeRealmDecorDef[] = [
   {
@@ -83,9 +90,16 @@ export const FAE_REALM_DECOR_LAYOUT: readonly FaeRealmDecorDef[] = [
     rotationY: Math.PI,
     scale: 0.6,
   },
-
-
-  { model: 'barkRoot', position: [5.2, 0, -7.2], rotationY: 2.1, scale: 0.45 },
+  {
+    model: 'deadTree',
+    position: [-15.2, 0, 7.8],
+    rotationY: 0.6,
+  },
+  {
+    model: 'deadTree',
+    position: [15.8, 0, -6.4],
+    rotationY: -1.1,
+  },
 ];
 
 export function listUniqueFaeRealmDecorModels(

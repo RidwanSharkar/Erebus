@@ -66,6 +66,8 @@ export class Projectile extends Component {
   public tempestBurstWyvernZombie?: boolean;
   /** Tempest Rounds burst visual theme key (RegularArrow). */
   public tempestBurstTheme?: string;
+  /** Warlord Poison Dart — once-per-dart lock after attempting dash-charge restore on first refund target. */
+  public poisonDartDashRestored?: boolean;
 
   // Homing properties
   public targetEntityId: number | null; // Entity ID to home towards

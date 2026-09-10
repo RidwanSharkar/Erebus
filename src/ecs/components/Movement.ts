@@ -82,6 +82,12 @@ export class Movement extends Component {
   // Hold-Shift sprint (any locomotion except backward)
   public isSprinting: boolean;
 
+  /**
+   * Epoch seconds until which dash free sprint may apply (no energy / no Rogue / no Shift).
+   * 0 = inactive. Timer starts at dash cast (deadline = cast time + weapon duration).
+   */
+  public dashSprintUntilSec: number;
+
   /** Explorer sabretooth mount — sit locomotion; synced via movementDirection. */
   public isMounted: boolean;
 
@@ -187,6 +193,7 @@ export class Movement extends Component {
 
     // Initialize sprint state
     this.isSprinting = false;
+    this.dashSprintUntilSec = 0;
 
     // Explorer sabretooth mount
     this.isMounted = false;
@@ -592,6 +599,20 @@ export class Movement extends Component {
     this.dashStartTime = 0;
   }
 
+  /** Grant dash free sprint; `untilSec` should be cast time + weaponDuration. */
+  public grantDashSprint(untilSec: number): void {
+    this.dashSprintUntilSec = untilSec;
+  }
+
+  /** True while the dash free-sprint window is still active (timer only; not whether sprinting). */
+  public isDashSprintActive(currentTimeSec: number = Date.now() / 1000): boolean {
+    return this.dashSprintUntilSec > 0 && currentTimeSec < this.dashSprintUntilSec;
+  }
+
+  public clearDashSprint(): void {
+    this.dashSprintUntilSec = 0;
+  }
+
   public stop(): void {
     this.velocity.set(0, 0, 0);
     this.acceleration.set(0, 0, 0);
@@ -603,6 +624,7 @@ export class Movement extends Component {
   public haltLocomotion(): void {
     this.stop();
     this.isSprinting = false;
+    this.clearDashSprint();
     this.isMounted = false;
     this.cancelDash();
     this.cancelCharge();
@@ -828,6 +850,7 @@ export class Movement extends Component {
     this.isAttackSlowed = false;
     // Keep attackSlowMultiplier / hexmetalWalkSpeedActive — item ownership, not combat state.
     this.isSprinting = false;
+    this.dashSprintUntilSec = 0;
     this.isMounted = false;
 
     // Reset dash properties
@@ -898,6 +921,7 @@ export class Movement extends Component {
     clone.attackSlowMultiplier = this.attackSlowMultiplier;
     clone.hexmetalWalkSpeedActive = this.hexmetalWalkSpeedActive;
     clone.isSprinting = this.isSprinting;
+    clone.dashSprintUntilSec = this.dashSprintUntilSec;
 
     // Clone dash properties
     clone.isDashing = this.isDashing;

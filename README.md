@@ -2,6 +2,8 @@
 
 A co-op 3D action roguelike with a unique weapon/class system. Descend through the void - clear combat rooms to acquire allies and powerful rewards to customize each build. Fast real-time combat where positioning, resources, and party coordination decide whether the run survives.
 
+**https://dead.army/games/erebus-de274d**
+
 **GAMEPLAY: https://www.youtube.com/watch?v=QKot8NbxdD8w**
 
 ## Table of Contents

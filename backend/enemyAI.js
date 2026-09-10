@@ -396,7 +396,7 @@ const WYVERN_BREATH_DAMAGE = 36;
 const WYVERN_BREATH_CAST_RANGE = 10;
 const WYVERN_BREATH_MAX_RANGE = WYVERN_BREATH_CAST_RANGE; // bolt always travels full cast range
 
-// Wilderness Wyrm — fast melee + Destiny-style bilateral flame pillars (1 per side)
+// Wilderness Wyrm — fast melee + Destiny-style bilateral flame pillars (3 per side)
 const WYRM_MELEE_RANGE = 2.6;
 const WYRM_AGGRO_RADIUS = 10;
 const WYRM_WALK_SPEED = 1.45;
@@ -405,8 +405,11 @@ const WYRM_SPELL_COOLDOWN_MS = 8000;
 const WYRM_SPELL_CAST_LOCK_MS = 2000;
 const WYRM_SPELL_PILLAR_DAMAGE = 40;
 const WYRM_SPELL_PILLAR_RADIUS = 2.25;
+const WYRM_SPELL_PILLAR_COUNT = 3;
 const WYRM_SPELL_PILLAR_DELAY_MS = 500;
+const WYRM_SPELL_PILLAR_STAGGER_MS = 250;
 const WYRM_SPELL_PILLAR_OFFSET = 2.0;
+const WYRM_SPELL_PILLAR_STEP = 1.0;
 const WYRM_SPELL_CAST_RANGE = 8;
 
 /** Allied Siege Wyrm (Beast Temple) — tiger follow + wyvern melee timings + pierce firebolt. */
@@ -18196,14 +18199,18 @@ class EnemyAI {
       );
     };
 
-    for (const side of [-1, 1]) {
-      const center = {
-        x: ox + lx * side * WYRM_SPELL_PILLAR_OFFSET,
-        y: py,
-        z: oz + lz * side * WYRM_SPELL_PILLAR_OFFSET,
-      };
-      const h = this._scheduleTimeout(() => erupt(center), WYRM_SPELL_PILLAR_DELAY_MS);
-      this.addWyrmSpellPillarTimeout(wid, h);
+    for (let i = 0; i < WYRM_SPELL_PILLAR_COUNT; i++) {
+      const dist = WYRM_SPELL_PILLAR_OFFSET + i * WYRM_SPELL_PILLAR_STEP;
+      const delay = WYRM_SPELL_PILLAR_DELAY_MS + i * WYRM_SPELL_PILLAR_STAGGER_MS;
+      for (const side of [-1, 1]) {
+        const center = {
+          x: ox + lx * side * dist,
+          y: py,
+          z: oz + lz * side * dist,
+        };
+        const h = this._scheduleTimeout(() => erupt(center), delay);
+        this.addWyrmSpellPillarTimeout(wid, h);
+      }
     }
 
     const endHandle = this._scheduleTimeout(() => {

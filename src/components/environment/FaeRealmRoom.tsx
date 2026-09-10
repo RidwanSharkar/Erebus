@@ -72,7 +72,7 @@ export default function FaeRealmRoom({
         <AtmosphericParticles
           position={[0, 0, 0]}
           count={45}
-          radius={16.8}
+          radius={21.84}
           color={`#${particleColor.getHexString()}`}
           speed={0.14}
           size={0.025}

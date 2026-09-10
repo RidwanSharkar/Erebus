@@ -44,6 +44,9 @@ export const GUIDE_ANNOUNCEMENTS = {
   defeatChampion: { title: 'DEFEAT THE CHAMPION', color: '#dc2626' },
   deliriumSuccess: { title: 'STRUCTURE HELD — REWARD EARNED', color: '#22c55e' },
   deliriumFailed: { title: 'CLEAR THE GHOULS', color: '#ef4444' },
+  buildFire: { title: "PRESS 'B' TO BUILD A FIRE", color: '#eab308' },
+  chopTrees: { title: 'CHOP DOWN TREES FOR WOOD', color: '#eab308' },
+  eatMeatAtFire: { title: 'EAT MEAT AT A FIRE TO CURE HUNGER', color: '#eab308' },
 } as const;
 
 export const LEVEL_UP_ANNOUNCEMENT = { title: 'LEVEL UP', color: '#eab308' } as const;

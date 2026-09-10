@@ -13,7 +13,7 @@ import SanctumIncinerationRuneDisc, {
 import StylizedGrass, { resolveGrassPresetByIndex } from './StylizedGrass';
 import ThroneNatureProps from './ThroneNatureProps';
 import ThroneTurretProps from './ThroneTurretProps';
-import VoidPortal from './VoidPortal';
+import VoidPortal, { voidPortalInteractRadius } from './VoidPortal';
 import Pillar from './Pillar';
 import { ArenaRewardPedestalBase } from './CombatArenaPedestal';
 import ThronePedestalAura from './ThronePedestalAura';
@@ -180,6 +180,63 @@ export const THRONE_SKY_TEMPLE_PORTAL_POSITION = Object.freeze({
   y: 0,
   z: -5.85,
 });
+
+/** Title-only mode labels for south-rim void portals (prep room). */
+export type ThroneVoidPortalTooltipDef = {
+  readonly key: string;
+  readonly name: string;
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly visualRadius: number;
+};
+
+/** World Y for projecting void-portal tooltips above each maw. */
+const THRONE_VOID_PORTAL_TOOLTIP_ANCHOR_Y = 1.75;
+
+export const THRONE_VOID_PORTAL_TOOLTIP_DEFS: ReadonlyArray<ThroneVoidPortalTooltipDef> =
+  Object.freeze([
+    Object.freeze({
+      key: 'void-portal:explore',
+      name: 'SURVIVAL',
+      x: THRONE_EXPLORE_PORTAL_POSITION.x,
+      y: THRONE_VOID_PORTAL_TOOLTIP_ANCHOR_Y,
+      z: THRONE_EXPLORE_PORTAL_POSITION.z,
+      visualRadius: THRONE_EXPLORE_PORTAL_RADIUS,
+    }),
+    Object.freeze({
+      key: 'void-portal:intro',
+      name: 'MAIN GAME',
+      x: THRONE_VOID_PORTAL_POSITION.x,
+      y: THRONE_VOID_PORTAL_TOOLTIP_ANCHOR_Y,
+      z: THRONE_VOID_PORTAL_POSITION.z,
+      visualRadius: THRONE_VOID_PORTAL_RADIUS,
+    }),
+    Object.freeze({
+      key: 'void-portal:defense',
+      name: 'COLOSSEUM',
+      x: THRONE_DEFENSE_PORTAL_POSITION.x,
+      y: THRONE_VOID_PORTAL_TOOLTIP_ANCHOR_Y,
+      z: THRONE_DEFENSE_PORTAL_POSITION.z,
+      visualRadius: THRONE_DEFENSE_PORTAL_RADIUS,
+    }),
+    Object.freeze({
+      key: 'void-portal:dungeon',
+      name: 'DUNGEON',
+      x: THRONE_DUNGEON_PORTAL_POSITION.x,
+      y: THRONE_VOID_PORTAL_TOOLTIP_ANCHOR_Y,
+      z: THRONE_DUNGEON_PORTAL_POSITION.z,
+      visualRadius: THRONE_DUNGEON_PORTAL_RADIUS,
+    }),
+    Object.freeze({
+      key: 'void-portal:sky_temple',
+      name: 'SKY TEMPLE',
+      x: THRONE_SKY_TEMPLE_PORTAL_POSITION.x,
+      y: THRONE_VOID_PORTAL_TOOLTIP_ANCHOR_Y,
+      z: THRONE_SKY_TEMPLE_PORTAL_POSITION.z,
+      visualRadius: THRONE_SKY_TEMPLE_PORTAL_RADIUS,
+    }),
+  ]);
 
 /** Defense playable circle (platform group scale). Keep in sync with backend `DEFENSE_ROOM_SCALE`. */
 export const DEFENSE_ROOM_SCALE = 1.35;
@@ -756,7 +813,8 @@ const THRONE_PILLAR_WEAPONS: WeaponType[] = [
 ];
 
 /**
- * Publishes merchant-style floating tooltips for throne weapon + archetype pedestals.
+ * Publishes merchant-style floating tooltips for throne weapon + archetype pedestals
+ * and south-rim void-portal mode labels (when open).
  * Weapon tooltips stay eligible after equip so aspect info remains visible while nearby.
  */
 function ThronePrepPedestalTooltips({
@@ -765,6 +823,7 @@ function ThronePrepPedestalTooltips({
   equippedWeapon = WeaponType.NONE,
   weaponAspectByWeapon,
   showcaseTick,
+  voidPortalOpen = false,
   symbolRefs,
   hoveredKey,
 }: {
@@ -773,6 +832,7 @@ function ThronePrepPedestalTooltips({
   equippedWeapon?: WeaponType;
   weaponAspectByWeapon?: WeaponAspectByWeapon;
   showcaseTick: number;
+  voidPortalOpen?: boolean;
   symbolRefs: React.MutableRefObject<Partial<Record<ThronePedestalTooltipKey, Group | null>>>;
   hoveredKey: ThronePedestalTooltipKey | null;
 }) {
@@ -786,36 +846,50 @@ function ThronePrepPedestalTooltips({
     description: string;
   } | null>(null);
 
-  const slots = useMemo(
-    () => [
-      ...THRONE_WEAPON_INTERACT_DEFS.map((def) => ({
-        key: thronePedestalTooltipKey('weapon', def.weapon),
-        kind: 'weapon' as const,
-        weapon: def.weapon,
-        x: def.x,
-        z: def.z,
-        // Weapons remain tooltip-eligible after equip (aspect cycling).
-        taken: false,
-      })),
-      ...THRONE_ARCHETYPE_INTERACT_DEFS.map((def) => ({
-        key: thronePedestalTooltipKey('archetype', def.archetype),
-        kind: 'archetype' as const,
-        archetype: def.archetype,
-        x: def.x,
-        z: def.z,
-        taken:
-          selectedArchetype !== 'NONE' && selectedArchetype === def.archetype,
-      })),
-    ],
-    [selectedArchetype],
-  );
+  const slots = useMemo(() => {
+    const weaponSlots = THRONE_WEAPON_INTERACT_DEFS.map((def) => ({
+      key: thronePedestalTooltipKey('weapon', def.weapon),
+      kind: 'weapon' as const,
+      weapon: def.weapon,
+      x: def.x,
+      z: def.z,
+      interactRadiusSq: THRONE_WEAPON_INTERACT_RADIUS * THRONE_WEAPON_INTERACT_RADIUS,
+      // Weapons remain tooltip-eligible after equip (aspect cycling).
+      taken: false,
+      usePedestalOffset: true,
+    }));
+    const archetypeSlots = THRONE_ARCHETYPE_INTERACT_DEFS.map((def) => ({
+      key: thronePedestalTooltipKey('archetype', def.archetype),
+      kind: 'archetype' as const,
+      archetype: def.archetype,
+      x: def.x,
+      z: def.z,
+      interactRadiusSq: THRONE_WEAPON_INTERACT_RADIUS * THRONE_WEAPON_INTERACT_RADIUS,
+      taken: selectedArchetype !== 'NONE' && selectedArchetype === def.archetype,
+      usePedestalOffset: true,
+    }));
+    const voidPortalSlots = voidPortalOpen
+      ? THRONE_VOID_PORTAL_TOOLTIP_DEFS.map((def) => {
+          const r = voidPortalInteractRadius(def.visualRadius);
+          return {
+            key: def.key,
+            kind: 'voidPortal' as const,
+            name: def.name,
+            x: def.x,
+            z: def.z,
+            interactRadiusSq: r * r,
+            taken: false,
+            usePedestalOffset: false,
+          };
+        })
+      : [];
+    return [...weaponSlots, ...archetypeSlots, ...voidPortalSlots];
+  }, [selectedArchetype, voidPortalOpen]);
 
   useEffect(() => () => clearMerchantShopTooltip(), []);
 
   useFrame(() => {
     const playerPos = playerPositionRef.current;
-    const interactRadiusSq =
-      THRONE_WEAPON_INTERACT_RADIUS * THRONE_WEAPON_INTERACT_RADIUS;
     let nearest: { key: ThronePedestalTooltipKey; d2: number } | null = null;
 
     for (const slot of slots) {
@@ -823,7 +897,7 @@ function ThronePrepPedestalTooltips({
       const dx = playerPos.x - slot.x;
       const dz = playerPos.z - slot.z;
       const d2 = dx * dx + dz * dz;
-      if (d2 <= interactRadiusSq && (!nearest || d2 < nearest.d2)) {
+      if (d2 <= slot.interactRadiusSq && (!nearest || d2 < nearest.d2)) {
         nearest = { key: slot.key, d2 };
       }
     }
@@ -858,7 +932,9 @@ function ThronePrepPedestalTooltips({
               ? resolvePedestalWeaponAspect(slot.weapon, weaponAspectByWeapon)
               : getShowcaseWeaponAspect(slot.weapon, showcaseTick),
           )
-        : getThroneArchetypeTooltipData(slot.archetype);
+        : slot.kind === 'archetype'
+          ? getThroneArchetypeTooltipData(slot.archetype)
+          : { name: slot.name, description: '' };
     if (!tooltipData) {
       if (lastPublishedTooltipRef.current !== null) {
         lastPublishedTooltipRef.current = null;
@@ -871,7 +947,9 @@ function ThronePrepPedestalTooltips({
     if (!symbolGroup || size.width <= 0 || size.height <= 0) return;
 
     symbolGroup.getWorldPosition(_thronePedestalProjectScratch);
-    _thronePedestalProjectScratch.add(THRONE_PEDESTAL_TOOLTIP_WORLD_OFFSET);
+    if (slot.usePedestalOffset) {
+      _thronePedestalProjectScratch.add(THRONE_PEDESTAL_TOOLTIP_WORLD_OFFSET);
+    }
     _thronePedestalProjectScratch.project(camera);
 
     const x = (_thronePedestalProjectScratch.x * 0.5 + 0.5) * size.width;
@@ -913,12 +991,14 @@ function ThronePrepSelectionPedestals({
   selectedArchetype = 'NONE',
   weaponAspectByWeapon,
   showcaseTick = 0,
+  voidPortalOpen = false,
 }: {
   playerPositionRef: React.MutableRefObject<Vector3>;
   equippedWeapon?: WeaponType;
   selectedArchetype?: Archetype;
   weaponAspectByWeapon?: WeaponAspectByWeapon;
   showcaseTick?: number;
+  voidPortalOpen?: boolean;
 }) {
   const symbolRefs = useRef<Partial<Record<ThronePedestalTooltipKey, Group | null>>>({});
   const [hoveredKey, setHoveredKey] = useState<ThronePedestalTooltipKey | null>(null);
@@ -935,6 +1015,7 @@ function ThronePrepSelectionPedestals({
         equippedWeapon={equippedWeapon}
         weaponAspectByWeapon={weaponAspectByWeapon}
         showcaseTick={showcaseTick}
+        voidPortalOpen={voidPortalOpen}
         symbolRefs={symbolRefs}
         hoveredKey={hoveredKey}
       />
@@ -949,6 +1030,17 @@ function ThronePrepSelectionPedestals({
         symbolRefs={symbolRefs}
         onHoverChange={handleHoverChange}
       />
+      {voidPortalOpen
+        ? THRONE_VOID_PORTAL_TOOLTIP_DEFS.map((def) => (
+            <group
+              key={def.key}
+              position={[def.x, def.y, def.z]}
+              ref={(node) => {
+                symbolRefs.current[def.key] = node;
+              }}
+            />
+          ))
+        : null}
     </>
   );
 }
@@ -1566,6 +1658,7 @@ function ThroneRoom({
                 selectedArchetype={selectedArchetype}
                 weaponAspectByWeapon={weaponAspectByWeapon}
                 showcaseTick={showcaseTick}
+                voidPortalOpen={voidPortalOpen}
               />
             ) : null}
             <VoidPortal

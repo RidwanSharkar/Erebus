@@ -3064,6 +3064,30 @@ function HomeContent() {
                 visitIndex,
                 coopCombatArenaEnterSeq,
               );
+              if (roomKind === 'explore') {
+                const seq = coopCombatArenaEnterSeq;
+                const fire = GUIDE_ANNOUNCEMENTS.buildFire;
+                const wood = GUIDE_ANNOUNCEMENTS.chopTrees;
+                const hunger = GUIDE_ANNOUNCEMENTS.eatMeatAtFire;
+                enqueueAnnouncementAfter(
+                  ROOM_TITLE_ANNOUNCEMENT_MS,
+                  fire.title,
+                  fire.color,
+                  `explore-fire-${seq}`,
+                );
+                enqueueAnnouncementAfter(
+                  ROOM_TITLE_ANNOUNCEMENT_MS * 2,
+                  wood.title,
+                  wood.color,
+                  `explore-wood-${seq}`,
+                );
+                enqueueAnnouncementAfter(
+                  ROOM_TITLE_ANNOUNCEMENT_MS * 3,
+                  hunger.title,
+                  hunger.color,
+                  `explore-hunger-${seq}`,
+                );
+              }
             }
           }}
         />

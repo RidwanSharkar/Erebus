@@ -1,16 +1,25 @@
 'use client';
 
-import React, { Suspense, useEffect, useLayoutEffect, useMemo } from 'react';
+import React, { Suspense, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Clone, useGLTF } from '@react-three/drei';
-import type { Group, Mesh, Object3D } from 'three';
+import type { BufferGeometry, Group, Mesh, Object3D } from 'three';
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import {
   applySelfIllumination,
   disposeClonedSkeletons,
   useDisposeClonedMaterials,
 } from '@/utils/disposeObject3D';
-import { DoubleSide, Material } from '@/utils/three-exports';
+import {
+  DoubleSide,
+  FrontSide,
+  InstancedMesh,
+  Material,
+  Matrix4,
+  Quaternion,
+  Vector3,
+} from '@/utils/three-exports';
 import { prepareDecorScene } from './FloatingTrinketMesh';
+import { prepareNaturePropScene } from './ThroneNatureProps';
 import {
   FAE_REALM_DECOR_GROUND_Y,
   FAE_REALM_DECOR_LAYOUT,
@@ -35,11 +44,61 @@ export function preloadFaeRealmDecor(
   }
 }
 
+const FOLIAGE_ALPHA = 0.45;
+
+const UP = new Vector3(0, 1, 0);
+const _mat = new Matrix4();
+const _q = new Quaternion();
+const _s = new Vector3();
+const _p = new Vector3();
+
 function configureCutoutMaterial(mat: Material): Material {
   mat.alphaTest = 0.5;
   mat.side = DoubleSide;
   mat.transparent = false;
   return mat;
+}
+
+function isFoliageMaterial(mat: Material): boolean {
+  const name = ((mat as Material & { name?: string }).name || '').toLowerCase();
+  return /leaf|leaves|pine|branch|vine|needle/i.test(name);
+}
+
+function configureTreeFoliage(mat: Material): void {
+  const m = mat as Material & {
+    transparent?: boolean;
+    alphaTest?: number;
+    depthWrite?: boolean;
+    side?: number;
+  };
+  if (!isFoliageMaterial(mat)) return;
+  m.transparent = false;
+  m.alphaTest = Math.max(m.alphaTest ?? 0, FOLIAGE_ALPHA);
+  m.depthWrite = true;
+  m.side = FrontSide;
+  m.needsUpdate = true;
+}
+
+function extractInstancedMeshSources(scene: Object3D): {
+  geometry: BufferGeometry;
+  material: Material;
+}[] {
+  const cloned = scene.clone(true);
+  prepareNaturePropScene(cloned);
+  cloned.updateWorldMatrix(true, true);
+  const out: { geometry: BufferGeometry; material: Material }[] = [];
+  cloned.traverse((child) => {
+    const mesh = child as Mesh;
+    if (!mesh.isMesh || !mesh.geometry) return;
+    const geo = mesh.geometry.clone();
+    geo.applyMatrix4(mesh.matrixWorld);
+    const raw = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+    if (!raw) return;
+    const material = (raw as Material).clone();
+    configureTreeFoliage(material);
+    out.push({ geometry: geo, material });
+  });
+  return out;
 }
 
 function prepareNumberedPylonScene(scene: Object3D): Object3D {
@@ -97,6 +156,79 @@ function SkinnedDecorInstance({
     };
   }, [cloned]);
   return <primitive object={cloned} position={position} rotation={rotation} scale={scale} />;
+}
+
+/** Explore-style InstancedMesh for static deadtree.glb (no shadow, baked geo). */
+function InstancedDecorBatch({
+  model,
+  defs,
+}: {
+  model: FaeRealmDecorModel;
+  defs: readonly FaeRealmDecorDef[];
+}) {
+  const url = faeRealmDecorGlbUrl(model);
+  const { scene } = useGLTF(url);
+  const meta = FAE_REALM_DECOR_MODEL_META[model];
+  const sources = useMemo(() => extractInstancedMeshSources(scene), [scene]);
+  const meshRefs = useRef<(InstancedMesh | null)[]>([]);
+  const pool = Math.max(1, defs.length);
+
+  const writeMatrices = () => {
+    const n = defs.length;
+    for (const mesh of meshRefs.current) {
+      if (!mesh) continue;
+      for (let i = 0; i < n; i++) {
+        const def = defs[i]!;
+        const s = meta.defaultScale * (def.scale ?? 1);
+        _q.setFromAxisAngle(UP, def.rotationY ?? 0);
+        _s.set(s, s, s);
+        _p.set(
+          def.position[0],
+          FAE_REALM_DECOR_GROUND_Y + meta.groundY * s + def.position[1],
+          def.position[2],
+        );
+        _mat.compose(_p, _q, _s);
+        mesh.setMatrixAt(i, _mat);
+      }
+      mesh.count = n;
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.computeBoundingSphere();
+    }
+  };
+
+  useLayoutEffect(() => {
+    if (sources.length === 0) return;
+    writeMatrices();
+  });
+
+  useEffect(() => {
+    return () => {
+      for (const src of sources) {
+        src.geometry.dispose();
+        src.material.dispose();
+      }
+    };
+  }, [sources]);
+
+  if (sources.length === 0) return null;
+
+  return (
+    <group name={`fae-instanced-${model}`}>
+      {sources.map((src, i) => (
+        <instancedMesh
+          key={`${url}-${i}`}
+          ref={(mesh) => {
+            meshRefs.current[i] = mesh;
+            if (mesh) writeMatrices();
+          }}
+          args={[src.geometry, src.material, pool]}
+          frustumCulled
+          castShadow={false}
+          receiveShadow={false}
+        />
+      ))}
+    </group>
+  );
 }
 
 function DecorModelBatch({
@@ -174,14 +306,18 @@ function FaeRealmDecorInner({
 
   return (
     <group name="fae-realm-decor">
-      {Array.from(byModel.entries()).map(([model, defs]) => (
-        <DecorModelBatch key={model} model={model} defs={defs} />
-      ))}
+      {Array.from(byModel.entries()).map(([model, defs]) => {
+        const meta = FAE_REALM_DECOR_MODEL_META[model];
+        if (meta.instanced) {
+          return <InstancedDecorBatch key={model} model={model} defs={defs} />;
+        }
+        return <DecorModelBatch key={model} model={model} defs={defs} />;
+      })}
     </group>
   );
 }
 
-/** GIANTSPINE, pinkTree, barkRoot, and numbered pylons for the Fae Realm hex. */
+/** GIANTSPINE, deadtree (instanced), and other Fae Realm hex décor. */
 function FaeRealmDecor({
   layout = FAE_REALM_DECOR_LAYOUT,
 }: {

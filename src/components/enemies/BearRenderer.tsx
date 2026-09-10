@@ -102,9 +102,8 @@ function BearRenderer({
 
   useEffect(() => {
     const dist = targetPosition.current.distanceTo(positionScratch.set(position.x, position.y, position.z));
-    const locked = isAttackingRef.current;
-    if (!locked) targetPosition.current.set(position.x, position.y, position.z);
-    if (dist > 5.0 && groupRef.current && !locked) {
+    targetPosition.current.set(position.x, position.y, position.z);
+    if (dist > 5.0 && groupRef.current) {
       groupRef.current.position.set(position.x, position.y, position.z);
     }
   }, [position.x, position.y, position.z]);
@@ -181,14 +180,11 @@ function BearRenderer({
     syncEnemyHealthBarFillFromRef(hpFillRef, enemiesRef, id, health, maxHealth);
     syncEnemyHealthBarNumericTextFromRef(hpTextRef, enemiesRef, id, health, maxHealth);
 
-    const locked = isAttackingRef.current;
-    let dist = 0;
-    if (!locked) {
-      dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
-      if (dist > 5.0) {
-        group.position.copy(targetPosition.current);
-      }
+    const dist = syncEnemyTransformFromRef(id, enemyTransformsRef, targetPosition.current, targetRotation);
+    if (dist > 5.0) {
+      group.position.copy(targetPosition.current);
     }
+    const locked = isAttackingRef.current;
 
     updateEnemyWalkStateFromMoveDist(
       dist,

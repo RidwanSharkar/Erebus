@@ -838,6 +838,12 @@ export class ProjectileSystem extends System {
     // Mark target as hit
     projectile.addHitTarget(target.id);
 
+    // Warlord Poison Dart — restore 1 dash on first refund-target hit (once per dart)
+    if (projectile.projectileType === 'poison_dart') {
+      const cs = (window as any).controlSystemRef?.current;
+      cs?.tryPoisonDartDashRestoreOnHit?.(projectile, target);
+    }
+
     // Deal damage through combat system if available, otherwise directly
     if (this.combatSystem) {
       // Check projectile type for special damage handling

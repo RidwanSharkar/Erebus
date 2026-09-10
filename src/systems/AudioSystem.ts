@@ -664,7 +664,7 @@ export class AudioSystem extends System {
   }
 
   public playSabresShatterSound(position: Vector3, volumeScale = 1) {
-    return this.playWeaponSound('sabres_shatter', position, { volume: 1.05 * volumeScale });
+    return this.playWeaponSound('sabres_shatter', position, { volume: 1.25 * volumeScale });
   }
 
   /** Sabres Q/E impact — layered connect tick (separate from ability wind-up / backstab cue). */

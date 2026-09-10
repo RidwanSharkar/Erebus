@@ -359,7 +359,10 @@ import {
 } from '@/components/enemies/HuntersMarkManager';
 import { isImmuneToPlayerStunAndFreeze } from '@/utils/enemyStatusImmunity';
 import { isCoopPlayerAllyEntity } from '@/utils/coopAllyTargeting';
-import { isWeaponHittableEntity } from '@/utils/destructibleEnvironmentTargeting';
+import {
+  isPoisonDartDashRefundTarget,
+  isWeaponHittableEntity,
+} from '@/utils/destructibleEnvironmentTargeting';
 import { triggerGlobalCobraShot } from '@/components/projectiles/CobraShotManager';
 import { triggerGlobalViperSting } from '@/components/projectiles/ViperStingManager';
 import { triggerGlobalRejuvenatingShot } from '@/components/projectiles/RejuvenatingShotManager';
@@ -1298,13 +1301,19 @@ export class ControlSystem extends System {
     ) {
       this.handleMovementInput(playerMovement);
     } else {
-      playerMovement.isSprinting = false;
+      // Keep sprint flag during dash if free-sprint window is active (timer started at cast).
+      if (playerMovement.isDashing && playerMovement.isDashSprintActive(crossentropyWallNowSec)) {
+        playerMovement.isSprinting = true;
+      } else {
+        playerMovement.isSprinting = false;
+      }
       this.clearMovementControlState();
     }
 
     const playerEnergy = this.playerEntity.getComponent(Energy);
     if (playerEnergy) {
-      if (playerMovement.isSprinting) {
+      const dashSprintActive = playerMovement.isDashSprintActive(crossentropyWallNowSec);
+      if (playerMovement.isSprinting && !dashSprintActive) {
         playerEnergy.spend(playerEnergy.drainRate * deltaTime);
         if (!playerEnergy.canSprint()) {
           playerMovement.isSprinting = false;
@@ -1407,6 +1416,20 @@ export class ControlSystem extends System {
     return !backward;
   }
 
+  /** Free sprint duration from dash cast (seconds), by equipped weapon. */
+  private getPostDashSprintDurationSec(): number {
+    switch (this.currentWeapon) {
+      case WeaponType.SABRES:
+        return 1.95;
+      case WeaponType.RUNEBLADE:
+        return 1.5;
+      case WeaponType.SCYTHE:
+      case WeaponType.BOW:
+      default:
+        return 1.25;
+    }
+  }
+
   private handleMovementInput(movement: Movement): void {
     if (!this.playerEntity) return;
 
@@ -1421,7 +1444,19 @@ export class ControlSystem extends System {
     const { inputDirection, hasInput } = this.getMovementInputDirection();
     const desiredSprint = !movement.isMounted && this.isSprintInputActive(hasInput);
     const energy = this.playerEntity?.getComponent(Energy);
-    movement.isSprinting = desiredSprint && (!energy || energy.canSprint());
+    const rogueSprint = desiredSprint && (!energy || energy.canSprint());
+
+    // Post-dash free sprint: same speed/anim as Rogue sprint, no Shift/Rogue/energy.
+    const nowSec = Date.now() / 1000;
+    const backward =
+      this.inputManager.isKeyPressed('s') || this.inputManager.isKeyPressed('arrowdown');
+    const dashSprint =
+      !movement.isMounted &&
+      hasInput &&
+      !backward &&
+      movement.isDashSprintActive(nowSec);
+
+    movement.isSprinting = rogueSprint || dashSprint;
 
     // Convert input to world space based on camera orientation
     if (hasInput) {
@@ -2807,8 +2842,11 @@ export class ControlSystem extends System {
 
     const playerMovement = this.playerEntity?.getComponent(Movement);
     const isSprinting = playerMovement?.isSprinting ?? false;
+    // Rogue Shift-sprint blocks LMB/Q/E; post-dash free sprint does not.
+    const blockAttacksForSprint =
+      isSprinting && !(playerMovement?.isDashSprintActive() ?? false);
 
-    if (!isSprinting && this.currentWeapon !== WeaponType.NONE) {
+    if (!blockAttacksForSprint && this.currentWeapon !== WeaponType.NONE) {
     if (this.currentWeapon === WeaponType.BOW) {
       this.handleBowInput(playerTransform);
     } else if (this.currentWeapon === WeaponType.SCYTHE) {
@@ -2825,7 +2863,7 @@ export class ControlSystem extends System {
     }
 
     // Dispatch Q/E/R to the player's chosen ability loadout (cross-weapon)
-    this.handleLoadoutAbilityKeys(playerTransform, isSprinting);
+    this.handleLoadoutAbilityKeys(playerTransform, blockAttacksForSprint);
 
     // Update ongoing ability states regardless of current weapon
     this.updateCrossWeaponStates(playerTransform, Date.now() / 1000);
@@ -7971,6 +8009,21 @@ export class ControlSystem extends System {
     }
   }
 
+  /**
+   * Warlord Poison Dart — on first hit of a refund target (enemy / mushroom / spine / env prop),
+   * restore 1 dash charge. Once-per-dart even if restore fails (charges already full).
+   */
+  public tryPoisonDartDashRestoreOnHit(projectile: Projectile, target: Entity): void {
+    if (!this.playerEntity || !isSabresWarlordAspect(this.weaponAspect)) return;
+    if (projectile.projectileType !== 'poison_dart') return;
+    if (projectile.owner !== this.playerEntity.id) return;
+    if (projectile.poisonDartDashRestored) return;
+    if (!isPoisonDartDashRefundTarget(target)) return;
+
+    projectile.poisonDartDashRestored = true;
+    this.playerEntity.getComponent(Movement)?.restoreDashCharge();
+  }
+
   private applyBloodroseToDamage(baseDamage: number): number {
     if (!this.hasOwnedItem(RAZED_DIAMOND) || !this.playerEntity) return baseDamage;
     const health = this.playerEntity.getComponent(Health);
@@ -8801,6 +8854,10 @@ export class ControlSystem extends System {
             if (!bloodOrbDash) {
               this.tryManaShieldOnDashChargeExpended(1);
             }
+            // Free sprint from dash cast: deadline = now + weapon duration.
+            movement.grantDashSprint(
+              currentTime + this.getPostDashSprintDurationSec(),
+            );
             this.audioSystem?.playUIDashSound();
             this.tryTriggerRoomBoomDashTalent(key, movement, transform.position, worldDirection);
             this.tryQueueDraconicDashLocustVolley(transform, worldDirection, currentTime);
