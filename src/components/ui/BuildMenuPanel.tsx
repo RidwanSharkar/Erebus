@@ -233,12 +233,17 @@ export default function BuildMenuPanel({
             onLeave: handleLeave,
           };
           if (kind !== 'barracks') return [buildingSlot];
+          const towerCostParts: string[] = [
+            `${watchWoodCost} wood`,
+            `${mageDef.woodCost} wood · ${mageDef.flowCost ?? 0} flow`,
+            `${siegeDef.woodCost} wood · ${siegeDef.stoneCost ?? 0} stone`,
+          ];
           const towerSlot: BuildSlotProps = {
             hotkey: EXPLORE_TOWER_CATEGORY_HOTKEY,
             label: 'Tower',
             iconId: 'tower-category',
             description: joinTooltipLines([
-              `${watchWoodCost} / ${mageDef.woodCost} / ${siegeDef.woodCost} wood`,
+              towerCostParts.join(' / '),
               towerSelectable ? 'Press H to choose a tower' : 'Cannot afford any tower',
             ]),
             selectable: towerSelectable,

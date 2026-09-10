@@ -47,6 +47,7 @@ export const GUIDE_ANNOUNCEMENTS = {
   buildFire: { title: "PRESS 'B' TO BUILD A FIRE", color: '#eab308' },
   chopTrees: { title: 'CHOP DOWN TREES FOR WOOD', color: '#eab308' },
   eatMeatAtFire: { title: 'EAT MEAT AT A FIRE TO CURE HUNGER', color: '#eab308' },
+  hungerDamage: { title: 'YOU ARE HUNGRY. CREATE A FIRE AND COOK MEAT', color: '#eab308' },
 } as const;
 
 export const LEVEL_UP_ANNOUNCEMENT = { title: 'LEVEL UP', color: '#eab308' } as const;

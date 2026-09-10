@@ -13,7 +13,7 @@ const CATHEDRAL_HULL_RADIUS = 2.0;
 const BEAST_TEMPLE_HULL_RADIUS = SHRINE_HULL_RADIUS;
 const ALTAR_OF_WAR_HULL_RADIUS = SHIELD_BATTERY_HULL_RADIUS;
 const EXPLORE_SHIELD_BATTERY_HEAL_RANGE = 5;
-const EXPLORE_SHIELD_BATTERY_HEAL_PER_SEC = 1;
+const EXPLORE_SHIELD_BATTERY_HEAL_PER_SEC = 2;
 const EXPLORE_CATHEDRAL_HP_BONUS = 250;
 const EXPLORE_CATHEDRAL_GOLD = 4;
 const EXPLORE_CATHEDRAL_GOLD_INTERVAL_MS = 5000;
@@ -25,7 +25,7 @@ const EXPLORE_BUILDING_DEFS = Object.freeze({
     label: 'Fire Pit',
     hotkey: 'F',
     woodCost: 10,
-    maxHp: 50,
+    maxHp: 80,
     hullRadius: FIRE_PIT_HULL_RADIUS,
     enabled: true,
   }),
@@ -33,7 +33,7 @@ const EXPLORE_BUILDING_DEFS = Object.freeze({
     kind: 'barracks',
     label: 'Spirit Lounge',
     hotkey: 'G',
-    woodCost: 160,
+    woodCost: 90,
     maxHp: 500,
     hullRadius: RESEARCH_STATION_HULL_RADIUS,
     enabled: true,
@@ -42,7 +42,7 @@ const EXPLORE_BUILDING_DEFS = Object.freeze({
     kind: 'watch-tower',
     label: 'Watch Tower',
     hotkey: '1',
-    woodCost: 100,
+    woodCost: 80,
     maxHp: 250,
     hullRadius: EXPLORE_TOWER_HULL_RADIUS,
     enabled: true,
@@ -51,8 +51,8 @@ const EXPLORE_BUILDING_DEFS = Object.freeze({
     kind: 'tower',
     label: 'Mage Tower',
     hotkey: '2',
-    woodCost: 125,
-    flowCost: 5,
+    woodCost: 100,
+    flowCost: 4,
     maxHp: 500,
     hullRadius: EXPLORE_TOWER_HULL_RADIUS,
     enabled: true,
@@ -61,8 +61,8 @@ const EXPLORE_BUILDING_DEFS = Object.freeze({
     kind: 'siege-tower',
     label: 'Siege Tower',
     hotkey: '3',
-    woodCost: 100,
-    stoneCost: 100,
+    woodCost: 120,
+    stoneCost: 60,
     maxHp: 750,
     hullRadius: EXPLORE_TOWER_HULL_RADIUS,
     enabled: true,
@@ -71,8 +71,8 @@ const EXPLORE_BUILDING_DEFS = Object.freeze({
     kind: 'research-station',
     label: 'Research Station',
     hotkey: 'J',
-    woodCost: 150,
-    flowCost: 5,
+    woodCost: 90,
+    flowCost: 1,
     maxHp: 150,
     hullRadius: RESEARCH_STATION_HULL_RADIUS,
     enabled: true,
@@ -82,7 +82,7 @@ const EXPLORE_BUILDING_DEFS = Object.freeze({
     label: 'Shrine',
     hotkey: 'K',
     woodCost: 0,
-    stoneCost: 150,
+    stoneCost: 85,
     flowCost: 10,
     maxHp: 300,
     hullRadius: SHRINE_HULL_RADIUS,
@@ -92,8 +92,8 @@ const EXPLORE_BUILDING_DEFS = Object.freeze({
     kind: 'obelisk',
     label: 'Obelisk',
     hotkey: 'L',
-    woodCost: 100,
-    stoneCost: 200,
+    woodCost: 125,
+    stoneCost: 100,
     maxHp: 400,
     hullRadius: OBELISK_HULL_RADIUS,
     enabled: true,
@@ -112,9 +112,9 @@ const EXPLORE_BUILDING_DEFS = Object.freeze({
     kind: 'cathedral',
     label: 'Cathedral',
     hotkey: 'N',
-    woodCost: 100,
-    stoneCost: 325,
-    flowCost: 15,
+    woodCost: 125,
+    stoneCost: 225,
+    flowCost: 10,
     maxHp: 1000,
     hullRadius: CATHEDRAL_HULL_RADIUS,
     enabled: true,
@@ -123,8 +123,8 @@ const EXPLORE_BUILDING_DEFS = Object.freeze({
     kind: 'beast-temple',
     label: 'Beast Temple',
     hotkey: 'O',
-    woodCost: 100,
-    stoneCost: 150,
+    woodCost: 85,
+    stoneCost: 85,
     maxHp: 600,
     hullRadius: BEAST_TEMPLE_HULL_RADIUS,
     enabled: true,
@@ -143,26 +143,26 @@ const EXPLORE_BUILDING_DEFS = Object.freeze({
 const EXPLORE_BARRACKS_ALLY_GOLD_COST = 50;
 const EXPLORE_BEAST_TEMPLE_UPGRADE_WOOD = 100;
 const EXPLORE_BEAST_TEMPLE_UPGRADE_GOLD = 25;
-const EXPLORE_SIEGE_GOLEM_STONE = 250;
+const EXPLORE_SIEGE_GOLEM_STONE = 125;
 const EXPLORE_SIEGE_GOLEM_GOLD = 100;
-const EXPLORE_SIEGE_WYRM_GOLD = 100;
-const EXPLORE_SIEGE_WYRM_MEAT = 15;
+const EXPLORE_SIEGE_WYRM_GOLD = 85;
+const EXPLORE_SIEGE_WYRM_MEAT = 5;
 const EXPLORE_BARRACKS_INTERACT_RADIUS = 3.5;
 const EXPLORE_BEAST_TEMPLE_INTERACT_RADIUS = 3.5;
 const EXPLORE_ALTAR_OF_WAR_INTERACT_RADIUS = 3.5;
 const EXPLORE_FIRE_PIT_INTERACT_RADIUS = 3.5;
-const EXPLORE_FIRE_PIT_HEAL_MEAT_COST = 5;
-const EXPLORE_FIRE_PIT_HEAL_SELF_HP = 80;
-const EXPLORE_MEAT_STACK_CAP = 20;
+const EXPLORE_FIRE_PIT_HEAL_MEAT_COST = 3;
+const EXPLORE_FIRE_PIT_HEAL_SELF_HP = 120;
+const EXPLORE_MEAT_STACK_CAP = 40;
 const EXPLORE_HUNGER_MAX = 100;
 const EXPLORE_HUNGER_GAIN_INTERVAL_MS = 5000;
 const EXPLORE_HUNGER_STARVE_DPS = 1;
-const EXPLORE_HUNGER_CRITICAL_AFTER_MS = 60000;
+const EXPLORE_HUNGER_CRITICAL_AFTER_MS = 110000;
 const EXPLORE_HUNGER_CRITICAL_DPS = 10;
 const EXPLORE_RESEARCH_INTERACT_RADIUS = 3.5;
 const EXPLORE_RESEARCH_FLOW_COST = 10;
 const EXPLORE_STONE_BREAKER_FLOW_COST = 5;
-const EXPLORE_GREATER_HARVEST_FLOW_COST = 15;
+const EXPLORE_GREATER_HARVEST_FLOW_COST = 10;
 const EXPLORE_SPIRIT_LINEAGE_MAX_RANK = 4;
 const EXPLORE_SPIRIT_LINEAGE_COSTS = Object.freeze([10, 15, 20, 25]);
 const EXPLORE_TOWER_EFFICIENCY_GOLD_COST = 100;

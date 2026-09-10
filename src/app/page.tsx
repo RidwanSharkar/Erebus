@@ -43,7 +43,12 @@ import CoopBossLootPickerModal from '../components/ui/CoopBossLootPickerModal';
 import CoopPetCompanionUpgradeModal from '../components/ui/CoopPetCompanionUpgradeModal';
 import type { PetCompanionUpgradeId } from '@/utils/petCompanionUpgrades';
 import { getPetCompanionUpgradeOptionsForKind } from '@/utils/petCompanionUpgrades';
-import { getExploreAllyCap, isExplorePurchasedAllyType, type ExploreCathedralOfferEntry } from '@/utils/exploreBuildings';
+import {
+  getExploreAllyCap,
+  isExplorePurchasedAllyType,
+  EXPLORE_HUNGER_MAX,
+  type ExploreCathedralOfferEntry,
+} from '@/utils/exploreBuildings';
 import DefeatRetryDialog from '../components/ui/DefeatRetryDialog';
 import {
   applyTalentIdToLoadout,
@@ -640,6 +645,7 @@ function HomeContent() {
   const [playerMeat, setPlayerMeat] = useState(0);
   const [playerHunger, setPlayerHunger] = useState(0);
   const [playerHungerCritical, setPlayerHungerCritical] = useState(false);
+  const hungerDamageAnnouncedRef = useRef(false);
   const [playerFate, setPlayerFate] = useState(STARTING_FATE);
   const [showMerchantUI, setShowMerchantUI] = useState(false);
   const [showRulesPanel, setShowRulesPanel] = useState(false);
@@ -2278,12 +2284,22 @@ function HomeContent() {
   const handleHungerUpdate = useCallback((hunger: number, starvingCritical: boolean) => {
     setPlayerHunger(hunger);
     setPlayerHungerCritical(starvingCritical);
-  }, []);
+    if (hunger >= EXPLORE_HUNGER_MAX) {
+      if (!hungerDamageAnnouncedRef.current) {
+        hungerDamageAnnouncedRef.current = true;
+        const { title, color } = GUIDE_ANNOUNCEMENTS.hungerDamage;
+        enqueueAnnouncement(title, color, 'hunger-damage');
+      }
+    } else {
+      hungerDamageAnnouncedRef.current = false;
+    }
+  }, [enqueueAnnouncement]);
 
   useEffect(() => {
     if (coopCurrentRoomKind !== 'explore') {
       setPlayerHunger(0);
       setPlayerHungerCritical(false);
+      hungerDamageAnnouncedRef.current = false;
     }
   }, [coopCurrentRoomKind]);
 

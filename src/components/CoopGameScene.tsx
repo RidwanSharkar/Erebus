@@ -1762,6 +1762,8 @@ interface CoopGameSceneProps {
 }
 
 const COOP_INTERACT_HINT_TEXT = "Press 'x' to interact";
+/** Passive idle dismiss for the B build menu / tower pick overlay. */
+const EXPLORE_BUILD_MENU_IDLE_MS = 7000;
 
 /** X / click pickup radius for gold and boss artifact drops (XZ). */
 const COOP_GROUND_ITEM_PICKUP_RADIUS = 6;
@@ -16366,7 +16368,7 @@ export function CoopGameScene({
 
         if (buildModeRef.current === 'menu' || buildModeRef.current === 'tower-pick') {
           const shownAt = buildMenuShownAtRef.current;
-          if (shownAt > 0 && Date.now() - shownAt >= 5000) {
+          if (shownAt > 0 && Date.now() - shownAt >= EXPLORE_BUILD_MENU_IDLE_MS) {
             closeBuildMenu();
           }
         }
