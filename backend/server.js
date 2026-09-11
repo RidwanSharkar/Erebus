@@ -722,6 +722,20 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('coop-reroll-sunken-loot', (data) => {
+    const { roomId } = data || {};
+    if (!roomId || !gameRooms.has(roomId)) return;
+
+    const room = gameRooms.get(roomId);
+    if (!room.getPlayer(socket.id)) return;
+    if (typeof room.rerollSunkenTempleLoot !== 'function') return;
+
+    const ok = room.rerollSunkenTempleLoot(socket.id);
+    if (ok) {
+      socket.emit('coop-reroll-sunken-loot-success', { roomId, timestamp: Date.now() });
+    }
+  });
+
   socket.on('coop-choose-eternity-pet-upgrade', (data) => {
     const { roomId, upgradeId } = data || {};
     if (!roomId || !gameRooms.has(roomId)) return;
@@ -943,7 +957,7 @@ function emitRoomJoined(socket, room, roomId, gameMode, extra = {}) {
     reclaimedPlayerState: extra.reclaimed && typeof room.serializeReclaimedPlayerState === 'function'
       ? room.serializeReclaimedPlayerState(reclaimedPlayer)
       : null,
-    ...(typeof room.getCoopSessionSnapshotFields === 'function' ? room.getCoopSessionSnapshotFields() : {
+    ...(typeof room.getCoopSessionSnapshotFields === 'function' ? room.getCoopSessionSnapshotFields(socket.id) : {
       ...(typeof room._getDeepSanctumPayloadFields === 'function' ? room._getDeepSanctumPayloadFields() : {}),
       ...(typeof room._getEdenPayloadFields === 'function' ? room._getEdenPayloadFields() : {}),
       ...(typeof room._getCoopSkyPayloadFields === 'function' ? room._getCoopSkyPayloadFields() : {}),

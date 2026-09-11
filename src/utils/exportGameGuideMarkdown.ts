@@ -33,6 +33,7 @@ import { ALLY_CHOICE_CARDS } from '@/utils/coopAllyChoice';
 import {
   STARTING_FATE,
   BOON_REROLL_FATE_COST,
+  SUNKEN_LOOT_REROLL_FATE_COST,
   TRIAL_ROOM_PEDESTAL_GOLD,
   STAT_ROOM_PEDESTAL_POINTS,
   INTRO_ROOM_GOLD_REWARDS,
@@ -386,7 +387,7 @@ function sectionRunProgression(): string {
     '',
     '#### Mid-run Sequences',
     '',
-    '- **Sunken Temple I–IV** — unlocks after Boss 1 (Hate / Twin Emperors). Fixed underwater rooms; ends with free boss-loot picks, fountain, then return to the main loop.',
+    `- **Sunken Temple I–IV** — unlocks after Boss 1 (Hate / Twin Emperors). Fixed underwater rooms; ends with free boss-loot picks (Architect's Gift; personal reroll for **${SUNKEN_LOOT_REROLL_FATE_COST} Fate**), fountain, then return to the main loop.`,
     `- Sunken gold rewards: ${SUNKEN_ROOM_GOLD_REWARDS.filter((n) => n > 0).join(' / ')}`,
     '- **Eternity\'s Palace I–V** — later mid-run sequence with its own gold curve and loot/fountain checkpoints.',
     `- Eternity gold rewards: ${ETERNITY_ROOM_GOLD_REWARDS.filter((n) => n > 0).join(' / ')}`,

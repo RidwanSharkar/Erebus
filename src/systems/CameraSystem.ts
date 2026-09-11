@@ -13,6 +13,9 @@ export interface CameraConfig {
   smoothing: number;
   minPolarAngle: number;
   maxPolarAngle: number;
+  /** Closest orbit radius (max zoom-in). */
+  minDistance: number;
+  /** Farthest orbit radius (max zoom-out). */
   maxDistance: number;
 }
 
@@ -30,6 +33,7 @@ export class CameraSystem extends System {
     smoothing: 0.1,
     minPolarAngle: Math.PI / 3.5, // Prevent camera from going above horizon
     maxPolarAngle: Math.PI / 2.5, // Prevent camera from looking underneath the map
+    minDistance: 3.5,
     maxDistance: 12.5,
   };
 
@@ -250,7 +254,11 @@ export class CameraSystem extends System {
     if (!this.wheelListenerAdded) {
       this.onWheelListener = ({ deltaY }) => {
         this.spherical.radius += deltaY * 0.01;
-        this.spherical.radius = MathUtils.clamp(this.spherical.radius, 2, this.config.maxDistance);
+        this.spherical.radius = MathUtils.clamp(
+          this.spherical.radius,
+          this.config.minDistance,
+          this.config.maxDistance,
+        );
       };
       this.inputManager.on('wheel', this.onWheelListener);
       this.wheelListenerAdded = true;
@@ -318,7 +326,11 @@ export class CameraSystem extends System {
   }
 
   public setDistance(distance: number): void {
-    this.spherical.radius = MathUtils.clamp(distance, 2, this.config.maxDistance);
+    this.spherical.radius = MathUtils.clamp(
+      distance,
+      this.config.minDistance,
+      this.config.maxDistance,
+    );
   }
 
   public getHorizontalAngle(): number {

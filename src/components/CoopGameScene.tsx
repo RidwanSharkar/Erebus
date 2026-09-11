@@ -862,6 +862,11 @@ function DevPerformanceCollector() {
     const calcStats = calculationCache.getStats();
 
     const zoomLod = getExploreZoomLod();
+    const dpr = gl.getPixelRatio();
+    const canvas = gl.domElement;
+    // Prefer actual drawing-buffer size; fall back to CSS × dpr.
+    const drawWidth = canvas.width || Math.round(canvas.clientWidth * dpr);
+    const drawHeight = canvas.height || Math.round(canvas.clientHeight * dpr);
     devPerformanceStore.publish({
       drawCalls: info.render.calls,
       triangles: info.render.triangles,
@@ -870,7 +875,9 @@ function DevPerformanceCollector() {
       geometries: info.memory.geometries,
       textures: info.memory.textures,
       programs: info.programs?.length ?? 0,
-      dpr: gl.getPixelRatio(),
+      dpr,
+      drawWidth,
+      drawHeight,
       exploreZoomRadius: zoomLod.radius,
       exploreZoomClose: zoomLod.close,
       exploreZoomVeryClose: zoomLod.veryClose,
@@ -934,8 +941,8 @@ function ShaderWarmup() {
     <group position={warmupPos}>
       {/* Player/ally death VFX — the confirmed first-compile hitch on ally death. */}
       <DeathEffect position={warmupPos} duration={600000} onComplete={noop} />
-      {/* troika text shader — every enemy health bar mounts a <Text>; compiling its
-          derived shader here means the first enemy spawn doesn't stall on it. */}
+      {/* Canvas HP label shader path — enemy bars no longer use Troika; keep a tiny
+          Text warmup for any remaining UI Troika mounts (tooltips / rare labels). */}
       <Text fontSize={0.16} color="#ccffcc" anchorX="center" anchorY="middle" fontWeight="bold">
         {'\u{1F9DF} 0/0'}
       </Text>

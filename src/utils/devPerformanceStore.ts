@@ -15,6 +15,9 @@ export interface DevPerformanceSnapshot {
   textures: number;
   programs: number;
   dpr: number;
+  /** WebGL drawing-buffer size (css × dpr), rounded. */
+  drawWidth: number;
+  drawHeight: number;
   /** Explore orbit radius from exploreZoomLod (null outside explore / unset). */
   exploreZoomRadius: number | null;
   exploreZoomClose: boolean;
@@ -72,6 +75,8 @@ const EMPTY_SNAPSHOT: DevPerformanceSnapshot = {
   textures: 0,
   programs: 0,
   dpr: 1,
+  drawWidth: 0,
+  drawHeight: 0,
   exploreZoomRadius: null,
   exploreZoomClose: false,
   exploreZoomVeryClose: false,

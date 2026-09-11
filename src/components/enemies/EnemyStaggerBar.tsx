@@ -4,7 +4,12 @@ import { useLayoutEffect, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import type { Mesh } from 'three';
 import { STAGGER_MAX } from '@/utils/talents';
-import { ENEMY_HP_BAR_WIDTH } from '@/utils/enemyHealthBar';
+import {
+  ENEMY_HP_BAR_FILL_Z,
+  ENEMY_HP_BAR_RENDER_ORDER_STAGGER_BG,
+  ENEMY_HP_BAR_RENDER_ORDER_STAGGER_FILL,
+  ENEMY_HP_BAR_WIDTH,
+} from '@/utils/enemyHealthBar';
 import { SharedMesh } from '@/utils/SharedMesh';
 import { MeshBasicMaterial, PlaneGeometry } from 'three';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
@@ -19,15 +24,24 @@ STAGGER_BAR_GEO.userData.shared = true;
 
 const STAGGER_BG_MAT = new MeshBasicMaterial({
   color: '#0f172a',
-  opacity: 0.88,
-  transparent: true,
+  opacity: 1,
+  transparent: false,
+  depthWrite: false,
+  depthTest: true,
+  toneMapped: false,
 });
 STAGGER_BG_MAT.userData.shared = true;
 
 const STAGGER_FILL_MAT = new MeshBasicMaterial({
   color: '#38bdf8',
-  opacity: 0.95,
-  transparent: true,
+  opacity: 1,
+  transparent: false,
+  depthWrite: false,
+  depthTest: true,
+  toneMapped: false,
+  polygonOffset: true,
+  polygonOffsetFactor: -1,
+  polygonOffsetUnits: -1,
 });
 STAGGER_FILL_MAT.userData.shared = true;
 
@@ -72,14 +86,19 @@ export default function EnemyStaggerBar({
 
   return (
     <>
-      <SharedMesh position={[0, y, 0]} scale={[width, h, 1]}>
+      <SharedMesh
+        position={[0, y, 0]}
+        scale={[width, h, 1]}
+        renderOrder={ENEMY_HP_BAR_RENDER_ORDER_STAGGER_BG}
+      >
         <primitive object={STAGGER_BAR_GEO} attach="geometry" />
         <primitive object={STAGGER_BG_MAT} attach="material" />
       </SharedMesh>
       <SharedMesh
         ref={fillRef}
-        position={[-width / 2, y, 0.001]}
+        position={[-width / 2, y, ENEMY_HP_BAR_FILL_Z]}
         scale={[0, fillH, 1]}
+        renderOrder={ENEMY_HP_BAR_RENDER_ORDER_STAGGER_FILL}
       >
         <primitive object={STAGGER_BAR_GEO} attach="geometry" />
         <primitive object={STAGGER_FILL_MAT} attach="material" />

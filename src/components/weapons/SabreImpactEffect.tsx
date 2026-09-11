@@ -9,6 +9,13 @@ import {
   Color,
   AdditiveBlending,
 } from 'three';
+import {
+  SABRE_IMPACT_BLADE_GEO,
+  SABRE_IMPACT_PINCH_GEO,
+  SABRE_IMPACT_RING_GEO,
+  SABRE_IMPACT_SPARK_GEO,
+} from '@/utils/sharedEnemyUiGeometry';
+import { SharedMesh } from '@/utils/SharedMesh';
 
 interface SabreImpactEffectProps {
   position: Vector3;
@@ -273,43 +280,64 @@ export default function SabreImpactEffect({
 
   return (
     <group position={[position.x, position.y, position.z]} rotation={[0, stabYaw, 0]}>
-      <mesh ref={ringRef} rotation={[-Math.PI / 2, 0, 0]} scale={[0.01, 0.01, 0.01]}>
-        <torusGeometry args={[1, 0.055, 8, 40]} />
-        <primitive object={ringMat} attach="material" />
-      </mesh>
+      <SharedMesh
+        ref={ringRef}
+        rotation={[-Math.PI / 2, 0, 0]}
+        scale={[0.01, 0.01, 0.01]}
+        geometry={SABRE_IMPACT_RING_GEO}
+        material={ringMat}
+      />
 
-      <mesh ref={pinchX1Ref} rotation={[0, Math.PI / 4, 0]}>
-        <planeGeometry args={[0.055, 0.48]} />
-        <primitive object={pinchMat} attach="material" />
-      </mesh>
-      <mesh ref={pinchX2Ref} rotation={[0, -Math.PI / 4, 0]}>
-        <planeGeometry args={[0.055, 0.48]} />
-        <primitive object={pinchMat} attach="material" />
-      </mesh>
+      <SharedMesh
+        ref={pinchX1Ref}
+        rotation={[0, Math.PI / 4, 0]}
+        geometry={SABRE_IMPACT_PINCH_GEO}
+        material={pinchMat}
+      />
+      <SharedMesh
+        ref={pinchX2Ref}
+        rotation={[0, -Math.PI / 4, 0]}
+        geometry={SABRE_IMPACT_PINCH_GEO}
+        material={pinchMat}
+      />
 
       {sparkParams.map((_, i) => (
-        <mesh key={i} ref={(el) => { sparkRefs.current[i] = el; }}>
-          <planeGeometry args={[1, 1]} />
-          <primitive object={sparkMats[i]} attach="material" />
-        </mesh>
+        <SharedMesh
+          key={i}
+          ref={(el) => { sparkRefs.current[i] = el; }}
+          geometry={SABRE_IMPACT_SPARK_GEO}
+          material={sparkMats[i]}
+        />
       ))}
 
-      <mesh ref={leftBladeRef} rotation={[0.15, 0, 0.35]} position={[-0.42, 0, 0]}>
-        <planeGeometry args={[0.095, 0.74]} />
-        <primitive object={leftMat} attach="material" />
-      </mesh>
-      <mesh ref={rightBladeRef} rotation={[0.15, 0, -0.35]} position={[0.42, 0, 0]}>
-        <planeGeometry args={[0.095, 0.74]} />
-        <primitive object={rightMat} attach="material" />
-      </mesh>
-      <mesh ref={leftGhostRef} rotation={[0.15, 0, 0.35]} position={[-0.42, 0, -0.045]}>
-        <planeGeometry args={[0.095, 0.74]} />
-        <primitive object={leftGhostMat} attach="material" />
-      </mesh>
-      <mesh ref={rightGhostRef} rotation={[0.15, 0, -0.35]} position={[0.42, 0, -0.045]}>
-        <planeGeometry args={[0.095, 0.74]} />
-        <primitive object={rightGhostMat} attach="material" />
-      </mesh>
+      <SharedMesh
+        ref={leftBladeRef}
+        rotation={[0.15, 0, 0.35]}
+        position={[-0.42, 0, 0]}
+        geometry={SABRE_IMPACT_BLADE_GEO}
+        material={leftMat}
+      />
+      <SharedMesh
+        ref={rightBladeRef}
+        rotation={[0.15, 0, -0.35]}
+        position={[0.42, 0, 0]}
+        geometry={SABRE_IMPACT_BLADE_GEO}
+        material={rightMat}
+      />
+      <SharedMesh
+        ref={leftGhostRef}
+        rotation={[0.15, 0, 0.35]}
+        position={[-0.42, 0, -0.045]}
+        geometry={SABRE_IMPACT_BLADE_GEO}
+        material={leftGhostMat}
+      />
+      <SharedMesh
+        ref={rightGhostRef}
+        rotation={[0.15, 0, -0.35]}
+        position={[0.42, 0, -0.045]}
+        geometry={SABRE_IMPACT_BLADE_GEO}
+        material={rightGhostMat}
+      />
     </group>
   );
 }

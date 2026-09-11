@@ -45,6 +45,7 @@ import type { PetCompanionUpgradeId } from '@/utils/petCompanionUpgrades';
 import { getPetCompanionUpgradeOptionsForKind } from '@/utils/petCompanionUpgrades';
 import {
   getExploreAllyCap,
+  isAlliedExploreBuilding,
   isExplorePurchasedAllyType,
   EXPLORE_HUNGER_MAX,
   type ExploreCathedralOfferEntry,
@@ -86,6 +87,7 @@ import {
   buildRoomTitleAnnouncement,
   buildRunePickupAnnouncement,
   BOON_REROLL_FATE_COST,
+  SUNKEN_LOOT_REROLL_FATE_COST,
   STARTING_FATE,
   BOSS_SLAIN_ANNOUNCEMENTS,
   GUIDE_ANNOUNCEMENTS,
@@ -317,6 +319,7 @@ function HomeContent() {
     registerShrineClaimedHandler,
     registerObeliskPurchaseSuccessHandler,
     chooseSunkenTempleLoot,
+    rerollSunkenTempleLoot,
     chooseEternityPalaceLoot,
     chooseEternityPetUpgrade,
   } = useMultiplayerActions();
@@ -1467,6 +1470,12 @@ function HomeContent() {
     window.audioSystem?.playUISelectionSound?.();
   }, [chooseSunkenTempleLoot]);
 
+  const handleSunkenLootReroll = useCallback(() => {
+    if (playerFate < SUNKEN_LOOT_REROLL_FATE_COST) return;
+    rerollSunkenTempleLoot();
+    window.audioSystem?.playBoonRerollSound?.();
+  }, [playerFate, rerollSunkenTempleLoot]);
+
   useEffect(() => {
     if (socket?.id && coopSunkenLootClaimedPlayerIds.includes(socket.id)) {
       setSunkenLootModalOpen(false);
@@ -2346,10 +2355,12 @@ function HomeContent() {
     let wyrm = false;
     for (const enemy of enemiesRef.current.values()) {
       if (enemy.isDying || (enemy.health ?? 0) <= 0) continue;
-      if (enemy.type === 'barracks') lounge = true;
-      if (enemy.type === 'research-station') research = true;
-      if (enemy.type === 'shrine' || enemy.type === 'obelisk') shrineOrObelisk = true;
-      if (enemy.type === 'cathedral' && enemy.alliedUnit === true) cathedral = true;
+      if (isAlliedExploreBuilding(enemy)) {
+        if (enemy.type === 'barracks') lounge = true;
+        if (enemy.type === 'research-station') research = true;
+        if (enemy.type === 'shrine' || enemy.type === 'obelisk') shrineOrObelisk = true;
+        if (enemy.type === 'cathedral') cathedral = true;
+      }
       if (enemy.type === 'allied-siege-wyrm') wyrm = true;
       if (isExplorePurchasedAllyType(enemy.type)) count += 1;
     }
@@ -2975,6 +2986,9 @@ function HomeContent() {
                 options={coopSunkenLootOffer}
                 inventory={inventory}
                 onPick={handleSunkenLootPick}
+                onReroll={handleSunkenLootReroll}
+                rerollCost={SUNKEN_LOOT_REROLL_FATE_COST}
+                fateBalance={playerFate}
                 onClose={() => setSunkenLootModalOpen(false)}
               />
             )}

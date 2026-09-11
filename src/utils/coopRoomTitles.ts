@@ -10,6 +10,8 @@ export interface RoomTitleAnnouncement {
 export const TRIAL_ROOM_PEDESTAL_GOLD = 250;
 export const STAT_ROOM_PEDESTAL_POINTS = StatSystem.STAT_ROOM_PEDESTAL_POINTS;
 export const BOON_REROLL_FATE_COST = 1;
+/** Architect's Gift personal reroll after Sunken Temple IV (same cost as boon rerolls). */
+export const SUNKEN_LOOT_REROLL_FATE_COST = BOON_REROLL_FATE_COST;
 export const STARTING_FATE = 3;
 
 export const ROOM_TITLE_ANNOUNCEMENT_MS = 4100;

@@ -3,13 +3,22 @@
  * pixels), so quality drops when the orbit radius shrinks — the opposite of
  * geometric LOD. Module flags only; no per-frame React state.
  *
- * Coop CameraSystem: radius 2–12.5, default 8.
+ * Coop CameraSystem: radius 3.5–12.5 (default distance 10).
  */
 
-export const EXPLORE_ZOOM_RADIUS_NEAR = 2;
+export const EXPLORE_ZOOM_RADIUS_NEAR = 3.5;
 export const EXPLORE_ZOOM_RADIUS_FAR = 12.5;
 export const EXPLORE_ZOOM_DPR_MIN = 1;
 export const EXPLORE_ZOOM_DPR_MAX = 1.5;
+
+/** Max WebGL drawing-buffer size in Explore (CSS canvas stays fullscreen). */
+export const EXPLORE_MAX_DRAW_WIDTH = 1280;
+export const EXPLORE_MAX_DRAW_HEIGHT = 720;
+
+/** Matches Canvas `dpr={[1, 1.5]}` in page.tsx — restore when leaving Explore. */
+export const CANVAS_DEFAULT_DPR: [number, number] = [1, 1.5];
+
+const DPR_FLOOR = 0.25;
 
 /** Enter close at or inside default orbit; hysteresis avoids grass-rewrite thrash. */
 const CLOSE_ENTER = 8;
@@ -51,6 +60,27 @@ function lerpDpr(radius: number): number {
   const raw = EXPLORE_ZOOM_DPR_MIN + (cap - EXPLORE_ZOOM_DPR_MIN) * t;
   const stepped = Math.round(raw / DPR_STEP) * DPR_STEP;
   return Math.min(cap, Math.max(EXPLORE_ZOOM_DPR_MIN, stepped));
+}
+
+/**
+ * Cap Explore drawing-buffer pixels to EXPLORE_MAX_DRAW_* while preserving
+ * aspect ratio. Never exceeds zoomLodDpr (1.0 close → 1.5 far).
+ * Steps down (floor) so the buffer never exceeds the named max.
+ */
+export function computeExploreDpr(
+  cssWidth: number,
+  cssHeight: number,
+  zoomDpr: number,
+): number {
+  const w = Math.max(1, cssWidth);
+  const h = Math.max(1, cssHeight);
+  const resCap = Math.min(
+    EXPLORE_MAX_DRAW_WIDTH / w,
+    EXPLORE_MAX_DRAW_HEIGHT / h,
+  );
+  const capped = Math.min(resCap, zoomDpr);
+  const stepped = Math.floor(capped / DPR_STEP + 1e-9) * DPR_STEP;
+  return Math.min(zoomDpr, Math.max(DPR_FLOOR, stepped));
 }
 
 export function updateExploreZoomLod(radius: number): ExploreZoomLod {

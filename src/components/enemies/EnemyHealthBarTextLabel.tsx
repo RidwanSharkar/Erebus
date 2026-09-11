@@ -1,8 +1,18 @@
 'use client';
 
-import React from 'react';
-import type { RefObject } from 'react';
-import { Text } from '@react-three/drei';
+import React, { useEffect, useLayoutEffect, useMemo } from 'react';
+import type { MutableRefObject } from 'react';
+import { SharedMesh } from '@/utils/SharedMesh';
+import {
+  createEnemyHpCanvasLabel,
+  ENEMY_HP_BAR_LABEL_Z,
+  ENEMY_HP_BAR_RENDER_ORDER_LABEL,
+  ENEMY_HP_LEADING_LABEL_GEO,
+  ENEMY_HP_NAME_LABEL_GEO,
+  ENEMY_HP_NUMERIC_LABEL_GEO,
+  formatEnemyHealthNumeric,
+  type EnemyHpNumericLabelHandle,
+} from '@/utils/enemyHealthBar';
 
 /** Vertical offset for the static display name above the HP bar. */
 const NAME_Y = 0.28;
@@ -16,7 +26,7 @@ export interface EnemyHealthBarTextLabelProps {
   name?: string;
   /** Static emoji or short prefix beside HP — only used when `name` is omitted. */
   leading?: string;
-  numericRef: RefObject<{ text?: string; sync?: () => void } | null>;
+  numericRef: MutableRefObject<EnemyHpNumericLabelHandle | null>;
   health: number;
   maxHealth: number;
   fontSize?: number;
@@ -27,8 +37,9 @@ export interface EnemyHealthBarTextLabelProps {
 }
 
 /**
- * Split HP label: static name (above bar) or short leading glyph + numeric text synced via ref.
- * Avoids Troika re-syncing the name/emoji on every HP tick (GPU program/texture churn).
+ * Canvas HP labels (no Troika).
+ * Static name/leading + live numeric share module-level plane geometries.
+ * Each instance owns a disposable CanvasTexture — no unique BufferGeometry per enemy.
  */
 function EnemyHealthBarTextLabel({
   name,
@@ -36,50 +47,82 @@ function EnemyHealthBarTextLabel({
   numericRef,
   health,
   maxHealth,
-  fontSize = 0.18,
-  nameFontSize,
   color = '#ffffff',
-  numericFormat = (hp, max) => `${Math.ceil(hp)}/${max}`,
+  numericFormat = formatEnemyHealthNumeric,
 }: EnemyHealthBarTextLabelProps) {
   const numericText = numericFormat(health, maxHealth);
   const useNameplate = Boolean(name);
 
+  const nameLabel = useMemo(
+    () => (name ? createEnemyHpCanvasLabel(name, color, 'name') : null),
+    // Recreate only when name/color identity changes — not every HP tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [name, color],
+  );
+
+  const leadingLabel = useMemo(
+    () => (!name && leading ? createEnemyHpCanvasLabel(leading, color, 'leading') : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [name, leading, color],
+  );
+
+  const numericLabel = useMemo(
+    () => createEnemyHpCanvasLabel(numericText, color, 'numeric'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [color],
+  );
+
+  useLayoutEffect(() => {
+    numericRef.current = numericLabel.handle;
+    return () => {
+      if (numericRef.current === numericLabel.handle) {
+        numericLabel.handle.alive = false;
+        numericRef.current = null;
+      }
+    };
+  }, [numericLabel, numericRef]);
+
+  useLayoutEffect(() => {
+    numericLabel.handle.setText?.(numericText);
+  }, [numericLabel, numericText]);
+
+  useEffect(() => {
+    return () => {
+      nameLabel?.handle.dispose?.();
+      leadingLabel?.handle.dispose?.();
+      numericLabel.handle.dispose?.();
+    };
+  }, [nameLabel, leadingLabel, numericLabel]);
+
   return (
     <>
-      {name ? (
-        <Text
-          position={[0, NAME_Y, 0.002]}
-          fontSize={nameFontSize ?? fontSize}
-          color={color}
-          anchorX="center"
-          anchorY="middle"
-          fontWeight="bold"
+      {nameLabel ? (
+        <SharedMesh
+          position={[0, NAME_Y, ENEMY_HP_BAR_LABEL_Z]}
+          scale={[1.15, 1, 1]}
+          renderOrder={ENEMY_HP_BAR_RENDER_ORDER_LABEL}
         >
-          {name}
-        </Text>
-      ) : leading ? (
-        <Text
-          position={[LEADING_X, 0, 0.002]}
-          fontSize={fontSize}
-          color={color}
-          anchorX="center"
-          anchorY="middle"
-          fontWeight="bold"
+          <primitive object={ENEMY_HP_NAME_LABEL_GEO} attach="geometry" />
+          <primitive object={nameLabel.material} attach="material" />
+        </SharedMesh>
+      ) : leadingLabel ? (
+        <SharedMesh
+          position={[LEADING_X, 0, ENEMY_HP_BAR_LABEL_Z]}
+          scale={[0.55, 1, 1]}
+          renderOrder={ENEMY_HP_BAR_RENDER_ORDER_LABEL}
         >
-          {leading}
-        </Text>
+          <primitive object={ENEMY_HP_LEADING_LABEL_GEO} attach="geometry" />
+          <primitive object={leadingLabel.material} attach="material" />
+        </SharedMesh>
       ) : null}
-      <Text
-        ref={numericRef}
-        position={[useNameplate || !leading ? 0 : NUMERIC_X, 0, 0.002]}
-        fontSize={fontSize}
-        color={color}
-        anchorX={useNameplate || !leading ? 'center' : 'left'}
-        anchorY="middle"
-        fontWeight="bold"
+      <SharedMesh
+        position={[useNameplate || !leading ? 0 : NUMERIC_X, 0, ENEMY_HP_BAR_LABEL_Z]}
+        scale={[useNameplate || !leading ? 1.05 : 0.95, 1, 1]}
+        renderOrder={ENEMY_HP_BAR_RENDER_ORDER_LABEL}
       >
-        {numericText}
-      </Text>
+        <primitive object={ENEMY_HP_NUMERIC_LABEL_GEO} attach="geometry" />
+        <primitive object={numericLabel.material} attach="material" />
+      </SharedMesh>
     </>
   );
 }

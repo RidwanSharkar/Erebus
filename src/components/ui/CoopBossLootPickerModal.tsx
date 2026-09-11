@@ -59,6 +59,11 @@ interface CoopBossLootPickerModalProps {
   inventory: InventoryItem[];
   onPick: (stockId: string) => void;
   onClose?: () => void;
+  onReroll?: () => void;
+  /** Fate cost per reroll; 0 = free / omit paid label. */
+  rerollCost?: number;
+  /** Current fate balance — used to disable paid rerolls. */
+  fateBalance?: number;
 }
 
 export default function CoopBossLootPickerModal({
@@ -66,9 +71,14 @@ export default function CoopBossLootPickerModal({
   inventory,
   onPick,
   onClose,
+  onReroll,
+  rerollCost = 0,
+  fateBalance = 0,
 }: CoopBossLootPickerModalProps) {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [openingFlash, setOpeningFlash] = useState(true);
+
+  const rerollDisabled = !!onReroll && rerollCost > 0 && fateBalance < rerollCost;
 
   const displayOptions = useMemo(
     () => options.filter((entry) => entry?.id && !entry.sold),
@@ -85,11 +95,29 @@ export default function CoopBossLootPickerModal({
     return () => window.clearTimeout(timer);
   }, []);
 
+  const handleRerollAttempt = () => {
+    if (!onReroll) return;
+    if (rerollDisabled) {
+      window.audioSystem?.playUIInterface4Sound?.();
+      return;
+    }
+    onReroll();
+  };
+
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
         onClose?.();
+        return;
+      }
+      if (onReroll && (e.key === 'r' || e.key === 'R')) {
+        e.preventDefault();
+        if (rerollDisabled) {
+          window.audioSystem?.playUIInterface4Sound?.();
+          return;
+        }
+        onReroll();
         return;
       }
       const idx = parseInt(e.key, 10) - 1;
@@ -101,7 +129,7 @@ export default function CoopBossLootPickerModal({
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [displayOptions, inventory, onClose, onPick]);
+  }, [displayOptions, inventory, onClose, onPick, onReroll, rerollDisabled]);
 
   const hoveredEntry = hoveredIdx !== null ? displayOptions[hoveredIdx] : undefined;
 
@@ -155,6 +183,28 @@ export default function CoopBossLootPickerModal({
             <span className={`text-sm font-bold tracking-[0.2em] uppercase ${ACCENT.text}`}>
               Choose One:
             </span>
+            {onReroll && (
+              <button
+                type="button"
+                onClick={handleRerollAttempt}
+                aria-disabled={rerollDisabled}
+                aria-label={
+                  rerollCost > 0
+                    ? `Reroll gift options for ${rerollCost} fate`
+                    : 'Reroll gift options'
+                }
+                className={`
+                  shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-md
+                  border text-xs font-bold tracking-widest uppercase
+                  transition-all duration-150
+                  ${rerollDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:brightness-125 hover:shadow-md hover:shadow-black/40'}
+                  ${ACCENT.dimBorder} ${ACCENT.text} ${ACCENT.bg}
+                `}
+              >
+                <span className="text-sm leading-none" aria-hidden="true">🎲</span>
+                {rerollCost > 0 ? `Reroll ${rerollCost} Fate` : 'Reroll'}
+              </button>
+            )}
             <div className="flex-1 h-px bg-gray-700/60" />
             <span className="text-gray-600 text-xs tracking-widest">
               Press&nbsp;
@@ -163,6 +213,12 @@ export default function CoopBossLootPickerModal({
               <kbd className="px-1 py-0.5 rounded bg-gray-800 border border-gray-600 text-gray-400 font-mono text-xs">2</kbd>
               &nbsp;·&nbsp;
               <kbd className="px-1 py-0.5 rounded bg-gray-800 border border-gray-600 text-gray-400 font-mono text-xs">3</kbd>
+              {onReroll && (
+                <>
+                  &nbsp;·&nbsp;
+                  <kbd className="px-1 py-0.5 rounded bg-gray-800 border border-gray-600 text-gray-400 font-mono text-xs">R</kbd>
+                </>
+              )}
             </span>
           </div>
 

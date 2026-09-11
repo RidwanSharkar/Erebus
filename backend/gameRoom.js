@@ -955,6 +955,8 @@ const DREAM_LAYER_HEAL_COST = 20;
 const DREAM_LAYER_HEAL_AMOUNT = 200;
 const DREAM_LAYER_WARDING_COST = 50;
 const DREAM_LAYER_EXODIA_COST = 75;
+/** Architect's Gift personal reroll cost (matches client `BOON_REROLL_FATE_COST`). */
+const SUNKEN_LOOT_REROLL_FATE_COST = 1;
 const WARDING_PENDANT_BANES = Object.freeze([
   { type: 'WARD_TEMPLAR', label: "Templar's Bane", bannedEnemyType: 'templar', description: 'No enemy Templars spawn for the rest of this run.' },
   { type: 'WARD_WARLOCK', label: "Warlock's Bane", bannedEnemyType: 'warlock', description: 'No enemy Warlocks spawn for the rest of this run.' },
@@ -2213,7 +2215,7 @@ class GameRoom {
     this.coopSunkenFountainPhase = false;
     this.coopSunkenFountainUsed = false;
     this.coopSunkenAllyChoiceMade = false;
-    this.coopSunkenLootOffer = [];
+    this._clearSunkenLootOffers();
     this.coopSunkenLootClaimedPlayerIds = new Set();
     this.coopSunkenLootPhaseComplete = false;
     this.coopSunkenCompleted = false;
@@ -2402,7 +2404,7 @@ class GameRoom {
    * Shared co-op session fields for `game-started`, `coop-throne-sync`, and `room-joined`.
    * Keep this as the single source of truth so late joiners cannot drift from the live room.
    */
-  getCoopSessionSnapshotFields() {
+  getCoopSessionSnapshotFields(playerId = null) {
     if (this.gameMode !== 'coop') {
       return {
         thronePortalOffer: [],
@@ -2438,7 +2440,7 @@ class GameRoom {
       ...this._getDefensePayloadFields(),
       ...this._getDungeonPayloadFields(),
       ...this._getSkyTemplePayloadFields(),
-      ...this._getSunkenPayloadFields(),
+      ...this._getSunkenPayloadFields(playerId),
       ...this._getEternityPayloadFields(),
       ...this._getDeepSanctumPayloadFields(),
       ...this._getEdenPayloadFields(),
@@ -4047,7 +4049,7 @@ class GameRoom {
     };
   }
 
-  _getSunkenPayloadFields() {
+  _getSunkenPayloadFields(playerId = null) {
     return {
       coopSunkenActive: this.coopSunkenActive,
       coopSunkenRoomIndex: this.coopSunkenRoomIndex,
@@ -4055,7 +4057,9 @@ class GameRoom {
       coopSunkenFountainPhase: this.coopSunkenFountainPhase,
       coopSunkenFountainUsed: this.coopSunkenFountainUsed,
       coopSunkenAllyChoiceMade: this.coopSunkenAllyChoiceMade,
-      coopSunkenLootOffer: this.getCoopSunkenLootOffer(),
+      coopSunkenLootOffer: playerId
+        ? this.getCoopSunkenLootOfferForPlayer(playerId)
+        : this.getCoopSunkenLootOffer(),
       coopSunkenLootClaimedPlayerIds: [...this.coopSunkenLootClaimedPlayerIds],
       coopSunkenLootPhaseComplete: this.coopSunkenLootPhaseComplete,
       coopSunkenCompleted: this.coopSunkenCompleted,
@@ -4064,11 +4068,46 @@ class GameRoom {
     };
   }
 
-  getCoopSunkenLootOffer() {
-    return this.coopSunkenLootOffer.map((entry) => ({
+  _cloneSunkenLootOffer(offer) {
+    return (offer || []).map((entry) => ({
       ...entry,
       item: entry.item ? { ...entry.item } : entry.item,
     }));
+  }
+
+  getCoopSunkenLootOffer() {
+    return this._cloneSunkenLootOffer(this.coopSunkenLootOffer);
+  }
+
+  getCoopSunkenLootOfferForPlayer(playerId) {
+    const player = this.players.get(playerId);
+    const source = (player?.sunkenLootOffer && player.sunkenLootOffer.length > 0)
+      ? player.sunkenLootOffer
+      : this.coopSunkenLootOffer;
+    return this._cloneSunkenLootOffer(source);
+  }
+
+  _getSunkenLootOfferForPlayer(playerId) {
+    const player = this.players.get(playerId);
+    if (player?.sunkenLootOffer && player.sunkenLootOffer.length > 0) {
+      return player.sunkenLootOffer;
+    }
+    return this.coopSunkenLootOffer || [];
+  }
+
+  _clearSunkenLootOffers() {
+    this.coopSunkenLootOffer = [];
+    for (const player of this.players.values()) {
+      player.sunkenLootOffer = null;
+    }
+  }
+
+  _ensurePlayerSunkenLootOffer(player) {
+    if (!player) return;
+    if (!this.coopSunkenFountainPhase || this.coopSunkenLootPhaseComplete) return;
+    if (player.sunkenLootOffer && player.sunkenLootOffer.length > 0) return;
+    if (!this.coopSunkenLootOffer?.length) return;
+    player.sunkenLootOffer = this._cloneSunkenLootOffer(this.coopSunkenLootOffer);
   }
 
   _getEternityPayloadFields() {
@@ -8021,7 +8060,14 @@ class GameRoom {
 
   _emitSunkenIntermission(extra = {}) {
     if (!this.io) return;
-    this.io.to(this.roomId).emit('coop-sunken-intermission', {
+    const phaseComplete =
+      extra.coopSunkenLootPhaseComplete === true || this.coopSunkenLootPhaseComplete;
+    const usePersonal =
+      this.coopSunkenFountainPhase
+      && !phaseComplete
+      && this.players.size > 0;
+
+    const buildPayload = (playerId) => ({
       combatArenaActive: true,
       coopCurrentRoomKind: this.currentCoopRoomKind,
       coopClearedRoomKind: this.clearedCoopRoomKind,
@@ -8033,10 +8079,19 @@ class GameRoom {
       merchantInventory: this.getMerchantInventory(),
       players: this.getPlayers(),
       enemies: this.getEnemies(),
-      ...this._getSunkenPayloadFields(),
+      ...this._getSunkenPayloadFields(usePersonal ? playerId : null),
       ...extra,
       timestamp: Date.now(),
     });
+
+    if (usePersonal) {
+      for (const playerId of this.players.keys()) {
+        this.io.to(playerId).emit('coop-sunken-intermission', buildPayload(playerId));
+      }
+      return;
+    }
+
+    this.io.to(this.roomId).emit('coop-sunken-intermission', buildPayload(null));
   }
 
   _onSunkenRoomCleared(roomIndex) {
@@ -8065,21 +8120,34 @@ class GameRoom {
     console.log(`✨ Sunken temple room 4 cleared (+${goldAmount} gold) — sentinel loot + fountain + portal choice.`);
   }
 
-  _rollSunkenTempleLootOffer() {
-    const pendant = PENDANT_POOL[Math.floor(Math.random() * PENDANT_POOL.length)];
-    const exodia = EXODIA_ITEM_POOL[Math.floor(Math.random() * EXODIA_ITEM_POOL.length)];
-    const ring = DREAM_LAYER_RING_POOL[Math.floor(Math.random() * DREAM_LAYER_RING_POOL.length)];
+  _pickFromSunkenLootPool(pool, excludeTypes = null) {
+    const filtered = excludeTypes?.size
+      ? pool.filter((entry) => !excludeTypes.has(entry.type))
+      : null;
+    const pickFrom = filtered && filtered.length > 0 ? filtered : pool;
+    return pickFrom[Math.floor(Math.random() * pickFrom.length)];
+  }
+
+  /**
+   * Build a fresh 3-slot Architect's Gift offer (pendant / armor / ring).
+   * @param {{ excludeTypes?: Set<string>|null }} [opts]
+   */
+  _buildSunkenTempleLootOffer({ excludeTypes = null } = {}) {
+    const pendant = this._pickFromSunkenLootPool(PENDANT_POOL, excludeTypes);
+    const exodia = this._pickFromSunkenLootPool(EXODIA_ITEM_POOL, excludeTypes);
+    const ring = this._pickFromSunkenLootPool(DREAM_LAYER_RING_POOL, excludeTypes);
     const ts = Date.now();
-    this.coopSunkenLootOffer = [
+    const suffix = Math.random().toString(36).slice(2, 8);
+    return [
       {
-        id: `sunken-loot-warding-${ts}`,
+        id: `sunken-loot-warding-${ts}-${suffix}`,
         kind: 'warding_pendant',
         cost: 0,
         sold: false,
         label: pendant.label,
         description: pendant.description,
         item: {
-          id: `sunken-ward-${ts}`,
+          id: `sunken-ward-${ts}-${suffix}`,
           type: pendant.type,
           label: pendant.label,
           category: 'ward',
@@ -8088,14 +8156,14 @@ class GameRoom {
         },
       },
       {
-        id: `sunken-loot-exodia-${ts}`,
+        id: `sunken-loot-exodia-${ts}-${suffix}`,
         kind: 'exodia',
         cost: 0,
         sold: false,
         label: exodia.label,
         description: dreamLayerItems.getDreamLayerItemDescription(exodia.type),
         item: {
-          id: `sunken-exodia-${ts}`,
+          id: `sunken-exodia-${ts}-${suffix}`,
           type: exodia.type,
           label: exodia.label,
           category: 'boss_drop',
@@ -8103,14 +8171,14 @@ class GameRoom {
         },
       },
       {
-        id: `sunken-loot-ring-${ts}`,
+        id: `sunken-loot-ring-${ts}-${suffix}`,
         kind: 'ring',
         cost: 0,
         sold: false,
         label: ring.label,
         description: dreamLayerItems.getDreamLayerItemDescription(ring.type),
         item: {
-          id: `sunken-ring-${ts}`,
+          id: `sunken-ring-${ts}-${suffix}`,
           type: ring.type,
           label: ring.label,
           category: 'boss_drop',
@@ -8118,6 +8186,13 @@ class GameRoom {
         },
       },
     ];
+  }
+
+  _rollSunkenTempleLootOffer() {
+    this.coopSunkenLootOffer = this._buildSunkenTempleLootOffer();
+    for (const player of this.players.values()) {
+      player.sunkenLootOffer = this._cloneSunkenLootOffer(this.coopSunkenLootOffer);
+    }
   }
 
   /**
@@ -8132,7 +8207,8 @@ class GameRoom {
     if (!player) return false;
     if (this.coopSunkenLootClaimedPlayerIds.has(playerId)) return false;
 
-    const entry = this.coopSunkenLootOffer.find((item) => item.id === stockId);
+    const offer = this._getSunkenLootOfferForPlayer(playerId);
+    const entry = offer.find((item) => item.id === stockId);
     if (!entry || entry.sold) return false;
 
     if (!this._isSunkenLootEntryEligible(player, entry)) {
@@ -8166,6 +8242,47 @@ class GameRoom {
       coopSunkenLootPhaseComplete: this.coopSunkenLootPhaseComplete,
     });
     console.log(`🎁 Sunken loot chosen by ${playerId}: ${item.label ?? item.type}`);
+    return true;
+  }
+
+  /**
+   * Spend Fate to re-roll this player's personal Architect's Gift choices.
+   * @param {string} playerId
+   * @returns {boolean}
+   */
+  rerollSunkenTempleLoot(playerId) {
+    if (!this.coopSunkenFountainPhase || this.coopSunkenLootPhaseComplete) return false;
+    const player = this.players.get(playerId);
+    if (!player) return false;
+    if (this.coopSunkenLootClaimedPlayerIds.has(playerId)) return false;
+
+    if ((player.fate || 0) < SUNKEN_LOOT_REROLL_FATE_COST) {
+      this._emitSunkenLootFailure(playerId, 'not_enough_fate');
+      return false;
+    }
+
+    const current = this._getSunkenLootOfferForPlayer(playerId);
+    const excludeTypes = new Set(
+      current.map((entry) => entry?.item?.type).filter(Boolean),
+    );
+
+    player.fate = (player.fate || 0) - SUNKEN_LOOT_REROLL_FATE_COST;
+    player.sunkenLootOffer = this._buildSunkenTempleLootOffer({ excludeTypes });
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('player-fate-changed', {
+        playerId,
+        fate: player.fate,
+        timestamp: Date.now(),
+      });
+      this.io.to(playerId).emit('coop-sunken-loot-rerolled', {
+        coopSunkenLootOffer: this._cloneSunkenLootOffer(player.sunkenLootOffer),
+        fate: player.fate,
+        timestamp: Date.now(),
+      });
+    }
+
+    console.log(`🎲 Sunken loot rerolled by ${playerId} (−${SUNKEN_LOOT_REROLL_FATE_COST} fate)`);
     return true;
   }
 
@@ -8224,7 +8341,8 @@ class GameRoom {
     for (const [playerId, player] of this.players) {
       if (this.coopSunkenLootClaimedPlayerIds.has(playerId)) continue;
 
-      const eligible = (this.coopSunkenLootOffer || []).filter((entry) => this._isSunkenLootEntryEligible(player, entry));
+      const eligible = this._getSunkenLootOfferForPlayer(playerId)
+        .filter((entry) => this._isSunkenLootEntryEligible(player, entry));
       let granted = null;
       let stockId = null;
       if (eligible.length > 0) {
@@ -8285,7 +8403,7 @@ class GameRoom {
     this.coopSunkenPortalOpen = false;
     this.coopSunkenFountainUsed = false;
     this.coopSunkenAllyChoiceMade = false;
-    this.coopSunkenLootOffer = [];
+    this._clearSunkenLootOffers();
     this.coopSunkenLootClaimedPlayerIds = new Set();
     this.coopSunkenLootPhaseComplete = false;
     this.coopSunkenRoomIndex = 0;
@@ -9889,7 +10007,7 @@ class GameRoom {
     this.coopSunkenFountainPhase = false;
     this.coopSunkenFountainUsed = false;
     this.coopSunkenAllyChoiceMade = false;
-    this.coopSunkenLootOffer = [];
+    this._clearSunkenLootOffers();
     this.coopSunkenLootClaimedPlayerIds = new Set();
     this.coopSunkenLootPhaseComplete = false;
     this.coopSunkenCompleted = false;
@@ -10850,6 +10968,7 @@ class GameRoom {
     player.joinedAt = Date.now();
     this._remapPlayerIdRefs(oldId, newPlayerId);
     this.players.set(newPlayerId, player);
+    this._ensurePlayerSunkenLootOffer(player);
     this._placePlayerAtCurrentSpawn(player);
     this.resumeGame();
     console.log(`♻️ Reclaimed session ${sessionId} as ${newPlayerId} in room ${this.roomId}`);
@@ -10968,6 +11087,8 @@ class GameRoom {
       exodiaSetCount: 0,
       /** Soul Ward pendant — timestamp when redirect is next available. */
       soulWardReadyAt: 0,
+      /** Personal Architect's Gift offer (Sunken Temple IV); null until rolled / seeded. */
+      sunkenLootOffer: null,
     });
 
     // Position players for co-op mode
@@ -10978,6 +11099,7 @@ class GameRoom {
         this._grantLateJoinCombatLoadout(player);
       }
 
+      this._ensurePlayerSunkenLootOffer(player);
       this._placePlayerAtCurrentSpawn(player);
     }
 

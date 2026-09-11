@@ -204,6 +204,8 @@ export function cloneBuildingScene(
 /**
  * Before mutating opacity/transparent for death fade, clone any shared materials
  * so other instances of the same enemy type are unaffected.
+ * Clones are created already-transparent so the fade does not compile a second
+ * skinned+opaque→transparent shader variant mid-death.
  */
 export function detachSharedMaterialsForMutation(root: THREE.Object3D): void {
   root.traverse((child) => {
@@ -216,6 +218,9 @@ export function detachSharedMaterialsForMutation(root: THREE.Object3D): void {
           changed = true;
           const uniq = m.clone();
           uniq.userData = { ...uniq.userData, shared: false };
+          uniq.transparent = true;
+          uniq.depthWrite = false;
+          uniq.needsUpdate = true;
           return uniq;
         }
         return m;
@@ -224,9 +229,36 @@ export function detachSharedMaterialsForMutation(root: THREE.Object3D): void {
     } else if (mesh.material.userData?.shared) {
       const uniq = mesh.material.clone();
       uniq.userData = { ...uniq.userData, shared: false };
+      uniq.transparent = true;
+      uniq.depthWrite = false;
+      uniq.needsUpdate = true;
       mesh.material = uniq;
     }
   });
+}
+
+/**
+ * Detach shared mats and return the material list used for per-frame opacity fade.
+ * Prefer this over hand-rolled traverse + `transparent = true` in each renderer.
+ */
+export function collectDeathFadeMaterials(root: THREE.Object3D): THREE.Material[] {
+  detachSharedMaterialsForMutation(root);
+  const collected: THREE.Material[] = [];
+  root.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.material) return;
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const mat of mats) {
+      if (!mat) continue;
+      if (!mat.transparent) {
+        mat.transparent = true;
+        mat.depthWrite = false;
+        mat.needsUpdate = true;
+      }
+      collected.push(mat);
+    }
+  });
+  return collected;
 }
 
 export function isSharedMaterial(material: THREE.Material | null | undefined): boolean {

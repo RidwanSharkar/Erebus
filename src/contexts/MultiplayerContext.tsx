@@ -836,6 +836,7 @@ interface MultiplayerContextType {
   useCoopFountain: () => void;
   chooseCoopAlly: (allyKind: CoopAllyKind) => void;
   chooseSunkenTempleLoot: (stockId: string) => void;
+  rerollSunkenTempleLoot: () => void;
   chooseEternityPalaceLoot: (stockId: string) => void;
   chooseEternityPetUpgrade: (upgradeId: string) => void;
   claimPreBossReward: () => void;
@@ -1051,6 +1052,7 @@ export type MultiplayerActionsContextType = Pick<
   | 'useCoopFountain'
   | 'chooseCoopAlly'
   | 'chooseSunkenTempleLoot'
+  | 'rerollSunkenTempleLoot'
   | 'chooseEternityPalaceLoot'
   | 'chooseEternityPetUpgrade'
   | 'claimPreBossReward'
@@ -4529,6 +4531,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       }
     });
 
+    addEventHandler('coop-sunken-loot-rerolled', (data: {
+      coopSunkenLootOffer?: DreamLayerStockItem[];
+    }) => {
+      if ('coopSunkenLootOffer' in (data ?? {})) {
+        setCoopSunkenLootOffer(parseCoopSunkenLootOffer(data.coopSunkenLootOffer));
+      }
+    });
+
     addEventHandler('coop-sunken-loot-failed', () => {
       (window as any).audioSystem?.playUIInterface4Sound?.();
     });
@@ -5596,6 +5606,12 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
   const chooseSunkenTempleLoot = useCallback((stockId: string) => {
     if (socket && currentRoomId) {
       socket.emit('coop-choose-sunken-loot', { roomId: currentRoomId, stockId });
+    }
+  }, [socket, currentRoomId]);
+
+  const rerollSunkenTempleLoot = useCallback(() => {
+    if (socket && currentRoomId) {
+      socket.emit('coop-reroll-sunken-loot', { roomId: currentRoomId });
     }
   }, [socket, currentRoomId]);
 
@@ -6915,6 +6931,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     useCoopFountain,
     chooseCoopAlly,
     chooseSunkenTempleLoot,
+    rerollSunkenTempleLoot,
     chooseEternityPalaceLoot,
     chooseEternityPetUpgrade,
     claimPreBossReward,
@@ -7058,6 +7075,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       useCoopFountain,
       chooseCoopAlly,
       chooseSunkenTempleLoot,
+      rerollSunkenTempleLoot,
       chooseEternityPalaceLoot,
     chooseEternityPetUpgrade,
       claimPreBossReward,
@@ -7178,6 +7196,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       useCoopFountain,
       chooseCoopAlly,
       chooseSunkenTempleLoot,
+      rerollSunkenTempleLoot,
       chooseEternityPalaceLoot,
     chooseEternityPetUpgrade,
       claimPreBossReward,

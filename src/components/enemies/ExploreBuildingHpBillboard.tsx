@@ -9,6 +9,7 @@ import type { Mesh } from 'three';
 import {
   syncEnemyHealthBarFillFromRef,
   syncEnemyHealthBarNumericTextFromRef,
+  type EnemyHpNumericLabelHandle,
 } from '@/utils/enemyHealthBar';
 import { isExploreZoomClose } from '@/utils/exploreZoomLod';
 import EnemyHealthBarTextLabel from './EnemyHealthBarTextLabel';
@@ -16,7 +17,7 @@ import EnemyHpBarPlanes from './EnemyHpBarPlanes';
 
 /** Planes only — tighter than before to cut transparent overdraw. */
 const BAR_DISTANCE = 14;
-/** Troika text is expensive; only when damaged and nearby. */
+/** Canvas numeric label — only when damaged and nearby. */
 const TEXT_DISTANCE = 12;
 const BAR_R2 = BAR_DISTANCE * BAR_DISTANCE;
 const TEXT_R2 = TEXT_DISTANCE * TEXT_DISTANCE;
@@ -26,7 +27,7 @@ const _world = new Vector3();
 export function syncExploreBuildingHpIfVisible(
   barVisibleRef: MutableRefObject<boolean>,
   fillRef: RefObject<Mesh | null>,
-  numericRef: RefObject<{ text?: string; sync?: () => void } | null>,
+  numericRef: MutableRefObject<EnemyHpNumericLabelHandle | null>,
   enemiesRef: MutableRefObject<Map<string, { health?: number }>> | undefined,
   enemyId: string,
   fallbackHealth: number,
@@ -54,7 +55,7 @@ export function ExploreBuildingHpBillboard({
   health: number;
   maxHealth: number;
   fillRef: RefObject<Mesh | null>;
-  numericRef: RefObject<{ text?: string; sync?: () => void } | null>;
+  numericRef: MutableRefObject<EnemyHpNumericLabelHandle | null>;
   backgroundColor: string;
   fillColor: string;
   textColor: string;
@@ -76,7 +77,7 @@ export function ExploreBuildingHpBillboard({
     g.visible = barOn;
     if (barVisibleRef) barVisibleRef.current = barOn;
 
-    // Troika Text only when damaged and in range (not zoom-close — fill-rate).
+    // Canvas HP text only when damaged and in range (not zoom-close — fill-rate).
     let wantText = textOnRef.current;
     if (isExploreZoomClose() || !barOn || !damaged || d2 > TEXT_UNMOUNT_R2) wantText = false;
     else if (barOn && damaged && d2 <= TEXT_R2) wantText = true;

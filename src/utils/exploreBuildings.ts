@@ -343,12 +343,12 @@ export const EXPLORE_BEAST_TEMPLE_UPGRADE_WOOD = 100;
 export const EXPLORE_BEAST_TEMPLE_UPGRADE_GOLD = 25;
 
 /** Altar of War Siege Golem summon costs. */
-export const EXPLORE_SIEGE_GOLEM_STONE = 250;
+export const EXPLORE_SIEGE_GOLEM_STONE = 125;
 export const EXPLORE_SIEGE_GOLEM_GOLD = 100;
 
 /** Beast Temple Siege Wyrm summon costs (requires live cathedral). */
-export const EXPLORE_SIEGE_WYRM_GOLD = 100;
-export const EXPLORE_SIEGE_WYRM_MEAT = 15;
+export const EXPLORE_SIEGE_WYRM_GOLD = 85;
+export const EXPLORE_SIEGE_WYRM_MEAT = 5;
 
 /** Interact radius to open barracks recruit UI. */
 export const EXPLORE_BARRACKS_INTERACT_RADIUS = 3.5;
@@ -363,13 +363,13 @@ export const EXPLORE_ALTAR_OF_WAR_INTERACT_RADIUS = 3.5;
 export const EXPLORE_FIRE_PIT_INTERACT_RADIUS = 3.5;
 
 /** Meat spent per fire-pit cook action. */
-export const EXPLORE_FIRE_PIT_HEAL_MEAT_COST = 5;
+export const EXPLORE_FIRE_PIT_HEAL_MEAT_COST = 3;
 
 /** HP restored to the cooking player (capped at max). */
-export const EXPLORE_FIRE_PIT_HEAL_SELF_HP = 80;
+export const EXPLORE_FIRE_PIT_HEAL_SELF_HP = 120;
 
 /** Raw meat stack cap in the explore inventory slot. */
-export const EXPLORE_MEAT_STACK_CAP = 20;
+export const EXPLORE_MEAT_STACK_CAP = 40;
 
 /** Hunger cap. At this value, starvation damage begins. */
 export const EXPLORE_HUNGER_MAX = 100;
@@ -484,7 +484,7 @@ export const EXPLORE_RESEARCH_FLOW_COST = 10;
 export const EXPLORE_STONE_BREAKER_FLOW_COST = 5;
 
 /** Flow cost for Greater Harvest (doubles tree/root wood for the run). */
-export const EXPLORE_GREATER_HARVEST_FLOW_COST = 15;
+export const EXPLORE_GREATER_HARVEST_FLOW_COST = 10;
 
 /** Spirit Lineage ranks: 0 (cap 1) through 4 (cap 5). */
 export const EXPLORE_SPIRIT_LINEAGE_MAX_RANK = 4;

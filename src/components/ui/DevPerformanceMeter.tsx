@@ -114,6 +114,14 @@ function ExpandedPanel({ s }: { s: DevPerformanceSnapshot }) {
         />
         <MetricRow label="DPR" value={s.dpr.toFixed(2)} />
         <MetricRow
+          label="Draw buffer"
+          value={
+            s.drawWidth > 0 && s.drawHeight > 0
+              ? `${s.drawWidth}×${s.drawHeight}`
+              : 'n/a'
+          }
+        />
+        <MetricRow
           label="Zoom LOD"
           value={
             s.exploreZoomRadius != null

@@ -9,7 +9,7 @@ import MedusaModel, { type MedusaAbilityClip } from './MedusaModel';
 import EnemyStaggerBar from './EnemyStaggerBar';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import { syncEnemyTransformFromRef, syncEnemyVisualRotation } from '@/utils/enemyLiveTransform';
-import { detachSharedMaterialsForMutation } from '@/utils/sharedEnemyMaterials';
+import { collectDeathFadeMaterials } from '@/utils/sharedEnemyMaterials';
 import { campHpTheme } from '@/utils/campHpTheme';
 import {
   ENEMY_HP_BAR_WIDTH,
@@ -168,18 +168,7 @@ function MedusaRenderer({
       fadeTimer.current += delta;
       opacity.current = Math.max(0, 1 - fadeTimer.current / FADE_DURATION);
       if (!deathCacheBuilt.current) {
-        detachSharedMaterialsForMutation(group);
-        const collected: any[] = [];
-        group.traverse((child: any) => {
-          if (child.isMesh && child.material) {
-            const mats = Array.isArray(child.material) ? child.material : [child.material];
-            mats.forEach((mat: any) => {
-              mat.transparent = true;
-              collected.push(mat);
-            });
-          }
-        });
-        cachedDeathMats.current = collected;
+        cachedDeathMats.current = collectDeathFadeMaterials(group);
         deathCacheBuilt.current = true;
       }
       cachedDeathMats.current.forEach((mat) => {
