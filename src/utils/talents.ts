@@ -328,6 +328,10 @@ export const ACID_RAIN_VENOM_STACKS_PER_TICK = 1;
 
 /** Cyclone Rush — double-tap forward Charge on Runeblade; separate from E-key Charge cooldown. */
 export const CYCLONE_RUSH_CHARGE_COOLDOWN_SEC = 3;
+/** Cyclone Rush — flat base damage dealt once per full spin rotation. */
+export const CYCLONE_RUSH_DAMAGE_PER_ROTATION = 70;
+/** Cyclone Rush — bonus damage per point of AGILITY on each spin rotation. */
+export const CYCLONE_RUSH_DAMAGE_PER_AGILITY = 10;
 /** RAISE DEAD active boon — cooldown after summoning a zombie via R key. */
 export const RAISE_DEAD_COOLDOWN_SEC = 15;
 /** METEOR active boon — cooldown after calling a meteor via R key. */
@@ -1149,14 +1153,14 @@ export const WRATHFUL_COMBO_CRIT_CHANCE_ADD = 0.40;
 export const WRATHFUL_COMBO_CRIT_DAMAGE_MULT_ADD = 1.25;
 
 /** Infested Combo — heal fraction of final hit damage dealt (after crit) on each left-click hit. */
-export const INFESTED_COMBO_LIFESTEAL = 0.02;
+export const INFESTED_COMBO_LIFESTEAL = 0.04;
 
 /** Guard Combo — Runeblade basic hits can proc Aegis-like barrier + invuln (no Aegis cooldown). */
 export const GUARD_COMBO_PROC_CHANCE = 0.35;
 export const GUARD_COMBO_DURATION_SEC = 4;
 
 /** Guard Sabres Swipes — each LMB blade (`sabre_left` / `sabre_right`) rolls independently (see ControlSystem). */
-export const GUARD_SABRES_SWIPES_PROC_CHANCE = 0.2;
+export const GUARD_SABRES_SWIPES_PROC_CHANCE = 0.26;
 /** Sabres purple guard shield duration (shared barrier channel for swipe / stab / flourish procs). */
 export const GUARD_SABRES_PURPLE_SHIELD_DURATION_SEC = WRAITH_GUARD_DURATION_SEC;
 
@@ -1175,19 +1179,19 @@ export function getExecutionerFlatDamageBonus(effectiveStrength: number): number
 }
 
 /** Frostpath — Entropic Bolt (scythe LMB) hits on PvE enemies can proc Coldsnap at impact (no E cooldown). */
-export const FROSTPATH_PROC_CHANCE = 0.125;
+export const FROSTPATH_PROC_CHANCE = 0.165;
 
 /** Solar Recharge — Entropic Bolt hits on PvE enemies can proc Sunwell (Reanimate) (no Q cooldown; does not require Sunwell in loadout). */
-export const SOLAR_RECHARGE_PROC_CHANCE = 0.135;
+export const SOLAR_RECHARGE_PROC_CHANCE = 0.185;
 
 /** Min wall-clock ms between successful Frostpath Coldsnap execution or Solar Recharge Sunwell proc (separate per talent). */
 export const FROST_SOLAR_PROC_EFFECT_ICD_MS = 2500;
 
 /** Windfury — Spear primary or Runeblade left-click combo hits that damage an enemy can proc Storm Shroud (Flurry) without F cooldown. */
-export const WINDFURY_PROC_CHANCE = 0.15;
+export const WINDFURY_PROC_CHANCE = 0.165;
 
 /** Crusader — Runeblade left-click hits that damage an enemy; matches Windfury proc rate. */
-export const CRUSADER_PROC_CHANCE = 0.1625;
+export const CRUSADER_PROC_CHANCE = 0.1825;
 export const CRUSADER_DURATION_SEC = 5;
 export const CRUSADER_LMB_FLAT_BONUS = 55;
 
@@ -1230,7 +1234,7 @@ export type MortalStrikeTheme = 'default' | 'wrathful' | 'staggering' | 'infeste
 export type WraithStrikeTheme = 'default' | 'wrathful' | 'infested' | 'guard' | 'staggering';
 
 /** Staggering Strike — Wraith Strike (`RUNEBLADE_E`) builds stagger; at 100, proc lightning + damage + stun. */
-export const STAGGERING_STRIKE_WRAITH_STAGGER_ADD = 80;
+export const STAGGERING_STRIKE_WRAITH_STAGGER_ADD = 100;
 /** Non-boss PvE: stagger needed for lightning proc + stun (co-op server must match). */
 export const STAGGER_MAX = 100;
 /** Co-op bosses (`boss`, `boss2`, `boss3`, `destiny`): same proc at this buildup (see `backend/gameRoom.js`). */
@@ -1248,7 +1252,7 @@ export const STAGGERING_SWIPES_LEFT_BLADE_STAGGER = 12;
 export const STAGGERING_SWIPES_RIGHT_BLADE_STAGGER = 13;
 
 /** Staggering Stab — Backstab applies this stagger server-side (`damageType` `backstab`). */
-export const STAGGERING_STAB_BACKSTAB_STAGGER = 80;
+export const STAGGERING_STAB_BACKSTAB_STAGGER = 100;
 /** Wrathful Stab — Backstab additive crit (see `calculateDamage`). */
 export const WRATHFUL_STAB_CRIT_CHANCE_ADD = 0.3;
 export const WRATHFUL_STAB_CRIT_DAMAGE_MULT_ADD = 0.8;
@@ -1260,7 +1264,7 @@ export const INFESTING_SABRES_SWIPES_LEFT_DAMAGE = 37;
 export const INFESTING_SABRES_SWIPES_RIGHT_DAMAGE = 31;
 
 /** Staggering Flourish — Sunder (`damageType` `sunder`) stagger server-side. */
-export const STAGGERING_FLOURISH_STAGGER = 40;
+export const STAGGERING_FLOURISH_STAGGER = 50;
 /** Wrathful Flourish — Flourish additive crit (see `calculateDamage` in ControlSystem). */
 export const WRATHFUL_FLOURISH_CRIT_CHANCE_ADD = 0.35;
 export const WRATHFUL_FLOURISH_CRIT_DAMAGE_MULT_ADD = 0.15;
@@ -1310,7 +1314,7 @@ export const TEMPEST_BURST_WYVERN_STING_PROC_CHANCE = 0.15;
 export const WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD = 0.3;
 export const WRATHFUL_ENTROPIC_BEAM_CRIT_CHANCE_ADD = 0.3;
 /** Staggering Entropic — bolt hit stagger and beam tick stagger (same cap/proc as other stagger talents). */
-export const STAGGERING_ENTROPIC_BOLT_STAGGER = 15;
+export const STAGGERING_ENTROPIC_BOLT_STAGGER = 20;
 export const STAGGERING_ENTROPIC_BEAM_STAGGER_PER_TICK = 5;
 /** Infesting Entropic — bolt base damage when talent active; beam heal on kill. */
 export const INFESTING_ENTROPIC_BOLT_DAMAGE = 89;
@@ -1404,7 +1408,7 @@ export const cycloneRushTalentDefinition: TalentDefinition = {
   id: TALENT_CYCLONE_RUSH,
   name: 'Cyclone Rush',
   description:
-    'Double-tapping W to dash forward performs a whirlwind spin with your Runeblade, dealing damage to enemies 4 times.',
+    `Double-tapping W to dash forward performs a whirlwind spin with your Runeblade, dealing ${CYCLONE_RUSH_DAMAGE_PER_ROTATION} + ${CYCLONE_RUSH_DAMAGE_PER_AGILITY} damage per point of AGILITY per rotation to enemies and Explorer harvest props (trees, roots, rocks, spines).`,
   modifiesAbilityId: 'Forward Dash (double-tap W)',
 };
 
@@ -3291,7 +3295,7 @@ export function getUnstableEnergyStaggerProcCombatSnapshot(params: {
   return {
     agility,
     critChance: 0.11 + criticalRuneCount * 0.03 + agility * 0.01,
-    critDamageMult: 2.0 + critDamageRuneCount * 0.15 + strength * 0.05,
+    critDamageMult: 2.0 + critDamageRuneCount * 0.15 + strength * 0.04,
   };
 }
 
@@ -3481,6 +3485,16 @@ export function getFanOfKnivesProjectileDamage(
 ): number {
   const agility = getEffectiveAgilityWithTalentBonuses(stats, talentLoadout, abilityLoadout);
   return FAN_OF_KNIVES_BASE_DAMAGE + FAN_OF_KNIVES_DAMAGE_PER_AGILITY * Math.max(0, agility);
+}
+
+/** Cyclone Rush — damage per full spin rotation: 70 + 10 per AGILITY. */
+export function getCycloneRushRotationDamage(
+  stats: PlayerStats,
+  talentLoadout?: TalentLoadout | null,
+  abilityLoadout?: AbilityLoadout | null,
+): number {
+  const agility = getEffectiveAgilityWithTalentBonuses(stats, talentLoadout, abilityLoadout);
+  return CYCLONE_RUSH_DAMAGE_PER_ROTATION + CYCLONE_RUSH_DAMAGE_PER_AGILITY * Math.max(0, agility);
 }
 
 export function getFireAffinityStormDamage(

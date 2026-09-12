@@ -315,6 +315,8 @@ interface DragonRendererProps {
   getRunebladeBlizzardStormHitRadius?: () => number;
   /** Local: Awakened Eye — denser Runeblade Blizzard frost particles. */
   getRunebladeBlizzardParticleSpawnMultiplier?: () => number;
+  /** Local: Cyclone Rush — 70 + 10 per AGILITY per spin rotation. */
+  getCycloneRushRotationDamage?: () => number;
   /** Local: Titan's Grip — flat STR-scaled LMB damage per combo strike. */
   getRunebladeTitansGripLmbFlatBonus?: () => number;
   /** Local: Vicegrip (Exodia Gauntlets) — +50 flat on each Runeblade combo hit. */
@@ -442,6 +444,7 @@ function DragonRenderer({
   getRunebladeBlizzardDamagePerTick,
   getRunebladeBlizzardStormHitRadius,
   getRunebladeBlizzardParticleSpawnMultiplier,
+  getCycloneRushRotationDamage,
   onRunebladeTitansGripHit,
   onRunebladeDeathdealerThirdHit,
   titansGripBladeThemeActive = false,
@@ -1166,6 +1169,7 @@ function DragonRenderer({
           getRunebladeBlizzardDamagePerTick={getRunebladeBlizzardDamagePerTick}
           getRunebladeBlizzardStormHitRadius={getRunebladeBlizzardStormHitRadius}
           getRunebladeBlizzardParticleSpawnMultiplier={getRunebladeBlizzardParticleSpawnMultiplier}
+          getCycloneRushRotationDamage={getCycloneRushRotationDamage}
           onRunebladeTitansGripHit={onRunebladeTitansGripHit}
           mushroomTargets={mushroomTargets}
           onMushroomHit={onMushroomHit}

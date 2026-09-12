@@ -287,7 +287,7 @@ export const RULEBOOK_CLASS_TALENTS: Record<
     { id: TALENT_BLIZZARD },
     { id: TALENT_DOUBLE_STRIKE },
     { id: TALENT_SPELLBLADE, stat: 'INT' },
-    { id: TALENT_CYCLONE_RUSH },
+    { id: TALENT_CYCLONE_RUSH, stat: 'AGI' },
     { id: TALENT_BREATH_WEAPON },
     { id: TALENT_MORTAL_STRIKE },
     { id: TALENT_EXECUTIONER, stat: 'STR' },

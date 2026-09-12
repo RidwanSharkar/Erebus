@@ -4,9 +4,8 @@ import { Group, Vector3, Color, AdditiveBlending, BufferGeometry, Float32BufferA
 import { WeaponSubclass } from '@/components/dragon/weapons';
 import CorruptedAura from './CorruptedAura';
 import Blizzard from './Blizzard/Blizzard';
-import { BLIZZARD_DURATION_SEC, BLIZZARD_DPS_PER_TICK, BLIZZARD_STORM_HIT_RADIUS } from '@/utils/talents';
+import { BLIZZARD_DURATION_SEC, BLIZZARD_DPS_PER_TICK, BLIZZARD_STORM_HIT_RADIUS, CYCLONE_RUSH_DAMAGE_PER_ROTATION } from '@/utils/talents';
 import { calculationCache } from '@/utils/CalculationCache';
-import { isInsideMainArenaXZ } from '@/utils/mapConstants';
 import { forEachMushroomHitBySwing } from '@/utils/mushroomMeleeUtils';
 import { MELEE_ARC_MIN_DOT, MELEE_ARC_RANGE } from '@/utils/meleeArcConstants';
 import {
@@ -160,6 +159,8 @@ interface RunebladeProps {
   getBlizzardStormHitRadius?: () => number;
   /** Local: Awakened Eye — denser frost particles. */
   getBlizzardParticleSpawnMultiplier?: () => number;
+  /** Local: Cyclone Rush — 70 + 10 per AGILITY per spin rotation. */
+  getCycloneRushRotationDamage?: () => number;
 }
 
 export default function Runeblade({
@@ -221,6 +222,7 @@ export default function Runeblade({
   getBlizzardDamagePerTick,
   getBlizzardStormHitRadius,
   getBlizzardParticleSpawnMultiplier,
+  getCycloneRushRotationDamage,
 }: RunebladeProps) {
   const [blizzardStormVisible, setBlizzardStormVisible] = useState(false);
   const [blizzardMountKey, setBlizzardMountKey] = useState(0);
@@ -547,30 +549,64 @@ export default function Runeblade({
 
       if (storedCharge) {
         const TAU = Math.PI * 2;
-        const CHARGE_SPIN_DAMAGE = 70;
         const CHARGE_SPIN_RADIUS = 2.95;
+        const spinDamage =
+          getCycloneRushRotationDamage?.() ?? CYCLONE_RUSH_DAMAGE_PER_ROTATION;
         const prevFloor = Math.floor(prevSpinAngle / TAU);
         const currFloor = Math.floor(currSpinAngle / TAU);
-        if (currFloor > prevFloor && enemyData.length > 0 && onHit) {
+        if (currFloor > prevFloor) {
           const currentPosition = realTimePositionRef?.current || playerPosition;
           if (currentPosition) {
+            const pushDamageNumber = (position: Vector3) => {
+              if (setDamageNumbers && nextDamageNumberId) {
+                setDamageNumbers((prev) => [
+                  ...prev,
+                  {
+                    id: nextDamageNumberId.current++,
+                    damage: spinDamage,
+                    position: position.clone(),
+                    isCritical: false,
+                  },
+                ]);
+              }
+            };
+
+            const hitHarvestTargets = (
+              targets: Array<{ index: number; position: Vector3; radius?: number }> | undefined,
+              onPropHit: ((index: number, baseDamage: number) => void) | undefined,
+            ) => {
+              if (!targets?.length || !onPropHit) return;
+              for (const target of targets) {
+                const surfaceDist = Math.max(
+                  0,
+                  currentPosition.distanceTo(target.position) - (target.radius ?? 0),
+                );
+                if (surfaceDist <= CHARGE_SPIN_RADIUS) {
+                  onPropHit(target.index, spinDamage);
+                  pushDamageNumber(target.position);
+                }
+              }
+            };
+
             for (let f = prevFloor + 1; f <= currFloor; f++) {
               if (f < 1 || f > 3) continue;
-              for (const enemy of enemyData) {
-                if (enemy.health <= 0) continue;
-                const distance = currentPosition.distanceTo(enemy.position);
-                if (distance <= CHARGE_SPIN_RADIUS) {
-                  onHit(enemy.id, CHARGE_SPIN_DAMAGE);
-                  if (setDamageNumbers && nextDamageNumberId) {
-                    setDamageNumbers(prev => [...prev, {
-                      id: nextDamageNumberId.current++,
-                      damage: CHARGE_SPIN_DAMAGE,
-                      position: enemy.position.clone(),
-                      isCritical: false,
-                    }]);
+
+              if (onHit) {
+                for (const enemy of enemyData) {
+                  if (enemy.health <= 0) continue;
+                  const distance = currentPosition.distanceTo(enemy.position);
+                  if (distance <= CHARGE_SPIN_RADIUS) {
+                    onHit(enemy.id, spinDamage);
+                    pushDamageNumber(enemy.position);
                   }
                 }
               }
+
+              hitHarvestTargets(mushroomTargets, onMushroomHit);
+              hitHarvestTargets(treeTargets, onTreeHit);
+              hitHarvestTargets(rootTargets, onRootHit);
+              hitHarvestTargets(rockTargets, onRockHit);
+              hitHarvestTargets(spineTargets, onSpineHit);
             }
           }
         }
@@ -611,7 +647,6 @@ export default function Runeblade({
     }
 
     if (isCharging) {
-      const CHARGE_DISTANCE = 8;
       const CHARGE_WINDUP_DURATION = 0.1;
       const CHARGE_DURATION = 0.45;
       const CHARGE_DAMAGE = 75;
@@ -661,18 +696,8 @@ export default function Runeblade({
 
       const dashElapsed = elapsed - CHARGE_WINDUP_DURATION;
       const progress = Math.min(dashElapsed / CHARGE_DURATION, 1);
-      const easeOutQuad = calculationCache.getEasingCalculation('easeOutQuad', progress, 0, 1);
 
       if (!chargeStartPosition.current || !chargeDirection.current || !playerPosition) {
-        chargeStartTime.current = null;
-        chargeStartPosition.current = null;
-        onChargeComplete?.();
-        return;
-      }
-
-      const displacement = chargeDirection.current.clone().multiplyScalar(CHARGE_DISTANCE * easeOutQuad);
-      const newPosition = chargeStartPosition.current.clone().add(displacement);
-      if (!isInsideMainArenaXZ(newPosition.x, newPosition.z)) {
         chargeStartTime.current = null;
         chargeStartPosition.current = null;
         onChargeComplete?.();

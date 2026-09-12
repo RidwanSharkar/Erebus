@@ -80,6 +80,8 @@ interface DragonUnitProps {
   getRunebladeBlizzardStormHitRadius?: () => number;
   /** Local: Awakened Eye — denser Runeblade Blizzard frost particles. */
   getRunebladeBlizzardParticleSpawnMultiplier?: () => number;
+  /** Local: Cyclone Rush — 70 + 10 per AGILITY per spin rotation. */
+  getCycloneRushRotationDamage?: () => number;
   /** Local: Titan's Grip — flat STR-scaled LMB damage per combo strike. */
   getRunebladeTitansGripLmbFlatBonus?: () => number;
   /** Local: Vicegrip (Exodia Gauntlets) — +50 flat on each Runeblade combo hit. */
@@ -295,6 +297,7 @@ export default function DragonUnit({
   getRunebladeBlizzardDamagePerTick,
   getRunebladeBlizzardStormHitRadius,
   getRunebladeBlizzardParticleSpawnMultiplier,
+  getCycloneRushRotationDamage,
   getRunebladeTitansGripLmbFlatBonus,
   getVicegripRunebladeComboFlatBonus,
   onRunebladeTitansGripHit,
@@ -738,6 +741,7 @@ export default function DragonUnit({
           getBlizzardDamagePerTick={getRunebladeBlizzardDamagePerTick}
           getBlizzardStormHitRadius={getRunebladeBlizzardStormHitRadius}
           getBlizzardParticleSpawnMultiplier={getRunebladeBlizzardParticleSpawnMultiplier}
+          getCycloneRushRotationDamage={getCycloneRushRotationDamage}
           mushroomTargets={mushroomTargets}
           onMushroomHit={onMushroomHit}
           treeTargets={treeTargets}

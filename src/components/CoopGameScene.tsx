@@ -266,6 +266,7 @@ import {
   shouldApplyTitansGripTalent,
   shouldApplyPsionicBladesTalent,
   getRunebladeBlizzardDamagePerTickFromStats,
+  getCycloneRushRotationDamage as computeCycloneRushRotationDamage,
   shouldApplySpellbladeTalent,
   SPELLBLADE_INTELLECT_BONUS,
   shouldApplyParryTalent,
@@ -19999,6 +20000,13 @@ export function CoopGameScene({
           }
           getRunebladeBlizzardDamagePerTick={() =>
             getRunebladeBlizzardDamagePerTickFromStats(
+              controlSystemRef.current?.getAllocatedPlayerStats() ?? effectiveCombatStats,
+              talentLoadout,
+              abilityLoadout ?? null,
+            )
+          }
+          getCycloneRushRotationDamage={() =>
+            computeCycloneRushRotationDamage(
               controlSystemRef.current?.getAllocatedPlayerStats() ?? effectiveCombatStats,
               talentLoadout,
               abilityLoadout ?? null,
