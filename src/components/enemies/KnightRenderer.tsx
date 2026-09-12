@@ -623,18 +623,17 @@ function KnightRenderer({
       yOffset={1.0}
     />
 
-    {showOrbitals && orbitalCharges.length > 0 && !isDying && (
-      <ChargedOrbitals
-        parentRef={groupRef as React.RefObject<Group>}
-        dashCharges={orbitalCharges}
-        weaponType={WeaponType.NONE}
-        yOffset={orbitalYOffset}
-        customActiveColor={orbitalActiveColor}
-        customInactiveColor={orbitalInactiveColor}
-      />
-    )}
-
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
+      {showOrbitals && orbitalCharges.length > 0 && !isDying && (
+        <ChargedOrbitals
+          parentRef={groupRef as React.RefObject<Group>}
+          dashCharges={orbitalCharges}
+          weaponType={WeaponType.NONE}
+          yOffset={orbitalYOffset}
+          customActiveColor={orbitalActiveColor}
+          customInactiveColor={orbitalInactiveColor}
+        />
+      )}
       <EnemyAbilityChargeTelegraph
         active={isSpinCharging && !isDying}
         primaryColor={spinChargeColor}

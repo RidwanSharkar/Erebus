@@ -374,14 +374,14 @@ const RUNEBLADE_ASPECT_COMBAT: Record<
   RunebladeAspectCombat
 > = {
   LEGIONNAIRE: {
-    comboDamage: [50, 60, 70],
+    comboDamage: [60, 75, 90],
     fireRateSec: 0.875,
     rAbility: 'colossus_smite',
     smiteCooldownSec: 6,
     smiteBaseHeal: 30,
   },
   BLADEMASTER: {
-    comboDamage: [50, 60, 70],
+    comboDamage: [50, 70, 90],
     fireRateSec: 0.725,
     rAbility: 'colossus_smite',
   },
@@ -392,7 +392,7 @@ const RUNEBLADE_ASPECT_COMBAT: Record<
     rAbility: 'colossus_smite',
   },
   ROYAL_GUARD: {
-    comboDamage: [50, 60, 70],
+    comboDamage: [60, 75, 90],
     fireRateSec: 0.875,
     rAbility: 'tempest_sweep',
   },
@@ -488,8 +488,8 @@ export function isRunebladeTempestSweepAspect(
 
 // ── Tempest Sweep (Spear E / Royal Guard R) — keep in sync with backend/gameRoom.js ─
 
-export const TEMPEST_SWEEP_MIN_DAMAGE = 100;
-export const TEMPEST_SWEEP_MAX_DAMAGE = 320;
+export const TEMPEST_SWEEP_MIN_DAMAGE = 125;
+export const TEMPEST_SWEEP_MAX_DAMAGE = 450;
 /** Royal Guard R: charge this long (seconds) to apply Ignite on hit. */
 export const TEMPEST_SWEEP_IGNITE_CHARGE_SEC = 1.5;
 export const TEMPEST_SWEEP_IGNITE_DOT_FRACTION = 0.8;

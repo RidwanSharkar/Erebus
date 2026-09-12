@@ -319,7 +319,7 @@ const PET_UPGRADE_APEX_KILLER_DAMAGE = 71;
 const PET_UPGRADE_APEX_KILLER_CRIT_CHANCE = 0.2;
 const PET_UPGRADE_APEX_KILLER_CRIT_MULT = 2;
 const PET_UPGRADE_EVASION_RANGE = 6;
-const PET_UPGRADE_EVASION_CHANCE = 0.2;
+const PET_UPGRADE_EVASION_CHANCE = 0.225;
 const PET_UPGRADE_PERSISTENCE_HUNTER_RANGE = 10;
 
 function isValidPetCompanionUpgradeId(upgradeId, kind) {
@@ -578,10 +578,10 @@ const EXPLORE_CAMP_MAX_ACTIVE = 3;
 const EXPLORE_CAMP_PROP_OFFSET_MIN = 4;
 const EXPLORE_CAMP_PROP_OFFSET_MAX = 6;
 /** ~40ft at meter-scale. Timer starts only after a player has approached within this range. */
-const EXPLORE_CAMP_DESPAWN_DIST = 12;
+const EXPLORE_CAMP_DESPAWN_DIST = 48;
 const EXPLORE_CAMP_DESPAWN_DELAY_MS = 30000;
 /** Immediate unload when all players leave this radius (matches EXPLORE_BUILDING_RENDER_RADIUS). */
-const EXPLORE_CAMP_STREAM_RADIUS = 36;
+const EXPLORE_CAMP_STREAM_RADIUS = 48;
 /** Pack-member kill thresholds for explore boss encounters 1 / 2 / 3. */
 const EXPLORE_BOSS_KILL_THRESHOLDS = Object.freeze([35, 80, 150]);
 const EXPLORE_BOSS_SPAWN_DIST = 15;
@@ -8208,7 +8208,29 @@ class GameRoom {
     if (this.coopSunkenLootClaimedPlayerIds.has(playerId)) return false;
 
     const offer = this._getSunkenLootOfferForPlayer(playerId);
-    const entry = offer.find((item) => item.id === stockId);
+    let entry = offer.find((item) => item.id === stockId);
+    // Stale UI after a personal reroll may still send the previous stock id.
+    // Fall back to the same slot kind inferred from the id prefix, then by item type.
+    if (!entry || entry.sold) {
+      const kindFromId = typeof stockId === 'string'
+        ? (
+          stockId.includes('-warding-') || stockId.includes('-ward-')
+            ? 'warding_pendant'
+            : stockId.includes('-exodia-')
+              ? 'exodia'
+              : stockId.includes('-ring-')
+                ? 'ring'
+                : null
+        )
+        : null;
+      if (kindFromId) {
+        entry = offer.find((item) => item.kind === kindFromId && !item.sold);
+      }
+    }
+    if ((!entry || entry.sold) && typeof stockId === 'string') {
+      // Last resort: client may have sent a type string in older builds.
+      entry = offer.find((item) => item?.item?.type === stockId && !item.sold);
+    }
     if (!entry || entry.sold) return false;
 
     if (!this._isSunkenLootEntryEligible(player, entry)) {
@@ -8229,7 +8251,7 @@ class GameRoom {
 
     if (this.io) {
       this.io.to(playerId).emit('coop-sunken-loot-chosen', {
-        stockId,
+        stockId: entry.id,
         item,
         coopSunkenLootClaimedPlayerIds: [...this.coopSunkenLootClaimedPlayerIds],
         coopSunkenLootPhaseComplete: this.coopSunkenLootPhaseComplete,
@@ -8248,17 +8270,17 @@ class GameRoom {
   /**
    * Spend Fate to re-roll this player's personal Architect's Gift choices.
    * @param {string} playerId
-   * @returns {boolean}
+   * @returns {{ coopSunkenLootOffer: object[], fate: number }|null}
    */
   rerollSunkenTempleLoot(playerId) {
-    if (!this.coopSunkenFountainPhase || this.coopSunkenLootPhaseComplete) return false;
+    if (!this.coopSunkenFountainPhase || this.coopSunkenLootPhaseComplete) return null;
     const player = this.players.get(playerId);
-    if (!player) return false;
-    if (this.coopSunkenLootClaimedPlayerIds.has(playerId)) return false;
+    if (!player) return null;
+    if (this.coopSunkenLootClaimedPlayerIds.has(playerId)) return null;
 
     if ((player.fate || 0) < SUNKEN_LOOT_REROLL_FATE_COST) {
       this._emitSunkenLootFailure(playerId, 'not_enough_fate');
-      return false;
+      return null;
     }
 
     const current = this._getSunkenLootOfferForPlayer(playerId);
@@ -8268,6 +8290,7 @@ class GameRoom {
 
     player.fate = (player.fate || 0) - SUNKEN_LOOT_REROLL_FATE_COST;
     player.sunkenLootOffer = this._buildSunkenTempleLootOffer({ excludeTypes });
+    const coopSunkenLootOffer = this._cloneSunkenLootOffer(player.sunkenLootOffer);
 
     if (this.io) {
       this.io.to(this.roomId).emit('player-fate-changed', {
@@ -8275,15 +8298,16 @@ class GameRoom {
         fate: player.fate,
         timestamp: Date.now(),
       });
+      // Also emit on the personal channel; the requesting socket gets a success ack with the same payload.
       this.io.to(playerId).emit('coop-sunken-loot-rerolled', {
-        coopSunkenLootOffer: this._cloneSunkenLootOffer(player.sunkenLootOffer),
+        coopSunkenLootOffer,
         fate: player.fate,
         timestamp: Date.now(),
       });
     }
 
     console.log(`🎲 Sunken loot rerolled by ${playerId} (−${SUNKEN_LOOT_REROLL_FATE_COST} fate)`);
-    return true;
+    return { coopSunkenLootOffer, fate: player.fate };
   }
 
   _isSunkenLootEntryEligible(player, entry) {

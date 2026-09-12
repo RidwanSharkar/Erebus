@@ -55,7 +55,9 @@ const CoopSummonRitualLayer = memo(forwardRef<CoopSummonRitualLayerHandle, objec
     }, []);
 
     const addGhoulSummonRitual = useCallback((ritual: GhoulSummonRitualState) => {
-      setGhoulSummonRituals((prev) => [...prev, ritual]);
+      setGhoulSummonRituals((prev) =>
+        prev.some((r) => r.id === ritual.id) ? prev : [...prev, ritual],
+      );
     }, []);
 
     const addInfestedZombieSummonVfx = useCallback((fx: InfestedZombieSummonVfxState) => {

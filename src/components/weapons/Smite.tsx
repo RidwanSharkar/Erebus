@@ -364,7 +364,7 @@ const SmiteComponent = memo(function Smite({
     if (damageTriggered.current) return;
     damageTriggered.current = true;
 
-    const baseSmiteDamage = baseDamageOverride ?? 245;
+    const baseSmiteDamage = baseDamageOverride ?? 275;
     const useFlatDamage = baseDamageOverride != null;
     const resolvedDamageType = damageTypeOverride ?? 'smite';
     const damageRadius = 3.0; // Horizontal radius around impact (Y ignored so hovering units still hit)

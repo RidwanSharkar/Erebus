@@ -730,9 +730,16 @@ io.on('connection', (socket) => {
     if (!room.getPlayer(socket.id)) return;
     if (typeof room.rerollSunkenTempleLoot !== 'function') return;
 
-    const ok = room.rerollSunkenTempleLoot(socket.id);
-    if (ok) {
-      socket.emit('coop-reroll-sunken-loot-success', { roomId, timestamp: Date.now() });
+    const result = room.rerollSunkenTempleLoot(socket.id);
+    if (result) {
+      // Ack on the requesting socket with the new personal offer so the picker updates
+      // even if io.to(playerId) room membership is delayed or missing.
+      socket.emit('coop-reroll-sunken-loot-success', {
+        roomId,
+        coopSunkenLootOffer: result.coopSunkenLootOffer,
+        fate: result.fate,
+        timestamp: Date.now(),
+      });
     }
   });
 

@@ -3986,6 +3986,111 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       });
     });
 
+    /** Grant a server-confirmed item to local inventory (idempotent by item id). */
+    const grantLocalInventoryItem = (itemId: string, item: DroppedItem | Omit<DroppedItem, 'position' | 'droppedAt'>) => {
+      if (!item?.type) return;
+      // Already applied from a parallel event (e.g. item-picked-up + coop-sunken-loot-chosen).
+      if (inventoryRef.current.some((i) => i.id === itemId)) return;
+
+      const isAmuletPickup =
+        typeof item.type === 'string' && item.type.startsWith('AMULET_OF');
+      if (isAmuletPickup) {
+        (window as any).audioSystem?.playUITomePickupSound?.();
+        if (item.stat != null) {
+          runePickupHandlersRef.current.forEach((handler) => handler({
+            stat: item.stat!,
+          }));
+        }
+      }
+
+      const invSnapshot = inventoryRef.current;
+      const existing = invSnapshot.find((i) => i.type === item.type);
+      let pickupOutcome: 'new' | 'upgrade' | 'discard' = 'new';
+
+      if (item.category === 'boss_drop' && item.type) {
+        if (isUpgradeableBossRelic(item.type)) {
+          pickupOutcome = resolveBossRelicPickup(existing?.rarity, item.rarity);
+        } else if (isUniqueDreamLayerItem(item.type) && existing) {
+          pickupOutcome = 'discard';
+        } else if (existing && item.category === 'boss_drop') {
+          // Any other boss_drop type is unique — one copy only
+          pickupOutcome = 'discard';
+        }
+      } else if (existing && (item.category === 'ward' || item.type.startsWith('WARD_'))) {
+        // Warding pendants / banes are unique by type
+        pickupOutcome = 'discard';
+      }
+
+      if (pickupOutcome === 'discard') {
+        return;
+      }
+
+      if (item.stat != null) {
+        if (pickupOutcome === 'upgrade' && existing) {
+          const delta = StatSystem.getBossRelicStatDelta(existing.statBonus, item.statBonus);
+          if (delta > 0) {
+            setStatPointData(prev => StatSystem.grantItemStat(prev, item.stat!, delta));
+          }
+        } else {
+          const bonus = item.statBonus;
+          if (bonus != null && bonus > 0) {
+            setStatPointData(prev => StatSystem.grantItemStat(prev, item.stat!, bonus));
+          } else if (bonus == null) {
+            setStatPointData(prev => StatSystem.grantItemStat(prev, item.stat!));
+          }
+        }
+      }
+
+      setInventory((prev) => {
+        if (prev.some((i) => i.id === itemId)) return prev;
+
+        const incoming: InventoryItem = {
+          id: itemId,
+          type: item.type,
+          stat: item.stat,
+          label: item.label,
+          category: item.category,
+          statBonus: item.statBonus,
+          rarity: item.rarity,
+          bannedEnemyType: item.bannedEnemyType,
+          iconPath: item.iconPath,
+          pickedUpAt: Date.now(),
+        };
+
+        let next: InventoryItem[];
+        if (pickupOutcome === 'upgrade') {
+          next = prev.map((i) => (i.type === item.type ? incoming : i));
+        } else {
+          // Belt-and-suspenders: never keep two of the same boss_drop / ward type
+          if (
+            (item.category === 'boss_drop' || item.category === 'ward')
+            && prev.some((i) => i.type === item.type)
+          ) {
+            return prev;
+          }
+          next = [...prev, incoming];
+        }
+
+        const bossDrops = next.filter((entry) => entry.category === 'boss_drop');
+        if (bossDrops.length <= 7) return next;
+
+        const sorted = [...bossDrops].sort((a, b) => {
+          const rankA = a.rarity && isItemRarity(a.rarity) ? ITEM_RARITY_RANK[a.rarity] : -1;
+          const rankB = b.rarity && isItemRarity(b.rarity) ? ITEM_RARITY_RANK[b.rarity] : -1;
+          if (rankA !== rankB) return rankA - rankB;
+          return (a.pickedUpAt ?? 0) - (b.pickedUpAt ?? 0);
+        });
+        const discardIds = new Set(sorted.slice(0, bossDrops.length - 7).map((entry) => entry.id));
+        return next.filter((entry) => entry.category !== 'boss_drop' || !discardIds.has(entry.id));
+      });
+      if (item.category === 'boss_drop') {
+        bossItemPickupHandlersRef.current.forEach((handler) => handler({
+          label: item.label ?? 'Artifact',
+          rarity: item.rarity,
+        }));
+      }
+    };
+
     addEventHandler('item-picked-up', (data: { itemId: string; playerId: string; item: DroppedItem }) => {
       // Remove from world for everyone
       setDroppedItems(prev => {
@@ -3994,99 +4099,8 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         return next;
       });
       // Grant / upgrade only for the player who picked it up
-      if (newSocket.id && data.playerId === newSocket.id) {
-        const isAmuletPickup =
-          typeof data.item.type === 'string' && data.item.type.startsWith('AMULET_OF');
-        if (isAmuletPickup) {
-          (window as any).audioSystem?.playUITomePickupSound?.();
-          if (data.item.stat != null) {
-            runePickupHandlersRef.current.forEach((handler) => handler({
-              stat: data.item.stat!,
-            }));
-          }
-        }
-
-        const invSnapshot = inventoryRef.current;
-        const existing = invSnapshot.find((i) => i.type === data.item.type);
-        let pickupOutcome: 'new' | 'upgrade' | 'discard' = 'new';
-
-        if (data.item.category === 'boss_drop' && data.item.type) {
-          if (isUpgradeableBossRelic(data.item.type)) {
-            pickupOutcome = resolveBossRelicPickup(existing?.rarity, data.item.rarity);
-          } else if (isUniqueDreamLayerItem(data.item.type) && existing) {
-            pickupOutcome = 'discard';
-          } else if (existing && data.item.category === 'boss_drop') {
-            // Any other boss_drop type is unique — one copy only
-            pickupOutcome = 'discard';
-          }
-        }
-
-        if (pickupOutcome === 'discard') {
-          return;
-        }
-
-        if (data.item.stat != null) {
-          if (pickupOutcome === 'upgrade' && existing) {
-            const delta = StatSystem.getBossRelicStatDelta(existing.statBonus, data.item.statBonus);
-            if (delta > 0) {
-              setStatPointData(prev => StatSystem.grantItemStat(prev, data.item.stat!, delta));
-            }
-          } else {
-            const bonus = data.item.statBonus;
-            if (bonus != null && bonus > 0) {
-              setStatPointData(prev => StatSystem.grantItemStat(prev, data.item.stat!, bonus));
-            } else if (bonus == null) {
-              setStatPointData(prev => StatSystem.grantItemStat(prev, data.item.stat!));
-            }
-          }
-        }
-
-        setInventory((prev) => {
-          const incoming = {
-            id: data.itemId,
-            type: data.item.type,
-            stat: data.item.stat,
-            label: data.item.label,
-            category: data.item.category,
-            statBonus: data.item.statBonus,
-            rarity: data.item.rarity,
-            bannedEnemyType: data.item.bannedEnemyType,
-            iconPath: data.item.iconPath,
-            pickedUpAt: Date.now(),
-          };
-
-          let next: InventoryItem[];
-          if (pickupOutcome === 'upgrade') {
-            next = prev.map((i) => (i.type === data.item.type ? incoming : i));
-          } else {
-            // Belt-and-suspenders: never keep two of the same boss_drop type
-            if (
-              data.item.category === 'boss_drop'
-              && prev.some((i) => i.type === data.item.type)
-            ) {
-              return prev;
-            }
-            next = [...prev, incoming];
-          }
-
-          const bossDrops = next.filter((item) => item.category === 'boss_drop');
-          if (bossDrops.length <= 7) return next;
-
-          const sorted = [...bossDrops].sort((a, b) => {
-            const rankA = a.rarity && isItemRarity(a.rarity) ? ITEM_RARITY_RANK[a.rarity] : -1;
-            const rankB = b.rarity && isItemRarity(b.rarity) ? ITEM_RARITY_RANK[b.rarity] : -1;
-            if (rankA !== rankB) return rankA - rankB;
-            return (a.pickedUpAt ?? 0) - (b.pickedUpAt ?? 0);
-          });
-          const discardIds = new Set(sorted.slice(0, bossDrops.length - 7).map((item) => item.id));
-          return next.filter((item) => item.category !== 'boss_drop' || !discardIds.has(item.id));
-        });
-        if (data.item.category === 'boss_drop') {
-          bossItemPickupHandlersRef.current.forEach((handler) => handler({
-            label: data.item.label ?? 'Artifact',
-            rarity: data.item.rarity,
-          }));
-        }
+      if (newSocket.id && data.playerId === newSocket.id && data.item) {
+        grantLocalInventoryItem(data.itemId, data.item);
       }
     });
 
@@ -4520,9 +4534,19 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     });
 
     addEventHandler('coop-sunken-loot-chosen', (data: {
+      stockId?: string;
+      item?: DroppedItem | Omit<DroppedItem, 'position' | 'droppedAt'>;
       coopSunkenLootClaimedPlayerIds?: string[];
       coopSunkenLootPhaseComplete?: boolean;
     }) => {
+      // Apply grant from the personal chosen event so inventory does not depend
+      // solely on the room-wide item-picked-up (idempotent if both arrive).
+      if (data?.item?.id || data?.item) {
+        const itemId = (data.item as { id?: string }).id
+          ?? data.stockId
+          ?? `sunken-loot-${Date.now()}`;
+        grantLocalInventoryItem(itemId, data.item as DroppedItem);
+      }
       if (Array.isArray(data?.coopSunkenLootClaimedPlayerIds)) {
         setCoopSunkenLootClaimedPlayerIds([...data.coopSunkenLootClaimedPlayerIds]);
       }
@@ -4531,13 +4555,26 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       }
     });
 
-    addEventHandler('coop-sunken-loot-rerolled', (data: {
+    const applySunkenLootRerollOffer = (data: {
       coopSunkenLootOffer?: DreamLayerStockItem[];
+      fate?: number;
     }) => {
       if ('coopSunkenLootOffer' in (data ?? {})) {
         setCoopSunkenLootOffer(parseCoopSunkenLootOffer(data.coopSunkenLootOffer));
       }
-    });
+      if (typeof data?.fate === 'number' && newSocket.id) {
+        patchPlayerRef(playersRef, newSocket.id, { fate: data.fate });
+        playerFateChangedHandlersRef.current.forEach((handler) => handler({
+          playerId: newSocket.id!,
+          fate: data.fate!,
+        }));
+      }
+    };
+
+    addEventHandler('coop-sunken-loot-rerolled', applySunkenLootRerollOffer);
+
+    // Requesting-socket ack with the new personal offer (primary UI refresh path).
+    addEventHandler('coop-reroll-sunken-loot-success', applySunkenLootRerollOffer);
 
     addEventHandler('coop-sunken-loot-failed', () => {
       (window as any).audioSystem?.playUIInterface4Sound?.();
@@ -7053,7 +7090,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     closeChat,
     setPlayers
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, playerRosterMetaRev, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopSkyPresetIndex, coopGrassPresetIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopFullResetSeq, coopMainArenaIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, lateJoinCombatLoadout, clearLateJoinCombatLoadout, reclaimedPlayerState, clearReclaimedPlayerState, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, switchRoom, leaveRoom, previewRoom, clearPreview, startGame, restartCoopRunToThrone, endCoopGame, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerArchetype, updatePlayerWeaponAspect, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastAlliedHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, damageTree, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, treeState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, selectedArchetype, selectedWeaponAspect, weaponAspectByWeapon, setSelectedWeapons, setSelectedArchetype, setSelectedWeaponAspect, rememberWeaponAspect, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, registerMerchantNpcGreetHandler, registerPlayerGoldChangedHandler, registerPlayerWoodChangedHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
+  }), [socket, isConnected, connectionError, isInRoom, currentRoomId, players, playerRosterMetaRev, enemies, killCount, skeletonKillCount, skeletonKillRequired, gameStarted, combatArenaActive, gameMode, campTypes, thronePortalOffer, thronePortalLayout, coopMainArenaPortalPhase, coopTerrainTheme, coopCurrentRoomKind, coopClearedRoomKind, coopColoredRoomVisitIndex, coopBossRoomVisitIndex, coopSkyPresetIndex, coopGrassPresetIndex, coopBossThroneArena, coopThroneBossKind, coopTransitionOverlay, coopCombatArenaEnterSeq, coopFullResetSeq, coopMainArenaIntermissionSeq, coopSunkenActive, coopSunkenRoomIndex, coopSunkenPortalOpen, coopSunkenFountainPhase, coopSunkenFountainUsed, coopSunkenAllyChoiceMade, coopSunkenLootOffer, coopSunkenLootClaimedPlayerIds, coopSunkenLootPhaseComplete, coopSunkenCompleted, coopEternityActive, coopEternityRoomIndex, coopEternityPortalOpen, coopEternityFountainPhase, coopEternityFountainUsed, coopEternityLootOffer, coopEternityLootClaimedPlayerIds, coopEternityLootPhaseComplete, coopEternityCompleted, coopAllyKind, coopAllyOffer, coopVoidPortalOffered, coopDeepSanctumLevel, deepSanctumRewardKind, coopDeepSanctumIntermissionSeq, coopBossClearedBgmSeq, coopClearedRoomColor, clearCoopClearedRoomColor, lateJoinCombatLoadout, clearLateJoinCombatLoadout, reclaimedPlayerState, clearReclaimedPlayerState, hideCoopPortalTransition, confirmCoopPortalTransitionComplete, endCoopPortalTransition, currentPreview, joinRoom, switchRoom, leaveRoom, previewRoom, clearPreview, startGame, restartCoopRunToThrone, endCoopGame, enterCombatArena, updatePlayerPosition, updatePlayerWeapon, updatePlayerArchetype, updatePlayerWeaponAspect, updatePlayerHealth, broadcastPlayerAttack, broadcastPlayerAbility, broadcastPlayerEffect, broadcastPlayerDamage, broadcastPlayerHealing, broadcastAlliedHealing, broadcastPlayerAnimationState, broadcastPlayerDebuff, broadcastPlayerStealth, broadcastPlayerKnockback, broadcastPlayerTornadoEffect, broadcastPlayerDeathEffect, damageEnemy, subscribeEnemyDamage, damageMushroom, damageTree, detonateWyvernConcentratedVenom, applyStatusEffect, mushroomState, treeState, updatePlayerExperience, updatePlayerLevel, updatePlayerEssence, updatePlayerGold, updatePlayerShield, selectedWeapons, selectedArchetype, selectedWeaponAspect, weaponAspectByWeapon, setSelectedWeapons, setSelectedArchetype, setSelectedWeaponAspect, rememberWeaponAspect, abilityLoadout, setAbilityLoadout, talentLoadout, setTalentLoadout, skillPointData, unlockAbility, updateSkillPointsForLevel, grantSkillPoints, statPointData, allocateStatPoint, updateStatPointsForLevel, grantStatPoints, purchaseItem, purchaseMerchantItem, purchaseMerchantHeal, merchantPurchaseState, registerMerchantPurchaseSuccessHandler, registerMerchantNpcGreetHandler, registerPlayerGoldChangedHandler, registerPlayerWoodChangedHandler, droppedItems, goldDrops, inventory, merchantInventory, pickupItem, pickupGoldDrop, chatMessages, isChatOpen, sendChatMessage, openChat, closeChat, setPlayers]);
 
   const actionsValue: MultiplayerActionsContextType = useMemo(
     () => ({
@@ -7506,8 +7543,33 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
       coopDefenseGrantClassBoon,
       coopDungeonActive,
       coopSkyTempleActive,
+      coopSunkenActive,
+      coopSunkenRoomIndex,
+      coopSunkenPortalOpen,
+      coopSunkenFountainPhase,
+      coopSunkenFountainUsed,
+      coopSunkenAllyChoiceMade,
+      coopSunkenLootOffer,
+      coopSunkenLootClaimedPlayerIds,
+      coopSunkenLootPhaseComplete,
+      coopSunkenCompleted,
+      coopEternityActive,
+      coopEternityRoomIndex,
+      coopEternityPortalOpen,
+      coopEternityFountainPhase,
+      coopEternityFountainUsed,
+      coopEternityLootOffer,
+      coopEternityLootClaimedPlayerIds,
+      coopEternityLootPhaseComplete,
       coopPetCompanionUpgrade,
       explorePetCompanionUpgrades,
+      coopEternityCompleted,
+      coopAllyKind,
+      coopAllyOffer,
+      coopVoidPortalOffered,
+      coopDeepSanctumLevel,
+      deepSanctumRewardKind,
+      coopDeepSanctumIntermissionSeq,
       coopEdenFountainUsed,
       coopEdenResumeKind,
       coopEdenIntermissionSeq,

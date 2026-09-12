@@ -238,16 +238,6 @@ function ValkyrieRenderer({
         yOffset={2.75}
       />
 
-      {!isDying && (
-        <ChargedOrbitals
-          parentRef={groupRef as React.RefObject<Group>}
-          dashCharges={orbitalCharges}
-          weaponType={WeaponType.NONE}
-          yOffset={VALKYRIE_ORBITAL_Y_OFFSET}
-          customActiveColor={VALKYRIE_ORBITAL_ACTIVE}
-          customInactiveColor={VALKYRIE_ORBITAL_INACTIVE}
-        />
-      )}
 
       <group ref={setGroupRef}>
         <ValkyrieModel abilityClip={abilityClip} isDying={isDying} />

@@ -15,7 +15,14 @@ export const EXPLORE_ZOOM_DPR_MAX = 1.5;
 export const EXPLORE_MAX_DRAW_WIDTH = 1280;
 export const EXPLORE_MAX_DRAW_HEIGHT = 720;
 
-/** Matches Canvas `dpr={[1, 1.5]}` in page.tsx — restore when leaving Explore. */
+/**
+ * Max WebGL drawing-buffer for non-Explore rooms (Throne, Fae, defense, PvP, …).
+ * Next 16:9 tier above 720p (~1400-class).
+ */
+export const STANDARD_MAX_DRAW_WIDTH = 1600;
+export const STANDARD_MAX_DRAW_HEIGHT = 900;
+
+/** Legacy R3F default range; drawing-buffer cap now always uses a numeric DPR. */
 export const CANVAS_DEFAULT_DPR: [number, number] = [1, 1.5];
 
 const DPR_FLOOR = 0.25;
@@ -63,24 +70,38 @@ function lerpDpr(radius: number): number {
 }
 
 /**
- * Cap Explore drawing-buffer pixels to EXPLORE_MAX_DRAW_* while preserving
- * aspect ratio. Never exceeds zoomLodDpr (1.0 close → 1.5 far).
- * Steps down (floor) so the buffer never exceeds the named max.
+ * Cap drawing-buffer pixels to maxWidth×maxHeight while preserving aspect
+ * ratio. Never exceeds zoomDpr. Steps down (floor) so the buffer never
+ * exceeds the named max.
  */
+export function computeCappedDpr(
+  cssWidth: number,
+  cssHeight: number,
+  zoomDpr: number,
+  maxWidth: number,
+  maxHeight: number,
+): number {
+  const w = Math.max(1, cssWidth);
+  const h = Math.max(1, cssHeight);
+  const resCap = Math.min(maxWidth / w, maxHeight / h);
+  const capped = Math.min(resCap, zoomDpr);
+  const stepped = Math.floor(capped / DPR_STEP + 1e-9) * DPR_STEP;
+  return Math.min(zoomDpr, Math.max(DPR_FLOOR, stepped));
+}
+
+/** Explore: 1280×720 cap + zoom LOD input. */
 export function computeExploreDpr(
   cssWidth: number,
   cssHeight: number,
   zoomDpr: number,
 ): number {
-  const w = Math.max(1, cssWidth);
-  const h = Math.max(1, cssHeight);
-  const resCap = Math.min(
-    EXPLORE_MAX_DRAW_WIDTH / w,
-    EXPLORE_MAX_DRAW_HEIGHT / h,
+  return computeCappedDpr(
+    cssWidth,
+    cssHeight,
+    zoomDpr,
+    EXPLORE_MAX_DRAW_WIDTH,
+    EXPLORE_MAX_DRAW_HEIGHT,
   );
-  const capped = Math.min(resCap, zoomDpr);
-  const stepped = Math.floor(capped / DPR_STEP + 1e-9) * DPR_STEP;
-  return Math.min(zoomDpr, Math.max(DPR_FLOOR, stepped));
 }
 
 export function updateExploreZoomLod(radius: number): ExploreZoomLod {
@@ -114,4 +135,50 @@ export function isExploreZoomClose(): boolean {
 
 export function isExploreZoomVeryClose(): boolean {
   return lod.veryClose;
+}
+
+/**
+ * Global Canvas `dpr` override. A number (can be < 1) so R3F configure()
+ * does not clamp back to [1, 1.5]. Null until the driver publishes → fallback.
+ */
+let canvasDpr: number | null = null;
+const canvasDprListeners = new Set<() => void>();
+
+export function getCanvasDpr(): number | null {
+  return canvasDpr;
+}
+
+export function setCanvasDpr(dpr: number | null): void {
+  if (canvasDpr === dpr) return;
+  if (
+    dpr !== null &&
+    canvasDpr !== null &&
+    Math.abs(canvasDpr - dpr) < 1e-6
+  ) {
+    return;
+  }
+  canvasDpr = dpr;
+  canvasDprListeners.forEach((listener) => listener());
+}
+
+export function subscribeCanvasDpr(listener: () => void): () => void {
+  canvasDprListeners.add(listener);
+  return () => {
+    canvasDprListeners.delete(listener);
+  };
+}
+
+/** First-frame fallback before ExploreZoomLodDriver publishes. */
+export function computeCanvasDprFallback(explore = false): number {
+  const maxW = explore ? EXPLORE_MAX_DRAW_WIDTH : STANDARD_MAX_DRAW_WIDTH;
+  const maxH = explore ? EXPLORE_MAX_DRAW_HEIGHT : STANDARD_MAX_DRAW_HEIGHT;
+  const w =
+    typeof window !== 'undefined' && Number.isFinite(window.innerWidth)
+      ? window.innerWidth
+      : maxW;
+  const h =
+    typeof window !== 'undefined' && Number.isFinite(window.innerHeight)
+      ? window.innerHeight
+      : maxH;
+  return computeCappedDpr(w, h, EXPLORE_ZOOM_DPR_MAX, maxW, maxH);
 }

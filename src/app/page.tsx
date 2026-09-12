@@ -1,7 +1,7 @@
 'use client';
 
 import '@/utils/installAssetLoadQueue';
-import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
+import { Suspense, useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
 import dynamic from 'next/dynamic';
 import { WeaponType, WeaponSubclass } from '../components/dragon/weapons';
 import { Camera } from '../utils/three-exports';
@@ -116,6 +116,11 @@ import { getWeaponAspectLabel, defaultWeaponAspect, type WeaponAspect } from '..
 import {
   EXPLORE_SHRINE_GIFTS,
 } from '../utils/exploreBuildings';
+import {
+  computeCanvasDprFallback,
+  getCanvasDpr,
+  subscribeCanvasDpr,
+} from '@/utils/exploreZoomLod';
 
 // Extend Window interface to include audioSystem
 declare global {
@@ -1465,9 +1470,9 @@ function HomeContent() {
   ]);
 
   const handleSunkenLootPick = useCallback((stockId: string) => {
+    // Do not close optimistically — wait for coop-sunken-loot-chosen / claimed ids.
+    // Closing early after a failed pick (e.g. stale stock id) looked like a successful empty grant.
     chooseSunkenTempleLoot(stockId);
-    setSunkenLootModalOpen(false);
-    window.audioSystem?.playUISelectionSound?.();
   }, [chooseSunkenTempleLoot]);
 
   const handleSunkenLootReroll = useCallback(() => {
@@ -1476,9 +1481,15 @@ function HomeContent() {
     window.audioSystem?.playBoonRerollSound?.();
   }, [playerFate, rerollSunkenTempleLoot]);
 
+  const sunkenLootClaimSoundPlayedRef = useRef(false);
   useEffect(() => {
-    if (socket?.id && coopSunkenLootClaimedPlayerIds.includes(socket.id)) {
+    const claimed = !!(socket?.id && coopSunkenLootClaimedPlayerIds.includes(socket.id));
+    if (claimed && !sunkenLootClaimSoundPlayedRef.current) {
+      sunkenLootClaimSoundPlayedRef.current = true;
       setSunkenLootModalOpen(false);
+      window.audioSystem?.playUISelectionSound?.();
+    } else if (!claimed) {
+      sunkenLootClaimSoundPlayedRef.current = false;
     }
   }, [coopSunkenLootClaimedPlayerIds, socket?.id]);
 
@@ -2312,6 +2323,17 @@ function HomeContent() {
     }
   }, [coopCurrentRoomKind]);
 
+  // Numeric DPR (can be < 1) so R3F configure() does not clamp to [1, 1.5].
+  // Caps drawing buffer to 1280×720 in every mode; ExploreZoomLodDriver publishes live values.
+  const canvasDprStore = useSyncExternalStore(
+    subscribeCanvasDpr,
+    getCanvasDpr,
+    () => null,
+  );
+  const canvasDpr =
+    canvasDprStore ??
+    computeCanvasDprFallback(coopCurrentRoomKind === 'explore');
+
   const handleFateUpdate = useCallback((fate: number) => {
     setPlayerFate(fate);
   }, []);
@@ -2662,7 +2684,7 @@ function HomeContent() {
           <Canvas
             camera={CANVAS_CAMERA}
             {...(ENABLE_REALTIME_SHADOWS ? { shadows: true as const } : {})}
-            dpr={[1, 1.5]}
+            dpr={canvasDpr}
             gl={CANVAS_GL}
           >
             <Suspense fallback={null}>

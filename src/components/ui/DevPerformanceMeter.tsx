@@ -122,6 +122,14 @@ function ExpandedPanel({ s }: { s: DevPerformanceSnapshot }) {
           }
         />
         <MetricRow
+          label="CSS size"
+          value={
+            s.cssWidth > 0 && s.cssHeight > 0
+              ? `${s.cssWidth}×${s.cssHeight}`
+              : 'n/a'
+          }
+        />
+        <MetricRow
           label="Zoom LOD"
           value={
             s.exploreZoomRadius != null

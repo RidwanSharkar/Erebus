@@ -864,9 +864,18 @@ function DevPerformanceCollector() {
     const zoomLod = getExploreZoomLod();
     const dpr = gl.getPixelRatio();
     const canvas = gl.domElement;
-    // Prefer actual drawing-buffer size; fall back to CSS × dpr.
-    const drawWidth = canvas.width || Math.round(canvas.clientWidth * dpr);
-    const drawHeight = canvas.height || Math.round(canvas.clientHeight * dpr);
+    const cssWidth = canvas.clientWidth || 0;
+    const cssHeight = canvas.clientHeight || 0;
+    const gpu = gl.getContext();
+    // Prefer actual GPU drawing-buffer size; fall back to CSS × dpr.
+    const drawWidth =
+      gpu.drawingBufferWidth ||
+      canvas.width ||
+      Math.round(cssWidth * dpr);
+    const drawHeight =
+      gpu.drawingBufferHeight ||
+      canvas.height ||
+      Math.round(cssHeight * dpr);
     devPerformanceStore.publish({
       drawCalls: info.render.calls,
       triangles: info.render.triangles,
@@ -878,6 +887,8 @@ function DevPerformanceCollector() {
       dpr,
       drawWidth,
       drawHeight,
+      cssWidth,
+      cssHeight,
       exploreZoomRadius: zoomLod.radius,
       exploreZoomClose: zoomLod.close,
       exploreZoomVeryClose: zoomLod.veryClose,
@@ -14363,6 +14374,7 @@ export function CoopGameScene({
     const handleWeaverSummonTelegraph = (data: {
       weaverId: string;
       ritualPosition: { x: number; y: number; z: number };
+      timestamp?: number;
     }) => {
       if (!data.ritualPosition) return; // Guard for older server versions
       const ritualPos = new Vector3(
@@ -14372,8 +14384,14 @@ export function CoopGameScene({
       );
       window.audioSystem?.playWeaverGhoulSummonSound(ritualPos);
       const isDeliriumSpawner = data.weaverId === 'delirium-gate-spawner';
+      // Delirium Gate emits a batch of telegraphs in the same tick with the same
+      // weaverId; include position + a unique suffix so React keys never collide.
+      const ts = data.timestamp ?? Date.now();
+      const uniq = Math.random().toString(36).slice(2, 8);
+      const xKey = Math.round(data.ritualPosition.x * 100);
+      const zKey = Math.round(data.ritualPosition.z * 100);
       summonRitualLayerRef.current?.addGhoulSummonRitual({
-        id: `ghoul-ritual-${data.weaverId}-${Date.now()}`,
+        id: `ghoul-ritual-${data.weaverId}-${xKey}-${zKey}-${ts}-${uniq}`,
         position: ritualPos,
         ...(isDeliriumSpawner ? { duration: 2 } : {}),
       });

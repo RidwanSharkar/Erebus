@@ -257,18 +257,17 @@ function AlliedHealerRenderer({
         />
       ))}
 
-      {orbitalCharges.length > 0 && !isDying && (
-        <ChargedOrbitals
-          parentRef={groupRef as React.RefObject<Group>}
-          dashCharges={orbitalCharges}
-          weaponType={WeaponType.NONE}
-          yOffset={2.1}
-          customActiveColor="#facc15"
-          customInactiveColor="#3a2a09"
-        />
-      )}
-
       <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
+        {orbitalCharges.length > 0 && !isDying && (
+          <ChargedOrbitals
+            parentRef={groupRef as React.RefObject<Group>}
+            dashCharges={orbitalCharges}
+            weaponType={WeaponType.NONE}
+            yOffset={2.1}
+            customActiveColor="#facc15"
+            customInactiveColor="#3a2a09"
+          />
+        )}
         <AlliedHealerModel isWalking={isWalking} isDying={isDying} abilityClip={abilityClip} />
 
         <Billboard position={[0, 2.8, 0]} follow lockX={false} lockY={false} lockZ={false}>

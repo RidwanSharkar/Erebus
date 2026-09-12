@@ -1798,7 +1798,7 @@ export class AudioSystem extends System {
 
   private startShieldRegenLoop(sound: Howl): void {
     if (this.shieldRegenLoopInstance !== null) return;
-    const vol = 0.85 * this.sfxVolume * this.masterVolume;
+    const vol = 6.125 * this.sfxVolume * this.masterVolume;
     this.shieldRegenLoopInstance = sound.play();
     if (this.shieldRegenLoopInstance !== undefined) {
       sound.loop(true, this.shieldRegenLoopInstance);
