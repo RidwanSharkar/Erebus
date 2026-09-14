@@ -35,6 +35,7 @@ interface AnimatedDeathGraspProps {
     health: number;
     type?: string;
     isBoss1EliteKnight?: boolean;
+    isBoss1EliteWyrm?: boolean;
   }>;
   /** True when this enemy should not be pulled (bosses / elites / training dummy). */
   isEnemyPullImmune?: (enemyId: string) => boolean;

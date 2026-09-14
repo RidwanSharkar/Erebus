@@ -795,7 +795,7 @@ const DEFENSE_TOWER_ATTACK_PROFILES = Object.freeze({
   'defense-tower-se': DEFENSE_TOWER_BOLT_PROFILE,
 });
 const DEFENSE_SPAWN_DISTANCE = 12;
-const EXPLORE_DAY_NIGHT_PERIOD_MS = 300000;
+const EXPLORE_DAY_NIGHT_PERIOD_MS = 240000;
 const EXPLORE_NIGHT_PHASE_START = 0.7;
 const EXPLORE_NIGHT_RAID_GAP_MS = 45000;
 const EXPLORE_NIGHT_RAID_SPAWN_DIST = 20;
@@ -874,10 +874,16 @@ const COOP_CRYPT_BEAST_CHANCE = 0.75;
 const COOP_WAVE_TITAN_ROOM_CHANCE = 0.25; // 25% of colored rooms spawn 1 elite at boss-count tier 1 (used by Nemesis; Titans require boss 2+)
 const COOP_WAVE_TITAN_ROOM_CHANCE_AFTER_BOSS2 = 0.40; // 40% of colored rooms spawn 1 elite after boss 2 (capped at 1)
 const COOP_WAVE_BOSS1_ROOM_CHANCE = 0.20; // 33% of colored rooms have a mini-boss1 spawn after boss2 is defeated
-const COOP_BOSS1_ELITE_KNIGHTS_CHANCE = 0.45; // 50% of 1st boss encounters are 2 elite knights instead of the GLB boss
+/** Boss1 encounter: equal thirds for Hate / twin elite knights / twin wyrms. */
+const COOP_BOSS1_ENCOUNTER_OPTION_CHANCE = 1 / 3;
 const BOSS1_ELITE_SIZE_SCALE = 1.33;
 const BOSS1_ELITE_SPEED_MULT = 1.15;
 const BOSS1_ELITE_HEALTH_MULT = 4;
+/** Base stats for Boss1 twin-wyrm encounter (matches wilderness wyrm). */
+const BOSS1_ELITE_WYRM_HEALTH = 5200;
+const BOSS1_ELITE_WYRM_DAMAGE = 43;
+const BOSS1_ELITE_WYRM_ATTACK_COOLDOWN = 850;
+const BOSS1_ELITE_WYRM_MOVE_SPEED = 1.75;
 /** Boss-2 slot: 50% chance to spawn Weaver (current boss3) instead of the warlock/weaver sub-roll. */
 const COOP_BOSS2_WEAVER_EARLY_CHANCE = 0.50;
 /** Of the remaining Boss-2 slot rolls: 60% Archon warlock, 40% Weaver. */
@@ -1374,6 +1380,8 @@ class GameRoom {
     this.tripleBossIds = null;
     /** Tracks IDs of the two elite knights in the alternate Boss1 encounter; null outside that fight. */
     this.boss1EliteKnightIds = null;
+    /** Tracks IDs of the two elite wyrms in the alternate Boss1 encounter; null outside that fight. */
+    this.boss1EliteWyrmIds = null;
 
     /** Co-op: per-index HP for `mushroomLayout` instances; reset on new game. */
     this.mushroomHealth = null;
@@ -2043,6 +2051,7 @@ class GameRoom {
       player.obeliskPurchasedTalents = new Set();
       player.isStealthing = false;
       player.isInvisible = false;
+      player.deathdealerInvisible = false;
       player.reaperCrossentropyStack = 0;
       player.backstabKillstreakStack = 0;
       player.coopZombieBoons = {
@@ -2182,6 +2191,7 @@ class GameRoom {
     this.miniBoss1SpawnedThisRoom = false;
     this.tripleBossIds = null;
     this.boss1EliteKnightIds = null;
+    this.boss1EliteWyrmIds = null;
     this._resetMushroomState();
     this.coopIntroPending = false;
     this.coopIntroActive = false;
@@ -7274,6 +7284,7 @@ class GameRoom {
       if (enemy._exploreNightRaid) continue;
       if (this.exploreBossIds?.has(id)) continue;
       if (enemy.isBoss1EliteKnight) continue;
+      if (enemy.isBoss1EliteWyrm) continue;
       if (COOP_BOSS_TYPES.has(enemy.type)) continue;
       const ex = enemy.position?.x || 0;
       const ez = enemy.position?.z || 0;
@@ -7455,6 +7466,7 @@ class GameRoom {
     if (enemy.type === 'tentacle-spine') return;
     if (COOP_BOSS_TYPES.has(enemy.type)) return;
     if (enemy.isBoss1EliteKnight) return;
+    if (enemy.isBoss1EliteWyrm) return;
     if (this.exploreBossIds?.has(enemy.id)) return;
 
     this.exploreKillCount += 1;
@@ -7499,15 +7511,12 @@ class GameRoom {
     this.exploreBossEncounterIndex = (index | 0) + 1;
     this.exploreBossIds = new Set();
     this.boss1EliteKnightIds = null;
+    this.boss1EliteWyrmIds = null;
 
     let spawned = null;
     if (index === 0) {
       this.coopThroneBossKind = 'boss';
-      if (Math.random() < COOP_BOSS1_ELITE_KNIGHTS_CHANCE) {
-        spawned = this.spawnBoss1EliteKnights(pos);
-      } else {
-        spawned = this.spawnBoss('boss', { position: pos });
-      }
+      spawned = this._spawnBoss1Encounter(pos);
     } else if (index === 1) {
       this.coopThroneBossKind = 'boss2';
       spawned = this.spawnBoss2Encounter({ position: pos });
@@ -7555,6 +7564,7 @@ class GameRoom {
     this.bossSpawned = false;
     this.exploreBossIds = new Set();
     this.boss1EliteKnightIds = null;
+    this.boss1EliteWyrmIds = null;
     this.coopThroneBossKind = null;
     this._spawnExploreBossRewardCamp(deathPosition || { x: 0, z: 0 });
   }
@@ -9359,6 +9369,7 @@ class GameRoom {
     this.miniBoss1SpawnedThisRoom = false;
     this.tripleBossIds = null;
     this.boss1EliteKnightIds = null;
+    this.boss1EliteWyrmIds = null;
     if (this.coopCombatTransition) {
       if (process.env.NODE_ENV !== 'production') {
         console.warn('⚠️ _clearAllCombatEnemies clearing active coopCombatTransition without release');
@@ -9808,8 +9819,8 @@ class GameRoom {
     const coopCombatTransitionId = this._beginCoopCombatTransition();
     this.teleportAllPlayersToCombatSpawn();
     const defeated = this.coopBossesDefeatedCount;
-    if (defeated === 0 && Math.random() < COOP_BOSS1_ELITE_KNIGHTS_CHANCE) {
-      this.spawnBoss1EliteKnights();
+    if (defeated === 0) {
+      this._spawnBoss1Encounter();
     } else {
       this.spawnBoss();
     }
@@ -9864,6 +9875,57 @@ class GameRoom {
     const coopCombatTransitionId = this._beginCoopCombatTransition();
     this.teleportAllPlayersToCombatSpawn();
     this.spawnBoss1EliteKnights();
+    this.bossSpawned = true;
+
+    if (this.io) {
+      this.io.to(this.roomId).emit('combat-arena-entered', {
+        players: this.getPlayers(),
+        coopBossThroneArena: true,
+        coopThroneBossKind: this.coopThroneBossKind,
+        coopTerrainTheme: this.getCoopTerrainTheme(),
+        coopCurrentRoomKind: this.currentCoopRoomKind,
+        coopClearedRoomKind: null,
+        merchantInventory: this.getMerchantInventory(),
+        coopColoredRoomVisitIndex: this._getCoopColoredRoomVisitIndexForEmit(),
+        coopBossRoomVisitIndex: this._getCoopBossRoomVisitIndexForEmit(),
+        coopCombatTransitionId,
+        coopRoomEntryToken: this.coopRoomEntryToken,
+        ...this._getCoopSkyPayloadFields(),
+        mushroomState: this.getMushroomState(),
+        timestamp: Date.now(),
+      });
+    }
+    return true;
+  }
+
+  /**
+   * Development-only: jump into boss arena with the alternate Boss1 twin-wyrm encounter.
+   */
+  activateDevBoss1WyrmArena() {
+    if (process.env.NODE_ENV === 'production') {
+      return false;
+    }
+    if (!this.gameStarted || this.combatArenaActive || this.gameMode !== 'coop') {
+      return false;
+    }
+
+    this.removeThroneTrainingDummy();
+    this.combatArenaActive = true;
+    this.thronePortalOffer = [];
+    this.coopMainArenaPortalPhase = null;
+    this.coopBossThroneArena = true;
+    this.coopThroneBossKind = 'boss';
+    this.currentCoopRoomKind = 'boss';
+    this.clearedCoopRoomKind = null;
+    this._bumpBossRoomVisit();
+    this.pendingCoopArchetype = null;
+    this.pendingCoopRoomKind = null;
+    this._postBossIntermissionScheduled = false;
+    this.merchantInventory = [];
+    this._resetMushroomState();
+    const coopCombatTransitionId = this._beginCoopCombatTransition();
+    this.teleportAllPlayersToCombatSpawn();
+    this.spawnBoss1EliteWyrms();
     this.bossSpawned = true;
 
     if (this.io) {
@@ -10467,8 +10529,8 @@ class GameRoom {
       this._resetMushroomState();
       const coopCombatTransitionId = this._beginCoopCombatTransition();
       this.teleportAllPlayersToCombatSpawn();
-      if (defeated === 0 && Math.random() < COOP_BOSS1_ELITE_KNIGHTS_CHANCE) {
-        this.spawnBoss1EliteKnights();
+      if (defeated === 0) {
+        this._spawnBoss1Encounter();
       } else if (defeated === 1) {
         this.spawnBoss2Encounter();
       } else {
@@ -11036,6 +11098,7 @@ class GameRoom {
       joinedAt: Date.now(),
       isStealthing: false, // Sabres stealth ability state
       isInvisible: false, // Whether player is currently invisible
+      deathdealerInvisible: false, // Deathdealer talent spectral invis (aggro skip)
       reaperCrossentropyStack: 0, // Reaper talent: +base damage from Crossentropy kills (session)
       backstabKillstreakStack: 0, // Killstreak talent: +base Backstab damage from Backstab kills (session)
       /** Co-op: universal green zombie room boons synced from client (`coop-zombie-room-boons`). */
@@ -13968,9 +14031,12 @@ class GameRoom {
    * @param { number } index
    * @param { number } damage
    * @param { string } playerId
+   * @param { string } [damageType]
    * @returns { { newHealth: number, destroyed: boolean } | null }
    */
-  damageMushroom(index, damage, playerId) {
+  damageMushroom(index, damage, playerId, damageType) {
+    // Deathdealer falling swords never apply to mushrooms.
+    if (damageType === 'deathdealer_judgment') return null;
     if (!this.gameStarted) return null;
     if (this.isCoopCombatTransitionActive()) return null;
     if (this.coopIntroActive || this.coopDeepSanctumActive) return null;
@@ -14425,8 +14491,8 @@ class GameRoom {
     }
     if (type === 'wyrm') {
       return { id: `wyrm-${campIndex}-${slotIndex}-${ts}`, type: 'wyrm', ...base,
-        health: 5200 + hpBonus, maxHealth: 5200 + hpBonus,
-        damage: 43, attackCooldown: 850, moveSpeed: 1.75,
+        health: 5900 + hpBonus, maxHealth: 5900 + hpBonus,
+        damage: 47, attackCooldown: 850, moveSpeed: 1.75,
         soulType: campDef.knightSoulType, attackVariant: 1,
         wanderAnchor: { x: pos.x, z: pos.z },
         spawnedAt: ts };
@@ -14434,7 +14500,7 @@ class GameRoom {
     if (type === 'terrorhawk') {
       return { id: `terrorhawk-${campIndex}-${slotIndex}-${ts}`, type: 'terrorhawk', ...base,
         health: 2300 + hpBonus, maxHealth: 2300 + hpBonus,
-        damage: 37, attackCooldown: 1700, moveSpeed: 0,
+        damage: 26, attackCooldown: 1700, moveSpeed: 0,
         terrorhawkPhase: 'takeoff',
         soulType: campDef.knightSoulType, attackVariant: 1, spawnedAt: ts };
     }
@@ -15577,6 +15643,11 @@ class GameRoom {
       return null;
     }
 
+    // Deathdealer falling swords never hit tentacle-spine traps.
+    if (hitMeta?.damageType === 'deathdealer_judgment' && enemy.type === 'tentacle-spine') {
+      return null;
+    }
+
     if (
       enemy.type === 'knight' &&
       hitMeta?.damageType !== 'ignite' &&
@@ -16353,6 +16424,19 @@ class GameRoom {
       this._addConcentratedVenomStacks(enemyId, INFESTED_TALENT_CONCENTRATED_VENOM_STACKS, fromPlayerId);
     }
 
+    // Infested Smite — 1 stack of Concentrated Venom per beam hit (Trinity multiplies beams)
+    if (
+      !result.wasKilled &&
+      hitMeta &&
+      hitMeta.damageType === 'smite' &&
+      hitMeta.infestedSmite &&
+      damage > 0 &&
+      !enemy.isDying &&
+      enemy.health > 0
+    ) {
+      this._addConcentratedVenomStacks(enemyId, INFESTED_TALENT_CONCENTRATED_VENOM_STACKS, fromPlayerId);
+    }
+
     // Blademaster — Wraith Strike applies Shadowflame: 60% of hit over 2.5s in 5 ticks
     const blademasterPlayer = player || (fromPlayerId ? this.players.get(fromPlayerId) : null);
     const shadowflameEligible =
@@ -16969,7 +17053,7 @@ class GameRoom {
         });
       }
 
-      // PLAGUE Crossentropy — up to two allied zombies per kill (`trySpawnInfestedZombie` respects max 3)
+      // PLAGUE Crossentropy — up to two allied zombies per kill (`trySpawnInfestedZombie` respects max per owner)
       if (
         hitMeta &&
         hitMeta.damageType === 'crossentropy' &&
@@ -17960,6 +18044,42 @@ class GameRoom {
         return result;
 
       } else if (enemy.type === 'wyrm') {
+        if (this.boss1EliteWyrmIds?.has(enemyId)) {
+          this.boss1EliteWyrmIds.delete(enemyId);
+          if (this.boss1EliteWyrmIds.size === 0) {
+            this.boss1EliteWyrmIds = null;
+            if (this.io) {
+              this.players.forEach((player, playerId) => {
+                this.io.to(this.roomId).emit('player-experience-gained', {
+                  playerId,
+                  experienceGained: 1000,
+                  source: 'boss_kill',
+                  enemyId,
+                  timestamp: Date.now(),
+                });
+              });
+              this.io.to(this.roomId).emit('boss-defeated', {
+                bossId: enemyId,
+                killedBy: fromPlayerId,
+                slainLabel: 'wyrms',
+                timestamp: Date.now(),
+              });
+              this.spawnBossItemDrops(enemy.position);
+              this._tryDreamLayerDropOnKill({
+                ...enemy,
+                type: 'boss',
+              });
+            }
+            this.coopBossesDefeatedCount += 1;
+            if (this.coopExploreActive) {
+              this._onExploreBossEncounterCleared(enemy.position);
+            } else {
+              this._schedulePostBossPortalIntermission();
+            }
+            console.log(`🎉 BOSS1 ELITE WYRMS DEFEATED by player ${fromPlayerId}!`);
+          }
+        }
+
         if (fromPlayerId && fromPlayerId !== 'unknown' && this.io) {
           this.io.to(this.roomId).emit('player-experience-gained', {
             playerId: fromPlayerId,
@@ -18493,6 +18613,21 @@ class GameRoom {
   }
 
   /**
+   * Boss1 encounter roll: equal chance of Hate, twin elite knights, or twin wyrms.
+   * @param {{ x: number, y?: number, z: number }|null} origin — optional spawn center (explore).
+   */
+  _spawnBoss1Encounter(origin = null) {
+    const r = Math.random();
+    if (r < COOP_BOSS1_ENCOUNTER_OPTION_CHANCE) {
+      return this.spawnBoss1EliteKnights(origin);
+    }
+    if (r < COOP_BOSS1_ENCOUNTER_OPTION_CHANCE * 2) {
+      return this.spawnBoss1EliteWyrms(origin);
+    }
+    return origin ? this.spawnBoss('boss', { position: origin }) : this.spawnBoss();
+  }
+
+  /**
    * Alternate Boss1 encounter: two elite knights (random distinct colors) instead of the GLB boss.
    * Both IDs are tracked in `this.boss1EliteKnightIds`; the encounter completes only when both fall.
    * @param {{ x: number, y?: number, z: number }|null} origin — optional center; knights spawn offset around it.
@@ -18557,6 +18692,72 @@ class GameRoom {
     );
     this.startEnemyAI();
     return spawnedKnights;
+  }
+
+  /**
+   * Alternate Boss1 encounter: two wyrms instead of the GLB boss.
+   * Both IDs are tracked in `this.boss1EliteWyrmIds`; the encounter completes only when both fall.
+   * @param {{ x: number, y?: number, z: number }|null} origin — optional center; wyrms spawn offset around it.
+   */
+  spawnBoss1EliteWyrms(origin = null) {
+    if (!this.gameStarted || this.bossSpawned) {
+      return null;
+    }
+
+    const now = Date.now();
+    const rand = () => Math.random().toString(36).substr(2, 9);
+    const ox = origin?.x || 0;
+    const oz = origin?.z || 0;
+
+    const spawnPositions = [
+      { x: ox - 4, y: 0, z: oz + 2 },
+      { x: ox + 4, y: 0, z: oz + 2 },
+    ];
+
+    this.boss1EliteWyrmIds = new Set();
+    const spawnedWyrms = [];
+
+    for (let i = 0; i < spawnPositions.length; i++) {
+      const pos = spawnPositions[i];
+      const wyrmId = `wyrm-boss1-elite-${now}-${rand()}`;
+      const wyrmData = {
+        id: wyrmId,
+        type: 'wyrm',
+        position: { ...pos },
+        initialPosition: { ...pos },
+        rotation: rotationYTowardEntry(pos.x, pos.z),
+        health: BOSS1_ELITE_WYRM_HEALTH,
+        maxHealth: BOSS1_ELITE_WYRM_HEALTH,
+        damage: BOSS1_ELITE_WYRM_DAMAGE,
+        attackCooldown: BOSS1_ELITE_WYRM_ATTACK_COOLDOWN,
+        moveSpeed: BOSS1_ELITE_WYRM_MOVE_SPEED,
+        spawnedAt: now,
+        isDying: false,
+        staggerBuildup: 0,
+        campIndex: 0,
+        campType: null,
+        soulType: null,
+        bossId: null,
+        attackVariant: 1,
+        wanderAnchor: { x: pos.x, z: pos.z },
+        visualScale: 1.3,
+        isBoss1EliteWyrm: true,
+      };
+
+      this.enemies.set(wyrmId, wyrmData);
+      this.boss1EliteWyrmIds.add(wyrmId);
+      spawnedWyrms.push(wyrmData);
+
+      if (this.io) {
+        broadcastEnemySpawn(this.io, this.roomId, wyrmData);
+      }
+    }
+
+    console.log(
+      `🔥🔥 Boss1 elite wyrms spawned! IDs: ${[...this.boss1EliteWyrmIds].join(', ')}`
+    );
+    this.startEnemyAI();
+    return spawnedWyrms;
   }
 
   /**
@@ -20470,6 +20671,7 @@ class GameRoom {
       || enemy.type === 'eternal-oak'
       || enemy.type === 'colossus'
       || (enemy.type === 'knight' && enemy.isBoss1EliteKnight)
+      || (enemy.type === 'wyrm' && enemy.isBoss1EliteWyrm)
     ) {
       chance = dreamLayerItems.DREAM_LAYER_ELITE_DROP_CHANCE;
     }

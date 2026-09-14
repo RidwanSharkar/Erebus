@@ -8,10 +8,12 @@ import CrossentropyExplosion from '@/components/projectiles/CrossentropyExplosio
 import DeathFlashExplosion from '@/components/enemies/DeathFlashExplosion';
 import TemplarBlinkSmiteGround from '@/components/enemies/TemplarBlinkSmiteGround';
 import ValkyrieJudgmentSword from '@/components/enemies/ValkyrieJudgmentSword';
+import DeathdealerJudgmentStrike from '@/components/weapons/DeathdealerJudgmentStrike';
 import ShadeTeleportEffect from '@/components/enemies/ShadeTeleportEffect';
 import WarlockTeleportEffect from '@/components/enemies/WarlockTeleportEffect';
 import type {
   DeathFlashExplosionState,
+  DeathdealerJudgmentStrikeState,
   FissionDetonationState,
   MartyrDetonationExplosionState,
   TeleportEffectState,
@@ -30,6 +32,7 @@ export type CoopExplosionBurstLayerHandle = {
   addDeathFlashExplosion: (fx: DeathFlashExplosionState) => void;
   addTemplarBlinkSmiteStrike: (strike: TemplarBlinkSmiteStrikeState) => void;
   addValkyrieJudgmentStrike: (strike: ValkyrieJudgmentStrikeState) => void;
+  addDeathdealerJudgmentStrike: (strike: DeathdealerJudgmentStrikeState) => void;
   addTeleportEffect: (effect: TeleportEffectState) => void;
 };
 
@@ -42,6 +45,7 @@ const CoopExplosionBurstLayer = memo(forwardRef<CoopExplosionBurstLayerHandle, o
     const [deathFlashExplosions, setDeathFlashExplosions] = useState<DeathFlashExplosionState[]>([]);
     const [templarBlinkSmiteStrikes, setTemplarBlinkSmiteStrikes] = useState<TemplarBlinkSmiteStrikeState[]>([]);
     const [valkyrieJudgmentStrikes, setValkyrieJudgmentStrikes] = useState<ValkyrieJudgmentStrikeState[]>([]);
+    const [deathdealerJudgmentStrikes, setDeathdealerJudgmentStrikes] = useState<DeathdealerJudgmentStrikeState[]>([]);
     const [activeTeleportEffects, setActiveTeleportEffects] = useState<TeleportEffectState[]>([]);
 
     const clearAll = useCallback(() => {
@@ -52,6 +56,7 @@ const CoopExplosionBurstLayer = memo(forwardRef<CoopExplosionBurstLayerHandle, o
       setDeathFlashExplosions([]);
       setTemplarBlinkSmiteStrikes([]);
       setValkyrieJudgmentStrikes([]);
+      setDeathdealerJudgmentStrikes([]);
       setActiveTeleportEffects([]);
     }, []);
 
@@ -83,6 +88,10 @@ const CoopExplosionBurstLayer = memo(forwardRef<CoopExplosionBurstLayerHandle, o
       setValkyrieJudgmentStrikes((prev) => [...prev, strike]);
     }, []);
 
+    const addDeathdealerJudgmentStrike = useCallback((strike: DeathdealerJudgmentStrikeState) => {
+      setDeathdealerJudgmentStrikes((prev) => [...prev, strike]);
+    }, []);
+
     const addTeleportEffect = useCallback((effect: TeleportEffectState) => {
       setActiveTeleportEffects((prev) => [...prev, effect]);
     }, []);
@@ -96,6 +105,7 @@ const CoopExplosionBurstLayer = memo(forwardRef<CoopExplosionBurstLayerHandle, o
       addDeathFlashExplosion,
       addTemplarBlinkSmiteStrike,
       addValkyrieJudgmentStrike,
+      addDeathdealerJudgmentStrike,
       addTeleportEffect,
     }), [
       clearAll,
@@ -106,6 +116,7 @@ const CoopExplosionBurstLayer = memo(forwardRef<CoopExplosionBurstLayerHandle, o
       addDeathFlashExplosion,
       addTemplarBlinkSmiteStrike,
       addValkyrieJudgmentStrike,
+      addDeathdealerJudgmentStrike,
       addTeleportEffect,
     ]);
 
@@ -172,6 +183,20 @@ const CoopExplosionBurstLayer = memo(forwardRef<CoopExplosionBurstLayerHandle, o
             skyHeight={strike.skyHeight}
             onComplete={() => {
               setValkyrieJudgmentStrikes(prev => prev.filter(s => s.id !== strike.id));
+            }}
+          />
+        ))}
+
+        {deathdealerJudgmentStrikes.map(strike => (
+          <DeathdealerJudgmentStrike
+            key={strike.id}
+            position={strike.position}
+            strikeAt={strike.strikeAt}
+            hoverMs={strike.hoverMs}
+            fallMs={strike.fallMs}
+            skyHeight={strike.skyHeight}
+            onComplete={() => {
+              setDeathdealerJudgmentStrikes(prev => prev.filter(s => s.id !== strike.id));
             }}
           />
         ))}

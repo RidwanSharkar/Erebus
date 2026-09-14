@@ -2,6 +2,7 @@ import { COOP_DEV_LOCALHOST_FEATURES } from '@/components/environment/ThroneRoom
 
 const DEV_ROOM_CHAT_TO_CAMP: Record<string, string> = {
   BOSS1: 'dev_boss',
+  BOSS1WYRM: 'dev_boss1_wyrm',
   BOSS2: 'dev_boss2',
   BOSS3: 'dev_boss3',
   INNERSANCTUMI: 'dev_intro_1',

@@ -199,7 +199,7 @@ export default function FrostNova({
   });
 
   return (
-    <group ref={effectRef} position={position} scale={[visualScale, visualScale, visualScale]}>
+    <group ref={effectRef} position={position} scale={[visualScale, visualScale, visualScale]} position-y={-1.65}>
       {/* Central ice explosion core */}
       <mesh ref={coreMeshRef} position={[0, 0.5, 0]}>
         <sphereGeometry args={[1, 16, 16]} />

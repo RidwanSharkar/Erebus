@@ -355,12 +355,12 @@ io.on('connection', (socket) => {
 
   // Co-op destructible mushrooms (server-authoritative HP + eruption)
   socket.on('mushroom-damage', (data) => {
-    const { roomId, index, damage, sourcePlayerId } = data || {};
+    const { roomId, index, damage, sourcePlayerId, damageType } = data || {};
     if (!roomId || !gameRooms.has(roomId)) return;
     const room = gameRooms.get(roomId);
     if (typeof room.damageMushroom !== 'function') return;
     const pid = sourcePlayerId || socket.id;
-    room.damageMushroom(index, damage, pid);
+    room.damageMushroom(index, damage, pid, damageType);
   });
 
   socket.on('tree-damage', (data) => {
@@ -628,6 +628,8 @@ io.on('connection', (socket) => {
       ok = room.activateDevBossArena();
     } else if (camp === 'dev_boss1_elite') {
       ok = room.activateDevBoss1EliteArena();
+    } else if (camp === 'dev_boss1_wyrm') {
+      ok = room.activateDevBoss1WyrmArena();
     } else if (camp === 'dev_boss2') {
       ok = room.activateDevBoss2Arena();
     } else if (camp === 'dev_boss3') {

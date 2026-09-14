@@ -325,6 +325,15 @@ export interface ValkyrieJudgmentStrikeState {
   skyHeight?: number;
 }
 
+export interface DeathdealerJudgmentStrikeState {
+  id: string;
+  position: Vector3;
+  strikeAt: number;
+  hoverMs?: number;
+  fallMs?: number;
+  skyHeight?: number;
+}
+
 export interface Boss2ArchonLightningState {
   id: string;
   beams: { startPosition: Vector3; targetPosition: Vector3 }[];

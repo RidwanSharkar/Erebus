@@ -102,6 +102,10 @@ import CoopBossTelegraphLayer, { type CoopBossTelegraphLayerHandle } from './coo
 import CoopGroundTelegraphLayer, { type CoopGroundTelegraphLayerHandle } from './coop/CoopGroundTelegraphLayer';
 import CoopBossMechanicLayer, { type CoopBossMechanicLayerHandle } from './coop/CoopBossMechanicLayer';
 import CoopExplosionBurstLayer, { type CoopExplosionBurstLayerHandle } from './coop/CoopExplosionBurstLayer';
+import {
+  DEATHDEALER_JUDGMENT_FALL_MS,
+  DEATHDEALER_JUDGMENT_SKY_HEIGHT,
+} from '@/components/weapons/DeathdealerJudgmentStrike';
 import CoopLightningBurstLayer, { type CoopLightningBurstLayerHandle } from './coop/CoopLightningBurstLayer';
 import CoopGroundHazardLayer, { type CoopGroundHazardLayerHandle } from './coop/CoopGroundHazardLayer';
 import CoopSummonRitualLayer, { type CoopSummonRitualLayerHandle } from './coop/CoopSummonRitualLayer';
@@ -280,7 +284,6 @@ import {
   shouldApplyGlacialDashTalent,
   shouldApplyMendingDashTalent,
   shouldApplyStaggeringDashTalent,
-  shouldApplyBloodleechTalent,
   shouldApplyRebukeTalent,
   shouldApplyTyrantsCloakTalent,
   shouldApplyMomentumRiftTalent,
@@ -327,6 +330,10 @@ import {
   WIND_SHEAR_MAX_DISTANCE_UNITS,
   WIND_SHEAR_PROJECTILE_SPEED,
   WIND_SHEAR_PROJECTILE_LIFETIME_SEC,
+  LEVIATHAN_MAX_DISTANCE,
+  LEVIATHAN_SPEED,
+  LEVIATHAN_LIFETIME_SEC,
+  LEVIATHAN_BASE_DAMAGE,
   type FanOfKnivesFlourishTint,
   CROSSENTROPY_PLAGUE_VENOM_MS,
   resolveWraithStrikeThemeFromMeta,
@@ -342,6 +349,7 @@ import {
   LOCUST_MISSILES_PER_VOLLEY,
   LOCUST_TARGET_RADIUS,
   ENTANGLEMENT_DURATION_MS,
+  DEATHDEALER_SWORD_STAGGER_MS,
 } from '@/utils/talents';
 import {
   EXODIA_GREAVES,
@@ -4372,6 +4380,7 @@ export function CoopGameScene({
           maxHealth: e.maxHealth,
           type: e.type,
           isBoss1EliteKnight: e.isBoss1EliteKnight === true,
+          isBoss1EliteWyrm: e.isBoss1EliteWyrm === true,
         };
       });
   }, [enemiesRef, enemyTransformsRef]);
@@ -4492,7 +4501,7 @@ export function CoopGameScene({
       if (gameMode === 'coop' && players.has(targetId)) return;
       if (enemies.has(targetId)) {
         damageEnemy(targetId, damage, socket.id, coopEnemyDamageMeta);
-        if (isCritical && shouldApplyBloodleechTalent(talentLoadout)) {
+        if (isCritical && controlSystemRef.current?.tryConsumeBloodleechCritHealIcd?.()) {
           const str = StatSystem.getEffectiveStatsWithInventory(
             playerStatDataRef.current?.stats ?? ZERO_PLAYER_STATS,
             inventorySnapshotRef.current,
@@ -4522,7 +4531,6 @@ export function CoopGameScene({
       gameMode,
       players,
       socket?.id,
-      talentLoadout,
       updatePlayerHealth,
     ],
   );
@@ -4571,7 +4579,7 @@ export function CoopGameScene({
   const spineEntityByIndexRef = useRef<Map<number, number>>(new Map());
 
   // Track stealth states for players
-  const playerStealthStates = useRef<Map<string, boolean>>(new Map());
+  const playerStealthStates = useRef<Map<string, { isInvisible: boolean; source: 'accretion' | 'deathdealer' }>>(new Map());
 
   // Track player deaths and respawn timers for PVP
   const [playerDeathStates, setPlayerDeathStates] = useState<Map<string, {
@@ -7593,7 +7601,7 @@ export function CoopGameScene({
         }
         
         // Handle regular projectile attacks - create projectiles that can hit the local player
-        const projectileTypes = ['regular_arrow', 'charged_arrow', 'entropic_bolt', 'crossentropy_bolt', 'perfect_shot', 'barrage_projectile', 'fan_of_knives_projectile', 'wind_shear_projectile', 'burst_arrow', 'scorpion_shard', 'poison_dart'];
+        const projectileTypes = ['regular_arrow', 'charged_arrow', 'entropic_bolt', 'crossentropy_bolt', 'perfect_shot', 'barrage_projectile', 'fan_of_knives_projectile', 'wind_shear_projectile', 'burst_arrow', 'scorpion_shard', 'poison_dart', 'leviathan'];
         if (projectileTypes.includes(data.attackType)) {
           // Skip creating projectiles for the local player's own attacks to prevent duplicates
           const localSocketId = socket?.id;
@@ -7883,9 +7891,44 @@ export function CoopGameScene({
                 }
                 break;
               }
+              case 'leviathan': {
+                const lcfg = data.animationData?.projectileConfig || {};
+                const levEntity = projectileSystem.createProjectile(
+                  engineRef.current.getWorld(),
+                  position,
+                  direction,
+                  attackerEntityId,
+                  {
+                    speed: typeof lcfg.speed === 'number' ? lcfg.speed : LEVIATHAN_SPEED,
+                    damage: typeof lcfg.damage === 'number' ? lcfg.damage : LEVIATHAN_BASE_DAMAGE,
+                    lifetime:
+                      typeof lcfg.lifetime === 'number' ? lcfg.lifetime : LEVIATHAN_LIFETIME_SEC,
+                    maxDistance:
+                      typeof lcfg.maxDistance === 'number'
+                        ? lcfg.maxDistance
+                        : LEVIATHAN_MAX_DISTANCE,
+                    piercing: true,
+                    opacity: typeof lcfg.opacity === 'number' ? lcfg.opacity : 1,
+                    sourcePlayerId: data.playerId,
+                    projectileType: 'leviathan',
+                  },
+                );
+                const levRen = levEntity.getComponent(Renderer);
+                if (levRen?.mesh) {
+                  levRen.mesh.visible = false;
+                  levRen.mesh.userData.isLeviathanProjectile = true;
+                  levRen.mesh.userData.projectileType = 'leviathan';
+                }
+                (window as any).audioSystem?.playLeviathanSound?.(position);
+                break;
+              }
               case 'burst_arrow': {
                 const burstCfg = data.animationData?.projectileConfig || {};
                 const tempestBurstTheme = burstCfg.tempestBurstTheme;
+                const burstDamage =
+                  typeof burstCfg.damage === 'number' && Number.isFinite(burstCfg.damage)
+                    ? burstCfg.damage
+                    : 25;
                 const burstEntity = projectileSystem.createProjectile(
                   engineRef.current.getWorld(),
                   position,
@@ -7893,7 +7936,7 @@ export function CoopGameScene({
                   attackerEntityId,
                   {
                     speed: 35,
-                    damage: 25,
+                    damage: burstDamage,
                     lifetime: 3,
                     maxDistance: 22,
                     piercing: false,
@@ -7907,6 +7950,9 @@ export function CoopGameScene({
                     ...(typeof burstCfg.staggerToAdd === 'number' && burstCfg.staggerToAdd > 0
                       ? { staggerToAdd: burstCfg.staggerToAdd }
                       : {}),
+                    ...(burstCfg.triggerFingerUncharged === true
+                      ? { triggerFingerUncharged: true as const }
+                      : {}),
                   }
                 );
 
@@ -7916,6 +7962,9 @@ export function CoopGameScene({
                   burstRenderer.mesh.userData.isRegularArrow = false;
                   if (tempestBurstTheme) {
                     burstRenderer.mesh.userData.tempestBurstTheme = tempestBurstTheme;
+                  }
+                  if (burstCfg.triggerFingerUncharged === true) {
+                    burstRenderer.mesh.userData.triggerFingerUncharged = true;
                   }
                 }
                 break;
@@ -11389,6 +11438,45 @@ export function CoopGameScene({
         }
       }
 
+      if (data.effect?.type === 'deathdealer_judgment' && Array.isArray(data.effect.positions)) {
+        const now = Date.now();
+        const fallMs =
+          typeof data.effect.fallMs === 'number' ? data.effect.fallMs : DEATHDEALER_JUDGMENT_FALL_MS;
+        const skyHeight =
+          typeof data.effect.skyHeight === 'number'
+            ? data.effect.skyHeight
+            : DEATHDEALER_JUDGMENT_SKY_HEIGHT;
+        const swordCount =
+          typeof data.effect.swordCount === 'number' && data.effect.swordCount > 0
+            ? data.effect.swordCount
+            : 1;
+        const staggerMs =
+          typeof data.effect.staggerMs === 'number'
+            ? data.effect.staggerMs
+            : DEATHDEALER_SWORD_STAGGER_MS;
+        for (let i = 0; i < data.effect.positions.length; i++) {
+          const raw = data.effect.positions[i];
+          if (!raw) continue;
+          for (let s = 0; s < swordCount; s++) {
+            const angle = (s / Math.max(1, swordCount)) * Math.PI * 2;
+            const offsetR = swordCount > 1 ? 0.35 : 0;
+            const strikePos = new Vector3(
+              raw.x + Math.cos(angle) * offsetR,
+              raw.y,
+              raw.z + Math.sin(angle) * offsetR,
+            );
+            explosionBurstLayerRef.current?.addDeathdealerJudgmentStrike({
+              id: `deathdealer-judgment-remote-${data.playerId}-${now}-${i}-${s}`,
+              position: strikePos,
+              strikeAt: now + fallMs + s * staggerMs,
+              hoverMs: 0,
+              fallMs,
+              skyHeight,
+            });
+          }
+        }
+      }
+
       if (data.effect?.type === 'frost_shatter') {
         const { position } = data.effect;
         if (position) {
@@ -11494,11 +11582,14 @@ export function CoopGameScene({
         return;
       }
 
-      const { playerId, isInvisible } = data;
+      const { playerId, isInvisible, source } = data;
+      const stealthSource = source === 'deathdealer' ? 'deathdealer' : 'accretion';
 
       // Update stealth state for the player
-      const previousState = playerStealthStates.current.get(playerId);
-      playerStealthStates.current.set(playerId, isInvisible);
+      playerStealthStates.current.set(playerId, {
+        isInvisible: !!isInvisible,
+        source: stealthSource,
+      });
 
 
     };
@@ -19151,6 +19242,44 @@ export function CoopGameScene({
       }
     });
 
+    controlSystem.setDeathdealerJudgmentCallback((positions: Vector3[], swordCount: number) => {
+      const now = Date.now();
+      const fallMs = DEATHDEALER_JUDGMENT_FALL_MS;
+      const skyHeight = DEATHDEALER_JUDGMENT_SKY_HEIGHT;
+      const staggerMs = DEATHDEALER_SWORD_STAGGER_MS;
+      const count = Math.max(0, swordCount);
+      const strikePayload: { x: number; y: number; z: number }[] = [];
+      for (let i = 0; i < positions.length; i++) {
+        const pos = positions[i]!;
+        strikePayload.push({ x: pos.x, y: pos.y, z: pos.z });
+        for (let s = 0; s < count; s++) {
+          const angle = (s / Math.max(1, count)) * Math.PI * 2;
+          const offsetR = count > 1 ? 0.35 : 0;
+          const strikePos = pos.clone();
+          strikePos.x += Math.cos(angle) * offsetR;
+          strikePos.z += Math.sin(angle) * offsetR;
+          explosionBurstLayerRef.current?.addDeathdealerJudgmentStrike({
+            id: `deathdealer-judgment-${now}-${i}-${s}-${Math.random().toString(36).slice(2, 7)}`,
+            position: strikePos,
+            strikeAt: now + fallMs + s * staggerMs,
+            hoverMs: 0,
+            fallMs,
+            skyHeight,
+          });
+        }
+      }
+      if (strikePayload.length > 0 && count > 0 && broadcastPlayerEffect) {
+        broadcastPlayerEffect({
+          type: 'deathdealer_judgment',
+          positions: strikePayload,
+          fallMs,
+          skyHeight,
+          swordCount: count,
+          staggerMs,
+        });
+      }
+    });
+
     controlSystem.setArcticGroundBlizzardCallback((position: Vector3) => {
       broadcastPlayerEffect?.({
         type: 'arctic_sting_blizzard',
@@ -19243,7 +19372,7 @@ export function CoopGameScene({
     // Melee attack sounds are now handled through animation state broadcasting only
 
     // Set up Reanimate callback
-    controlSystem.setReanimateCallback(() => {
+    controlSystem.setReanimateCallback((healAmount) => {
       if (reanimateRef.current) {
         reanimateRef.current.triggerHealingEffect();
       }
@@ -19263,7 +19392,7 @@ export function CoopGameScene({
           if (socket && currentRoomId) {
             socket.emit('heal-nearby-allies', {
               roomId: currentRoomId,
-              healAmount: REANIMATE_SUNWELL_HEAL,
+              healAmount: healAmount ?? REANIMATE_SUNWELL_HEAL,
               abilityType: 'reanimate',
               position: {
                 x: transform.position.x,
@@ -19547,10 +19676,10 @@ export function CoopGameScene({
         damageEnemy(enemyId, damage, sourcePlayerId, meta);
       },
     );
-    combatSystem.setMushroomDamageCallback((index, damage, sourcePlayerId) => {
+    combatSystem.setMushroomDamageCallback((index, damage, sourcePlayerId, damageType) => {
       // Mirror the blockLocalDamageDuringCoopPortal guard used for enemy hits.
       if (coopTransitionOverlayRef.current) return;
-      damageMushroom(index, damage, sourcePlayerId ?? socket?.id);
+      damageMushroom(index, damage, sourcePlayerId ?? socket?.id, damageType);
     });
     combatSystem.setTreeDamageCallback((index, damage, sourcePlayerId) => {
       if (coopTransitionOverlayRef.current) return;
@@ -19865,6 +19994,7 @@ export function CoopGameScene({
           isViperStingCharging={weaponState.isViperStingCharging}
           isRejuvenatingShotCharging={weaponState.isRejuvenatingShotCharging}
           isDead={playerDeathStates.get(socket?.id ?? '')?.isDead ?? false}
+          spectralActive={controlSystemRef.current?.getIsDeathdealerInvisible() || false}
         />
       )}
 
@@ -19927,6 +20057,7 @@ export function CoopGameScene({
           isLocalPlayer={true}
           isStealthing={controlSystemRef.current?.getIsStealthing() || false}
           isInvisible={controlSystemRef.current?.getIsInvisible() || false}
+          spectralActive={controlSystemRef.current?.getIsDeathdealerInvisible() || false}
           playerLevel={playerLevel}
           wrathfulTalonsReturnCrit={shouldApplyWrathfulTalonsTalent(talentLoadout, abilityLoadout ?? null)}
           wrathfulTalonsExplosionCrit={
@@ -20164,13 +20295,17 @@ export function CoopGameScene({
         const livePlayer = contextPlayersRef.current.get(player.id) ?? player;
 
         // Check if player is invisible due to stealth
-        const isPlayerInvisible = playerStealthStates.current.get(player.id) || false;
+        const stealthState = playerStealthStates.current.get(player.id);
+        const isPlayerInvisible = stealthState?.isInvisible || false;
+        const isDeathdealerSpectral =
+          isPlayerInvisible && stealthState?.source === 'deathdealer';
 
         // Check if player is dead
         const deathState = playerDeathStates.get(player.id);
         const isPlayerDead = deathState?.isDead || false;
 
-        if (isPlayerInvisible) {
+        // Accretion fully hides remotes; Deathdealer keeps a spectral ghost visible.
+        if (isPlayerInvisible && !isDeathdealerSpectral) {
           return null; // Don't render invisible players
         }
 
@@ -20228,6 +20363,7 @@ export function CoopGameScene({
               isRejuvenatingShotCharging={playerState.isRejuvenatingShotCharging ?? false}
               remotePrimaryWeaponCastHold={remotePrimaryWeaponCastHold}
               isDead={isPlayerDead}
+              spectralActive={isDeathdealerSpectral}
             />
 
             {/* Weapon layer — dragon body hidden, only weapon rendered */}
@@ -20295,6 +20431,7 @@ export function CoopGameScene({
                 rotation={player.rotation}
                 rotationRef={enemySmoothedRotationRef}
                 isLocalPlayer={false}
+                spectralActive={isDeathdealerSpectral}
                 runebladeStoredCharge={playerState.runebladeStoredCharge ?? false}
                 onBowRelease={() => {}}
                 onScytheSwingComplete={() => {}}
@@ -20513,8 +20650,8 @@ export function CoopGameScene({
         if (player.id === socket?.id) return null; // Don't show health bar for local player
 
         // Check if player is invisible (stealth mode) - don't show health bar
-        const isInvisible = playerStealthStates.current.get(player.id);
-        if (isInvisible) return null;
+        const stealthState = playerStealthStates.current.get(player.id);
+        if (stealthState?.isInvisible) return null;
 
         // Use shield values from the synchronized player data
         const shieldAmount = player.shield ?? 0;

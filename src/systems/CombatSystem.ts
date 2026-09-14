@@ -40,6 +40,7 @@ import {
   computeIgniteDotTickPlan,
   getConcentratedVenomMaxStacks,
   shouldApplyFanOfKnivesTalent,
+  isDeathdealerJudgmentTarget,
 } from '@/utils/talents';
 import {
   BLADEMASTER_SHADOWFLAME_DOT_FRACTION,
@@ -323,16 +324,13 @@ export class CombatSystem extends System {
     return (window as any).controlSystemRef?.current;
   }
 
-  private shouldApplyBloodleechRoomTalent(): boolean {
-    return this.getControlSystem()?.shouldApplyBloodleechRoomTalent?.() === true;
-  }
-
   private maybeApplyBloodleechCriticalHeal(damageResult: DamageResult, source?: Entity): void {
-    if (!damageResult.isCritical || !source || !this.shouldApplyBloodleechRoomTalent()) return;
+    if (!damageResult.isCritical || !source) return;
+    const controlSystem = this.getControlSystem();
+    if (!controlSystem?.tryConsumeBloodleechCritHealIcd?.()) return;
     const healingAmount = Math.max(0, Math.floor(getGlobalStrengthStatPoints()));
     if (healingAmount <= 0) return;
 
-    const controlSystem = this.getControlSystem();
     const playerEntity = controlSystem?.playerEntity as Entity | undefined;
     const playerHealth = playerEntity?.getComponent(Health);
     if (!playerEntity || !playerHealth || !playerHealth.heal(healingAmount)) return;
@@ -1078,6 +1076,11 @@ export class CombatSystem extends System {
     const health = target.getComponent(Health);
     if (!health || !health.enabled) return;
 
+    // Deathdealer swords never apply to mushrooms / tentacle-spine traps.
+    if (damageType === 'deathdealer_judgment' && !isDeathdealerJudgmentTarget(target)) {
+      return;
+    }
+
     const enemy = target.getComponent(Enemy);
     if (enemy && isCoopPlayerAllyEntity(target)) {
       return;
@@ -1413,6 +1416,10 @@ export class CombatSystem extends System {
                                             ? {
                                                 damageType: 'deflect_smite' as const,
                                               }
+                                          : damageType === 'deathdealer_judgment'
+                                            ? {
+                                                damageType: 'deathdealer_judgment' as const,
+                                              }
                                           : undefined;
       const routeMeta = baseRouteMeta;
       let hitWorldPosition: { x: number; y: number; z: number } | undefined;
@@ -1423,6 +1430,22 @@ export class CombatSystem extends System {
       }
       this.maybeTriggerKaiserOnCriticalHit(damageResult, target, finalSourcePlayerId);
       this.onEnemyDamageCallback(serverEnemyId, actualDamage, finalSourcePlayerId, routeMeta, hitWorldPosition);
+
+      // Entanglement heal — local Frostbite Barrage hits (server applies the root).
+      if (
+        damageType === 'barrage' &&
+        damageEvent.entanglementBarrage === true &&
+        actualDamage > 0
+      ) {
+        const proj = source?.getComponent(Projectile);
+        if (
+          proj &&
+          this.localPlayerEntityId !== null &&
+          proj.owner === this.localPlayerEntityId
+        ) {
+          this.getControlSystem()?.tryEntanglementHealOnBarrageHit?.(serverEnemyId);
+        }
+      }
 
       // Apply Runeblade Arcane Mastery passive healing (10% of damage dealt)
       if (source && currentWeapon === WeaponType.RUNEBLADE) {
@@ -1501,6 +1524,7 @@ export class CombatSystem extends System {
 
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);
+      this.maybeTriggerLeviathan(damageType, source, target);
       this.maybeTriggerArcticShards(damageType, source, target);
 
       this.maybeAddBowOrEntropicImpactVfx(source, target, damageType, actualDamage > 0);
@@ -1548,6 +1572,7 @@ export class CombatSystem extends System {
 
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);
+      this.maybeTriggerLeviathan(damageType, source, target);
       this.maybeTriggerArcticShards(damageType, source, target);
 
       return;
@@ -1592,6 +1617,7 @@ export class CombatSystem extends System {
 
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);
+      this.maybeTriggerLeviathan(damageType, source, target);
       this.maybeTriggerArcticShards(damageType, source, target);
 
       return;
@@ -1636,6 +1662,7 @@ export class CombatSystem extends System {
 
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);
+      this.maybeTriggerLeviathan(damageType, source, target);
       this.maybeTriggerArcticShards(damageType, source, target);
 
       return;
@@ -1680,6 +1707,7 @@ export class CombatSystem extends System {
 
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);
+      this.maybeTriggerLeviathan(damageType, source, target);
       this.maybeTriggerArcticShards(damageType, source, target);
 
       return;
@@ -1724,6 +1752,7 @@ export class CombatSystem extends System {
 
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);
+      this.maybeTriggerLeviathan(damageType, source, target);
       this.maybeTriggerArcticShards(damageType, source, target);
 
       return;
@@ -2045,6 +2074,7 @@ export class CombatSystem extends System {
       this.triggerDamageEffects(target, actualDamage, source, damageType, damageResult.isCritical);
       this.maybeTriggerFrostpath(damageType, source, target);
       this.maybeTriggerSolarRecharge(damageType, source, target);
+      this.maybeTriggerLeviathan(damageType, source, target);
       this.maybeTriggerArcticShards(damageType, source, target);
 
       const enemyForVenom = target.getComponent(Enemy);
@@ -2080,6 +2110,22 @@ export class CombatSystem extends System {
         enemyForVenom &&
         damageType === 'wraith_strike' &&
         damageEvent.infestedStrike === true &&
+        damageDealt &&
+        !health.isDead
+      ) {
+        enemyForVenom.applyConcentratedVenomStacks(
+          INFESTED_TALENT_CONCENTRATED_VENOM_STACKS,
+          currentTime,
+          venomMaxStacks,
+        );
+        concentratedVenomApplied = true;
+      }
+
+      // Infested Smite — 1 stack of Concentrated Venom per beam hit (Trinity multiplies beams)
+      if (
+        enemyForVenom &&
+        damageType === 'smite' &&
+        damageEvent.infestedSmite === true &&
         damageDealt &&
         !health.isDead
       ) {
@@ -2448,6 +2494,14 @@ export class CombatSystem extends System {
         const t = target.getComponent(Transform);
         if (t) {
           addGlobalEntangledEnemy(target.id.toString(), t.getWorldPosition().clone(), ENTANGLEMENT_DURATION_MS);
+        }
+        const proj = source?.getComponent(Projectile);
+        if (
+          !proj ||
+          this.localPlayerEntityId === null ||
+          proj.owner === this.localPlayerEntityId
+        ) {
+          this.getControlSystem()?.tryEntanglementHealOnBarrageHit?.(target.id.toString());
         }
       }
 
@@ -3075,37 +3129,72 @@ export class CombatSystem extends System {
     }
   }
 
-  /** Frostpath talent: Entropic Bolt hit on PvE enemy — delegate to ControlSystem (routed + local apply paths). */
+  /** Frostpath talent: Entropic Bolt or Icebeam tick on PvE enemy — delegate to ControlSystem. */
   private maybeTriggerFrostpath(
     damageType: string | undefined,
     source: Entity | undefined,
     target: Entity,
   ): void {
-    if (damageType !== 'entropic' || !source) return;
+    if ((damageType !== 'entropic' && damageType !== 'icebeam') || !source) return;
     if (!target.getComponent(Enemy)) return;
-    const proj = source.getComponent(Projectile);
-    if (!proj) return;
-    if (this.localPlayerEntityId === null || proj.owner !== this.localPlayerEntityId) return;
+
+    if (damageType === 'icebeam') {
+      if (this.localPlayerEntityId === null || source.id !== this.localPlayerEntityId) return;
+    } else {
+      const proj = source.getComponent(Projectile);
+      if (!proj) return;
+      if (this.localPlayerEntityId === null || proj.owner !== this.localPlayerEntityId) return;
+    }
+
     const cs = (window as any).controlSystemRef?.current;
     if (cs?.tryProcFrostpathOnEntropicHit) {
-      cs.tryProcFrostpathOnEntropicHit(target, source);
+      cs.tryProcFrostpathOnEntropicHit(target, source, damageType);
     }
   }
 
-  /** Solar Recharge talent: Entropic Bolt hit on PvE enemy — delegate to ControlSystem (routed + local apply paths). */
+  /** Solar Recharge talent: Entropic Bolt or Icebeam tick on PvE enemy — delegate to ControlSystem. */
   private maybeTriggerSolarRecharge(
     damageType: string | undefined,
     source: Entity | undefined,
     target: Entity,
   ): void {
-    if (damageType !== 'entropic' || !source) return;
+    if ((damageType !== 'entropic' && damageType !== 'icebeam') || !source) return;
     if (!target.getComponent(Enemy)) return;
-    const proj = source.getComponent(Projectile);
-    if (!proj) return;
-    if (this.localPlayerEntityId === null || proj.owner !== this.localPlayerEntityId) return;
+
+    if (damageType === 'icebeam') {
+      if (this.localPlayerEntityId === null || source.id !== this.localPlayerEntityId) return;
+    } else {
+      const proj = source.getComponent(Projectile);
+      if (!proj) return;
+      if (this.localPlayerEntityId === null || proj.owner !== this.localPlayerEntityId) return;
+    }
+
     const cs = (window as any).controlSystemRef?.current;
     if (cs?.tryProcSolarRechargeOnEntropicHit) {
-      cs.tryProcSolarRechargeOnEntropicHit(target, source);
+      cs.tryProcSolarRechargeOnEntropicHit(target, source, damageType);
+    }
+  }
+
+  /** Leviathan talent: Entropic Bolt or Icebeam tick on PvE enemy — delegate to ControlSystem. */
+  private maybeTriggerLeviathan(
+    damageType: string | undefined,
+    source: Entity | undefined,
+    target: Entity,
+  ): void {
+    if ((damageType !== 'entropic' && damageType !== 'icebeam') || !source) return;
+    if (!target.getComponent(Enemy)) return;
+
+    if (damageType === 'icebeam') {
+      if (this.localPlayerEntityId === null || source.id !== this.localPlayerEntityId) return;
+    } else {
+      const proj = source.getComponent(Projectile);
+      if (!proj) return;
+      if (this.localPlayerEntityId === null || proj.owner !== this.localPlayerEntityId) return;
+    }
+
+    const cs = (window as any).controlSystemRef?.current;
+    if (cs?.tryProcLeviathanOnEntropicHit) {
+      cs.tryProcLeviathanOnEntropicHit(target, source, damageType);
     }
   }
 

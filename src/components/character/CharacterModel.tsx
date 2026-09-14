@@ -9,6 +9,11 @@ import { Group, LoopRepeat, LoopOnce, AnimationAction, AnimationClip, AnimationM
 import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { loadAllGltfAnimationClips, loadGltfAnimationClips } from '@/utils/gltfAnimationLoader';
 import { applySelfIllumination, useDisposeClonedMaterials } from '@/utils/disposeObject3D';
+import {
+  applySpectralLook,
+  clearSpectralLook,
+  updateSpectralUniforms,
+} from '@/utils/spectralMaterial';
 
 export type AnimState =
   | 'Idle' | 'Run' | 'Sprint' | 'Walk' | 'WalkBack' | 'WalkLeft' | 'WalkRight' | 'Backwards'
@@ -25,6 +30,8 @@ interface CharacterModelProps {
   portalFallRef?: React.MutableRefObject<{ active: boolean; phase: 'rise' | 'fall'; progress: number }>;
   /** Slight Run playback boost (Persistence Hunter). Sprint unchanged. */
   runAnimTimeScale?: number;
+  /** Deathdealer talent — spectral / translucent look while post-dash invisible. */
+  spectralActive?: boolean;
 }
 
 type CharacterDeferredAnimState = keyof typeof CHARACTER_DEFERRED_MODEL_PATHS;
@@ -197,6 +204,7 @@ export default function CharacterModel({
   isDead = false,
   portalFallRef,
   runAnimTimeScale = 1,
+  spectralActive = false,
 }: CharacterModelProps) {
   const [deferredAnimationClips, setDeferredAnimationClips] = useState<CharacterDeferredClips | null>(null);
 
@@ -222,6 +230,7 @@ export default function CharacterModel({
       isDead={isDead}
       portalFallRef={portalFallRef}
       runAnimTimeScale={runAnimTimeScale}
+      spectralActive={spectralActive}
       deferredAnimationClips={deferredAnimationClips}
     />
   );
@@ -236,6 +245,7 @@ function CharacterModelRig({
   isDead = false,
   portalFallRef,
   runAnimTimeScale = 1,
+  spectralActive = false,
   deferredAnimationClips,
 }: CharacterModelRigProps) {
   const sceneGroupRef   = useRef<Group>(null);
@@ -271,6 +281,17 @@ function CharacterModelRig({
   }, [scene]);
 
   useDisposeClonedMaterials(clonedScene);
+
+  useEffect(() => {
+    if (spectralActive) {
+      applySpectralLook(clonedScene, 'deathdealer');
+    } else {
+      clearSpectralLook(clonedScene);
+    }
+    return () => {
+      clearSpectralLook(clonedScene);
+    };
+  }, [spectralActive, clonedScene]);
 
   const sprintUsesFallback = useMemo(
     () => !hasAssimpRotationTracks(sprintAnims),
@@ -479,7 +500,11 @@ function CharacterModelRig({
     };
   }, [animState, isDead, actions, mixer, animations, sprintUsesFallback, runAnimTimeScale]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useFrame(() => {
+  useFrame((state) => {
+    if (spectralActive) {
+      updateSpectralUniforms(clonedScene, 1, state.clock.elapsedTime);
+    }
+
     if (!portalFallRef?.current.active) return;
     if (!actions) return;
 

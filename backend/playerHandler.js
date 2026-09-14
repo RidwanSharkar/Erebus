@@ -65,7 +65,9 @@ function handlePlayerEvents(socket, gameRooms) {
   function isDeathGraspPullImmune(enemy) {
     if (!enemy || !enemy.type) return false;
     if (DEATH_GRASP_PULL_IMMUNE_TYPES.has(enemy.type)) return true;
-    return enemy.type === 'knight' && enemy.isBoss1EliteKnight === true;
+    if (enemy.type === 'knight' && enemy.isBoss1EliteKnight === true) return true;
+    if (enemy.type === 'wyrm' && enemy.isBoss1EliteWyrm === true) return true;
+    return false;
   }
 
   function isDeathGraspHostileEnemy(enemy) {
@@ -699,7 +701,7 @@ function handlePlayerEvents(socket, gameRooms) {
 
   // Handle player stealth state changes
   socket.on('player-stealth', (data) => {
-    const { roomId, playerId, isInvisible, isStealthing } = data;
+    const { roomId, playerId, isInvisible, isStealthing, source } = data;
 
     if (!gameRooms.has(roomId)) {
       return;
@@ -707,13 +709,20 @@ function handlePlayerEvents(socket, gameRooms) {
 
     const room = gameRooms.get(roomId);
     const player = room.players.get(socket.id);
+    const stealthSource = source === 'deathdealer' ? 'deathdealer' : 'accretion';
 
     if (player) {
       // Update player's stealth state on server
       player.isInvisible = isInvisible;
       player.isStealthing = isStealthing || false;
+      player.deathdealerInvisible = isInvisible && stealthSource === 'deathdealer';
 
-      console.log(`👤 Player ${socket.id} stealth state: invisible=${isInvisible}, stealthing=${player.isStealthing}`);
+      // Deathdealer: wipe sticky aggro/threat immediately on enter (pets intact).
+      if (isInvisible && stealthSource === 'deathdealer' && room.enemyAI?.dropPlayerAggro) {
+        room.enemyAI.dropPlayerAggro(socket.id);
+      }
+
+      console.log(`👤 Player ${socket.id} stealth state: invisible=${isInvisible}, stealthing=${player.isStealthing}, source=${stealthSource}`);
     }
 
     // Broadcast stealth state to all other players in the room (including the sender for consistency)
@@ -721,6 +730,7 @@ function handlePlayerEvents(socket, gameRooms) {
       playerId: socket.id,
       isInvisible,
       isStealthing: player?.isStealthing || false,
+      source: stealthSource,
       timestamp: Date.now()
     });
   });

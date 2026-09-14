@@ -24,6 +24,7 @@ import { PhysicsSystem } from './PhysicsSystem';
 import { WeaponSubclass, WeaponType } from '@/components/dragon/weapons';
 import { DeflectBarrier } from '@/components/weapons/DeflectBarrier';
 import { spawnArcticGroundBlizzardAtFromReact } from '@/components/weapons/Blizzard/arcticBlizzardSpawnBridge';
+import { DEATHDEALER_JUDGMENT_FALL_MS } from '@/components/weapons/DeathdealerJudgmentStrike';
 import { SkillPointSystem, SkillPointData } from '@/utils/SkillPointSystem';
 import type { PlayerStats } from '@/utils/StatSystem';
 import { AbilityLoadout } from '@/utils/weaponAbilities';
@@ -52,6 +53,7 @@ import {
   shouldApplyWyvernBiteTalent,
   shouldApplyStaggeringBiteTalent,
   shouldApplyEntanglementTalent,
+  getEntanglementHealPerEnemy,
   shouldApplyInfernoTalent,
   shouldApplyReaperTalent,
   shouldApplyMeteorTalent,
@@ -94,6 +96,7 @@ import {
   shouldApplyExecutionerTalent,
   shouldApplyFrostpathTalent,
   shouldApplySolarRechargeTalent,
+  shouldApplyLeviathanTalent,
   getEntropicBoltFireRateSec,
   SCYTHE_LMB_WINDUP_SEC,
   getArcaneSynergyEntropicBoltFlatDamageBonus,
@@ -102,11 +105,21 @@ import {
   shouldApplyBlizzardTalent,
   shouldApplyTitansGripTalent,
   FROSTPATH_PROC_CHANCE,
+  FROSTPATH_ICEBEAM_PROC_CHANCE,
   SOLAR_RECHARGE_PROC_CHANCE,
+  SOLAR_RECHARGE_ICEBEAM_PROC_CHANCE,
+  LEVIATHAN_PROC_CHANCE,
+  LEVIATHAN_ICEBEAM_PROC_CHANCE,
+  LEVIATHAN_CROSSENTROPY_PROC_CHANCE,
+  LEVIATHAN_MAX_DISTANCE,
+  LEVIATHAN_SPEED,
+  LEVIATHAN_LIFETIME_SEC,
+  getLeviathanDamage,
   WINDFURY_PROC_CHANCE,
   CRUSADER_PROC_CHANCE,
   CRUSADER_DURATION_SEC,
   CRUSADER_LMB_FLAT_BONUS,
+  CRUSADER_PROC_HEAL,
   BLIZZARD_PROC_CHANCE,
   BLIZZARD_DURATION_SEC,
   TITANS_GRIP_STUN_PROC_CHANCE,
@@ -143,10 +156,14 @@ import {
   BLITZ_CANNON_MAX_CHARGES,
   BLITZ_CANNON_INTERNAL_COOLDOWN_SEC,
   ACCELERATOR_TOTEM_AURA_RADIUS_UNITS,
+  ACCELERATOR_MANTRA_COOLDOWN_REDUCTION_SEC,
+  BLOODLEECH_CRIT_HEAL_ICD_SEC,
   shouldApplyAcceleratorTalent,
   shouldApplyHealingStreamTalent,
+  getSolarRechargeHeal,
   HEALING_STREAM_HP_PER_SEC_PER_TOTEM,
   REANIMATE_SUNWELL_HEAL,
+  isMantraInLoadout,
   REANIMATE_SUNWELL_COOLDOWN_SEC,
   WRATHFUL_BITE_BARRAGE_CRIT_CHANCE_ADD,
   WRATHFUL_BITE_BARRAGE_CRIT_DAMAGE_MULT_ADD,
@@ -204,14 +221,12 @@ import {
   SPELLBLADE_WRAITH_STRIKE_SHIELD_RESTORE,
   PARRY_FLOURISH_SHIELD_RESTORE,
   shouldApplyBreathWeaponTalent,
-  BREATH_WEAPON_DAMAGE,
   AFTERSHOCK_STRIP_LENGTH,
   AFTERSHOCK_DETONATION_DELAY_MS,
   AFTERSHOCK_STRIP_HALF_WIDTH,
-  AFTERSHOCK_INFESTED_DAMAGE_BONUS,
-  AFTERSHOCK_GUARD_DAMAGE_BONUS,
   AFTERSHOCK_WRATHFUL_CRIT_CHANCE_ADD,
   AFTERSHOCK_STAGGERING_STAGGER,
+  getAftershockDetonationDamage,
   STAGGERING_STAB_BACKSTAB_STAGGER,
   WRATHFUL_STAB_CRIT_CHANCE_ADD,
   WRATHFUL_STAB_CRIT_DAMAGE_MULT_ADD,
@@ -236,10 +251,13 @@ import {
   shouldApplyCrescentBladesTalent,
   shouldApplyMortalStrikeTalent,
   resolveMortalStrikeDamageBundle,
+  getMortalStrikeDamage,
   resolveWraithStrikeTheme,
   MORTAL_STRIKE_ATTACK_INTERVAL,
   MORTAL_STRIKE_RANGE,
   MORTAL_STRIKE_ARC_ANGLE,
+  getTempestRoundsBurstFireRate,
+  getTempestRoundsBurstDamage,
   shouldApplyWindShearTalent,
   shouldApplyPsionicBladesTalent,
   getPsionicBladesProcDamage,
@@ -255,8 +273,14 @@ import {
   shouldApplyInfestedFlourishTalent,
   shouldApplyFanOfKnivesTalent,
   shouldApplyFireAffinityTalent,
+  shouldApplyDeathdealerTalent,
+  isDeathdealerJudgmentTarget,
+  DEATHDEALER_SPRINT_BONUS_SEC,
+  DEATHDEALER_DAMAGE_PER_ORB,
+  DEATHDEALER_SWORD_STAGGER_MS,
   getFanOfKnivesFlourishTintFromLoadout,
   getFanOfKnivesProjectileDamage,
+  getCrescentFlareDamage,
   getFireAffinityStormDamage,
   getFireAffinitySkyfallDamage,
   FAN_OF_KNIVES_MAX_DISTANCE_UNITS,
@@ -479,8 +503,8 @@ export class ControlSystem extends System {
   // Callback for Barrage activation
   private onBarrageCallback?: (position: Vector3, direction: Vector3) => void;
   
-  // Callback for Reanimate healing effect
-  private onReanimateCallback?: () => void;
+  // Callback for Reanimate healing effect (optional healAmount for Solar Recharge scaling)
+  private onReanimateCallback?: (healAmount?: number) => void;
 
   // Callback for creating damage numbers
   private onDamageNumbersUpdate?: (damageNumbers: Array<{
@@ -720,6 +744,8 @@ export class ControlSystem extends System {
   private barrageFireRateBase = 8.0; // Frostbite / Barrage base cooldown
   /** Invalidates staggered barrage timeouts on new volleys / weapon reset */
   private barrageVolleyGeneration = 0;
+  /** Distinct enemies Entangled by the current Frostbite/Barrage cast (for Entanglement heal). */
+  private entanglementBarrageHealEnemyKeys = new Set<string>();
   private fanOfKnivesVolleyGeneration = 0;
   private static readonly BARRAGE_ARROW_STAGGER_MS = 100;
   
@@ -905,6 +931,7 @@ export class ControlSystem extends System {
   private flurryDuration = 5.0; // 5 second duration
   private lastFrostpathProcEffectWallClockMs = 0;
   private lastSolarRechargeProcEffectWallClockMs = 0;
+  private lastBloodleechCritHealWallClockMs = 0;
   private lastFlurryHealVfxWallClockMs = 0;
   private lastFlurryHealNumberWallClockMs = 0;
   private healingStreamHealCarry = 0;
@@ -927,14 +954,29 @@ export class ControlSystem extends System {
     return this.isStealthing;
   }
 
-  // Public getter for invisibility state
+  // Public getter for invisibility state (Accretion OR Deathdealer)
   public getIsInvisible(): boolean {
-    return this.isInvisible;
+    return this.isInvisible || this.isDeathdealerInvisible;
+  }
+
+  /** Deathdealer talent — spectral post-dash invis (separate from Sabres F Accretion). */
+  public getIsDeathdealerInvisible(): boolean {
+    return this.isDeathdealerInvisible;
   }
   private stealthStartTime = 0;
   private stealthDelayDuration = 0.5; // 0.5 second delay before invisibility
   private stealthInvisibilityDuration = 5.0; // 5 seconds of invisibility
   private isInvisible = false;
+
+  /** Deathdealer class talent — spectral invis during extended post-dash sprint. */
+  private isDeathdealerInvisible = false;
+  private deathdealerAmbushArmed = false;
+  private deathdealerUntilSec = 0;
+  private deathdealerAmbushOrbsThisPass = 0;
+  private deathdealerAmbushCommittedThisPass = false;
+  private deathdealerAmbushPositionsThisPass: Vector3[] = [];
+  private deathdealerAmbushTargetsThisPass: Entity[] = [];
+  private onDeathdealerJudgmentCallback?: (positions: Vector3[], swordCount: number) => void;
   
   // Sunder stack tracking - Map of entity ID to stack data
   private sunderStacks = new Map<number, { stacks: number; lastApplied: number; duration: number }>();
@@ -1419,8 +1461,13 @@ export class ControlSystem extends System {
   /** Free sprint duration from dash cast (seconds), by equipped weapon. */
   private getPostDashSprintDurationSec(): number {
     switch (this.currentWeapon) {
-      case WeaponType.SABRES:
-        return 1.95;
+      case WeaponType.SABRES: {
+        let duration = 1.95;
+        if (shouldApplyDeathdealerTalent(this.talentLoadout)) {
+          duration += DEATHDEALER_SPRINT_BONUS_SEC;
+        }
+        return duration;
+      }
       case WeaponType.RUNEBLADE:
         return 1.5;
       case WeaponType.SCYTHE:
@@ -1967,7 +2014,7 @@ export class ControlSystem extends System {
           !this.isSwinging &&
           !this.isSkyfalling &&
           !this.isSundering &&
-          (!this.backstabDoubleStabActive || !this.isBackstabbing)
+          !this.isBackstabbing
         ) {
           window.dispatchEvent(new CustomEvent('character-ability-cast'));
           this.performBackstab(playerTransform);
@@ -2095,6 +2142,9 @@ export class ControlSystem extends System {
     }
     if (this.isStealthing) {
       this.updateStealthState(playerTransform);
+    }
+    if (this.isDeathdealerInvisible) {
+      this.updateDeathdealerInvisState(playerTransform);
     }
     // Runeblade states
     if (this.corruptedAuraActive) {
@@ -2592,14 +2642,6 @@ export class ControlSystem extends System {
     );
   }
 
-  private getCrossentropyEffectiveRechargeSec(playerPos: Vector3): number {
-    let mult = 1;
-    if (shouldApplyAcceleratorTalent(this.talentLoadout, this.abilityLoadout)) {
-      mult = Math.pow(2, this.countAcceleratorTotemsInRangeXZ(playerPos.x, playerPos.z));
-    }
-    return this.crossentropyCooldownSec / mult;
-  }
-
   /** Sync Blitz Cannon charge mode with talent + loadout; init or clear charge state on transitions. */
   private syncCrossentropyBlitzChargeMode(): boolean {
     const active = shouldApplyBlitzCannonTalent(this.talentLoadout, this.abilityLoadout);
@@ -2621,9 +2663,35 @@ export class ControlSystem extends System {
     return true;
   }
 
-  /** Apply completed Crossentropy charge timers (Blitz Cannon only). */
+  /** Apply completed Crossentropy charge timers (Blitz Cannon only). Accelerator pulls deadlines forward each tick. */
   private advanceCrossentropyChargeRecharges(now: number, playerPos?: Vector3): void {
     const maxC = BLITZ_CANNON_MAX_CHARGES;
+
+    if (this.crossentropyCooldownReconcileWallSec === null) {
+      this.crossentropyCooldownReconcileWallSec = now;
+    } else {
+      let dt = now - this.crossentropyCooldownReconcileWallSec;
+      if (dt < 0) dt = 0;
+      dt = Math.min(dt, 0.25);
+      this.crossentropyCooldownReconcileWallSec = now;
+
+      if (
+        this.crossentropyNextChargeAt !== null &&
+        this.crossentropyCharges < maxC &&
+        playerPos &&
+        shouldApplyAcceleratorTalent(this.talentLoadout, this.abilityLoadout)
+      ) {
+        const mult = Math.pow(
+          2,
+          this.countAcceleratorTotemsInRangeXZ(playerPos.x, playerPos.z),
+        );
+        if (mult > 1) {
+          // Remaining recharge drains at dt * mult (pull deadline forward by bonus time).
+          this.crossentropyNextChargeAt -= dt * (mult - 1);
+        }
+      }
+    }
+
     while (
       this.crossentropyNextChargeAt !== null &&
       now >= this.crossentropyNextChargeAt &&
@@ -2631,10 +2699,8 @@ export class ControlSystem extends System {
     ) {
       this.crossentropyCharges++;
       if (this.crossentropyCharges < maxC) {
-        const rechargeSec = playerPos
-          ? this.getCrossentropyEffectiveRechargeSec(playerPos)
-          : this.crossentropyCooldownSec;
-        this.crossentropyNextChargeAt += rechargeSec;
+        // Schedule next charge at base cooldown; Accelerator accelerates remaining time each tick.
+        this.crossentropyNextChargeAt += this.crossentropyCooldownSec;
       } else {
         this.crossentropyNextChargeAt = null;
       }
@@ -2655,7 +2721,7 @@ export class ControlSystem extends System {
     }
     if (this.syncCrossentropyBlitzChargeMode()) {
       const maxC = BLITZ_CANNON_MAX_CHARGES;
-      const rechargeSec = p ? this.getCrossentropyEffectiveRechargeSec(p) : this.crossentropyCooldownSec;
+      const baseRechargeSec = this.crossentropyCooldownSec;
       if (this.crossentropyCharges > 0) {
         const internalCooldownRemaining = Math.max(
           0,
@@ -2667,7 +2733,7 @@ export class ControlSystem extends System {
           max:
             internalCooldownRemaining > 0
               ? BLITZ_CANNON_INTERNAL_COOLDOWN_SEC
-              : rechargeSec,
+              : baseRechargeSec,
           isActive: this.isCrossentropyCharging,
           charges: this.crossentropyCharges,
           maxCharges: maxC,
@@ -2676,10 +2742,10 @@ export class ControlSystem extends System {
       const until =
         this.crossentropyNextChargeAt != null
           ? Math.max(0, this.crossentropyNextChargeAt - currentTime)
-          : rechargeSec;
+          : baseRechargeSec;
       return {
         current: until,
-        max: rechargeSec,
+        max: baseRechargeSec,
         isActive: this.isCrossentropyCharging,
         charges: 0,
         maxCharges: maxC,
@@ -2892,7 +2958,7 @@ export class ControlSystem extends System {
         const currentTime = Date.now() / 1000; // Convert to seconds
 
         // Check cooldown
-        if (currentTime - this.lastBurstFireTime >= this.burstFireRate) {
+        if (currentTime - this.lastBurstFireTime >= this.getTempestBurstFireRate()) {
           // Fire burst attack - use same direction calculation as regular projectiles
           // Get dragon's facing direction (same as camera direction since dragon faces camera)
           const direction = new Vector3();
@@ -2920,6 +2986,8 @@ export class ControlSystem extends System {
                 getBowFullChargeMs(
                   this.currentWeapon === WeaponType.BOW &&
                     shouldApplyHighCaliberTalent(this.talentLoadout),
+                  this.currentWeapon === WeaponType.BOW &&
+                    shouldApplyTriggerFingerTalent(this.talentLoadout),
                 ),
             );
           }
@@ -3177,7 +3245,8 @@ export class ControlSystem extends System {
           this.crossentropyCharges < BLITZ_CANNON_MAX_CHARGES &&
           this.crossentropyNextChargeAt === null
         ) {
-          this.crossentropyNextChargeAt = currentTime + this.getCrossentropyEffectiveRechargeSec(ppos);
+          // Base cooldown; Accelerator drains remaining time each tick near totems.
+          this.crossentropyNextChargeAt = currentTime + this.crossentropyCooldownSec;
         }
       } else {
         this.crossentropyRechargeAccumulator = 0;
@@ -3227,6 +3296,7 @@ export class ControlSystem extends System {
     direction.normalize();
 
     this.createCrossentropyBoltProjectile(playerTransform.position.clone(), direction);
+    this.tryProcLeviathanOnCrossentropyCast(playerTransform);
   }
 
   private performSummonTotemAbility(playerTransform: Transform): void {
@@ -3429,10 +3499,12 @@ export class ControlSystem extends System {
 
     const tempestTheme = resolveTempestBurstTheme(this.talentLoadout);
     const tempestBurstWrathful = shouldApplyWrathfulShotsTalent(this.talentLoadout);
+    const triggerFingerTempest =
+      shouldApplyTriggerFingerTalent(this.talentLoadout) && tempestTheme === 'default';
 
     const projectileConfig = {
       speed: 35,
-      damage: 25, // Burst arrows deal 25 damage each
+      damage: getTempestRoundsBurstDamage(this.talentLoadout),
       lifetime: 3,
       maxDistance: 20,
       subclass: this.currentSubclass,
@@ -3445,6 +3517,7 @@ export class ControlSystem extends System {
       tempestBurstTheme: tempestTheme,
       ...(tempestBurstWrathful ? { tempestBurstWrathful: true as const } : {}),
       ...(this.shouldApplyStaggerShotTalent() ? { staggerToAdd: STAGGER_SHOT_TEMPEST_ROUND_STAGGER } : {}),
+      ...(triggerFingerTempest ? { triggerFingerUncharged: true as const } : {}),
     };
 
     const useDualCoil = this.shouldApplyDualCoilForBow();
@@ -3477,9 +3550,12 @@ export class ControlSystem extends System {
       this.createBurstProjectile(position, direction);
     }, 100);
 
-    // Fire third projectile after 0.2 seconds
+    // Fire third projectile after 0.2 seconds, then Wyvern Sting Cobra (if Tempest + talent).
     this.scheduleAbilityTimeout(() => {
       this.createBurstProjectile(position, direction);
+      if (this.isBowTempestRoundsActive()) {
+        this.tryFireWyvernStingCobra();
+      }
     }, 200);
 
     // Update burst fire cooldown
@@ -3681,24 +3757,29 @@ export class ControlSystem extends System {
 
   /**
    * Solar Recharge talent: same Sunwell outcome as `performReanimateAbility` but does not check or
-   * advance Q cooldown (independent of manual Sunwell usage).
+   * advance Q cooldown (independent of manual Sunwell usage). Heal scales with Strength.
    */
   private performReanimateAsSolarRechargeProc(playerTransform: Transform): void {
     if (!this.playerEntity) return;
+    const healAmount = getSolarRechargeHeal(
+      this.allocatedPlayerStats,
+      this.talentLoadout,
+      this.abilityLoadout,
+    );
     this.audioSystem?.playScytheSunwellSound(playerTransform.getWorldPosition());
-    this.triggerReanimateEffect(playerTransform);
+    this.triggerReanimateEffect(playerTransform, healAmount);
     const healthComponent = this.playerEntity.getComponent(Health);
     if (healthComponent) {
-      healthComponent.heal(REANIMATE_SUNWELL_HEAL);
+      healthComponent.heal(healAmount);
     }
-    this.healNearbyAllies(playerTransform, REANIMATE_SUNWELL_HEAL, 5.0);
+    this.healNearbyAllies(playerTransform, healAmount, 5.0);
   }
 
-  private triggerReanimateEffect(playerTransform: Transform): void {
+  private triggerReanimateEffect(playerTransform: Transform, healAmount: number = REANIMATE_SUNWELL_HEAL): void {
     // Trigger the visual healing effect
 
     if (this.onReanimateCallback) {
-      this.onReanimateCallback();
+      this.onReanimateCallback(healAmount);
     }
 
     // Create healing damage number above player head
@@ -3708,7 +3789,7 @@ export class ControlSystem extends System {
     if (this.onDamageNumbersUpdate) {
       this.onDamageNumbersUpdate([{
         id: this.nextDamageNumberId.toString(),
-        damage: REANIMATE_SUNWELL_HEAL,
+        damage: healAmount,
         position: playerPosition,
         isCritical: false,
         timestamp: Date.now(),
@@ -3852,19 +3933,31 @@ export class ControlSystem extends System {
   }
 
   /**
-   * Called from CombatSystem when an Entropic Bolt hits a PvE enemy; rolls proc and attributes to local player projectiles only.
+   * Called from CombatSystem when an Entropic Bolt or Icebeam tick hits a PvE enemy;
+   * rolls proc and attributes to local player projectiles (bolts) or local player entity (beam).
    */
-  public tryProcFrostpathOnEntropicHit(target: Entity, projectileSource: Entity): void {
+  public tryProcFrostpathOnEntropicHit(
+    target: Entity,
+    source: Entity,
+    damageType: string = 'entropic',
+  ): void {
     if (!this.playerEntity) return;
     if (!shouldApplyFrostpathTalent(this.talentLoadout)) return;
     const now = Date.now();
     if (now - this.lastFrostpathProcEffectWallClockMs < FROST_SOLAR_PROC_EFFECT_ICD_MS) return;
-    if (Math.random() >= FROSTPATH_PROC_CHANCE) return;
+
+    const procChance =
+      damageType === 'icebeam' ? FROSTPATH_ICEBEAM_PROC_CHANCE : FROSTPATH_PROC_CHANCE;
+    if (Math.random() >= procChance) return;
 
     if (!target.getComponent(Enemy)) return;
 
-    const proj = projectileSource.getComponent(Projectile);
-    if (!proj || proj.owner !== this.playerEntity.id) return;
+    if (damageType === 'icebeam') {
+      if (source.id !== this.playerEntity.id) return;
+    } else {
+      const proj = source.getComponent(Projectile);
+      if (!proj || proj.owner !== this.playerEntity.id) return;
+    }
 
     const targetTransform = target.getComponent(Transform);
     if (!targetTransform) return;
@@ -3874,25 +3967,131 @@ export class ControlSystem extends System {
   }
 
   /**
-   * Solar Recharge talent: Sunwell (Reanimate) on Entropic hit vs PvE; roll independent of Q cooldown.
+   * Solar Recharge talent: Sunwell (Reanimate) on Entropic/Icebeam hit vs PvE; roll independent of Q cooldown.
    */
-  public tryProcSolarRechargeOnEntropicHit(target: Entity, projectileSource: Entity): void {
+  public tryProcSolarRechargeOnEntropicHit(
+    target: Entity,
+    source: Entity,
+    damageType: string = 'entropic',
+  ): void {
     if (!this.playerEntity) return;
     if (!shouldApplySolarRechargeTalent(this.talentLoadout)) return;
     const now = Date.now();
     if (now - this.lastSolarRechargeProcEffectWallClockMs < FROST_SOLAR_PROC_EFFECT_ICD_MS) return;
-    if (Math.random() >= SOLAR_RECHARGE_PROC_CHANCE) return;
+
+    const procChance =
+      damageType === 'icebeam' ? SOLAR_RECHARGE_ICEBEAM_PROC_CHANCE : SOLAR_RECHARGE_PROC_CHANCE;
+    if (Math.random() >= procChance) return;
 
     if (!target.getComponent(Enemy)) return;
 
-    const proj = projectileSource.getComponent(Projectile);
-    if (!proj || proj.owner !== this.playerEntity.id) return;
+    if (damageType === 'icebeam') {
+      if (source.id !== this.playerEntity.id) return;
+    } else {
+      const proj = source.getComponent(Projectile);
+      if (!proj || proj.owner !== this.playerEntity.id) return;
+    }
 
     const playerTransform = this.playerEntity.getComponent(Transform);
     if (!playerTransform) return;
 
     this.lastSolarRechargeProcEffectWallClockMs = now;
     this.performReanimateAsSolarRechargeProc(playerTransform);
+  }
+
+  /**
+   * Leviathan talent: Entropic Bolt or Icebeam tick on PvE enemy — spawn piercing ground basilisk.
+   */
+  public tryProcLeviathanOnEntropicHit(
+    target: Entity,
+    source: Entity,
+    damageType: string = 'entropic',
+  ): void {
+    if (!this.playerEntity) return;
+    if (!shouldApplyLeviathanTalent(this.talentLoadout)) return;
+
+    const procChance =
+      damageType === 'icebeam' ? LEVIATHAN_ICEBEAM_PROC_CHANCE : LEVIATHAN_PROC_CHANCE;
+    if (Math.random() >= procChance) return;
+
+    if (!target.getComponent(Enemy)) return;
+
+    if (damageType === 'icebeam') {
+      if (source.id !== this.playerEntity.id) return;
+    } else {
+      const proj = source.getComponent(Projectile);
+      if (!proj || proj.owner !== this.playerEntity.id) return;
+    }
+
+    const playerTransform = this.playerEntity.getComponent(Transform);
+    if (!playerTransform) return;
+
+    this.createLeviathanProjectile(playerTransform);
+  }
+
+  /** Leviathan talent: 50% chance on Crossentropy cast (after charge completes). */
+  public tryProcLeviathanOnCrossentropyCast(playerTransform: Transform): void {
+    if (!this.playerEntity) return;
+    if (!shouldApplyLeviathanTalent(this.talentLoadout)) return;
+    if (Math.random() >= LEVIATHAN_CROSSENTROPY_PROC_CHANCE) return;
+    this.createLeviathanProjectile(playerTransform);
+  }
+
+  private createLeviathanProjectile(playerTransform: Transform): void {
+    if (!this.playerEntity) return;
+
+    const direction = new Vector3();
+    this.camera.getWorldDirection(direction);
+    direction.y = 0;
+    if (direction.lengthSq() < 1e-8) {
+      direction.copy(playerTransform.getForward());
+      direction.y = 0;
+      if (direction.lengthSq() < 1e-8) direction.set(0, 0, -1);
+    }
+    direction.normalize();
+
+    const spawnPosition = playerTransform.getWorldPosition().clone();
+    spawnPosition.add(direction.clone().multiplyScalar(1.25));
+    spawnPosition.y = 0.35;
+
+    const damage = getLeviathanDamage(
+      this.allocatedPlayerStats,
+      this.talentLoadout,
+      this.abilityLoadout,
+    );
+
+    const projectileConfig = {
+      speed: LEVIATHAN_SPEED,
+      damage,
+      lifetime: LEVIATHAN_LIFETIME_SEC,
+      maxDistance: LEVIATHAN_MAX_DISTANCE,
+      piercing: true,
+      explosive: false,
+      projectileType: 'leviathan',
+      sourcePlayerId: this.playerEntity?.userData?.playerId || 'unknown',
+      opacity: 1.0,
+    };
+
+    const projectileEntity = this.projectileSystem.createProjectile(
+      this.world,
+      spawnPosition,
+      direction,
+      this.playerEntity.id,
+      projectileConfig,
+    );
+
+    const renderer = projectileEntity.getComponent(Renderer) as Renderer;
+    if (renderer?.mesh) {
+      renderer.mesh.visible = false;
+      renderer.mesh.userData.projectileType = 'leviathan';
+      renderer.mesh.userData.isLeviathanProjectile = true;
+    }
+
+    this.audioSystem?.playLeviathanSound(spawnPosition);
+
+    if (this.onProjectileCreatedCallback) {
+      this.onProjectileCreatedCallback('leviathan', spawnPosition, direction, projectileConfig);
+    }
   }
 
   private spawnArcticGroundBlizzardAt(worldPosition: Vector3): void {
@@ -4200,15 +4399,9 @@ export class ControlSystem extends System {
       }
     }
 
-    if (this.shouldApplyWyvernStingForBow()) {
-      const now = Date.now() / 1000;
-      if (now - this.lastWyvernStingTime >= WYVERN_STING_COOLDOWN_SEC) {
-        const playerTransform = this.playerEntity.getComponent(Transform) as Transform | undefined;
-        if (playerTransform) {
-          this.lastWyvernStingTime = now;
-          this.emitCobraShotFromPlayerTransform(playerTransform);
-        }
-      }
+    // Perfect Shot path only when Tempest Rounds is off (Tempest procs after the 3-round burst instead).
+    if (!this.isBowTempestRoundsActive()) {
+      this.tryFireWyvernStingCobra();
     }
   }
 
@@ -4261,7 +4454,7 @@ export class ControlSystem extends System {
     this.onBarrageCallback = callback;
   }
 
-  public setReanimateCallback(callback: () => void): void {
+  public setReanimateCallback(callback: (healAmount?: number) => void): void {
     this.onReanimateCallback = callback;
   }
   
@@ -4388,6 +4581,10 @@ export class ControlSystem extends System {
 
   public setBroadcastSabreMistCallback(callback: (position: Vector3, effectType: 'stealth' | 'skyfall') => void): void {
     this.onBroadcastSabreMistCallback = callback;
+  }
+
+  public setDeathdealerJudgmentCallback(callback: (positions: Vector3[], swordCount: number) => void): void {
+    this.onDeathdealerJudgmentCallback = callback;
   }
 
   public setArcticGroundBlizzardCallback(callback: (position: Vector3) => void): void {
@@ -5719,6 +5916,13 @@ export class ControlSystem extends System {
       const cs = world.getSystem(CombatSystem);
       if (!cs || !playerEntity) return;
 
+      const aftershockDamage = getAftershockDetonationDamage(
+        this.talentLoadout,
+        this.allocatedPlayerStats,
+        this.abilityLoadout,
+        { infested, wraithGuard },
+      );
+
       const allEntities = this.queryNearbyEntities(origin, aftershockQueryRadius);
       for (const entity of allEntities) {
         if (entity === playerEntity) continue;
@@ -5745,9 +5949,7 @@ export class ControlSystem extends System {
         const lateral = Math.hypot(px - cx, pz - cz);
         if (lateral > AFTERSHOCK_STRIP_HALF_WIDTH) continue;
 
-        let damage = BREATH_WEAPON_DAMAGE;
-        if (infested) damage += AFTERSHOCK_INFESTED_DAMAGE_BONUS;
-        if (wraithGuard) damage += AFTERSHOCK_GUARD_DAMAGE_BONUS;
+        let damage = aftershockDamage;
 
         let isCritical: boolean | undefined;
         if (wrathful) {
@@ -5973,6 +6175,36 @@ export class ControlSystem extends System {
     if (Math.random() >= CRUSADER_PROC_CHANCE) return;
     this.runebladeCrusaderBuffEndMs = Date.now() + CRUSADER_DURATION_SEC * 1000;
     this.audioSystem?.playCrusaderProcSound(playerTransform.position);
+    this.performCrusaderProcHeal(playerTransform);
+  }
+
+  /** Crusader proc — flat self-heal (Smite-style number + coop broadcast; no Sunwell AoE). */
+  private performCrusaderProcHeal(playerTransform: Transform): void {
+    if (!this.playerEntity || CRUSADER_PROC_HEAL <= 0) return;
+    const healthComponent = this.playerEntity.getComponent(Health);
+    if (!healthComponent) return;
+    const actualHealingAmount = Math.floor(CRUSADER_PROC_HEAL);
+    const didHeal = healthComponent.heal(actualHealingAmount);
+    if (!didHeal) return;
+
+    const healingPosition = playerTransform.position.clone();
+    healingPosition.y += 1.5;
+
+    if (this.onDamageNumbersUpdate) {
+      this.onDamageNumbersUpdate([{
+        id: this.nextDamageNumberId.toString(),
+        damage: actualHealingAmount,
+        position: healingPosition,
+        isCritical: false,
+        timestamp: Date.now(),
+        damageType: 'smite_healing',
+      }]);
+      this.nextDamageNumberId++;
+    }
+
+    if (this.onBroadcastHealing) {
+      this.onBroadcastHealing(actualHealingAmount, 'crusader', healingPosition);
+    }
   }
 
   private tryBlizzardProcFromRunebladePrimaryHit(_playerTransform: Transform): void {
@@ -6509,11 +6741,15 @@ export class ControlSystem extends System {
     this.isSwinging = false;
   }
 
-  /** Crescent Blades — wide-arc 150-damage slash fired on every 3rd LMB swing. */
+  /** Crescent Blades — wide-arc Agility-scaled slash fired on every 3rd LMB swing. */
   private performCrescentSlash(playerTransform: Transform): void {
     const attackRange = 4;
     const attackAngle = Math.PI / 2;
-    const crescentDamage = 150;
+    const crescentDamage = getCrescentFlareDamage(
+      this.allocatedPlayerStats,
+      this.talentLoadout,
+      this.abilityLoadout,
+    );
 
     const attackDirection = _abilityDirScratch;
     this.camera.getWorldDirection(attackDirection);
@@ -6563,6 +6799,11 @@ export class ControlSystem extends System {
   /** Mortal Strike — wide-arc bonus slash fired on every 4th Runeblade LMB swing. */
   private performMortalStrike(playerTransform: Transform): void {
     const bundle = resolveMortalStrikeDamageBundle(this.talentLoadout);
+    const baseDamage = getMortalStrikeDamage(
+      this.talentLoadout,
+      this.allocatedPlayerStats,
+      this.abilityLoadout,
+    );
     const attackRange = MORTAL_STRIKE_RANGE;
     const attackAngle = MORTAL_STRIKE_ARC_ANGLE;
 
@@ -6599,10 +6840,10 @@ export class ControlSystem extends System {
       if (angleToTarget > attackAngle / 2) continue;
 
       if (combatSystem) {
-        let finalDamage = bundle.baseDamage;
+        let finalDamage = baseDamage;
         let isCritical = false;
         if (bundle.critChanceAdd != null) {
-          const r = calculateDamage(bundle.baseDamage, WeaponType.RUNEBLADE, {
+          const r = calculateDamage(baseDamage, WeaponType.RUNEBLADE, {
             critChanceAdd: bundle.critChanceAdd,
           });
           finalDamage = r.damage;
@@ -6765,6 +7006,7 @@ export class ControlSystem extends System {
     const attackDirection = this.flattenMeleeAttackDirection(this.meleeAttackDirection);
     
     let hitCount = 0;
+    this.beginDeathdealerAmbushPass();
     
     for (const target of potentialTargets) {
       const targetTransform = target.getComponent(Transform);
@@ -6774,6 +7016,8 @@ export class ControlSystem extends System {
       if (!this.isInFlattenedMeleeCone(playerPosition, target, attackDirection, attackRange, halfAngle)) {
         continue;
       }
+
+      this.registerDeathdealerAmbushHit(target, targetTransform.position);
       
       // Target is within range and cone - apply damage from both sabres
       const combatSystem = this.world.getSystem(CombatSystem);
@@ -6867,6 +7111,7 @@ export class ControlSystem extends System {
       }
     }
 
+    this.finishDeathdealerAmbushPass();
     return hitCount;
   }
 
@@ -6987,6 +7232,7 @@ export class ControlSystem extends System {
     const allEntities = this.queryNearbyEntities(landingPosition, damageRadius);
 
     let hitCount = 0;
+    this.beginDeathdealerAmbushPass();
     
     for (const entity of allEntities) {
       if (entity === this.playerEntity) continue;
@@ -7001,6 +7247,7 @@ export class ControlSystem extends System {
       const distanceToLanding = landingPosition.distanceTo(targetTransform.position);
       
       if (distanceToLanding <= damageRadius) {
+        this.registerDeathdealerAmbushHit(entity, targetTransform.position);
         // Apply Skyfall damage
         const combatSystem = this.world.getSystem(CombatSystem);
         if (combatSystem) {
@@ -7059,6 +7306,8 @@ export class ControlSystem extends System {
         }
       }
     }
+
+    this.finishDeathdealerAmbushPass();
 
     // Create Sabre Reaper Mist effect at landing position
     if (this.onCreateSabreMistEffectCallback) {
@@ -7232,6 +7481,8 @@ export class ControlSystem extends System {
       playerPosition,
       sunderRange + ControlSystem.MELEE_COLLIDER_QUERY_PAD,
     );
+
+    this.beginDeathdealerAmbushPass();
     
     for (const entity of allEntities) {
       if (entity === this.playerEntity) continue;
@@ -7265,6 +7516,8 @@ export class ControlSystem extends System {
         finalDamage = dr.damage;
         isCritForQueue = dr.isCritical;
       }
+
+      this.registerDeathdealerAmbushHit(entity, targetTransform.position);
 
       const staggeringFlourish = shouldApplyStaggeringFlourishTalent(this.talentLoadout);
       const staggerFlourishAmount = staggeringFlourish ? STAGGERING_FLOURISH_STAGGER : undefined;
@@ -7360,6 +7613,7 @@ export class ControlSystem extends System {
         this.onSunderCallback(playerTransform.position, attackDirection, finalDamage, stackCount);
       }
     }
+    this.finishDeathdealerAmbushPass();
   }
 
   private performFireAffinityStorm(playerTransform: Transform): void {
@@ -7557,12 +7811,137 @@ export class ControlSystem extends System {
     }
   }
   
-  private broadcastStealthState(isInvisible: boolean): void {
+  private broadcastStealthState(
+    isInvisible: boolean,
+    source: 'accretion' | 'deathdealer' = 'accretion',
+  ): void {
     // Broadcast stealth state through the multiplayer system
     const multiplayerContext = (window as any).multiplayerContext;
     if (multiplayerContext && multiplayerContext.broadcastPlayerStealth) {
-      multiplayerContext.broadcastPlayerStealth(isInvisible, this.isStealthing);
+      multiplayerContext.broadcastPlayerStealth(
+        isInvisible,
+        source === 'accretion' ? this.isStealthing : false,
+        source,
+      );
     }
+  }
+
+  private playSabreMistAtPlayer(effectType: 'stealth' | 'skyfall' = 'stealth'): void {
+    if (!this.playerEntity) return;
+    const playerTransform = this.playerEntity.getComponent(Transform);
+    if (!playerTransform) return;
+    const pos = playerTransform.position.clone();
+    this.onCreateSabreMistEffectCallback?.(pos);
+    this.onBroadcastSabreMistCallback?.(pos.clone(), effectType);
+  }
+
+  private enterDeathdealerInvis(untilSec: number): void {
+    const wasActive = this.isDeathdealerInvisible;
+    this.isDeathdealerInvisible = true;
+    this.deathdealerAmbushArmed = true;
+    this.deathdealerUntilSec = untilSec;
+    if (!wasActive) {
+      this.playSabreMistAtPlayer('stealth');
+      this.broadcastStealthState(true, 'deathdealer');
+    }
+  }
+
+  private endDeathdealerInvis(opts?: { playMist?: boolean; clearSprint?: boolean }): void {
+    if (!this.isDeathdealerInvisible) {
+      this.deathdealerAmbushArmed = false;
+      this.deathdealerUntilSec = 0;
+      return;
+    }
+    const playMist = opts?.playMist !== false;
+    const clearSprint = opts?.clearSprint !== false;
+    this.isDeathdealerInvisible = false;
+    this.deathdealerAmbushArmed = false;
+    this.deathdealerUntilSec = 0;
+    this.deathdealerAmbushOrbsThisPass = 0;
+    this.deathdealerAmbushCommittedThisPass = false;
+    this.deathdealerAmbushPositionsThisPass = [];
+    this.deathdealerAmbushTargetsThisPass = [];
+    if (clearSprint) {
+      this.playerEntity?.getComponent(Movement)?.clearDashSprint();
+    }
+    if (playMist) {
+      this.playSabreMistAtPlayer('stealth');
+    }
+    this.broadcastStealthState(false, 'deathdealer');
+  }
+
+  private updateDeathdealerInvisState(_playerTransform: Transform): void {
+    if (!this.isDeathdealerInvisible) return;
+    const nowSec = Date.now() / 1000;
+    if (this.deathdealerUntilSec > 0 && nowSec >= this.deathdealerUntilSec) {
+      this.endDeathdealerInvis({ playMist: true, clearSprint: true });
+    }
+  }
+
+  private beginDeathdealerAmbushPass(): void {
+    this.deathdealerAmbushOrbsThisPass = 0;
+    this.deathdealerAmbushCommittedThisPass = false;
+    this.deathdealerAmbushPositionsThisPass = [];
+    this.deathdealerAmbushTargetsThisPass = [];
+  }
+
+  /**
+   * Register a damaging hit while Deathdealer invis is armed.
+   * Orbs are spent once on the first hit of the pass; sword damage is deferred to finishDeathdealerAmbushPass.
+   * Mushrooms and tentacle-spine traps do not count (keep invis, no orb spend).
+   */
+  private registerDeathdealerAmbushHit(target: Entity, position: Vector3): void {
+    if (!this.deathdealerAmbushArmed || !this.isDeathdealerInvisible) return;
+    if (!isDeathdealerJudgmentTarget(target)) return;
+    this.deathdealerAmbushPositionsThisPass.push(position.clone());
+    this.deathdealerAmbushTargetsThisPass.push(target);
+    if (!this.deathdealerAmbushCommittedThisPass) {
+      this.deathdealerAmbushCommittedThisPass = true;
+      const movement = this.playerEntity?.getComponent(Movement);
+      const now = Date.now() / 1000;
+      const available = movement?.getAvailableDashCharges() ?? 0;
+      const consumed = movement
+        ? movement.consumeDashChargesWithoutDash(Math.max(available, 0), now)
+        : 0;
+      if (consumed > 0) {
+        this.tryManaShieldOnDashChargeExpended(consumed);
+      }
+      this.deathdealerAmbushOrbsThisPass = consumed;
+    }
+  }
+
+  private finishDeathdealerAmbushPass(): void {
+    if (!this.deathdealerAmbushCommittedThisPass) return;
+    const positions = this.deathdealerAmbushPositionsThisPass.slice();
+    const targets = this.deathdealerAmbushTargetsThisPass.slice();
+    const swordCount = this.deathdealerAmbushOrbsThisPass;
+
+    if (positions.length > 0 && swordCount > 0) {
+      this.onDeathdealerJudgmentCallback?.(positions, swordCount);
+
+      const combatSystem = this.world.getSystem(CombatSystem);
+      const pid = this.playerEntity?.userData?.playerId;
+      for (let i = 0; i < swordCount; i++) {
+        const delayMs = DEATHDEALER_JUDGMENT_FALL_MS + i * DEATHDEALER_SWORD_STAGGER_MS;
+        this.scheduleAbilityTimeout(() => {
+          if (!combatSystem) return;
+          for (const target of targets) {
+            if (!isDeathdealerJudgmentTarget(target)) continue;
+            const targetHealth = target.getComponent(Health);
+            if (!targetHealth || targetHealth.isDead) continue;
+            combatSystem.queueDamage(
+              target,
+              DEATHDEALER_DAMAGE_PER_ORB,
+              this.playerEntity || undefined,
+              'deathdealer_judgment',
+              pid,
+            );
+          }
+        }, delayMs);
+      }
+    }
+
+    this.endDeathdealerInvis({ playMist: true, clearSprint: true });
   }
   
   private resetAllAbilityStates(): void {
@@ -7578,6 +7957,7 @@ export class ControlSystem extends System {
     this.isBarrageCharging = false; // Reset barrage charging
     this.barrageChargeProgress = 0;
     this.barrageVolleyGeneration++;
+    this.entanglementBarrageHealEnemyKeys.clear();
     this.isCobraShotCharging = false; // Reset cobra shot charging
     this.cobraShotChargeProgress = 0;
     this.isRejuvenatingShotCharging = false; // Reset rejuvenating shot charging
@@ -7630,7 +8010,10 @@ export class ControlSystem extends System {
       this.stealthStartTime = 0;
 
       // Broadcast visibility restoration when switching weapons
-      this.broadcastStealthState(false);
+      this.broadcastStealthState(false, 'accretion');
+    }
+    if (this.isDeathdealerInvisible) {
+      this.endDeathdealerInvis({ playMist: true, clearSprint: true });
     }
 
     this.isSwordCharging = false;
@@ -7878,7 +8261,14 @@ export class ControlSystem extends System {
   }
 
   private get summonTotemFireRate(): number {
-    return this.resolveAbilityCooldownSec('SCYTHE_F', this.summonTotemFireRateBase);
+    let sec = this.resolveAbilityCooldownSec('SCYTHE_F', this.summonTotemFireRateBase);
+    if (
+      this.talentLoadout?.accelerator &&
+      isMantraInLoadout(this.abilityLoadout)
+    ) {
+      sec = Math.max(0.5, sec - ACCELERATOR_MANTRA_COOLDOWN_REDUCTION_SEC);
+    }
+    return sec;
   }
 
   private get sunderCooldown(): number {
@@ -8187,6 +8577,20 @@ export class ControlSystem extends System {
     return shouldApplyBloodleechTalent(this.talentLoadout);
   }
 
+  /**
+   * Bloodleech crit heal ICD — shared across CombatSystem and totem crit paths.
+   * Returns true and stamps the ICD when a heal is allowed; false if talent off or on cooldown.
+   */
+  public tryConsumeBloodleechCritHealIcd(): boolean {
+    if (!shouldApplyBloodleechTalent(this.talentLoadout)) return false;
+    const now = Date.now();
+    if (now - this.lastBloodleechCritHealWallClockMs < BLOODLEECH_CRIT_HEAL_ICD_SEC * 1000) {
+      return false;
+    }
+    this.lastBloodleechCritHealWallClockMs = now;
+    return true;
+  }
+
   public broadcastRoomBoonHealing(healingAmount: number, healingType: string, position: Vector3): void {
     this.onBroadcastHealing?.(healingAmount, healingType, position);
   }
@@ -8202,6 +8606,11 @@ export class ControlSystem extends System {
 
   private bowTriggerFingerUnchargedActive(): boolean {
     return this.currentWeapon === WeaponType.BOW && shouldApplyTriggerFingerTalent(this.talentLoadout);
+  }
+
+  /** Tempest Rounds burst interval — High Caliber slows, Quick Draw speeds; both cancel to base. */
+  private getTempestBurstFireRate(): number {
+    return getTempestRoundsBurstFireRate(this.talentLoadout);
   }
 
   private bowPrimaryScaledMaxDamage(): number {
@@ -8287,6 +8696,58 @@ export class ControlSystem extends System {
     return shouldApplyWyvernStingTalent(this.talentLoadout) && this.currentWeapon === WeaponType.BOW;
   }
 
+  /**
+   * Entanglement: heal once per distinct enemy Entangled by the current Frostbite cast.
+   * Heal = 5 + 1 per allocated Stamina.
+   */
+  public tryEntanglementHealOnBarrageHit(enemyKey: string): void {
+    if (!enemyKey || !this.playerEntity) return;
+    if (!shouldApplyEntanglementTalent(this.talentLoadout, this.abilityLoadout)) return;
+    if (this.entanglementBarrageHealEnemyKeys.has(enemyKey)) return;
+    this.entanglementBarrageHealEnemyKeys.add(enemyKey);
+
+    const stamina = Math.max(0, this.allocatedPlayerStats.stamina ?? 0);
+    const healAmount = Math.floor(getEntanglementHealPerEnemy(stamina));
+    if (healAmount <= 0) return;
+
+    const healthComponent = this.playerEntity.getComponent(Health);
+    if (!healthComponent) return;
+    const didHeal = healthComponent.heal(healAmount);
+    if (!didHeal) return;
+
+    const playerTransform = this.playerEntity.getComponent(Transform);
+    if (!playerTransform) return;
+    const healingPosition = playerTransform.position.clone();
+    healingPosition.y += 1.5;
+
+    if (this.onDamageNumbersUpdate) {
+      this.onDamageNumbersUpdate([{
+        id: this.nextDamageNumberId.toString(),
+        damage: healAmount,
+        position: healingPosition,
+        isCritical: false,
+        timestamp: Date.now(),
+        damageType: 'entanglement_healing',
+      }]);
+      this.nextDamageNumberId++;
+    }
+
+    if (this.onBroadcastHealing) {
+      this.onBroadcastHealing(healAmount, 'entanglement', healingPosition);
+    }
+  }
+
+  /** Wyvern Sting: fire bonus Cobra if ICD ready (Perfect Shot or Tempest burst completion). */
+  private tryFireWyvernStingCobra(): void {
+    if (!this.shouldApplyWyvernStingForBow()) return;
+    const now = Date.now() / 1000;
+    if (now - this.lastWyvernStingTime < WYVERN_STING_COOLDOWN_SEC) return;
+    const playerTransform = this.playerEntity?.getComponent(Transform) as Transform | undefined;
+    if (!playerTransform) return;
+    this.lastWyvernStingTime = now;
+    this.emitCobraShotFromPlayerTransform(playerTransform);
+  }
+
   /** Wrathful Talons: Reaping Talons return-arrow preset crit (applied in `useViperSting`). */
   public shouldApplyWrathfulTalonsTalentActive(): boolean {
     return computeWrathfulTalonsTalentActive(this.talentLoadout, this.abilityLoadout);
@@ -8351,7 +8812,10 @@ export class ControlSystem extends System {
       this.isStealthing = false;
       this.isInvisible = false;
       this.stealthStartTime = 0;
-      this.broadcastStealthState(false);
+      this.broadcastStealthState(false, 'accretion');
+      if (this.isDeathdealerInvisible) {
+        this.endDeathdealerInvis({ playMist: false, clearSprint: true });
+      }
       this.executionerBuffDeadlineMs = 0;
       this.runebladeExecutionerFlatBonusPending = 0;
       this.runebladeCrusaderBuffEndMs = 0;
@@ -8485,6 +8949,7 @@ export class ControlSystem extends System {
     this.backstabPlayerDirection.normalize();
 
     const hitState = { hitCount: 0 };
+    this.beginDeathdealerAmbushPass();
 
     if (vorpalGust) {
       const beamHits: { entity: Entity; t: number }[] = [];
@@ -8511,6 +8976,7 @@ export class ControlSystem extends System {
           t,
         );
       }
+      this.finishDeathdealerAmbushPass();
       return;
     }
 
@@ -8541,6 +9007,7 @@ export class ControlSystem extends System {
         hitState,
       );
     }
+    this.finishDeathdealerAmbushPass();
   }
 
   /** Positional logic + damage queue shared by melee cone Backstab and Vorpal Gust beam order. */
@@ -8645,6 +9112,7 @@ export class ControlSystem extends System {
         })
       : calculateDamage(baseDamage, WeaponType.SABRES);
     const damage = this.applyBloodroseToDamage(damageResult.damage);
+    this.registerDeathdealerAmbushHit(entity, targetTransform.position);
 
     const combatSystem = this.world.getSystem(CombatSystem);
     if (combatSystem) {
@@ -8855,9 +9323,14 @@ export class ControlSystem extends System {
               this.tryManaShieldOnDashChargeExpended(1);
             }
             // Free sprint from dash cast: deadline = now + weapon duration.
-            movement.grantDashSprint(
-              currentTime + this.getPostDashSprintDurationSec(),
-            );
+            const dashSprintUntil = currentTime + this.getPostDashSprintDurationSec();
+            movement.grantDashSprint(dashSprintUntil);
+            if (
+              this.currentWeapon === WeaponType.SABRES &&
+              shouldApplyDeathdealerTalent(this.talentLoadout)
+            ) {
+              this.enterDeathdealerInvis(dashSprintUntil);
+            }
             this.audioSystem?.playUIDashSound();
             this.tryTriggerRoomBoomDashTalent(key, movement, transform.position, worldDirection);
             this.tryQueueDraconicDashLocustVolley(transform, worldDirection, currentTime);
@@ -10263,6 +10736,7 @@ export class ControlSystem extends System {
 
   private fireBarrage(playerTransform: Transform): void {
     this.barrageVolleyGeneration++;
+    this.entanglementBarrageHealEnemyKeys.clear();
     const volleyGeneration = this.barrageVolleyGeneration;
 
     const getCompensatedAim = (): { playerPosition: Vector3; direction: Vector3 } => {

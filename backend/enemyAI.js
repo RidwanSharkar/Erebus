@@ -268,12 +268,12 @@ const DEATH_KNIGHT_HEARTSTRIKE_DAMAGE = 59;
 const DEATH_KNIGHT_HEARTSTRIKE_RANGE = DEATH_KNIGHT_MELEE_RANGE;
 const DEATH_KNIGHT_HEARTSTRIKE_HALF_ANGLE_RAD = Math.PI / 4;
 const DEATH_KNIGHT_HEARTSTRIKE_CAST_RANGE = 4.0;
-const DEATH_KNIGHT_FROST_PILLARS_COOLDOWN_MS = 7000;
+const DEATH_KNIGHT_FROST_PILLARS_COOLDOWN_MS = 6500;
 const DEATH_KNIGHT_FROST_PILLARS_CAST_MS = 1100;
-const DEATH_KNIGHT_FROST_PILLARS_CAST_RANGE = 8.0;
+const DEATH_KNIGHT_FROST_PILLARS_CAST_RANGE = 6.6;
 const DEATH_KNIGHT_FROST_PILLARS_COUNT = 6;
 const DEATH_KNIGHT_FROST_PILLARS_BASE_OFFSET = 2.0;
-const DEATH_KNIGHT_FROST_PILLARS_STEP = 0.9;
+const DEATH_KNIGHT_FROST_PILLARS_STEP = 1.1;
 const DEATH_KNIGHT_FROST_PILLARS_STAGGER_MS = 120;
 const DEATH_KNIGHT_FROST_PILLARS_DAMAGE = 37;
 const DEATH_KNIGHT_FROST_PILLARS_RADIUS = 2.0;
@@ -329,7 +329,7 @@ const TIGER_POUNCE_COOLDOWN_MS = 5_000;
 const TIGER_POUNCE_DAMAGE = 19;
 const TIGER_POUNCE_LANDING_RADIUS = 2.25;
 const TIGER_POUNCE_LAND_STANDOFF_M = 0.1;
-const TIGER_POUNCE_MIN_RANGE = 2.7;
+const TIGER_POUNCE_MIN_RANGE = 3.7;
 
 // Wolf — Fae Realm I pack melee (howl intro, no pounce)
 const WOLF_MELEE_RANGE = 2.6;
@@ -398,10 +398,10 @@ const WYVERN_BREATH_MAX_RANGE = WYVERN_BREATH_CAST_RANGE; // bolt always travels
 
 // Wilderness Wyrm — fast melee + Destiny-style bilateral flame pillars (3 per side)
 const WYRM_MELEE_RANGE = 2.6;
-const WYRM_AGGRO_RADIUS = 10;
+const WYRM_AGGRO_RADIUS = 17;
 const WYRM_WALK_SPEED = 1.45;
 const WYRM_RUN_SPEED = 3.195;
-const WYRM_SPELL_COOLDOWN_MS = 8000;
+const WYRM_SPELL_COOLDOWN_MS = 5000;
 const WYRM_SPELL_CAST_LOCK_MS = 2000;
 const WYRM_SPELL_PILLAR_DAMAGE = 40;
 const WYRM_SPELL_PILLAR_RADIUS = 2.25;
@@ -410,7 +410,7 @@ const WYRM_SPELL_PILLAR_DELAY_MS = 500;
 const WYRM_SPELL_PILLAR_STAGGER_MS = 250;
 const WYRM_SPELL_PILLAR_OFFSET = 2.0;
 const WYRM_SPELL_PILLAR_STEP = 1.0;
-const WYRM_SPELL_CAST_RANGE = 8;
+const WYRM_SPELL_CAST_RANGE = 5;
 
 /** Allied Siege Wyrm (Beast Temple) — tiger follow + wyvern melee timings + pierce firebolt. */
 const ALLIED_SIEGE_WYRM_MAX_HP = 2150;
@@ -436,8 +436,8 @@ const TERRORHAWK_AGGRO_RADIUS = 12;
 const TERRORHAWK_FLY_SPEED = 3.7;
 const TERRORHAWK_MELEE_RANGE = 3.125;
 const TERRORHAWK_LANDING_RADIUS = 2.0;
-const TERRORHAWK_LANDING_DAMAGE = 21;
-const TERRORHAWK_MELEE_DAMAGE = 26;
+const TERRORHAWK_LANDING_DAMAGE = 31;
+const TERRORHAWK_MELEE_DAMAGE = 23;
 const TERRORHAWK_DIVE_XZ_THRESHOLD = 2.5;
 const TERRORHAWK_DIVE_SPEED = 22.5;
 /** Brief hold at hover Y after dive telegraph SFX before descending. */
@@ -448,7 +448,7 @@ const TERRORHAWK_SWING_LOCK_MS = 3100;
 const TERRORHAWK_HIT_DELAY_MS = 875;
 const TERRORHAWK_APPROACH_STOP = 0.75;
 /** Minimum time on the ground after landing before takeoff may begin. */
-const TERRORHAWK_MIN_GROUND_MS = 2250;
+const TERRORHAWK_MIN_GROUND_MS = 3250;
 
 // Destiny — dragon boss (Wyvern-style melee + roar breath + 70% fly phase)
 const DESTINY_MELEE_RANGE = 3.875;
@@ -584,7 +584,7 @@ const FROST_QUEEN_ICE_SHARDS_CAST_LOCK_MS = 1500;
 const FROST_QUEEN_ICE_SHARDS_LAUNCH_MS = 1000;
 const FROST_QUEEN_ICE_SHARDS_TRAVEL_MS = 550;
 const FROST_QUEEN_ICE_SHARDS_HIT_RADIUS = 1.35;
-const FROST_QUEEN_ICE_SHARDS_DAMAGE = 24;
+const FROST_QUEEN_ICE_SHARDS_DAMAGE = 37;
 const FROST_QUEEN_ICE_SHARDS_ALLY_DAMAGE = 220;
 const FROST_QUEEN_ICE_SHARDS_FREEZE_MS = 2000;
 const FROST_QUEEN_ICE_SHARDS_LATERAL = 0.4;
@@ -605,7 +605,7 @@ const MEDUSA_VOIDWARP_CAST_LOCK_MS = 4000;
 /** Same purple-warlock meteor swarm; Medusa uses a shorter CD. */
 const MEDUSA_METEOR_COOLDOWN_MS = 5000;
 // Projectile — keep in sync with MedusaProjectile.tsx
-const MEDUSA_PROJECTILE_DAMAGE = 18;
+const MEDUSA_PROJECTILE_DAMAGE = 36;
 const MEDUSA_HOMING_DELAY_SEC = 0.55;
 const MEDUSA_START_SPEED = 4;
 const MEDUSA_MAX_SPEED = 14;
@@ -644,6 +644,10 @@ const BERSERKER_STRAIN_MOVE_MULT = 2;
 const PLAYER_ZOMBIE_UNLOCK_MOVE_SPEED = 1.75;
 const PACK_HUNTER_DAMAGE_PER_ZOMBIE = 15;
 const EXPLODER_STRAIN_RADIUS = 2.5;
+/** Keep in sync with `ALLIED_ZOMBIE_MAX_PER_OWNER` in src/utils/talents.ts */
+const PLAYER_ZOMBIE_MAX_PER_OWNER = 7;
+/** Keep in sync with `ALLIED_ZOMBIE_LIFETIME_SEC` in src/utils/talents.ts */
+const PLAYER_ZOMBIE_LIFETIME_MS = 60000;
 
 const ALLIED_KNIGHT_MAX_HP = 1500;
 const ALLIED_KNIGHT_DAMAGE = 50;
@@ -8781,7 +8785,7 @@ class EnemyAI {
 
     damageMap.forEach((damage, playerId) => {
       const player = players.find((p) => p.id === playerId);
-      if (!player || player.health <= 0) return;
+      if (!player || player.health <= 0 || player.deathdealerInvisible) return;
       let effectiveDamage = damage;
       if (isTaunted && playerId === tauntTargetId) {
         effectiveDamage += 10000;
@@ -10240,6 +10244,34 @@ class EnemyAI {
     }
   }
 
+  /**
+   * Clear sticky threat for a player without killing their pets (Deathdealer invis enter).
+   * Unlike removePlayerFromAllAggro, this does not destroy owned zombies.
+   */
+  dropPlayerAggro(playerId) {
+    if (!playerId) return;
+
+    this.bossDamageTracking.forEach((damageMap) => {
+      if (damageMap.has(playerId)) {
+        damageMap.delete(playerId);
+      }
+    });
+
+    this.enemyAggro.forEach((aggroData) => {
+      if (aggroData.targetPlayerId === playerId) {
+        aggroData.targetPlayerId = null;
+        aggroData.aggro = 0;
+        aggroData.isAggroed = false;
+        aggroData.threatFromDamage = false;
+        aggroData.directPlayerDamageAggroed = false;
+      }
+    });
+  }
+
+  isPlayerUntargetable(player) {
+    return !player || player.health <= 0 || !!player.deathdealerInvisible;
+  }
+
   findClosestPlayer(enemy, players) {
     const enemyId = enemy?.id;
     const cache = this._closestPlayerCache;
@@ -10247,7 +10279,13 @@ class EnemyAI {
     if (enemyId != null && cache) {
       const cached = cache.get(enemyId);
       // Reuse for current tick and the previous one (~33–66ms) — same targeting intent.
-      if (cached && tick - cached.tick <= 1 && cached.player && cached.player.health > 0) {
+      if (
+        cached &&
+        tick - cached.tick <= 1 &&
+        cached.player &&
+        cached.player.health > 0 &&
+        !cached.player.deathdealerInvisible
+      ) {
         return cached.player;
       }
     }
@@ -10259,8 +10297,9 @@ class EnemyAI {
 
     for (let i = 0; i < players.length; i++) {
       const player = players[i];
-      // Skip dead players (health <= 0)
+      // Skip dead players and Deathdealer-invisible players
       if (player.health <= 0) continue;
+      if (player.deathdealerInvisible) continue;
 
       const dx = ex - player.position.x;
       const dz = ez - player.position.z;
@@ -14490,7 +14529,7 @@ class EnemyAI {
 
   trySpawnInfestedZombie(ownerId, position) {
     if (!this.room || !ownerId) return;
-    if (this.countLivingPlayerZombies(ownerId) >= 3) return;
+    if (this.countLivingPlayerZombies(ownerId) >= PLAYER_ZOMBIE_MAX_PER_OWNER) return;
 
     const boons = this.getCoopZombieBoons(ownerId);
     let maxHp = PLAYER_ZOMBIE_STANDARD_HP;
@@ -14526,7 +14565,7 @@ class EnemyAI {
       damage,
       attackCooldown: 1000,
       moveSpeed: 0,
-      expireAt: now + 30000,
+      expireAt: now + PLAYER_ZOMBIE_LIFETIME_MS,
       staggerBuildup: 0,
       summonUnlockAt: now + summonLockMs,
       zombieVariant,
@@ -22598,16 +22637,23 @@ class EnemyAI {
     let targetPlayer = aggroData.targetPlayerId
       ? players.find((p) => p.id === aggroData.targetPlayerId)
       : null;
-    if (!targetPlayer || targetPlayer.health <= 0) {
+    if (!targetPlayer || targetPlayer.health <= 0 || targetPlayer.deathdealerInvisible) {
+      if (targetPlayer?.deathdealerInvisible) {
+        aggroData.targetPlayerId = null;
+        aggroData.threatFromDamage = false;
+        aggroData.directPlayerDamageAggroed = false;
+      }
       const newTarget = this.findClosestPlayer(moverEnemy, players);
       if (newTarget) {
         aggroData.targetPlayerId = newTarget.id;
         targetPlayer = newTarget;
       } else if (!aggroData.targetHostileEnemyId) {
         return null;
+      } else {
+        targetPlayer = null;
       }
     }
-    if (targetPlayer && targetPlayer.health > 0) {
+    if (targetPlayer && targetPlayer.health > 0 && !targetPlayer.deathdealerInvisible) {
       return { kind: 'player', player: targetPlayer };
     }
     return null;

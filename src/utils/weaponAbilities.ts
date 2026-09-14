@@ -10,6 +10,7 @@ import {
   CLOUDKILL_DAMAGE,
   CLOUDKILL_ARROW_COUNT_MIN,
   CLOUDKILL_ARROW_COUNT_MAX,
+  ALLIED_ZOMBIE_MAX_PER_OWNER,
   type TalentLoadout,
 } from '@/utils/talents';
 import {
@@ -46,10 +47,13 @@ const DEATH_GRASP_PULL_IMMUNE_TYPES = new Set([
 export function isDeathGraspPullImmune(enemy: {
   type?: string;
   isBoss1EliteKnight?: boolean;
+  isBoss1EliteWyrm?: boolean;
 } | null | undefined): boolean {
   if (!enemy?.type) return false;
   if (DEATH_GRASP_PULL_IMMUNE_TYPES.has(enemy.type)) return true;
-  return enemy.type === 'knight' && enemy.isBoss1EliteKnight === true;
+  if (enemy.type === 'knight' && enemy.isBoss1EliteKnight === true) return true;
+  if (enemy.type === 'wyrm' && enemy.isBoss1EliteWyrm === true) return true;
+  return false;
 }
 
 export interface AbilityData {
@@ -259,7 +263,7 @@ export const universalAbilityPool: UniversalAbility[] = [
   {
     id: 'RAISE_DEAD', sourceWeapon: WeaponType.NONE, sourceKey: 'R',
     name: 'Raise Dead', cooldown: 15.0, icon: '/icons/raiseDead.svg',
-    description: 'Instantly summons one allied zombie at your position. Subject to the 3-zombie cap; benefits from all owned zombie boons.',
+    description: `Instantly summons one allied zombie at your position. Subject to the ${ALLIED_ZOMBIE_MAX_PER_OWNER}-zombie cap; benefits from all owned zombie boons.`,
     allowedWeapons: ALL_WEAPONS_EXCEPT_SABRES,
   },
   {

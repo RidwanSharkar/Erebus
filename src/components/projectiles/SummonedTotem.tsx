@@ -5,17 +5,16 @@ import TotemModel from './TotemModel';
 import UnholyAura from './UnholyAura';
 import TotemEntropicBolt, { type TotemBoltPoolSlot } from './TotemEntropicBolt';
 import TotemSuperconductorLightning, { type TotemLightningPoolSlot } from './TotemSuperconductorLightning';
-import { calculateDamage } from '@/core/DamageCalculator';
+import { calculateDamage, getGlobalAgilityStatPoints } from '@/core/DamageCalculator';
 import { WeaponType } from '@/components/dragon/weapons';
 import { useMultiplayerActions } from '@/contexts/MultiplayerContext';
 import type { EnemyDamageMeta } from '@/contexts/MultiplayerContext';
 import type { TotemBoltVariant } from '@/utils/talents';
 import {
   ENTANGLEMENT_DURATION_MS,
-  SUPERCONDUCTOR_INFESTING_DAMAGE,
+  getSuperconductorShockDamage,
   SUPERCONDUCTOR_STAGGERING_STRIKE_STAGGER,
   SUPERCONDUCTOR_TOTEM_COOLDOWN_SEC,
-  SUPERCONDUCTOR_TOTEM_DAMAGE,
   SUPERCONDUCTOR_WRATHFUL_CRIT_CHANCE_ADD,
   WRATHFUL_ENTROPIC_BOLT_CRIT_CHANCE_ADD,
   STAGGERING_TOTEM_STAGGER,
@@ -445,8 +444,12 @@ export default function SummonedTotem({
       return;
     }
 
-    const base =
-      totemBoltVariant === 'infesting' ? SUPERCONDUCTOR_INFESTING_DAMAGE : SUPERCONDUCTOR_TOTEM_DAMAGE;
+    const cs = (window as any).controlSystemRef?.current;
+    const agility =
+      typeof cs?.getAllocatedPlayerStats === 'function'
+        ? (cs.getAllocatedPlayerStats().agility ?? 0)
+        : getGlobalAgilityStatPoints();
+    const base = getSuperconductorShockDamage(agility, totemBoltVariant);
     const dmgOpts =
       totemBoltVariant === 'wrathful'
         ? { critChanceAdd: SUPERCONDUCTOR_WRATHFUL_CRIT_CHANCE_ADD }

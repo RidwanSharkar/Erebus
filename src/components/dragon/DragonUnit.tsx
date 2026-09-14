@@ -106,6 +106,8 @@ interface DragonUnitProps {
   isSundering?: boolean;
   isStealthing?: boolean;
   isInvisible?: boolean;
+  /** Deathdealer spectral invis on character/weapons. */
+  spectralActive?: boolean;
   isSwordCharging?: boolean;
   isDeflecting?: boolean;
   deflectShieldActive?: boolean;
@@ -272,6 +274,7 @@ export default function DragonUnit({
   isSundering = false,
   isStealthing = false,
   isInvisible = false,
+  spectralActive = false,
   isSwordCharging = false,
   isDeflecting = false,
   deflectShieldActive: deflectShieldActiveProp,
@@ -674,6 +677,7 @@ export default function DragonUnit({
             isSundering={isSundering}
             isStealthing={isStealthing}
             isInvisible={isInvisible}
+            spectralActive={spectralActive}
             onBackstabComplete={onBackstabComplete}
             onSunderComplete={onSunderComplete}
             subclass={currentSubclass}

@@ -10,6 +10,12 @@ import {
   useDisposeClonedMaterials,
 } from '@/utils/disposeObject3D';
 import {
+  applySpectralLook,
+  clearSpectralLook,
+  updateSpectralUniforms,
+} from '@/utils/spectralMaterial';
+import { useFrame } from '@react-three/fiber';
+import {
   ASPECT_FIRE_AFFINITY,
   ASPECT_FROST_AFFINITY,
   ASPECT_WARLORD,
@@ -68,6 +74,8 @@ export interface SabreItemMeshVisualProps {
   aspect?: WeaponAspect;
   /** Psionic Blades talent — purple emissive tint; default keeps native textures. */
   psionicTint?: boolean;
+  /** Deathdealer spectral invis look. */
+  spectralActive?: boolean;
 }
 
 const PSIONIC_EMISSIVE = new Color('#c084fc');
@@ -93,6 +101,7 @@ export default function SabreItemMeshVisual({
   hand,
   aspect,
   psionicTint = false,
+  spectralActive = false,
 }: SabreItemMeshVisualProps) {
   const aspectKey = resolveSabreAspectKey(aspect);
   const config = SABRE_ASPECT_CONFIG[aspectKey];
@@ -132,8 +141,26 @@ export default function SabreItemMeshVisual({
 
   useDisposeClonedMaterials(clonedScene);
 
+  useEffect(() => {
+    if (spectralActive) {
+      applySpectralLook(clonedScene, 'deathdealer');
+    } else {
+      clearSpectralLook(clonedScene);
+    }
+    return () => {
+      clearSpectralLook(clonedScene);
+    };
+  }, [spectralActive, clonedScene]);
+
+  useFrame((state) => {
+    if (spectralActive) {
+      updateSpectralUniforms(clonedScene, 1, state.clock.elapsedTime);
+    }
+  });
+
   // Subtle purple emissive for Psionic Blades — restore boosted native when off.
   useEffect(() => {
+    if (spectralActive) return;
     if (!psionicTint) {
       for (const backup of emissiveBackups) {
         backup.mat.emissive.copy(backup.emissive);
@@ -148,7 +175,7 @@ export default function SabreItemMeshVisual({
       backup.mat.emissiveIntensity = Math.max(backup.emissiveIntensity, 3.5);
       backup.mat.needsUpdate = true;
     }
-  }, [psionicTint, emissiveBackups]);
+  }, [psionicTint, emissiveBackups, spectralActive]);
 
   // Match procedural handle/blade X offsets (left +0.2, right -0.2).
   const mountX = hand === 'left' ? 0.2 : -0.2;

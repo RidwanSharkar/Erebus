@@ -183,6 +183,7 @@ type CoopPvpAbilityLayerProps = {
     health: number;
     type?: string;
     isBoss1EliteKnight?: boolean;
+    isBoss1EliteWyrm?: boolean;
   }>;
   getEnemyType: (enemyId: string) => string | undefined;
   isDeathGraspPullImmuneEnemy?: (enemyId: string) => boolean;

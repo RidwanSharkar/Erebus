@@ -221,6 +221,8 @@ function handleEnemyEvents(socket, gameRooms) {
       hitMeta = { damageType: 'deflect_smite' };
     } else if (damageType === 'hatemail') {
       hitMeta = { damageType: 'hatemail' };
+    } else if (damageType === 'deathdealer_judgment') {
+      hitMeta = { damageType: 'deathdealer_judgment' };
     }
     room.damageEnemy(enemyId, damage, actualSourcePlayerId, player, hitMeta);
   });

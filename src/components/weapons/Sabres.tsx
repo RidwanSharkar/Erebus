@@ -20,6 +20,8 @@ interface SabresProps {
   isSundering?: boolean;
   isStealthing?: boolean;
   isInvisible?: boolean;
+  /** Deathdealer spectral look on sabre meshes. */
+  spectralActive?: boolean;
   onBackstabComplete?: () => void;
   onSunderComplete?: () => void;
   subclass?: string;
@@ -46,6 +48,7 @@ export default function Sabres({
   isSundering = false,
   isStealthing = false,
   isInvisible = false,
+  spectralActive = false,
   onBackstabComplete = () => {},
   onSunderComplete = () => {},
   subclass: _subclass = 'FROST',
@@ -552,6 +555,7 @@ export default function Sabres({
           hand="left"
           aspect={weaponAspect}
           psionicTint={psionicBladesBladeThemeActive}
+          spectralActive={spectralActive}
         />
       </group>
 
@@ -567,6 +571,7 @@ export default function Sabres({
           hand="right"
           aspect={weaponAspect}
           psionicTint={psionicBladesBladeThemeActive}
+          spectralActive={spectralActive}
         />
       </group>
 

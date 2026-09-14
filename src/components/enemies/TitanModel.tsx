@@ -4,7 +4,6 @@ import React, { useRef, useEffect, useMemo, useState } from 'react';
 import { useGLTF, useAnimations } from '@react-three/drei';
 import { Group, AnimationAction, AnimationClip } from 'three';
 import { playEnemyAction, useEnemyIdlePose } from '@/hooks/useEnemyIdlePose';
-import * as SkeletonUtils from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { UNIT_SELF_ILLUMINATION_INTENSITY, useDisposeClonedMaterials, useCleanupAnimationMixer } from '@/utils/disposeObject3D';
 import { cloneEnemySceneWithSharedMaterials } from '@/utils/sharedEnemyMaterials';
 import { loadGltfAnimationClips, preloadSkinnedIdleAndAnimationClips } from '@/utils/gltfAnimationLoader';
@@ -19,10 +18,11 @@ interface TitanModelProps {
   isDying: boolean;
 }
 
-const TITAN_IDLE_PATH = '/models/titan_walk.glb';
+const TITAN_IDLE_PATH = '/models/titan_idle.glb';
 
 const TITAN_MODEL_PATHS = [
   TITAN_IDLE_PATH,
+  '/models/titan_walk.glb',
   '/models/titan_melee.glb',
   '/models/titan_death.glb',
   '/models/titan_powerup.glb',
@@ -31,6 +31,7 @@ const TITAN_MODEL_PATHS = [
 ];
 
 const TITAN_DEFERRED_PATHS = {
+  Walk: '/models/titan_walk.glb',
   Melee: '/models/titan_melee.glb',
   Death: '/models/titan_death.glb',
   Powerup: '/models/titan_powerup.glb',
@@ -56,7 +57,7 @@ export default React.memo(function TitanModel({
   const currentActionRef = useRef<AnimationAction | null>(null);
   const [extraAnims, setExtraAnims] = useState<Record<string, AnimationClip[]>>({});
 
-  const { scene, animations: walkAnims } = useGLTF(TITAN_IDLE_PATH);
+  const { scene, animations: idleAnims } = useGLTF(TITAN_IDLE_PATH);
 
   useEffect(() => {
     let cancelled = false;
@@ -90,29 +91,30 @@ export default React.memo(function TitanModel({
   useDisposeClonedMaterials(clonedScene);
 
   const animations = useMemo(() => {
-    const walkClips = renameAnimationClips(walkAnims, 'Walk').map(stripRootMotionXZ);
+    const idleClips = renameAnimationClips(idleAnims, 'Idle').map(stripRootMotionXZ);
     const hasAllDeferred = Object.keys(TITAN_DEFERRED_PATHS).every((key) => extraAnims[key]?.length);
-    if (!hasAllDeferred) return walkClips;
+    if (!hasAllDeferred) return idleClips;
     return getCachedEnemyAnimationClips('titan', () => [
-      ...walkClips,
+      ...idleClips,
+      ...renameAnimationClips(extraAnims.Walk, 'Walk').map(stripRootMotionXZ),
       ...renameAnimationClips(extraAnims.Melee, 'Melee').map(stripRootMotionXZ),
       ...renameAnimationClips(extraAnims.Powerup, 'Powerup').map(stripRootMotionXZ),
       ...renameAnimationClips(extraAnims.Stomp, 'Stomp').map(stripRootMotionXZ),
       ...renameAnimationClips(extraAnims.Cast, 'Cast').map(stripRootMotionXZ),
       ...renameAnimationClips(extraAnims.Death, 'Death'),
     ]);
-  }, [walkAnims, extraAnims]);
+  }, [idleAnims, extraAnims]);
 
   const { actions, mixer } = useAnimations(animations, sceneGroupRef);
 
   useCleanupAnimationMixer(mixer, sceneGroupRef);
 
-  const getAction = (name: 'Walk' | 'Melee' | 'Powerup' | 'Stomp' | 'Cast' | 'Death'): AnimationAction | null =>
+  const getAction = (name: 'Idle' | 'Walk' | 'Melee' | 'Powerup' | 'Stomp' | 'Cast' | 'Death'): AnimationAction | null =>
     actions[name] ?? null;
 
-  const posed = useEnemyIdlePose({ actions, mixer, currentActionRef, idleClipName: 'Walk' });
+  const posed = useEnemyIdlePose({ actions, mixer, currentActionRef });
 
-  // Priority: Death > Cast > Stomp > Powerup > Melee > Walk
+  // Priority: Death > Cast > Stomp > Powerup > Melee > Walk > Idle
   useEffect(() => {
     if (!actions) return;
 
@@ -126,7 +128,9 @@ export default React.memo(function TitanModel({
             ? getAction('Powerup')
             : isAttacking
               ? getAction('Melee')
-              : getAction('Walk');
+              : isWalking
+                ? getAction('Walk')
+                : getAction('Idle');
 
     const oneShot = !!(isDying || isCasting || isStomping || isPoweringUp || isAttacking);
     playEnemyAction(nextAction, currentActionRef, mixer, {
@@ -145,13 +149,14 @@ export default React.memo(function TitanModel({
       const name = e.action.getClip().name;
       if (name === 'Death') return;
       if (name === 'Melee' || name === 'Stomp' || name === 'Powerup' || name === 'Cast') {
-        playEnemyAction(getAction('Walk'), currentActionRef, mixer, { fadeIn: 0.15, fadeOut: 0.15 });
+        const fallback = isWalking ? getAction('Walk') : getAction('Idle');
+        playEnemyAction(fallback, currentActionRef, mixer, { fadeIn: 0.15, fadeOut: 0.15 });
       }
     };
 
     mixer.addEventListener('finished', handleFinish);
     return () => mixer.removeEventListener('finished', handleFinish);
-  }, [mixer, isDying, actions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [mixer, isDying, isWalking, actions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <group ref={sceneGroupRef} visible={posed}>

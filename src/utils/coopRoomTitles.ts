@@ -61,7 +61,7 @@ export function buildRunePickupAnnouncement(stat: StatKey): { title: string; col
   };
 }
 
-export type BossSlainLabel = 'hate' | 'knights' | 'envy' | 'fear' | 'destiny' | 'trinity';
+export type BossSlainLabel = 'hate' | 'knights' | 'wyrms' | 'envy' | 'fear' | 'destiny' | 'trinity';
 
 export const BOSS_SLAIN_ANNOUNCEMENTS: Record<
   BossSlainLabel,
@@ -69,6 +69,7 @@ export const BOSS_SLAIN_ANNOUNCEMENTS: Record<
 > = {
   hate: { title: 'HATE SLAIN', color: '#dc2626' },
   knights: { title: 'TWIN EMPERORS SLAIN', color: '#dc2626' },
+  wyrms: { title: 'WYRMS SLAIN', color: '#dc2626' },
   envy: { title: 'ENVY SLAIN', color: '#22c55e' },
   fear: { title: 'FEAR SLAIN', color: '#6c3dff' },
   destiny: { title: 'DESTINY SLAIN', color: '#f59e0b' },

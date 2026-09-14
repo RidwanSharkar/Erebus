@@ -9,6 +9,7 @@ import {
   Color,
   DoubleSide,
   InstancedMesh,
+  Matrix4,
   Mesh,
   MeshBasicMaterial,
   Object3D,
@@ -27,7 +28,8 @@ const MAX_PUFFS = 12;
 const MAX_CONCURRENT_TRAILS = 3;
 const SPAWN_DISTANCE = 1.1;
 const PUFF_LIFE = 0.5;
-const PUFF_SCALE = 0.55;
+/** Long face axis ≈ 1.0 after bake; ~1.25× bolt world width (~0.71). */
+const PUFF_SCALE = 0.9;
 const PUFF_EXPAND = 0.4;
 const TRAIL_BACK_OFFSET = 0.4;
 const SPIN_MIN = 1.8;
@@ -91,6 +93,36 @@ function trailTint(
   return getCrossentropyBlitzAspectPalette(aspectKey).trail;
 }
 
+/**
+ * Bake leaves the rune as a flat XZ card (normal +Y). lookAt aims +Z at travel,
+ * so rotate the thinnest bbox axis onto +Z so the shooter sees the full face.
+ */
+function alignRuneFaceToPlusZ(geometry: BufferGeometry): void {
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox;
+  if (!box) return;
+
+  const size = new Vector3();
+  box.getSize(size);
+  let thinAxis = 0;
+  if (size.y < size.getComponent(thinAxis)) thinAxis = 1;
+  if (size.z < size.getComponent(thinAxis)) thinAxis = 2;
+
+  // Already facing +Z (thin along Z) — nothing to do.
+  if (thinAxis === 2) return;
+
+  const align = new Matrix4();
+  if (thinAxis === 1) {
+    // XZ card → XY card: rotateX(+90°) maps +Y normal onto +Z.
+    align.makeRotationX(Math.PI / 2);
+  } else {
+    // YZ card → XY card: rotateY(-90°) maps +X normal onto +Z.
+    align.makeRotationY(-Math.PI / 2);
+  }
+  geometry.applyMatrix4(align);
+  geometry.computeBoundingBox();
+}
+
 function getTrailGroups(scene: Object3D): TrailGroup[] {
   const cached = groupCache.get(scene);
   if (cached) return cached;
@@ -103,6 +135,7 @@ function getTrailGroups(scene: Object3D): TrailGroup[] {
 
     const geometry = mesh.geometry.clone();
     geometry.applyMatrix4(mesh.matrixWorld);
+    alignRuneFaceToPlusZ(geometry);
     geometry.userData.shared = true;
 
     const srcMat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;

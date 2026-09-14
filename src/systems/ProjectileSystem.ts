@@ -51,6 +51,7 @@ import {
   shouldApplyWyvernStingTalent,
   TEMPEST_BURST_ARCTIC_STING_PROC_CHANCE,
   TEMPEST_BURST_WYVERN_STING_PROC_CHANCE,
+  LEVIATHAN_HIT_RADIUS,
   type TempestBurstTheme,
 } from '@/utils/talents';
 import {
@@ -523,10 +524,12 @@ export class ProjectileSystem extends System {
     // Update position
     transform.translate(this.tempVector.x, this.tempVector.y, this.tempVector.z);
     if (getDungeonMeshCollider()) {
+      const groundOffset = projectile.projectileType === 'leviathan' ? 0.35 : undefined;
       transform.position.y = snapToDungeonChestY(
         transform.position.x,
         transform.position.z,
         transform.position.y,
+        groundOffset,
       );
     }
     transform.matrixNeedsUpdate = true;
@@ -792,7 +795,8 @@ export class ProjectileSystem extends System {
       }
 
       // Use collider radius for more accurate collision detection
-      const projectileRadius = 0.2;
+      const projectileRadius =
+        projectile.projectileType === 'leviathan' ? LEVIATHAN_HIT_RADIUS : 0.2;
       const targetRadius = targetCollider.radius;
 
       // Use squared distance for performance (avoid sqrt)
@@ -857,6 +861,9 @@ export class ProjectileSystem extends System {
       const isWindShear =
         projectile.projectileType === 'wind_shear' ||
         renderer?.mesh?.userData?.isWindShearProjectile === true;
+      const isLeviathan =
+        projectile.projectileType === 'leviathan' ||
+        renderer?.mesh?.userData?.isLeviathanProjectile === true;
       const wyvernBiteConcentratedVenom = renderer?.mesh?.userData?.barrageWyvernBite === true;
       const glacialBiteChill = isBarrageArrow === true && renderer?.mesh?.userData?.barrageGlacialBite === true;
       const entanglementBarrage = isBarrageArrow === true && renderer?.mesh?.userData?.barrageEntanglement === true;
@@ -873,6 +880,8 @@ export class ProjectileSystem extends System {
         damageType = 'fan_of_knives';
       } else if (isWindShear) {
         damageType = 'wind_shear';
+      } else if (isLeviathan) {
+        damageType = 'leviathan';
       } else if (projectile.projectileType === 'poison_dart') {
         damageType = 'poison_dart';
       }
@@ -1984,7 +1993,7 @@ export class ProjectileSystem extends System {
       opacity: isScorpionShard ? 0.85 : 0.1,
     });
     const placeholderMesh = new Mesh(placeholderGeometry, placeholderMaterial);
-    if (isPoisonDart) {
+    if (isPoisonDart || projectileType === 'leviathan') {
       placeholderMesh.visible = false;
     }
 
@@ -2030,6 +2039,10 @@ export class ProjectileSystem extends System {
       placeholderMesh.userData.isWindShearProjectile = true;
     }
 
+    if (projectileType === 'leviathan') {
+      placeholderMesh.userData.isLeviathanProjectile = true;
+    }
+
     renderer.mesh = placeholderMesh;
     
     // Set shadow casting with safety check
@@ -2043,7 +2056,7 @@ export class ProjectileSystem extends System {
 
     // Add Collider component
     const collider = world.createComponent(Collider);
-    collider.radius = 0.15;
+    collider.radius = projectileType === 'leviathan' ? LEVIATHAN_HIT_RADIUS : 0.15;
     collider.layer = CollisionLayer.PROJECTILE;
     // Pass through arena ENVIRONMENT walls; hits are resolved against ENEMY/PLAYER only.
     collider.setMask(CollisionLayer.PLAYER | CollisionLayer.ENEMY);

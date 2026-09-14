@@ -217,7 +217,7 @@ export class CameraSystem extends System {
       !this.cameraRotationDisabled
     ) {
       // Apply Ice Beam camera rotation speed reduction (50% slower)
-      const sensitivity = this.isIcebeaming ? this.config.mouseSensitivity * 0.125 : this.config.mouseSensitivity;
+      const sensitivity = this.isIcebeaming ? this.config.mouseSensitivity * 0.425 : this.config.mouseSensitivity;
 
       // Update spherical coordinates based on mouse movement
       this.spherical.theta -= mouseDelta.x * sensitivity;

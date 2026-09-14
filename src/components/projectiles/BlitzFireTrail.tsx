@@ -76,6 +76,10 @@ export interface BlitzFireTrailProps {
   aspectKey?: CrossentropyBlitzAspectKey;
   reaperPurple?: boolean;
   yOffset?: number;
+  /** When set, skips theme/aspect palette. */
+  colorOverride?: { color: string; emissive: string };
+  /** Distance behind the projectile tip where particles spawn. */
+  backOffset?: number;
 }
 
 const BlitzFireTrail = React.memo(
@@ -87,6 +91,8 @@ const BlitzFireTrail = React.memo(
     aspectKey = 'archmage',
     reaperPurple = false,
     yOffset = 0,
+    colorOverride,
+    backOffset = TRAIL_BACK_OFFSET,
   }: BlitzFireTrailProps) => {
     const meshRef = useRef<InstancedMesh>(null);
     const dummy = useMemo(() => new Object3D(), []);
@@ -97,8 +103,8 @@ const BlitzFireTrail = React.memo(
     const tmpBack = useRef(new Vector3());
 
     const { color, emissive } = useMemo(
-      () => trailPalette(visualTheme, reaperPurple, aspectKey),
-      [visualTheme, reaperPurple, aspectKey],
+      () => colorOverride ?? trailPalette(visualTheme, reaperPurple, aspectKey),
+      [colorOverride, visualTheme, reaperPurple, aspectKey],
     );
 
     const material = useMemo(
@@ -142,7 +148,7 @@ const BlitzFireTrail = React.memo(
         const dir = directionRef.current;
         tmpBack.current.set(0, 0, 0);
         if (dir && dir.lengthSq() > 0.0001) {
-          tmpBack.current.copy(dir).normalize().multiplyScalar(-TRAIL_BACK_OFFSET);
+          tmpBack.current.copy(dir).normalize().multiplyScalar(-backOffset);
         }
 
         const current = tmpB.current.copy(raw);

@@ -7,8 +7,13 @@ export const BOW_FULL_CHARGE_MS = (1000 * 60) / 60;
 /** HIGH CALIBER bow talent — full charge takes this many times baseline duration (90/60 ≈ 1.5×). */
 export const BOW_HIGH_CALIBER_CHARGE_TIME_MULT = 100 / 60;
 
-export function getBowFullChargeMs(highCaliber: boolean): number {
-  return BOW_FULL_CHARGE_MS * (highCaliber ? BOW_HIGH_CALIBER_CHARGE_TIME_MULT : 1);
+/**
+ * High Caliber slows full charge unless Quick Draw is also active
+ * (Quick Draw cancels the charge-time penalty while keeping High Caliber damage).
+ */
+export function getBowFullChargeMs(highCaliber: boolean, triggerFinger = false): number {
+  if (!highCaliber || triggerFinger) return BOW_FULL_CHARGE_MS;
+  return BOW_FULL_CHARGE_MS * BOW_HIGH_CALIBER_CHARGE_TIME_MULT;
 }
 
 export const BOW_PERFECT_SHOT_MIN_PROGRESS = 0.75;

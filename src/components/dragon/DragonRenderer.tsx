@@ -188,6 +188,8 @@ interface DragonRendererProps {
   isLocalPlayer?: boolean; // Flag to distinguish local player from other players
   isStealthing?: boolean; // Whether the local player is currently in stealth mode
   isInvisible?: boolean; // Whether the local player is currently invisible (stealth active)
+  /** Deathdealer spectral invis — translucent character/weapons while post-dash invisible. */
+  spectralActive?: boolean;
   isViperStingCharging?: boolean;
   viperStingChargeProgress?: number;
   isBarrageCharging?: boolean;
@@ -389,6 +391,7 @@ function DragonRenderer({
   isLocalPlayer = false,
   isStealthing = false,
   isInvisible = false,
+  spectralActive = false,
   isViperStingCharging = false,
   viperStingChargeProgress = 0,
   isBarrageCharging = false,
@@ -1094,6 +1097,7 @@ function DragonRenderer({
           isSundering={isSundering}
           isStealthing={isStealthing}
           isInvisible={isInvisible}
+          spectralActive={spectralActive}
           isSwordCharging={isSwordCharging}
           isDeflecting={isDeflecting}
           deflectShieldActive={effectiveDeflectShieldActive}

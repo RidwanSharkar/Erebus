@@ -290,13 +290,13 @@ function WyrmRenderer({
         />
       )}
 
-      <Billboard position={[0, 2.8 * visualScale, 0]} follow lockX={false} lockY={false} lockZ={false}>
+      <Billboard position={[0, 2.8 * visualScale +0.5, 0]} follow lockX={false} lockY={false} lockZ={false}>
         {health > 0 && !isDying && (
           <>
             <EnemyHpBarPlanes
               fillRef={hpFillRef}
-              backgroundColor={campType ? hpTheme.background : '#1a0a0a'}
-              fillColor={campType ? hpTheme.fill : '#aa7700'}
+              backgroundColor={hpTheme.background}
+              fillColor={hpTheme.fill}
             />
 
             <EnemyHealthBarTextLabel
@@ -305,7 +305,7 @@ function WyrmRenderer({
               health={health}
               maxHealth={maxHealth}
               fontSize={0.16}
-              color={campType ? hpTheme.text : '#ffccaa'}
+              color={hpTheme.text}
             />
             <EnemyStaggerBar enemyId={id} stagger={staggerBuildup} />
           </>

@@ -30,6 +30,7 @@ import {
   INFESTED_TALENT_CONCENTRATED_VENOM_STACKS,
   INFESTED_COMBO_VENOM_PROC_CHANCE,
   INFESTING_SABRES_SWIPES_VENOM_PROC_CHANCE,
+  ALLIED_ZOMBIE_MAX_PER_OWNER,
   CROSSENTROPY_METEOR_SINGLE_CHANCE,
   CROSSENTROPY_METEOR_DOUBLE_CHANCE,
   CROSSENTROPY_METEOR_TRIPLE_CHANCE,
@@ -48,6 +49,13 @@ import {
   FROST_SOLAR_PROC_EFFECT_ICD_MS,
   solarRechargeTalentDefinition,
   SOLAR_RECHARGE_PROC_CHANCE,
+  leviathanTalentDefinition,
+  LEVIATHAN_PROC_CHANCE,
+  LEVIATHAN_ICEBEAM_PROC_CHANCE,
+  LEVIATHAN_CROSSENTROPY_PROC_CHANCE,
+  LEVIATHAN_BASE_DAMAGE,
+  LEVIATHAN_DAMAGE_PER_STAT,
+  LEVIATHAN_MAX_DISTANCE,
   arcaneSynergyTalentDefinition,
   ARCANE_SYNERGY_ENTROPIC_BOLT_DAMAGE_PER_INTELLECT,
   ENTROPIC_BOLT_FIRE_RATE_SEC,
@@ -64,6 +72,8 @@ import {
   entanglementTalentDefinition,
   ENTANGLEMENT_DAMAGE_PER_SECOND,
   ENTANGLEMENT_DURATION_MS,
+  ENTANGLEMENT_HEAL_BASE,
+  ENTANGLEMENT_HEAL_PER_STAMINA,
   WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK,
   WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS,
   WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC,
@@ -93,6 +103,7 @@ import {
   CRUSADER_PROC_CHANCE,
   CRUSADER_DURATION_SEC,
   CRUSADER_LMB_FLAT_BONUS,
+  CRUSADER_PROC_HEAL,
   blizzardTalentDefinition,
   BLIZZARD_PROC_CHANCE,
   BLIZZARD_DURATION_SEC,
@@ -144,7 +155,12 @@ import {
   BOW_HIGH_CALIBER_FULL_CHARGE_BASE_DAMAGE,
   HIGH_CALIBER_PERFECT_DAMAGE_PER_STRENGTH,
   HIGH_CALIBER_CHARGED_DAMAGE_PER_STRENGTH,
+  HIGH_CALIBER_TEMPEST_FLAT_DAMAGE,
   TRIGGER_FINGER_DAMAGE_PER_AGILITY,
+  TEMPEST_ROUNDS_BURST_DAMAGE,
+  TEMPEST_ROUNDS_BURST_FIRE_RATE,
+  TEMPEST_ROUNDS_HIGH_CALIBER_BURST_FIRE_RATE,
+  TEMPEST_ROUNDS_TRIGGER_FINGER_BURST_FIRE_RATE,
   wyvernStingTalentDefinition,
   wyvernTalonsTalentDefinition,
   arcticStingTalentDefinition,
@@ -169,6 +185,7 @@ import {
   WRAITH_STRIKE_DOUBLE_STRIKE_INTERNAL_COOLDOWN_SEC,
   breathWeaponTalentDefinition,
   BREATH_WEAPON_DAMAGE,
+  AFTERSHOCK_DAMAGE_PER_STAMINA,
   AFTERSHOCK_STRIP_LENGTH,
   AFTERSHOCK_STRIP_HALF_WIDTH,
   AFTERSHOCK_DETONATION_DELAY_MS,
@@ -253,6 +270,10 @@ import {
   PARRY_INTELLECT_BONUS,
   PARRY_STRENGTH_BONUS,
   PARRY_FLOURISH_SHIELD_RESTORE,
+  deathdealerTalentDefinition,
+  DEATHDEALER_SPRINT_BONUS_SEC,
+  DEATHDEALER_DAMAGE_PER_ORB,
+  DEATHDEALER_SWORD_STAGGER_MS,
 } from '@/utils/talents';
 
 interface TalentSelectionModalProps {
@@ -597,6 +618,10 @@ export default function TalentSelectionModal({
     setLoadout((prev) => ({ ...prev, fireAffinity: !prev.fireAffinity }));
   }, [flourishEquipped]);
 
+  const toggleDeathdealer = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, deathdealer: !prev.deathdealer }));
+  }, []);
+
   const toggleParry = useCallback(() => {
     if (!flourishEquipped) return;
     setLoadout((prev) => ({ ...prev, parry: !prev.parry }));
@@ -712,6 +737,10 @@ export default function TalentSelectionModal({
 
   const toggleSolarRecharge = useCallback(() => {
     setLoadout((prev) => ({ ...prev, solarRecharge: !prev.solarRecharge }));
+  }, []);
+
+  const toggleLeviathan = useCallback(() => {
+    setLoadout((prev) => ({ ...prev, leviathan: !prev.leviathan }));
   }, []);
 
   const toggleArcaneSynergy = useCallback(() => {
@@ -939,7 +968,7 @@ export default function TalentSelectionModal({
                   <p className="text-emerald-200/90 text-xs mt-2 font-mono">
                     190 damage · {INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} Concentrated Venom stack/hit (
                     {WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK} DPS/stack · max {WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS} ·{' '}
-                    {WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC}s) · green VFX · zombies on kill (max 3)
+                    {WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC}s) · green VFX · zombies on kill (max {ALLIED_ZOMBIE_MAX_PER_OWNER})
                   </p>
                 </>
               )}
@@ -1095,7 +1124,7 @@ export default function TalentSelectionModal({
                 <>
                   <p className="text-gray-400 text-sm mt-1">{breathWeaponTalentDefinition.description}</p>
                   <p className="text-emerald-200/90 text-xs mt-2 font-mono">
-                    +{BREATH_WEAPON_DAMAGE} damage after {AFTERSHOCK_DETONATION_DELAY_MS / 1000}s · {AFTERSHOCK_STRIP_LENGTH}u × {AFTERSHOCK_STRIP_HALF_WIDTH * 2}u strip · flame pillar detonation VFX
+                    +{BREATH_WEAPON_DAMAGE} + {AFTERSHOCK_DAMAGE_PER_STAMINA}/STA after {AFTERSHOCK_DETONATION_DELAY_MS / 1000}s · {AFTERSHOCK_STRIP_LENGTH}u × {AFTERSHOCK_STRIP_HALF_WIDTH * 2}u strip · flame pillar detonation VFX
                   </p>
                 </>
               )}
@@ -1346,7 +1375,7 @@ export default function TalentSelectionModal({
                       <p className="text-gray-400 text-sm mt-1">{crusaderTalentDefinition.description}</p>
                       <p className="text-sky-200/90 text-xs mt-2 font-mono">
                         {CRUSADER_PROC_CHANCE * 100}% per Runeblade combo hit (enemy damaged) · {CRUSADER_DURATION_SEC}s · +
-                        {CRUSADER_LMB_FLAT_BONUS} base per swing · corrupted blade colors (F unchanged) · refresh on
+                        {CRUSADER_LMB_FLAT_BONUS} base per swing · +{CRUSADER_PROC_HEAL} HP on proc · corrupted blade colors (F unchanged) · refresh on
                         proc
                       </p>
                     </>
@@ -1471,7 +1500,7 @@ export default function TalentSelectionModal({
                   {loadout.infestedSmite && (
                     <>
                       <p className="text-gray-400 text-sm mt-1">{infestedSmiteTalentDefinition.description}</p>
-                      <p className="text-emerald-200/90 text-xs mt-2 font-mono">Green bolts · 5 heal per hit per beam · Smite kills spawn zombies (max 3)</p>
+                      <p className="text-emerald-200/90 text-xs mt-2 font-mono">Green bolts · 5 heal per hit per beam · {INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} Concentrated Venom stack/hit per beam · Smite kills spawn zombies (max {ALLIED_ZOMBIE_MAX_PER_OWNER})</p>
                     </>
                   )}
                 </label>
@@ -1814,6 +1843,31 @@ export default function TalentSelectionModal({
               </label>
             </div>
             </TalentHoverSurface>
+            <TalentHoverSurface talent={deathdealerTalentDefinition}>
+            <div className="flex items-start gap-3 mt-4">
+              <TalentRowIcon talent={deathdealerTalentDefinition} />
+              <input
+                type="checkbox"
+                id="talent-deathdealer"
+                checked={loadout.deathdealer}
+                onChange={toggleDeathdealer}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+                aria-label={deathdealerTalentDefinition.name}
+              />
+              <label htmlFor="talent-deathdealer" className="flex-1 cursor-pointer">
+                {loadout.deathdealer && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{deathdealerTalentDefinition.description}</p>
+                    <p className="text-rose-200/90 text-xs mt-2 font-mono">
+                      +{DEATHDEALER_SPRINT_BONUS_SEC}s post-dash sprint · spectral invis ·{' '}
+                      {DEATHDEALER_DAMAGE_PER_ORB} dmg per falling sword (1 per dash charge,{' '}
+                      {DEATHDEALER_SWORD_STAGGER_MS}ms apart)
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+            </TalentHoverSurface>
             {!flourishEquipped && (
               <p className="text-gray-500 text-xs mt-2 pl-7">
                 Equip <span className="text-gray-300">Flourish</span> (Sabres E) in your ability loadout to enable PARRY and FIRE AFFINITY.
@@ -1887,7 +1941,7 @@ export default function TalentSelectionModal({
                     <p className="text-emerald-200/90 text-xs mt-2 font-mono">
                       {INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} Concentrated Venom stack/hit (
                       {WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK} DPS/stack · max {WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS} ·{' '}
-                      {WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC}s) · zombies on kill (max 3)
+                      {WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC}s) · zombies on kill (max {ALLIED_ZOMBIE_MAX_PER_OWNER})
                     </p>
                   </>
                 )}
@@ -2077,7 +2131,7 @@ export default function TalentSelectionModal({
                     <p className="text-emerald-200/90 text-xs mt-2 font-mono">
                       {INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} Concentrated Venom stack/hit (
                       {WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK} DPS/stack · max {WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS} ·{' '}
-                      {WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC}s) · zombies on kill (max 3)
+                      {WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC}s) · zombies on kill (max {ALLIED_ZOMBIE_MAX_PER_OWNER})
                     </p>
                   </>
                 )}
@@ -2347,7 +2401,7 @@ export default function TalentSelectionModal({
                   <>
                     <p className="text-gray-400 text-sm mt-1">{entanglementTalentDefinition.description}</p>
                     <p className="text-emerald-200/90 text-xs mt-2 font-mono">
-                      {ENTANGLEMENT_DURATION_MS / 1000}s Entangle · {ENTANGLEMENT_DAMAGE_PER_SECOND} DPS · green roots
+                      {ENTANGLEMENT_DURATION_MS / 1000}s Entangle · {ENTANGLEMENT_DAMAGE_PER_SECOND} DPS · green roots · heal {ENTANGLEMENT_HEAL_BASE}+{ENTANGLEMENT_HEAL_PER_STAMINA}/STA per distinct target
                     </p>
                   </>
                 )}
@@ -2625,6 +2679,9 @@ export default function TalentSelectionModal({
                     <p className="text-rose-200/90 text-xs mt-2 font-mono">
                       Perfect: {BOW_HIGH_CALIBER_PERFECT_SHOT_BASE_DAMAGE} + {HIGH_CALIBER_PERFECT_DAMAGE_PER_STRENGTH}/STR · Full charge: {BOW_HIGH_CALIBER_FULL_CHARGE_BASE_DAMAGE} + {HIGH_CALIBER_CHARGED_DAMAGE_PER_STRENGTH}/STR
                     </p>
+                    <p className="text-rose-200/90 text-xs mt-1 font-mono">
+                      Tempest: {TEMPEST_ROUNDS_HIGH_CALIBER_BURST_FIRE_RATE}s burst · +{HIGH_CALIBER_TEMPEST_FLAT_DAMAGE}/arrow · +Quick Draw removes charge penalty / cancels Tempest rate change
+                    </p>
                   </>
                 )}
               </label>
@@ -2652,6 +2709,9 @@ export default function TalentSelectionModal({
                     <p className="text-gray-400 text-sm mt-1">{triggerFingerTalentDefinition.description}</p>
                     <p className="text-rose-200/90 text-xs mt-2 font-mono">
                       Partial/uncharged: scaled LMB damage + {TRIGGER_FINGER_FLAT_DAMAGE_BONUS} + {TRIGGER_FINGER_DAMAGE_PER_AGILITY}/AGI (excludes perfect &amp; full charge)
+                    </p>
+                    <p className="text-rose-200/90 text-xs mt-1 font-mono">
+                      Tempest: red arrows · {TEMPEST_ROUNDS_TRIGGER_FINGER_BURST_FIRE_RATE}s burst · +High Caliber → {TEMPEST_ROUNDS_BURST_FIRE_RATE}s · cancels High Caliber charge penalty
                     </p>
                   </>
                 )}
@@ -2713,9 +2773,14 @@ export default function TalentSelectionModal({
                       Cobra venom: {WYVERN_STING_VENOM_BASE_DPS} + {WYVERN_STING_VENOM_PER_INTELLECT} per Intellect DPS · {COBRA_SHOT_VENOM_DURATION_SEC}s
                     </p>
                     {loadout.tempestRounds && (
-                      <p className="text-emerald-200/90 text-xs mt-1 font-mono">
-                        With Tempest Rounds: {TEMPEST_BURST_WYVERN_STING_PROC_CHANCE * 100}% chance per burst hit to raise a zombie on kill
-                      </p>
+                      <>
+                        <p className="text-emerald-200/90 text-xs mt-1 font-mono">
+                          With Tempest Rounds: bonus Cobra Shot fires after each 3-round burst (same {WYVERN_STING_COOLDOWN_SEC}s ICD)
+                        </p>
+                        <p className="text-emerald-200/90 text-xs mt-1 font-mono">
+                          With Tempest Rounds: {TEMPEST_BURST_WYVERN_STING_PROC_CHANCE * 100}% chance per burst hit to raise a zombie on kill
+                        </p>
+                      </>
                     )}
                   </>
                 )}
@@ -2743,6 +2808,9 @@ export default function TalentSelectionModal({
                   <>
                     <p className="text-gray-400 text-sm mt-1">{tempestRoundsTalentDefinition.description}</p>
                     <p className="text-sky-200/90 text-xs mt-2 font-mono">
+                      {TEMPEST_ROUNDS_BURST_DAMAGE}/arrow · base {TEMPEST_ROUNDS_BURST_FIRE_RATE}s · High Caliber {TEMPEST_ROUNDS_HIGH_CALIBER_BURST_FIRE_RATE}s +{HIGH_CALIBER_TEMPEST_FLAT_DAMAGE} · Quick Draw {TEMPEST_ROUNDS_TRIGGER_FINGER_BURST_FIRE_RATE}s red · both → {TEMPEST_ROUNDS_BURST_FIRE_RATE}s
+                    </p>
+                    <p className="text-sky-200/90 text-xs mt-1 font-mono">
                       Arctic Sting / Wyvern Sting (when active): {TEMPEST_BURST_ARCTIC_STING_PROC_CHANCE * 100}% proc per burst hit
                     </p>
                   </>
@@ -2965,7 +3033,7 @@ export default function TalentSelectionModal({
                     <p className="text-emerald-200/90 text-xs mt-2 font-mono">
                       Base hit damage {CROSSENTROPY_PLAGUE_DAMAGE} · {CROSSENTROPY_PLAGUE_VENOM_STACKS} Concentrated Venom stacks/hit (
                       {WYVERN_BITE_CONCENTRATED_VENOM_DPS_PER_STACK} DPS/stack · max {WYVERN_BITE_CONCENTRATED_VENOM_MAX_STACKS} ·{' '}
-                      {WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC}s) · up to 2 zombies/kill · max 3 zombies · mutually exclusive with{' '}
+                      {WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC}s) · up to 2 zombies/kill · max {ALLIED_ZOMBIE_MAX_PER_OWNER} zombies · mutually exclusive with{' '}
                       {crossentropyTempestTalentDefinition.name} and {glacialStormTalentDefinition.name}
                     </p>
                   </>
@@ -3056,7 +3124,30 @@ export default function TalentSelectionModal({
                   <>
                     <p className="text-gray-400 text-sm mt-1">{solarRechargeTalentDefinition.description}</p>
                     <p className="text-orange-200/90 text-xs mt-2 font-mono">
-                      {SOLAR_RECHARGE_PROC_CHANCE * 100}% per Entropic Bolt hit on PvE enemies · Sunwell (Reanimate) heal and VFX · does not put Q on cooldown · min {FROST_SOLAR_PROC_EFFECT_ICD_MS / 1000}s between procs
+                      {SOLAR_RECHARGE_PROC_CHANCE * 100}% per Entropic Bolt hit on PvE enemies · Sunwell heal scales with STRENGTH · does not put Q on cooldown · min {FROST_SOLAR_PROC_EFFECT_ICD_MS / 1000}s between procs
+                    </p>
+                  </>
+                )}
+              </label>
+            </div>
+            </TalentHoverSurface>
+            <TalentHoverSurface talent={leviathanTalentDefinition}>
+            <div className="flex items-start gap-3">
+              <TalentRowIcon talent={leviathanTalentDefinition} />
+              <input
+                type="checkbox"
+                id="talent-leviathan"
+                checked={loadout.leviathan}
+                onChange={toggleLeviathan}
+                className="mt-1 h-4 w-4 rounded border-gray-500 text-amber-500 focus:ring-amber-500"
+                aria-label={leviathanTalentDefinition.name}
+              />
+              <label htmlFor="talent-leviathan" className="flex-1 cursor-pointer">
+                {loadout.leviathan && (
+                  <>
+                    <p className="text-gray-400 text-sm mt-1">{leviathanTalentDefinition.description}</p>
+                    <p className="text-indigo-200/90 text-xs mt-2 font-mono">
+                      {LEVIATHAN_PROC_CHANCE * 100}% per Entropic Bolt · {LEVIATHAN_ICEBEAM_PROC_CHANCE * 100}% Icebeam · {LEVIATHAN_CROSSENTROPY_PROC_CHANCE * 100}% Crossentropy · {LEVIATHAN_BASE_DAMAGE}+{LEVIATHAN_DAMAGE_PER_STAT}/STR+AGI · {LEVIATHAN_MAX_DISTANCE}u pierce
                     </p>
                   </>
                 )}
@@ -3162,7 +3253,7 @@ export default function TalentSelectionModal({
               <label htmlFor="talent-accelerator" className={`flex-1 ${mantraEquipped ? 'cursor-pointer' : 'cursor-not-allowed'}`}>
                 {mantraEquipped && !crossentropyEquipped && (
                   <p className="text-amber-600/85 text-xs mt-1">
-                    Requires Crossentropy in your ability bar for the cooldown bonus to apply in combat.
+                    Mantra cooldown −2s applies with Mantra equipped. Crossentropy must also be on your bar for Blitz Cannon recharge near totems.
                   </p>
                 )}
                 {loadout.accelerator && (

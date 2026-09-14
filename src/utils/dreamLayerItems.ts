@@ -4,7 +4,6 @@
  */
 
 import type { InventoryItem } from '@/contexts/MultiplayerContext';
-import { INFERNAL_DASH_DAMAGE } from '@/utils/talents';
 
 // ── Item type constants ──────────────────────────────────────────────────────
 
@@ -78,7 +77,8 @@ export const MERCHANT_EXODIA_POOL_TYPES = Object.freeze([
 // ── Effect constants ─────────────────────────────────────────────────────────
 
 export const KAISER_ICD_SEC = 2.5;
-export const KAISER_PILLAR_DAMAGE = INFERNAL_DASH_DAMAGE;
+/** Keep equal to INFERNAL_DASH_DAMAGE in talents.ts (do not import — circular init). */
+export const KAISER_PILLAR_DAMAGE = 195;
 
 export const SCORPION_SHARD_BASE_DAMAGE = 40;
 export const SCORPION_SHARD_AGI_PER_POINT = 4;

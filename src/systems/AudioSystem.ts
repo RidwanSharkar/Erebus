@@ -98,6 +98,7 @@ const WEAPON_SOUND_ASSETS: SfxAsset[] = [
   { id: 'scythe_meteorite', file: 'scythe/meteorite.mp3' },
   { id: 'scythe_totem_bolt', file: 'scythe/totembolt.mp3' },
   { id: 'scythe_superconductor', file: 'scythe/superconductor.mp3' },
+  { id: 'leviathan', file: 'scythe/leviathan.mp3' },
   { id: 'sword_swing_1', file: 'sword/swing_1.mp3' },
   { id: 'sword_swing_2', file: 'sword/swing_2.mp3' },
   { id: 'sword_swing_3', file: 'sword/swing_3.mp3' },
@@ -309,6 +310,7 @@ const WEAPON_SPECIFIC_SOUND_IDS: Partial<Record<WeaponType, readonly string[]>> 
     'scythe_meteorite',
     'scythe_totem_bolt',
     'scythe_superconductor',
+    'leviathan',
     'icebeam',
     'ui_hitbox_scythe_1',
     'ui_hitbox_scythe_2',
@@ -728,6 +730,11 @@ export class AudioSystem extends System {
   // Play frost nova sound
   public playFrostNovaSound(position: Vector3) {
     return this.playWeaponSound('frost_nova', position, { volume: 0.9 });
+  }
+
+  // Play Leviathan talent proc sound
+  public playLeviathanSound(position: Vector3) {
+    return this.playWeaponSound('leviathan', position, { volume: 0.9 });
   }
 
   // Play backstab sound

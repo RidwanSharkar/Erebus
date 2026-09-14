@@ -22,7 +22,7 @@ export const BASE_SCENE_REL_PATHS = new Set([
   'shade_idle.glb',
   'spectre_idle.glb',
   'templar_idle.glb',
-  'titan_walk.glb',
+  'titan_idle.glb',
   'valkyrie_idle.glb',
   'viper_idle.glb',
   'warlock_idle.glb',

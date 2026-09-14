@@ -89,14 +89,14 @@ function RegularArrow({
   const arrowRef = useRef<Group>(null);
 
   const isBurstArrow = projectileType === 'burst_arrow';
-  const isTriggerFinger = !isBurstArrow && triggerFingerUncharged === true;
+  const isTriggerFinger = triggerFingerUncharged === true;
   let color = '#00ffff';
   let emissiveColor = '#0088aa';
   let shaftEmissiveColor = '#0099cc';
   let fletchingColor = '#66ffff';
   let fletchingEmissiveColor = '#00aaff';
   let auraColor = '#00ffff';
-  if (isBurstArrow) {
+  if (isBurstArrow && tempestBurstTheme && tempestBurstTheme !== 'default') {
     const burstColors = resolveBurstArrowColors(tempestBurstTheme);
     color = burstColors.color;
     emissiveColor = burstColors.emissiveColor;
@@ -111,6 +111,14 @@ function RegularArrow({
     fletchingColor = '#ff4444';
     fletchingEmissiveColor = '#ff1100';
     auraColor = '#ff3300';
+  } else if (isBurstArrow) {
+    const burstColors = resolveBurstArrowColors(tempestBurstTheme);
+    color = burstColors.color;
+    emissiveColor = burstColors.emissiveColor;
+    shaftEmissiveColor = burstColors.shaftEmissiveColor;
+    fletchingColor = burstColors.fletchingColor;
+    fletchingEmissiveColor = burstColors.fletchingEmissiveColor;
+    auraColor = burstColors.auraColor;
   }
 
   const size = 0.15;

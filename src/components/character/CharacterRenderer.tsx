@@ -39,6 +39,8 @@ interface CharacterRendererProps {
   isDead?: boolean;
   /** Co-op remote: SwordCast/Cast when replicated melee/channel state mirrors LMB posture. */
   remotePrimaryWeaponCastHold?: boolean;
+  /** Deathdealer spectral invis look. */
+  spectralActive?: boolean;
 }
 
 const LERP_SPEED      = 15;  // snappy but smooth position interpolation
@@ -207,6 +209,7 @@ export default function CharacterRenderer({
   isRejuvenatingShotCharging = false,
   isDead = false,
   remotePrimaryWeaponCastHold = false,
+  spectralActive = false,
 }: CharacterRendererProps) {
   const groupRef         = useRef<Group | null>(null);
   const { camera }       = useThree();
@@ -764,6 +767,7 @@ export default function CharacterRenderer({
               isDead={isDead}
               portalFallRef={portalFallAnimRef}
               runAnimTimeScale={runAnimTimeScale}
+              spectralActive={spectralActive}
             />
           </group>
         </group>

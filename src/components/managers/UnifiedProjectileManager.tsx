@@ -19,6 +19,7 @@ import Barrage from '@/components/projectiles/Barrage';
 import FanOfKnivesDagger from '@/components/projectiles/FanOfKnivesDagger';
 import PoisonDart from '@/components/projectiles/PoisonDart';
 import { WindShearProjectile } from '@/components/projectiles/WindShearProjectile';
+import LeviathanProjectile from '@/components/projectiles/LeviathanProjectile';
 import { POISON_DART_RANGE } from '@/utils/weaponAspects';
 import TowerProjectile from '@/components/projectiles/TowerProjectile';
 import ExplosionEffect from '@/components/projectiles/ExplosionEffect';
@@ -30,7 +31,7 @@ import CloudkillArrow from '@/components/projectiles/CloudkillArrow';
 import VenomEffect from '@/components/projectiles/VenomEffect';
 import { Vector3, Color } from '@/utils/three-exports';
 import { DEFAULT_ENTROPIC_COLOR_VARIANT } from '@/utils/entropicColorThemes';
-import { CROSSENTROPY_PLAGUE_VENOM_MS, type CrossentropyVisualTheme, type FanOfKnivesFlourishTint, type TempestBurstTheme, getFanOfKnivesDaggerColorsFromTint } from '@/utils/talents';
+import { CROSSENTROPY_PLAGUE_VENOM_MS, LEVIATHAN_MAX_DISTANCE, type CrossentropyVisualTheme, type FanOfKnivesFlourishTint, type TempestBurstTheme, getFanOfKnivesDaggerColorsFromTint } from '@/utils/talents';
 import {
   isWeaponAspect,
   resolveCrossentropyBlitzAspectKey,
@@ -172,6 +173,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
     fanOfKnives: ProjectileData[];
     poisonDart: ProjectileData[];
     windShear: ProjectileData[];
+    leviathan: ProjectileData[];
     tower: ProjectileData[];
   }>({
     crossentropy: [],
@@ -184,6 +186,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
     fanOfKnives: [],
     poisonDart: [],
     windShear: [],
+    leviathan: [],
     tower: []
   });
 
@@ -205,6 +208,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
   const fanOfKnivesIdCounter = useRef(0);
   const poisonDartIdCounter = useRef(0);
   const windShearIdCounter = useRef(0);
+  const leviathanIdCounter = useRef(0);
   const towerIdCounter = useRef(0);
   const explosionIdCounter = useRef(0);
   const plagueVenomEffectIdCounter = useRef(0);
@@ -281,6 +285,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
     const newFanOfKnives: ProjectileData[] = [];
     const newPoisonDart: ProjectileData[] = [];
     const newWindShear: ProjectileData[] = [];
+    const newLeviathan: ProjectileData[] = [];
     const newTower: ProjectileData[] = [];
 
     for (const entity of allProjectileEntities) {
@@ -524,6 +529,30 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
             cachedStartPosition: projectile.startPosition?.clone(),
           });
         }
+      } else if (
+        userData.projectileType === 'leviathan' ||
+        userData.isLeviathanProjectile === true
+      ) {
+        const existing = projectileData.leviathan.find((p) => p.entityId === entity.id);
+        if (existing) {
+          existing.position.copy(transform.position);
+          existing.direction.copy(direction);
+          existing.distanceTraveled = projectile.distanceTraveled;
+          existing.maxDistance = projectile.maxDistance;
+          newLeviathan.push(existing);
+        } else {
+          newLeviathan.push({
+            id: leviathanIdCounter.current++,
+            position: transform.position.clone(),
+            direction: direction.clone(),
+            entityId: entity.id,
+            opacity: userData.opacity || 1.0,
+            projectileType: 'leviathan',
+            distanceTraveled: projectile.distanceTraveled,
+            maxDistance: projectile.maxDistance,
+            cachedStartPosition: projectile.startPosition?.clone(),
+          });
+        }
       } else if (userData.projectileType === 'sword_projectile') {
         const existing = projectileData.sword.find(p => p.entityId === entity.id);
         if (existing) {
@@ -733,6 +762,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
       newFanOfKnives.length !== projectileData.fanOfKnives.length ||
       newPoisonDart.length !== projectileData.poisonDart.length ||
       newWindShear.length !== projectileData.windShear.length ||
+      newLeviathan.length !== projectileData.leviathan.length ||
       newTower.length !== projectileData.tower.length ||
       newCrossentropy.some(p => !projectileData.crossentropy.find(existing => existing.entityId === p.entityId)) ||
       newBlitzCrossentropy.some(p => !projectileData.blitzCrossentropy.find(existing => existing.entityId === p.entityId)) ||
@@ -743,6 +773,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
       newFanOfKnives.some(p => !projectileData.fanOfKnives.find(existing => existing.entityId === p.entityId)) ||
       newPoisonDart.some(p => !projectileData.poisonDart.find(existing => existing.entityId === p.entityId)) ||
       newWindShear.some(p => !projectileData.windShear.find(existing => existing.entityId === p.entityId)) ||
+      newLeviathan.some(p => !projectileData.leviathan.find(existing => existing.entityId === p.entityId)) ||
       newTower.some(p => !projectileData.tower.find(existing => existing.entityId === p.entityId))
     );
 
@@ -758,6 +789,7 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
         fanOfKnives: newFanOfKnives,
         poisonDart: newPoisonDart,
         windShear: newWindShear,
+        leviathan: newLeviathan,
         tower: newTower
       });
     }
@@ -1000,6 +1032,23 @@ function UnifiedProjectileManager({ world, onHauntedSoulAt }: UnifiedProjectileM
             maxDistance,
             distanceTraveled,
             roll: ws.windShearRoll ?? 0,
+          };
+        })}
+      />
+
+      <LeviathanProjectile
+        projectiles={projectileData.leviathan.map((lev) => {
+          const distanceTraveled = lev.distanceTraveled ?? 0;
+          const maxDistance =
+            lev.maxDistance != null && lev.maxDistance !== Infinity
+              ? lev.maxDistance
+              : LEVIATHAN_MAX_DISTANCE;
+          return {
+            id: lev.id,
+            position: lev.position,
+            direction: lev.direction.clone(),
+            maxDistance,
+            distanceTraveled,
           };
         })}
       />

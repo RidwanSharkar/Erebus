@@ -18,6 +18,7 @@ interface DeathGraspProjectileProps {
     health: number;
     type?: string;
     isBoss1EliteKnight?: boolean;
+    isBoss1EliteWyrm?: boolean;
   }>;
   players?: Map<string, any>;
   localSocketId?: string;

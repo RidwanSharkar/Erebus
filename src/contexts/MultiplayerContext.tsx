@@ -301,6 +301,8 @@ export interface Enemy {
   bladestormStartTime?: number;
   /** Alternate Boss1 encounter: elite knight (Death Grasp pull-immune). */
   isBoss1EliteKnight?: boolean;
+  /** Alternate Boss1 encounter: elite wyrm (Death Grasp pull-immune). */
+  isBoss1EliteWyrm?: boolean;
   /** Player-built explore structures (fire pit, barracks, towers, research station). */
   isStructure?: boolean;
   hullRadius?: number;
@@ -441,7 +443,7 @@ export interface ExploreObeliskPurchasedPayload {
   talentId: string;
 }
 
-export type BossSlainLabel = 'hate' | 'knights' | 'envy' | 'fear' | 'destiny' | 'trinity';
+export type BossSlainLabel = 'hate' | 'knights' | 'wyrms' | 'envy' | 'fear' | 'destiny' | 'trinity';
 
 export interface BossDefeatedPayload {
   bossId?: string;
@@ -869,7 +871,11 @@ interface MultiplayerContextType {
   broadcastAlliedHealing: (healingAmount: number, healingType: string, position: { x: number; y: number; z: number }, targetEnemyId: string) => void;
   broadcastPlayerAnimationState: (animationState: PlayerAnimationState) => void;
   broadcastPlayerDebuff: (targetPlayerId: string, debuffType: 'frozen' | 'slowed' | 'stunned' | 'corrupted', duration: number, effectData?: any) => void;
-  broadcastPlayerStealth: (isInvisible: boolean, isStealthing?: boolean) => void;
+  broadcastPlayerStealth: (
+    isInvisible: boolean,
+    isStealthing?: boolean,
+    source?: 'accretion' | 'deathdealer',
+  ) => void;
   broadcastPlayerKnockback: (targetPlayerId: string, direction: { x: number; y: number; z: number }, distance: number, duration: number) => void;
   broadcastPlayerTornadoEffect: (playerId: string, position: { x: number; y: number; z: number }, duration: number) => void;
   broadcastPlayerDeathEffect: (playerId: string, position: { x: number; y: number; z: number }, isStarting: boolean) => void;
@@ -892,7 +898,7 @@ interface MultiplayerContextType {
 
   /** Co-op: ring mushroom HP (server sync). Explore packed-index HP lives in `exploreHealth`. */
   mushroomState: { health: number[]; maxHealth: number; exploreHealth?: Record<number, number> } | null;
-  damageMushroom: (index: number, damage: number, sourcePlayerId?: string) => void;
+  damageMushroom: (index: number, damage: number, sourcePlayerId?: string, damageType?: string) => void;
   treeState: { maxHealth: number; exploreHealth: Record<number, number> } | null;
   damageTree: (index: number, damage: number, sourcePlayerId?: string) => void;
   rootState: { maxHealth: number; exploreHealth: Record<number, number> } | null;
@@ -5899,13 +5905,14 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const damageMushroom = useCallback((index: number, damage: number, sourcePlayerId?: string) => {
+  const damageMushroom = useCallback((index: number, damage: number, sourcePlayerId?: string, damageType?: string) => {
     if (socket && currentRoomId) {
       socket.emit('mushroom-damage', {
         roomId: currentRoomId,
         index,
         damage,
         sourcePlayerId: sourcePlayerId || socket.id,
+        ...(damageType ? { damageType } : {}),
       });
     }
   }, [socket, currentRoomId]);
@@ -6266,7 +6273,11 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
     }
   }, [socket, currentRoomId]);
 
-  const broadcastPlayerStealth = useCallback((isInvisible: boolean, isStealthing?: boolean) => {
+  const broadcastPlayerStealth = useCallback((
+    isInvisible: boolean,
+    isStealthing?: boolean,
+    source: 'accretion' | 'deathdealer' = 'accretion',
+  ) => {
 
     if (socket && currentRoomId) {
       socket.emit('player-stealth', {
@@ -6274,6 +6285,7 @@ export function MultiplayerProvider({ children }: MultiplayerProviderProps) {
         playerId: socket.id,
         isInvisible,
         isStealthing: isStealthing || false,
+        source,
         timestamp: Date.now()
       });
     }

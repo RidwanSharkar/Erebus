@@ -2,6 +2,8 @@ import type { AbilityLoadout } from '@/utils/weaponAbilities';
 import { Vector3 } from '@/utils/three-exports';
 import { WeaponType } from '@/components/dragon/weapons';
 import type { Entity } from '@/ecs/Entity';
+import { Enemy } from '@/ecs/components/Enemy';
+import { DestructibleMushroom } from '@/ecs/components/DestructibleMushroom';
 import { Shield } from '@/ecs/components/Shield';
 import type { PlayerStats } from '@/utils/StatSystem';
 import type { CoopAllyKind } from '@/utils/coopAllyTargeting';
@@ -56,6 +58,8 @@ export const TALENT_GLACIAL_TALONS = 'GLACIAL_TALONS' as const;
 export const TALENT_WRAITH_GUARD = 'WRAITH_GUARD' as const;
 export const TALENT_FROSTPATH = 'FROSTPATH' as const;
 export const TALENT_SOLAR_RECHARGE = 'SOLAR_RECHARGE' as const;
+/** Scythe class talent — Entropic Bolt / Icebeam / Crossentropy can spawn a piercing ground basilisk. */
+export const TALENT_LEVIATHAN = 'LEVIATHAN' as const;
 /** Scythe class talent — Entropic Bolt base damage scales with Intellect; faster fire rate. */
 export const TALENT_ARCANE_SYNERGY = 'ARCANE_SYNERGY' as const;
 export const TALENT_WINDFURY = 'WINDFURY' as const;
@@ -131,7 +135,7 @@ export const TALENT_GUARD_SABRES_SWIPES = 'GUARD_SABRES_SWIPES' as const;
 export const TALENT_GUARD_SABRES_STAB = 'GUARD_SABRES_STAB' as const;
 /** Sabres purple room — Flourish / Sunder hits proc shield (mutex with other Flourish room boons). */
 export const TALENT_GUARD_SABRES_FLOURISH = 'GUARD_SABRES_FLOURISH' as const;
-/** Sabres class talent — every 3rd swing fires a 150-damage crescent slash AoE; stacks freely with other boons. */
+/** Sabres class talent — every 3rd swing fires a crescent slash AoE scaled by Agility; stacks freely with other boons. */
 export const TALENT_CRESCENT_BLADES = 'CRESCENT_BLADES' as const;
 /** Sabres class talent — every LMB swing fires a forward wind slash projectile for 40 damage (first hit only). */
 export const TALENT_WIND_SHEAR = 'WIND_SHEAR' as const;
@@ -151,6 +155,15 @@ export const TALENT_PARRY = 'PARRY' as const;
 export const TALENT_FIRE_AFFINITY = 'FIRE_AFFINITY' as const;
 /** Sabres class boon — Backstab (`SABRES_Q`) holds 2 staggered charges (same pattern as Double Strike). */
 export const TALENT_DOUBLE_STAB = 'DOUBLE_STAB' as const;
+/** Sabres class boon — post-dash free sprint lasts longer and grants spectral invis ambush. */
+export const TALENT_DEATHDEALER = 'DEATHDEALER' as const;
+
+/** Deathdealer — extra free-sprint seconds after dash (on top of Sabres base). */
+export const DEATHDEALER_SPRINT_BONUS_SEC = 2;
+/** Deathdealer — damage per falling sword (one sword per dash charge spent). */
+export const DEATHDEALER_DAMAGE_PER_ORB = 450;
+/** Deathdealer — delay between sequential falling swords from one ambush. */
+export const DEATHDEALER_SWORD_STAGGER_MS = 200;
 
 /** Backstab (`SABRES_Q`) base cooldown in seconds (single charge or per-charge recharge with Double Stab). */
 export const BACKSTAB_COOLDOWN_SEC = 3.875;
@@ -161,11 +174,11 @@ export const BACKSTAB_DOUBLE_STAB_INTERNAL_COOLDOWN_SEC = 0.75;
 
 /** Wind Shear — projectile tuning (local + replicated). */
 export const WIND_SHEAR_BASE_DAMAGE = 24;
-export const WIND_SHEAR_DAMAGE_PER_STRENGTH = 3;
+export const WIND_SHEAR_DAMAGE_PER_STRENGTH = 2;
 export const WIND_SHEAR_MAX_DISTANCE_UNITS = 8;
 /** Psionic Blades — flat proc damage per blade hit + Intellect scaling. */
 export const PSIONIC_BLADES_BASE_DAMAGE = 10;
-export const PSIONIC_BLADES_DAMAGE_PER_INTELLECT = 2;
+export const PSIONIC_BLADES_DAMAGE_PER_INTELLECT = 3;
 export const WIND_SHEAR_PROJECTILE_SPEED = 32;
 export const WIND_SHEAR_PROJECTILE_LIFETIME_SEC = 3;
 
@@ -175,6 +188,10 @@ export const FAN_OF_KNIVES_DAMAGE_PER_AGILITY = 3;
 export const FAN_OF_KNIVES_MAX_DISTANCE_UNITS = 7;
 export const FAN_OF_KNIVES_PROJECTILE_SPEED = 32;
 export const FAN_OF_KNIVES_PROJECTILE_LIFETIME_SEC = 3;
+
+/** Crescent Flare — every 3rd Sabres LMB swing; base + Agility scaling. */
+export const CRESCENT_FLARE_BASE_DAMAGE = 150;
+export const CRESCENT_FLARE_DAMAGE_PER_AGILITY = 8;
 
 /** Fire Affinity — Flourish firestorm AoE (all stats scale). */
 export const FIRE_AFFINITY_STORM_BASE_DAMAGE = 100;
@@ -556,6 +573,8 @@ export const REBUKE_IGNITE_DURATION_MS = 4000;
 export const REBUKE_IGNITE_TICKS = 4;
 /** REBUKE — min seconds between procs when repeatedly taking damage. */
 export const REBUKE_ICD_SEC = 2.5;
+/** BLOODLEECH room boon — min seconds between critical-strike heals. */
+export const BLOODLEECH_CRIT_HEAL_ICD_SEC = 3;
 /** ORB SHIELD room boon — flat heal on proc before Stamina scaling. */
 export const ORB_SHIELD_BASE_HEAL = 50;
 /** ORB SHIELD — min seconds between procs when repeatedly taking damage. */
@@ -585,11 +604,13 @@ export const UNSTABLE_ENERGY_AGILITY_DAMAGE_PER_POINT = 8;
 export const CROSSENTROPY_COOLDOWN_SEC = 8;
 /** Accelerator — horizontal distance (xz) within which each owned totem counts toward Crossentropy recharge. */
 export const ACCELERATOR_TOTEM_AURA_RADIUS_UNITS = 5;
+/** Accelerator — flat Mantra (`SCYTHE_F`) cooldown reduction in seconds (independent of totem proximity). */
+export const ACCELERATOR_MANTRA_COOLDOWN_REDUCTION_SEC = 2;
 
 /** GIANTKILLER — extra damage vs non-boss: fraction of target max HP on Reaping Talons return hit after a forward hit on the same target. */
-export const GIANTKILLER_MAX_HP_DAMAGE_FRAC = 0.15;
+export const GIANTKILLER_MAX_HP_DAMAGE_FRAC = 0.125;
 /** GIANTKILLER — same vs bosses (`EnemyType.BOSS`, including co-op boss variants mapped to BOSS). */
-export const GIANTKILLER_MAX_HP_DAMAGE_FRAC_BOSS = 0.1;
+export const GIANTKILLER_MAX_HP_DAMAGE_FRAC_BOSS = 0.075;
 /**
  * HEALING STREAM — HP healed per second per owned totem in range.
  * Range matches `ACCELERATOR_TOTEM_AURA_RADIUS_UNITS` (horizontal xz).
@@ -610,6 +631,10 @@ export const INFESTED_TALENT_CONCENTRATED_VENOM_STACKS = 1;
 export const INFESTED_COMBO_VENOM_PROC_CHANCE = 0.30;
 /** Infested Blades — chance per Sabres basic attack hit to apply Concentrated Venom. */
 export const INFESTING_SABRES_SWIPES_VENOM_PROC_CHANCE = 0.15;
+/** Allied player-zombies — lifetime in seconds (keep in sync with `PLAYER_ZOMBIE_LIFETIME_MS` in backend/enemyAI.js). */
+export const ALLIED_ZOMBIE_LIFETIME_SEC = 60;
+/** Allied player-zombies — max living per owner (keep in sync with `PLAYER_ZOMBIE_MAX_PER_OWNER` in backend/enemyAI.js). */
+export const ALLIED_ZOMBIE_MAX_PER_OWNER = 7;
 /** TEMPEST boon: stagger added per Crossentropy hit. */
 export const CROSSENTROPY_TEMPEST_STAGGER = 100;
 /** METEOR talent — weighted strike count on each eligible Crossentropy impact. */
@@ -715,7 +740,7 @@ export function shouldEntropicFragmentationChain(fragmentHop: number): boolean {
   return false;
 }
 /** Reaper: +1 base damage per enemy kill (session). */
-export const CROSSENTROPY_REAPER_DAMAGE_PER_KILL = 5;
+export const CROSSENTROPY_REAPER_DAMAGE_PER_KILL = 10;
 /** Killstreak (Sabres): +base Backstab damage per Backstab kill this session (server-synced in co-op). */
 export const BACKSTAB_KILLSTREAK_DAMAGE_PER_KILL = 20;
 /** Relentless (Sabres): base HP healed when Backstab kills an enemy. */
@@ -886,6 +911,7 @@ export type TalentId =
   | typeof TALENT_WRAITH_GUARD
   | typeof TALENT_FROSTPATH
   | typeof TALENT_SOLAR_RECHARGE
+  | typeof TALENT_LEVIATHAN
   | typeof TALENT_ARCANE_SYNERGY
   | typeof TALENT_WINDFURY
   | typeof TALENT_COLOSSUS_GUARD
@@ -946,6 +972,7 @@ export type TalentId =
   | typeof TALENT_PARRY
   | typeof TALENT_FIRE_AFFINITY
   | typeof TALENT_DOUBLE_STAB
+  | typeof TALENT_DEATHDEALER
   | typeof TALENT_PACK_HUNTER
   | typeof TALENT_BERSERKER_STRAIN
   | typeof TALENT_JUGGERNAUT_STRAIN
@@ -1018,10 +1045,12 @@ export const MANTRA_SHAMAN_MAX_CHARGES = 2;
 export const MANTRA_SHAMAN_INTERNAL_COOLDOWN_SEC = 1.0;
 /** Superconductor — bonus Mantra totem lightning damage. */
 export const SUPERCONDUCTOR_TOTEM_DAMAGE = 90;
+/** Superconductor — additional shock damage per point of Agility. */
+export const SUPERCONDUCTOR_DAMAGE_PER_AGILITY = 5;
 /** Superconductor + Infesting Totem — shock base damage before crit. */
 export const SUPERCONDUCTOR_INFESTING_DAMAGE = 125;
 /** Superconductor + Staggering Totem — stagger per shock (totem bolts use `STAGGERING_TOTEM_STAGGER`). */
-export const SUPERCONDUCTOR_STAGGERING_STRIKE_STAGGER = 15;
+export const SUPERCONDUCTOR_STAGGERING_STRIKE_STAGGER = 18;
 /** Superconductor + Wrathful Totem — additive crit chance on shock (crit damage multiplier unchanged). */
 export const SUPERCONDUCTOR_WRATHFUL_CRIT_CHANCE_ADD = 0.5;
 /** Superconductor — seconds between bonus lightning casts per totem. */
@@ -1031,7 +1060,7 @@ export const SUPERCONDUCTOR_TOTEM_COOLDOWN_SEC = 1.75;
 export const SPELLBLADE_INTELLECT_BONUS = 10;
 export const SPELLBLADE_WRAITH_STRIKE_SHIELD_RESTORE = 36;
 /** SPELLBLADE — additive Wraith Strike base damage per effective Intellect (allocated + Spellblade bonus). */
-export const SPELLBLADE_WRAITH_DAMAGE_PER_INTELLECT = 3;
+export const SPELLBLADE_WRAITH_DAMAGE_PER_INTELLECT = 4;
 
 /** Sabres PARRY — +effective intellect / strength while Flourish (`SABRES_E`) is in loadout (same derived-stat plumbing as Spellblade); shield chunk on Flourish cast. */
 
@@ -1057,6 +1086,8 @@ export const AFTERSHOCK_GUARD_DAMAGE_BONUS = 50;
 export const AFTERSHOCK_WRATHFUL_CRIT_CHANCE_ADD = 0.8;
 /** Staggering Strike — stagger applied per enemy hit by Aftershock detonation. */
 export const AFTERSHOCK_STAGGERING_STAGGER = 50;
+/** Aftershock detonation — flat bonus damage per point of Stamina (stacks with Infested/Guard). */
+export const AFTERSHOCK_DAMAGE_PER_STAMINA = 12;
 
 /** Modifies Wraith Strike (`RUNEBLADE_E`) when equipped in Q/E/R. */
 export const WRATH_STRIKE_CRIT_CHANCE_ADD = 0.5;
@@ -1069,7 +1100,7 @@ export const WRATHFUL_TALONS_RETURN_CRIT_DAMAGE_MULT_ADD = 1.0;
 export const WRATHFUL_TALONS_EXPLOSION_CRIT_CHANCE_ADD = 0.3;
 
 /** EXECUTE — Reaping Talons (`BOW_R`) first forward hit: bonus when a dash charge is consumed (useViperSting + Movement). */
-export const EXECUTE_REAPING_TALONS_BONUS_DAMAGE = 220;
+export const EXECUTE_REAPING_TALONS_BONUS_DAMAGE = 250;
 
 /** Reaping Talons (`BOW_R`) forward leg max travel in `useViperSting` (return-arrow variant). */
 export const REAPING_TALONS_MAX_TRAVEL_DISTANCE = 20;
@@ -1105,6 +1136,8 @@ export const BOW_PERFECT_SHOT_BASE_DAMAGE = 75;
 export const BOW_HIGH_CALIBER_PERFECT_SHOT_BASE_DAMAGE = 150;
 /** High Caliber — additive base damage per STRENGTH on perfect LMB. */
 export const HIGH_CALIBER_PERFECT_DAMAGE_PER_STRENGTH = 3;
+/** High Caliber + Tempest Rounds — flat bonus damage per burst arrow. */
+export const HIGH_CALIBER_TEMPEST_FLAT_DAMAGE = 40;
 /** Quick Draw — additive base damage per AGILITY on partial/uncharged LMB (not perfect or full charge). */
 export const TRIGGER_FINGER_DAMAGE_PER_AGILITY = 2;
 
@@ -1120,6 +1153,13 @@ export const WYVERN_BITE_CONCENTRATED_VENOM_DURATION_SEC = 8;
 /** Entanglement — Barrage hits root the target and squeeze for fixed damage. */
 export const ENTANGLEMENT_DURATION_MS = 5000;
 export const ENTANGLEMENT_DAMAGE_PER_SECOND = 20;
+/** Entanglement — self-heal per distinct enemy Entangled by one Frostbite cast. */
+export const ENTANGLEMENT_HEAL_BASE = 5;
+export const ENTANGLEMENT_HEAL_PER_STAMINA = 1;
+
+export function getEntanglementHealPerEnemy(stamina: number): number {
+  return ENTANGLEMENT_HEAL_BASE + ENTANGLEMENT_HEAL_PER_STAMINA * Math.max(0, stamina);
+}
 
 /** Cobra Shot — impact and venom DPS (same value). */
 export const COBRA_SHOT_VENOM_DAMAGE_PER_SECOND = 29;
@@ -1179,21 +1219,45 @@ export function getExecutionerFlatDamageBonus(effectiveStrength: number): number
 }
 
 /** Frostpath — Entropic Bolt (scythe LMB) hits on PvE enemies can proc Coldsnap at impact (no E cooldown). */
-export const FROSTPATH_PROC_CHANCE = 0.165;
+export const FROSTPATH_PROC_CHANCE = 0.1725;
+/** Frostpath — Icebeam tick chance (lower than bolts; beam ticks ~3× faster). */
+export const FROSTPATH_ICEBEAM_PROC_CHANCE = 0.055;
 
 /** Solar Recharge — Entropic Bolt hits on PvE enemies can proc Sunwell (Reanimate) (no Q cooldown; does not require Sunwell in loadout). */
-export const SOLAR_RECHARGE_PROC_CHANCE = 0.185;
+export const SOLAR_RECHARGE_PROC_CHANCE = 0.1725;
+/** Solar Recharge — Icebeam tick chance (lower than bolts; beam ticks ~3× faster). */
+export const SOLAR_RECHARGE_ICEBEAM_PROC_CHANCE = 0.06;
+/** Solar Recharge — additional heal per point of Strength (on top of `REANIMATE_SUNWELL_HEAL`). */
+export const SOLAR_RECHARGE_HEAL_PER_STRENGTH = 1;
+
+/** Leviathan — Entropic Bolt hits on PvE enemies can spawn a piercing ground basilisk. */
+export const LEVIATHAN_PROC_CHANCE = 0.1725;
+/** Leviathan — Icebeam tick chance (lower than bolts; beam ticks ~3× faster). */
+export const LEVIATHAN_ICEBEAM_PROC_CHANCE = 0.058;
+/** Leviathan — chance on Crossentropy cast (after charge completes). */
+export const LEVIATHAN_CROSSENTROPY_PROC_CHANCE = 0.5;
+export const LEVIATHAN_BASE_DAMAGE = 170;
+/** Flat damage per point of effective Strength and per point of effective Agility. */
+export const LEVIATHAN_DAMAGE_PER_STAT = 10;
+export const LEVIATHAN_MAX_DISTANCE = 22;
+/** ~50% faster than throne basilisk orbit linear speed (~4.2 u/s). */
+export const LEVIATHAN_SPEED = 17.3;
+/** Wider than default projectile sphere so the long body tags a corridor. */
+export const LEVIATHAN_HIT_RADIUS = 1.6;
+export const LEVIATHAN_LIFETIME_SEC = 2.5;
 
 /** Min wall-clock ms between successful Frostpath Coldsnap execution or Solar Recharge Sunwell proc (separate per talent). */
-export const FROST_SOLAR_PROC_EFFECT_ICD_MS = 2500;
+export const FROST_SOLAR_PROC_EFFECT_ICD_MS = 1000;
 
 /** Windfury — Spear primary or Runeblade left-click combo hits that damage an enemy can proc Storm Shroud (Flurry) without F cooldown. */
-export const WINDFURY_PROC_CHANCE = 0.165;
+export const WINDFURY_PROC_CHANCE = 0.17125;
 
 /** Crusader — Runeblade left-click hits that damage an enemy; matches Windfury proc rate. */
-export const CRUSADER_PROC_CHANCE = 0.1825;
+export const CRUSADER_PROC_CHANCE = 0.1775;
 export const CRUSADER_DURATION_SEC = 5;
-export const CRUSADER_LMB_FLAT_BONUS = 55;
+export const CRUSADER_LMB_FLAT_BONUS = 65;
+/** Crusader — flat self-heal whenever the damage buff procs. */
+export const CRUSADER_PROC_HEAL = 10;
 
 /** Blizzard — Runeblade LMB hits that damage an enemy; matches Windfury proc rate. */
 export const BLIZZARD_PROC_CHANCE = 0.175;
@@ -1228,6 +1292,8 @@ export const MORTAL_STRIKE_STAGGERING_DAMAGE = 160;
 export const MORTAL_STRIKE_STAGGERING_STAGGER = 35;
 export const MORTAL_STRIKE_INFESTED_DAMAGE = 185;
 export const MORTAL_STRIKE_GUARD_DAMAGE = 240;
+/** Mortal Strike — flat bonus damage per point of Agility (stacks with colored combo bases). */
+export const MORTAL_STRIKE_DAMAGE_PER_AGILITY = 10;
 
 export type MortalStrikeTheme = 'default' | 'wrathful' | 'staggering' | 'infested' | 'wraith_guard';
 
@@ -1290,12 +1356,43 @@ export const WRATHFUL_SHOTS_PERFECT_CRIT_DAMAGE_MULT_ADD = 0.65;
 /** Wrathful Shots — Tempest Rounds burst arrows. */
 export const WRATHFUL_SHOTS_TEMPEST_CRIT_CHANCE_ADD = 0.2;
 export const WRATHFUL_SHOTS_TEMPEST_CRIT_DAMAGE_MULT_ADD = 0.2;
+/** Tempest Rounds — base damage per burst arrow (before High Caliber / Sniper / Wrathful). */
+export const TEMPEST_ROUNDS_BURST_DAMAGE = 25;
+/** Tempest Rounds burst interval (seconds between 3-round bursts). */
+export const TEMPEST_ROUNDS_BURST_FIRE_RATE = 0.925;
+/** Tempest + High Caliber — slower burst interval. */
+export const TEMPEST_ROUNDS_HIGH_CALIBER_BURST_FIRE_RATE = 1.45;
+/** Tempest + Quick Draw — faster burst interval. */
+export const TEMPEST_ROUNDS_TRIGGER_FINGER_BURST_FIRE_RATE = 0.75;
 /** Sniper + Tempest Rounds — flat bonus per AGILITY when horizontal range > TERMINAL_VELOCITY_MIN_RANGE (10). */
 export const TEMPEST_ROUNDS_LONG_RANGE_DAMAGE_PER_AGILITY = 1;
 
 /** Sniper Tempest Rounds long-range bonus: +1 per AGILITY. Caller must gate on Sniper + Tempest + range. */
 export function getTempestRoundsLongRangeBonusDamage(agility: number): number {
   return TEMPEST_ROUNDS_LONG_RANGE_DAMAGE_PER_AGILITY * Math.max(0, agility);
+}
+
+/** Tempest Rounds burst interval: High Caliber slows, Quick Draw speeds; both cancel to base. */
+export function getTempestRoundsBurstFireRate(
+  talentLoadout: TalentLoadout | null | undefined,
+): number {
+  const highCaliber = shouldApplyHighCaliberTalent(talentLoadout);
+  const triggerFinger = shouldApplyTriggerFingerTalent(talentLoadout);
+  if (highCaliber && triggerFinger) return TEMPEST_ROUNDS_BURST_FIRE_RATE;
+  if (highCaliber) return TEMPEST_ROUNDS_HIGH_CALIBER_BURST_FIRE_RATE;
+  if (triggerFinger) return TEMPEST_ROUNDS_TRIGGER_FINGER_BURST_FIRE_RATE;
+  return TEMPEST_ROUNDS_BURST_FIRE_RATE;
+}
+
+/** Tempest Rounds per-arrow damage: base 25, +40 with High Caliber (Quick Draw does not add its uncharged bonus). */
+export function getTempestRoundsBurstDamage(
+  talentLoadout: TalentLoadout | null | undefined,
+): number {
+  let damage = TEMPEST_ROUNDS_BURST_DAMAGE;
+  if (shouldApplyHighCaliberTalent(talentLoadout)) {
+    damage += HIGH_CALIBER_TEMPEST_FLAT_DAMAGE;
+  }
+  return damage;
 }
 
 /** Dual Coil — left/right offset for the twin Bow LMB spawns and perfect-shot beams (world units, half the pair’s separation is this distance from center). */
@@ -1376,7 +1473,7 @@ export const infestedStrikeTalentDefinition: TalentDefinition = {
   id: TALENT_INFESTED_STRIKE,
   name: 'Infested Strike',
   description:
-    `Wraith Strike gains increased base damage and applies ${INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} stack of Concentrated Venom per hit; killing an enemy with Wraith Strike raises a ZOMBIE ally for 30s (max 3).`,
+    `Wraith Strike gains increased base damage and applies ${INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} stack of Concentrated Venom per hit; killing an enemy with Wraith Strike raises a ZOMBIE ally for ${ALLIED_ZOMBIE_LIFETIME_SEC}s (max ${ALLIED_ZOMBIE_MAX_PER_OWNER}).`,
   modifiesAbilityId: 'Wraith Strike (E)',
 };
 
@@ -1424,7 +1521,7 @@ export const infestedSmiteTalentDefinition: TalentDefinition = {
   id: TALENT_INFESTED_SMITE,
   name: 'Infested Smite',
   description:
-    'Each Smite beam heals you for 5 health per enemy hit by that beam. Killing an enemy with Smite raises a ZOMBIE ally for 30s (max 3)..',
+    `Each Smite beam heals you for 5 health per enemy hit by that beam and applies ${INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} stack of Concentrated Venom per enemy hit. Killing an enemy with Smite raises a ZOMBIE ally for ${ALLIED_ZOMBIE_LIFETIME_SEC}s (max ${ALLIED_ZOMBIE_MAX_PER_OWNER}).`,
   modifiesAbilityId: 'Colossus Strike (R)',
 };
 
@@ -1496,7 +1593,7 @@ export const superconductorTalentDefinition: TalentDefinition = {
   id: TALENT_SUPERCONDUCTOR,
   name: 'Superconductor',
   description:
-    'Mantra Totems now continuiously zaps targets with lightning for 90 damage.',
+    `Mantra Totems now continuously zap targets with lightning for ${SUPERCONDUCTOR_TOTEM_DAMAGE} + ${SUPERCONDUCTOR_DAMAGE_PER_AGILITY} damage per point of AGILITY.`,
   modifiesAbilityId: 'Mantra (Q)',
 };
 
@@ -1504,7 +1601,7 @@ export const acceleratorTalentDefinition: TalentDefinition = {
   id: TALENT_ACCELERATOR,
   name: 'Accelerator',
   description:
-    'Crossentropy recharges faster for each nearby Totem. Each Totem in range doubles the recharge rate of Crossentropy, up to 6 seconds faster.',
+    `Crossentropy (Blitz Cannon) charges recharge faster for each nearby Totem — each Totem in range doubles the recharge rate. Also reduces Mantra cooldown by ${ACCELERATOR_MANTRA_COOLDOWN_REDUCTION_SEC} seconds.`,
   modifiesAbilityId: 'Mantra (Q)',
 };
 
@@ -1518,7 +1615,7 @@ export const giantKillerTalentDefinition: TalentDefinition = {
 
 export const doubleTalonsTalentDefinition: TalentDefinition = {
   id: TALENT_DOUBLE_TALONS,
-  name: 'Falcon Aspect',
+  name: 'Icaro',
   description:
     'Reaping Talons now holds 2 charges for use.',
   modifiesAbilityId: 'Reaping Talons (E)',
@@ -1544,7 +1641,7 @@ export const breathWeaponTalentDefinition: TalentDefinition = {
   id: TALENT_BREATH_WEAPON,
   name: 'Aftershock',
   description:
-    'When you cast Wraith Strike, scorch the ground in a line in front of you. After 1 second, the strip erupts in flame pillars, dealing 125 damage to all enemies in the area.',
+    `When you cast Wraith Strike, scorch the ground in a line in front of you. After 1 second, the strip erupts in flame pillars, dealing ${BREATH_WEAPON_DAMAGE} + ${AFTERSHOCK_DAMAGE_PER_STAMINA} damage per STAMINA to all enemies in the area (Infested/Guard strike boons still add their bonus damage).`,
   modifiesAbilityId: 'Wraith Strike (Q)',
 };
 
@@ -1552,7 +1649,7 @@ export const mortalStrikeTalentDefinition: TalentDefinition = {
   id: TALENT_MORTAL_STRIKE,
   name: 'Mortal Strike',
   description:
-    `Every ${MORTAL_STRIKE_ATTACK_INTERVAL}th Runeblade left-click attack unleashes a sweeping arc slash that deals ${MORTAL_STRIKE_BASE_DAMAGE} damage to enemies in front of you, in addition to the normal combo hit.`,
+    `Every ${MORTAL_STRIKE_ATTACK_INTERVAL}th Runeblade left-click attack unleashes a sweeping arc slash that deals ${MORTAL_STRIKE_BASE_DAMAGE} + ${MORTAL_STRIKE_DAMAGE_PER_AGILITY} damage per AGILITY to enemies in front of you, in addition to the normal combo hit. Colored combo boons keep their higher Mortal Strike bases (${MORTAL_STRIKE_STAGGERING_DAMAGE}/${MORTAL_STRIKE_INFESTED_DAMAGE}/${MORTAL_STRIKE_GUARD_DAMAGE}).`,
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 
@@ -1576,7 +1673,7 @@ export const infestedComboTalentDefinition: TalentDefinition = {
   id: TALENT_INFESTED_COMBO,
   name: 'Infested Combo',
   description:
-    `Your Runeblade basic attacks now heal you for 10% of damage dealt and have a ${INFESTED_COMBO_VENOM_PROC_CHANCE * 100}% chance per hit to apply ${INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} stack of Concentrated Venom. Killing an enemy with these attacks raises a ZOMBIE ally for 30s (max 3).`,
+    `Your Runeblade basic attacks now heal you for 10% of damage dealt and have a ${INFESTED_COMBO_VENOM_PROC_CHANCE * 100}% chance per hit to apply ${INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} stack of Concentrated Venom. Killing an enemy with these attacks raises a ZOMBIE ally for ${ALLIED_ZOMBIE_LIFETIME_SEC}s (max ${ALLIED_ZOMBIE_MAX_PER_OWNER}).`,
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 
@@ -1632,7 +1729,7 @@ export const infestedBackstabTalentDefinition: TalentDefinition = {
   id: TALENT_INFESTED_BACKSTAB,
   name: 'Infested Stab',
   description:
-    `Backstab applies ${INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} stack of Concentrated Venom per hit; killing an enemy with Backstab raises a ZOMBIE ally for 30s (max 3).`,
+    `Backstab applies ${INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} stack of Concentrated Venom per hit; killing an enemy with Backstab raises a ZOMBIE ally for ${ALLIED_ZOMBIE_LIFETIME_SEC}s (max ${ALLIED_ZOMBIE_MAX_PER_OWNER}).`,
   modifiesAbilityId: 'Backstab (Q)',
 };
 
@@ -1704,6 +1801,14 @@ export const fireAffinityTalentDefinition: TalentDefinition = {
   description:
     `Flourish erupts in a brief violent firestorm around you, dealing ${FIRE_AFFINITY_STORM_BASE_DAMAGE} + ${FIRE_AFFINITY_STORM_DAMAGE_PER_STAT_POINT} damage per point of STRENGTH, AGILITY, STAMINA, and INTELLECT to all enemies within ${FIRE_AFFINITY_STORM_RADIUS} units. Applies IGNITE, dealing ${FIRE_AFFINITY_IGNITE_DOT_FRACTION * 100}% of the impact damage over 4 seconds. (${FIRE_AFFINITY_STORM_ICD_SEC}s internal cooldown.)`,
   modifiesAbilityId: 'Flourish (E)',
+};
+
+export const deathdealerTalentDefinition: TalentDefinition = {
+  id: TALENT_DEATHDEALER,
+  name: 'Deathdealer',
+  description:
+    `After dashing, you become invisible for a few seconds, dropping all enemy aggro. Your next attack while invisible consumes all remaining dash charges and calls down one falling sword per charge, dealing ${DEATHDEALER_DAMAGE_PER_ORB} damage each. Attacking this way ends the invisibility. If you do not attack, no extra charges are spent.`,
+  modifiesAbilityId: 'Dash',
 };
 
 export const packHunterTalentDefinition: TalentDefinition = {
@@ -1805,7 +1910,7 @@ export const bloodleechTalentDefinition: TalentDefinition = {
   id: TALENT_BLOODLEECH,
   name: 'Blood Leech',
   description:
-    'Critical strikes you deal to enemies now HEAL you for your current STRENGTH points.',
+    `Critical strikes you deal to enemies now HEAL you for your current STRENGTH points. Cannot occur more than once every ${BLOODLEECH_CRIT_HEAL_ICD_SEC} seconds.`,
   modifiesAbilityId: 'Infernal Boons',
 };
 
@@ -1869,7 +1974,7 @@ export const raiseDeadTalentDefinition: TalentDefinition = {
   id: TALENT_RAISE_DEAD,
   name: 'Raise Dead',
   description:
-    'Instantly summons one ZOMBIE ally at your position. Subject to the 3-ZOMBIE cap and benefits from all ZOMBIE boons.',
+    `Instantly summons one ZOMBIE ally at your position. Subject to the ${ALLIED_ZOMBIE_MAX_PER_OWNER}-ZOMBIE cap and benefits from all ZOMBIE boons.`,
   modifiesAbilityId: 'Spell (R)',
 };
 
@@ -2180,7 +2285,7 @@ export const infestingSabresSwipesTalentDefinition: TalentDefinition = {
   id: TALENT_INFESTING_SABRES_SWIPES,
   name: 'Infested Blades',
   description:
-    `Sabres basic attacks gain increased base damage and have a ${INFESTING_SABRES_SWIPES_VENOM_PROC_CHANCE * 100}% chance per hit to apply ${INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} stack of Concentrated Venom. Killing an enemy with these attacks raises a ZOMBIE ally for 30s (max 3).`,
+    `Sabres basic attacks gain increased base damage and have a ${INFESTING_SABRES_SWIPES_VENOM_PROC_CHANCE * 100}% chance per hit to apply ${INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} stack of Concentrated Venom. Killing an enemy with these attacks raises a ZOMBIE ally for ${ALLIED_ZOMBIE_LIFETIME_SEC}s (max ${ALLIED_ZOMBIE_MAX_PER_OWNER}).`,
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 
@@ -2204,7 +2309,7 @@ export const infestedFlourishTalentDefinition: TalentDefinition = {
   id: TALENT_INFESTED_FLOURISH,
   name: 'Infested Flourish',
   description:
-    `Flourish applies ${INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} stack of Concentrated Venom per hit; killing an enemy with Flourish raises a ZOMBIE ally for 30s (max 3).`,
+    `Flourish applies ${INFESTED_TALENT_CONCENTRATED_VENOM_STACKS} stack of Concentrated Venom per hit; killing an enemy with Flourish raises a ZOMBIE ally for ${ALLIED_ZOMBIE_LIFETIME_SEC}s (max ${ALLIED_ZOMBIE_MAX_PER_OWNER}).`,
   modifiesAbilityId: 'Flourish (E)',
 };
 
@@ -2236,7 +2341,7 @@ export const crescentBladesTalentDefinition: TalentDefinition = {
   id: TALENT_CRESCENT_BLADES,
   name: 'Crescent Flare',
   description:
-    'Every 3rd Sabres basic attack unleashes a crescent slash that deals 150 damage to all enemies in the arc in front of you, in addition to the normal dual-blade hit.',
+    `Every 3rd Sabres basic attack unleashes a crescent slash that deals ${CRESCENT_FLARE_BASE_DAMAGE} + ${CRESCENT_FLARE_DAMAGE_PER_AGILITY} damage per point of AGILITY to all enemies in the arc in front of you, in addition to the normal dual-blade hit.`,
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 
@@ -2276,7 +2381,7 @@ export const highCaliberTalentDefinition: TalentDefinition = {
   id: TALENT_HIGH_CALIBER,
   name: 'High Caliber',
   description:
-    `Bow left-click takes 1.5× as long to reach full charge. Perfect Shots and fully charged shots deal double base damage (+${HIGH_CALIBER_PERFECT_DAMAGE_PER_STRENGTH} / +${HIGH_CALIBER_CHARGED_DAMAGE_PER_STRENGTH} base damage per STRENGTH respectively).`,
+    `Bow left-click takes 1.5× as long to reach full charge. Perfect Shots and fully charged shots deal double base damage (+${HIGH_CALIBER_PERFECT_DAMAGE_PER_STRENGTH} / +${HIGH_CALIBER_CHARGED_DAMAGE_PER_STRENGTH} base damage per STRENGTH respectively). With Tempest Rounds: burst interval ${TEMPEST_ROUNDS_HIGH_CALIBER_BURST_FIRE_RATE}s and +${HIGH_CALIBER_TEMPEST_FLAT_DAMAGE} damage per burst arrow. With Quick Draw (no Tempest): charge-time penalty is removed while damage bonuses remain.`,
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 
@@ -2284,7 +2389,7 @@ export const triggerFingerTalentDefinition: TalentDefinition = {
   id: TALENT_TRIGGER_FINGER,
   name: 'Quick Draw',
   description:
-    `Partial and uncharged basic attacks gain +${TRIGGER_FINGER_FLAT_DAMAGE_BONUS} base damage and +${TRIGGER_FINGER_DAMAGE_PER_AGILITY} base damage per AGILITY (does not apply to Perfect Shots or fully charged shots).`,
+    `Partial and uncharged basic attacks gain +${TRIGGER_FINGER_FLAT_DAMAGE_BONUS} base damage and +${TRIGGER_FINGER_DAMAGE_PER_AGILITY} base damage per AGILITY (does not apply to Perfect Shots or fully charged shots). With Tempest Rounds: burst arrows turn red and burst interval becomes ${TEMPEST_ROUNDS_TRIGGER_FINGER_BURST_FIRE_RATE}s (with High Caliber, interval returns to ${TEMPEST_ROUNDS_BURST_FIRE_RATE}s). With High Caliber (no Tempest): removes High Caliber's charge-time penalty.`,
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 
@@ -2300,7 +2405,7 @@ export const tempestRoundsTalentDefinition: TalentDefinition = {
   id: TALENT_TEMPEST_ROUNDS,
   name: 'Tempest Rounds',
   description:
-    'Replaces the Bow\'s basic attack with a rapid three round burst attack. Sniper: burst hits detonate Hunter\'s Mark like a Perfect Shot, and deal +1 damage per AGILITY when fired from over 10 meters away.',
+    `Replaces the Bow's basic attack with a rapid three round burst attack (${TEMPEST_ROUNDS_BURST_DAMAGE} damage per arrow). Sniper: burst hits detonate Hunter's Mark like a Perfect Shot, and deal +1 damage per AGILITY when fired from over 10 meters away. High Caliber: slower bursts (+${HIGH_CALIBER_TEMPEST_FLAT_DAMAGE} damage/arrow). Quick Draw: faster red bursts. Both: fire rate returns to base.`,
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 
@@ -2316,7 +2421,7 @@ export const wyvernStingTalentDefinition: TalentDefinition = {
   id: TALENT_WYVERN_STING,
   name: 'Wyvern Sting',
   description:
-    `When you release a Perfect Shot, you also fire a venemous arrow that applies VENOM to enemies hit, dealing ${WYVERN_STING_VENOM_BASE_DPS} + ${WYVERN_STING_VENOM_PER_INTELLECT} damage per INTELLECT per second for ${COBRA_SHOT_VENOM_DURATION_SEC} seconds. Enemmies killed by VENOM raise an infested ZOMBIE ally.`,
+    `When you release a Perfect Shot, you also fire a venemous arrow that applies VENOM to enemies hit, dealing ${WYVERN_STING_VENOM_BASE_DPS} + ${WYVERN_STING_VENOM_PER_INTELLECT} damage per INTELLECT per second for ${COBRA_SHOT_VENOM_DURATION_SEC} seconds. With Tempest Rounds, the venemous arrow instead fires after you complete a three-round burst (same internal cooldown). Enemmies killed by VENOM raise an infested ZOMBIE ally.`,
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 
@@ -2348,7 +2453,7 @@ export const entanglementTalentDefinition: TalentDefinition = {
   id: TALENT_ENTANGLEMENT,
   name: 'Entanglement',
   description:
-    'Each Frostbite arrow hit Entangles its target for 5 seconds: the target cannot move, but can still cast, attack, dash, and blink. Green roots squeeze the target for 20 damage per second.',
+    `Each Frostbite arrow hit Entangles its target for 5 seconds: the target cannot move, but can still cast, attack, dash, and blink. Green roots squeeze the target for 20 damage per second. For each distinct enemy Entangled by a Frostbite cast, heal for ${ENTANGLEMENT_HEAL_BASE} + ${ENTANGLEMENT_HEAL_PER_STAMINA} HP per point of STAMINA.`,
   modifiesAbilityId: 'Frostbite (Q)',
 };
 
@@ -2380,7 +2485,7 @@ export const wyvernTalonsTalentDefinition: TalentDefinition = {
   id: TALENT_WYVERN_TALONS,
   name: 'Wyvern Talons',
   description:
-    'Reaping Talons (E) now detonates active VENOM, dealing all remaining DoT damage and instantly ending the effect. Reaping Talons and detonation kills raise an infested ZOMBIE ally for 30s (max 3).',
+    `Reaping Talons (E) now detonates active VENOM, dealing all remaining DoT damage and instantly ending the effect. Reaping Talons and detonation kills raise an infested ZOMBIE ally for ${ALLIED_ZOMBIE_LIFETIME_SEC}s (max ${ALLIED_ZOMBIE_MAX_PER_OWNER}).`,
   modifiesAbilityId: 'Reaping Talons (E)',
 };
 
@@ -2461,7 +2566,7 @@ export const crossentropyPlagueTalentDefinition: TalentDefinition = {
   id: TALENT_CROSSENTROPY_PLAGUE,
   name: 'Plague',
   description:
-    `Crossentropy now deals ${CROSSENTROPY_PLAGUE_DAMAGE} base damage and applies ${CROSSENTROPY_PLAGUE_VENOM_STACKS} stacks of Concentrated Venom per hit. Each enemy killed by Crossentropy raises up to two ZOMBIE allies for 30s (max 3).`,
+    `Crossentropy now deals ${CROSSENTROPY_PLAGUE_DAMAGE} base damage and applies ${CROSSENTROPY_PLAGUE_VENOM_STACKS} stacks of Concentrated Venom per hit. Each enemy killed by Crossentropy raises up to two ZOMBIE allies for ${ALLIED_ZOMBIE_LIFETIME_SEC}s (max ${ALLIED_ZOMBIE_MAX_PER_OWNER}).`,
   modifiesAbilityId: 'Crossentropy (E)',
 };
 
@@ -2493,7 +2598,7 @@ export const frostPathTalentDefinition: TalentDefinition = {
   id: TALENT_FROSTPATH,
   name: 'Frostpath',
   description:
-    'Each Entropic Bolt hit has a 20% chance to trigger a FROST NOVA burst centered on that enemy that applies FREEZE for 4 seconds. Cannot occur more than once every 2.5 seconds.',
+    `Each Entropic Bolt hit has a ${Math.round(FROSTPATH_PROC_CHANCE * 1000) / 10}% chance to trigger a FROST NOVA burst centered on that enemy that applies FREEZE. Icebeam ticks have a ${Math.round(FROSTPATH_ICEBEAM_PROC_CHANCE * 1000) / 10}% chance. Cannot occur more than once every ${FROST_SOLAR_PROC_EFFECT_ICD_MS / 1000} second.`,
   modifiesAbilityId: 'Entropic Bolts (Left-click)',
 };
 
@@ -2501,7 +2606,15 @@ export const solarRechargeTalentDefinition: TalentDefinition = {
   id: TALENT_SOLAR_RECHARGE,
   name: 'Solar Recharge',
   description:
-    'Each Entropic Bolt hit has a 15% chance to trigger Sunwell that HEALS you and nearby allies for 15 HP. Cannot occur more than once every 2.5 seconds.',
+    `Each Entropic Bolt hit has a ${Math.round(SOLAR_RECHARGE_PROC_CHANCE * 1000) / 10}% chance to trigger Sunwell that HEALS you and nearby allies for ${REANIMATE_SUNWELL_HEAL} + ${SOLAR_RECHARGE_HEAL_PER_STRENGTH} HP per point of STRENGTH. Icebeam ticks have a ${Math.round(SOLAR_RECHARGE_ICEBEAM_PROC_CHANCE * 1000) / 10}% chance. Cannot occur more than once every ${FROST_SOLAR_PROC_EFFECT_ICD_MS / 1000} second.`,
+  modifiesAbilityId: 'Entropic Bolts (Left-click)',
+};
+
+export const leviathanTalentDefinition: TalentDefinition = {
+  id: TALENT_LEVIATHAN,
+  name: 'Leviathan',
+  description:
+    `Each Entropic Bolt hit has a ${Math.round(LEVIATHAN_PROC_CHANCE * 1000) / 10}% chance to summon a Leviathan that surges forward ${LEVIATHAN_MAX_DISTANCE} units, dealing ${LEVIATHAN_BASE_DAMAGE} + ${LEVIATHAN_DAMAGE_PER_STAT} damage per STRENGTH and AGILITY to enemies in its path. Icebeam ticks have a ${Math.round(LEVIATHAN_ICEBEAM_PROC_CHANCE * 1000) / 10}% chance. Crossentropy casts have a ${Math.round(LEVIATHAN_CROSSENTROPY_PROC_CHANCE * 1000) / 10}% chance.`,
   modifiesAbilityId: 'Entropic Bolts (Left-click)',
 };
 
@@ -2509,7 +2622,7 @@ export const arcaneSynergyTalentDefinition: TalentDefinition = {
   id: TALENT_ARCANE_SYNERGY,
   name: 'Arcane Synergy',
   description:
-    `Entropic Bolts gain +${ARCANE_SYNERGY_ENTROPIC_BOLT_DAMAGE_PER_INTELLECT} base damage per point of INTELLECT and fire 30% faster.`,
+    `Entropic Bolts and Particle Beam gain +${ARCANE_SYNERGY_ENTROPIC_BOLT_DAMAGE_PER_INTELLECT} base damage per point of INTELLECT. Entropic Bolts also fire 30% faster.`,
   modifiesAbilityId: 'Entropic Bolts (Left-click)',
 };
 
@@ -2557,7 +2670,7 @@ export const infestingTotemTalentDefinition: TalentDefinition = {
   id: TALENT_INFESTING_TOTEM,
   name: 'Infesting Totem',
   description:
-    'Mantra\'s Totem shots now gain increased base damage. Enemies killed by Totem shots raise an allied ZOMBIE for 30s (max 3).',
+    `Mantra's Totem shots now gain increased base damage. Enemies killed by Totem shots raise an allied ZOMBIE for ${ALLIED_ZOMBIE_LIFETIME_SEC}s (max ${ALLIED_ZOMBIE_MAX_PER_OWNER}).`,
   modifiesAbilityId: 'Mantra (Q)',
 };
 
@@ -2573,7 +2686,7 @@ export const crusaderTalentDefinition: TalentDefinition = {
   id: TALENT_CRUSADER,
   name: 'Crusader',
   description:
-    'Each Runeblade basic attack that damages an enemy has a 20% chance to grant +50 base damage to each attack for 5 seconds.',
+    `Each Runeblade basic attack that damages an enemy has a chance to grant +${CRUSADER_LMB_FLAT_BONUS} base damage to each attack for ${CRUSADER_DURATION_SEC} seconds and heal you for ${CRUSADER_PROC_HEAL} HP.`,
   modifiesAbilityId: 'Primary Attack (Left-click)',
 };
 
@@ -2623,6 +2736,8 @@ export interface TalentLoadout {
   blitzCannon: boolean;
   frostPath: boolean;
   solarRecharge: boolean;
+  /** Leviathan — Entropic / Icebeam / Crossentropy can spawn a piercing ground basilisk. */
+  leviathan: boolean;
   /** Arcane Synergy — Entropic Bolt Intellect scaling + faster fire rate. */
   arcaneSynergy: boolean;
   windFury: boolean;
@@ -2683,7 +2798,7 @@ export interface TalentLoadout {
   guardSabresSwipes: boolean;
   guardSabresStab: boolean;
   guardSabresFlourish: boolean;
-  /** Crescent Blades — every 3rd Sabres LMB swing fires a 150-damage crescent slash AoE. */
+  /** Crescent Blades — every 3rd Sabres LMB swing fires a crescent slash AoE (150 + 8 per AGILITY). */
   crescentBlades: boolean;
   /** Wind Shear — every Sabres LMB swing fires a forward wind slash for 40 damage (first hit only). */
   windShear: boolean;
@@ -2702,6 +2817,8 @@ export interface TalentLoadout {
   fireAffinity: boolean;
   /** Double Stab — Backstab holds 2 staggered charges while Backstab is in loadout. */
   doubleStab: boolean;
+  /** Deathdealer — longer post-dash free sprint + spectral invis ambush that spends dash orbs. */
+  deathdealer: boolean;
   /** Co-op green room — Pack Hunter zombie pack damage bonus. */
   packHunterRoom: boolean;
   /** Co-op green room — zombies have double HP and double move speed. */
@@ -2832,6 +2949,7 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     blitzCannon: false,
     frostPath: false,
     solarRecharge: false,
+    leviathan: false,
     arcaneSynergy: false,
     windFury: false,
     dualCoil: false,
@@ -2898,6 +3016,7 @@ export function createDefaultTalentLoadout(): TalentLoadout {
     parry: false,
     fireAffinity: false,
     doubleStab: false,
+    deathdealer: false,
     packHunterRoom: false,
     berserkerStrainRoom: false,
     juggernautStrainRoom: false,
@@ -3458,6 +3577,41 @@ export function getEffectiveAgilityWithTalentBonuses(
   return stats.agility;
 }
 
+/** Superconductor shock base damage before crit: 90 (or 125 Infesting) + 2 per Agility. */
+export function getSuperconductorShockDamage(
+  agility: number,
+  totemBoltVariant?: TotemBoltVariant | null,
+): number {
+  const base =
+    totemBoltVariant === 'infesting' ? SUPERCONDUCTOR_INFESTING_DAMAGE : SUPERCONDUCTOR_TOTEM_DAMAGE;
+  return base + SUPERCONDUCTOR_DAMAGE_PER_AGILITY * Math.max(0, agility);
+}
+
+/** Solar Recharge talent proc heal: Sunwell base + 1 per Strength. */
+export function getSolarRechargeHeal(
+  stats: PlayerStats,
+  talentLoadout?: TalentLoadout | null,
+  abilityLoadout?: AbilityLoadout | null,
+): number {
+  const strength = getEffectiveStrengthWithTalentBonuses(stats, talentLoadout, abilityLoadout);
+  return REANIMATE_SUNWELL_HEAL + SOLAR_RECHARGE_HEAL_PER_STRENGTH * Math.max(0, strength);
+}
+
+/** Leviathan projectile damage: 170 + 10 per Strength + 10 per Agility. */
+export function getLeviathanDamage(
+  stats: PlayerStats,
+  talentLoadout?: TalentLoadout | null,
+  abilityLoadout?: AbilityLoadout | null,
+): number {
+  const strength = getEffectiveStrengthWithTalentBonuses(stats, talentLoadout, abilityLoadout);
+  const agility = getEffectiveAgilityWithTalentBonuses(stats, talentLoadout, abilityLoadout);
+  return (
+    LEVIATHAN_BASE_DAMAGE +
+    LEVIATHAN_DAMAGE_PER_STAT * Math.max(0, strength) +
+    LEVIATHAN_DAMAGE_PER_STAT * Math.max(0, agility)
+  );
+}
+
 export function getEffectiveStaminaWithTalentBonuses(
   stats: PlayerStats,
   _talentLoadout?: TalentLoadout | null,
@@ -3485,6 +3639,16 @@ export function getFanOfKnivesProjectileDamage(
 ): number {
   const agility = getEffectiveAgilityWithTalentBonuses(stats, talentLoadout, abilityLoadout);
   return FAN_OF_KNIVES_BASE_DAMAGE + FAN_OF_KNIVES_DAMAGE_PER_AGILITY * Math.max(0, agility);
+}
+
+/** Crescent Flare — pre-crit arc slash damage: 150 + 8 per AGILITY. */
+export function getCrescentFlareDamage(
+  stats: PlayerStats,
+  talentLoadout?: TalentLoadout | null,
+  abilityLoadout?: AbilityLoadout | null,
+): number {
+  const agility = getEffectiveAgilityWithTalentBonuses(stats, talentLoadout, abilityLoadout);
+  return CRESCENT_FLARE_BASE_DAMAGE + CRESCENT_FLARE_DAMAGE_PER_AGILITY * Math.max(0, agility);
 }
 
 /** Cyclone Rush — damage per full spin rotation: 70 + 10 per AGILITY. */
@@ -3952,6 +4116,13 @@ export function shouldApplySolarRechargeTalent(
   return !!talentLoadout?.solarRecharge;
 }
 
+/** Toggle only — Entropic / Icebeam / Crossentropy can spawn Leviathan; no ability slot requirement. */
+export function shouldApplyLeviathanTalent(
+  talentLoadout: TalentLoadout | null | undefined,
+): boolean {
+  return !!talentLoadout?.leviathan;
+}
+
 /** Arcane Synergy — Entropic Bolt Intellect scaling + faster fire rate; toggle only. */
 export function shouldApplyArcaneSynergyTalent(
   talentLoadout: TalentLoadout | null | undefined,
@@ -4183,6 +4354,21 @@ export function shouldApplyFireAffinityTalent(talentLoadout: TalentLoadout | nul
   return !!talentLoadout?.fireAffinity;
 }
 
+export function shouldApplyDeathdealerTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
+  return !!talentLoadout?.deathdealer;
+}
+
+/**
+ * Deathdealer falling swords / orb spend / invis break — real enemies only.
+ * Excludes mushrooms and tentacle-spine traps (normal weapon damage still applies).
+ */
+export function isDeathdealerJudgmentTarget(entity: Entity): boolean {
+  if (entity.getComponent(DestructibleMushroom)) return false;
+  if (!entity.getComponent(Enemy)) return false;
+  if (entity.userData?.coopServerEnemyType === 'tentacle-spine') return false;
+  return true;
+}
+
 /**
  * Guard > Stagger > Wrath > Infested > default (mutex room boons normally pick one; order handles debug multi-toggle).
  */
@@ -4333,6 +4519,31 @@ export function resolveMortalStrikeDamageBundle(
         theme,
       };
   }
+}
+
+/** Mortal Strike final pre-crit damage: colored-room base + 5 per Agility. */
+export function getMortalStrikeDamage(
+  talentLoadout: TalentLoadout | null | undefined,
+  stats: PlayerStats,
+  abilityLoadout?: AbilityLoadout | null,
+): number {
+  const bundle = resolveMortalStrikeDamageBundle(talentLoadout);
+  const agility = getEffectiveAgilityWithTalentBonuses(stats, talentLoadout, abilityLoadout);
+  return bundle.baseDamage + MORTAL_STRIKE_DAMAGE_PER_AGILITY * Math.max(0, agility);
+}
+
+/** Aftershock detonation pre-crit damage: base + Infested/Guard flats + 10 per Stamina. */
+export function getAftershockDetonationDamage(
+  talentLoadout: TalentLoadout | null | undefined,
+  stats: PlayerStats,
+  abilityLoadout?: AbilityLoadout | null,
+  options?: { infested?: boolean; wraithGuard?: boolean },
+): number {
+  let damage = BREATH_WEAPON_DAMAGE;
+  if (options?.infested) damage += AFTERSHOCK_INFESTED_DAMAGE_BONUS;
+  if (options?.wraithGuard) damage += AFTERSHOCK_GUARD_DAMAGE_BONUS;
+  const stamina = getEffectiveStaminaWithTalentBonuses(stats, talentLoadout, abilityLoadout);
+  return damage + AFTERSHOCK_DAMAGE_PER_STAMINA * Math.max(0, stamina);
 }
 
 export function shouldApplyWindShearTalent(talentLoadout: TalentLoadout | null | undefined): boolean {
@@ -4647,6 +4858,7 @@ export function buildScytheClassBoonPool(): TalentId[] {
     TALENT_REAPER,
     TALENT_FROSTPATH,
     TALENT_SOLAR_RECHARGE,
+    TALENT_LEVIATHAN,
     TALENT_ARCANE_SYNERGY,
     TALENT_SHAMAN,
     TALENT_SUPERCONDUCTOR,
@@ -4659,7 +4871,19 @@ export function buildScytheClassBoonPool(): TalentId[] {
 
 /** Sabres class boon pool (co-op): Backstab-focused talents + LMB augments (Crescent Blades, Wind Shear). */
 export function buildSabresClassBoonPool(): TalentId[] {
-  return [TALENT_KILLSTREAK, TALENT_RELENTLESS, TALENT_DOUBLE_STAB, TALENT_VORPAL_GUST, TALENT_FAN_OF_KNIVES, TALENT_PARRY, TALENT_FIRE_AFFINITY, TALENT_CRESCENT_BLADES, TALENT_WIND_SHEAR, TALENT_PSIONIC_BLADES];
+  return [
+    TALENT_KILLSTREAK,
+    TALENT_RELENTLESS,
+    TALENT_DOUBLE_STAB,
+    TALENT_VORPAL_GUST,
+    TALENT_FAN_OF_KNIVES,
+    TALENT_PARRY,
+    TALENT_FIRE_AFFINITY,
+    TALENT_CRESCENT_BLADES,
+    TALENT_WIND_SHEAR,
+    TALENT_PSIONIC_BLADES,
+    TALENT_DEATHDEALER,
+  ];
 }
 
 export function buildClassBoonPoolForWeapon(
@@ -5213,6 +5437,9 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_SOLAR_RECHARGE:
       next.solarRecharge = true;
       return next;
+    case TALENT_LEVIATHAN:
+      next.leviathan = true;
+      return next;
     case TALENT_ARCANE_SYNERGY:
       next.arcaneSynergy = true;
       return next;
@@ -5387,6 +5614,9 @@ export function applyTalentIdToLoadout(prev: TalentLoadout, id: TalentId): Talen
     case TALENT_FIRE_AFFINITY:
       next.fireAffinity = true;
       return next;
+    case TALENT_DEATHDEALER:
+      next.deathdealer = true;
+      return next;
     case TALENT_PACK_HUNTER:
       next.packHunterRoom = true;
       return next;
@@ -5553,6 +5783,7 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_WRAITH_GUARD]: wraithGuardTalentDefinition,
   [TALENT_FROSTPATH]: frostPathTalentDefinition,
   [TALENT_SOLAR_RECHARGE]: solarRechargeTalentDefinition,
+  [TALENT_LEVIATHAN]: leviathanTalentDefinition,
   [TALENT_ARCANE_SYNERGY]: arcaneSynergyTalentDefinition,
   [TALENT_WINDFURY]: windFuryTalentDefinition,
   [TALENT_CYCLONE_RUSH]: cycloneRushTalentDefinition,
@@ -5634,6 +5865,7 @@ const BOON_TALENT_DEFINITIONS: Partial<Record<TalentId, TalentDefinition>> = {
   [TALENT_FAN_OF_KNIVES]: fanOfKnivesTalentDefinition,
   [TALENT_PARRY]: parryTalentDefinition,
   [TALENT_FIRE_AFFINITY]: fireAffinityTalentDefinition,
+  [TALENT_DEATHDEALER]: deathdealerTalentDefinition,
   [TALENT_PACK_HUNTER]: packHunterTalentDefinition,
   [TALENT_BERSERKER_STRAIN]: berserkerStrainTalentDefinition,
   [TALENT_JUGGERNAUT_STRAIN]: juggernautStrainTalentDefinition,
@@ -5734,6 +5966,7 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_WRAITH_GUARD]: '/icons/strike.svg',
   [TALENT_FROSTPATH]: '/icons/frostpath.svg',
   [TALENT_SOLAR_RECHARGE]: '/icons/solarRecharge.svg',
+  [TALENT_LEVIATHAN]: '/icons/leviathan.svg',
   [TALENT_ARCANE_SYNERGY]: '/icons/arcaneSynergy.svg',
   [TALENT_WINDFURY]: '/icons/windFury.svg',
   [TALENT_COLOSSUS_GUARD]: '/icons/smite.svg',
@@ -5792,6 +6025,7 @@ export const TALENT_ICON_SRC: Record<TalentId, string | null> = {
   [TALENT_FAN_OF_KNIVES]: '/icons/fanofknives.svg',
   [TALENT_PARRY]: '/icons/parry.svg',
   [TALENT_FIRE_AFFINITY]: '/icons/fireAffinity.svg',
+  [TALENT_DEATHDEALER]: '/icons/deathdealer.svg',
   [TALENT_PACK_HUNTER]: '/icons/packHunter.svg',
   [TALENT_BERSERKER_STRAIN]: '/icons/berserkerStrain.svg',
   [TALENT_JUGGERNAUT_STRAIN]: '/icons/juggernautStrain.svg',
@@ -5952,6 +6186,7 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   // BLITZ_CANNON is baseline Crossentropy — legacy loadout flag is a no-op (not listed as owned).
   if (loadout.frostPath) out.push(TALENT_FROSTPATH);
   if (loadout.solarRecharge) out.push(TALENT_SOLAR_RECHARGE);
+  if (loadout.leviathan) out.push(TALENT_LEVIATHAN);
   if (loadout.arcaneSynergy) out.push(TALENT_ARCANE_SYNERGY);
   if (loadout.windFury) out.push(TALENT_WINDFURY);
   if (loadout.dualCoil) out.push(TALENT_DUAL_COIL);
@@ -6018,6 +6253,7 @@ export function getEnabledTalentIds(loadout: TalentLoadout): TalentId[] {
   if (loadout.fanOfKnives) out.push(TALENT_FAN_OF_KNIVES);
   if (loadout.parry) out.push(TALENT_PARRY);
   if (loadout.fireAffinity) out.push(TALENT_FIRE_AFFINITY);
+  if (loadout.deathdealer) out.push(TALENT_DEATHDEALER);
   if (loadout.packHunterRoom) out.push(TALENT_PACK_HUNTER);
   if (loadout.berserkerStrainRoom) out.push(TALENT_BERSERKER_STRAIN);
   if (loadout.juggernautStrainRoom) out.push(TALENT_JUGGERNAUT_STRAIN);

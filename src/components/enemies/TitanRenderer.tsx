@@ -78,7 +78,7 @@ function TitanRenderer({
   const [isPoweringUp, setIsPoweringUp] = useState(false);
   const [isStomping, setIsStomping] = useState(false);
   const [isCasting, setIsCasting] = useState(false);
-  const [isWalking, setIsWalking] = useState(true);
+  const [isWalking, setIsWalking] = useState(false);
 
   const targetPosition = useRef(new Vector3(position.x, position.y, position.z));
   const targetRotation = useRef(rotation);
@@ -86,7 +86,7 @@ function TitanRenderer({
   const isPoweringUpRef = useRef(false);
   const isStompingRef = useRef(false);
   const isCastingRef = useRef(false);
-  const isWalkingRef = useRef(true);
+  const isWalkingRef = useRef(false);
 
   const lastMoveTimeRef = useRef(0);
   const pendingTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -163,10 +163,6 @@ function TitanRenderer({
         setIsAttacking(false);
         setMeleeTelegraph(null);
         isAttackingRef.current = false;
-        if (!isAnimLocked()) {
-          isWalkingRef.current = true;
-          setIsWalking(true);
-        }
       }, duration);
     };
 
@@ -184,10 +180,6 @@ function TitanRenderer({
       trackTimeout(() => {
         setIsPoweringUp(false);
         isPoweringUpRef.current = false;
-        if (!isAnimLocked()) {
-          isWalkingRef.current = true;
-          setIsWalking(true);
-        }
       }, POWERUP_DURATION);
     };
 
@@ -200,10 +192,6 @@ function TitanRenderer({
       trackTimeout(() => {
         setIsStomping(false);
         isStompingRef.current = false;
-        if (!isAnimLocked()) {
-          isWalkingRef.current = true;
-          setIsWalking(true);
-        }
       }, STOMP_DURATION);
     };
 
@@ -216,10 +204,6 @@ function TitanRenderer({
       trackTimeout(() => {
         setIsCasting(false);
         isCastingRef.current = false;
-        if (!isAnimLocked()) {
-          isWalkingRef.current = true;
-          setIsWalking(true);
-        }
       }, CANNON_CAST_DURATION);
     };
 
@@ -296,7 +280,7 @@ function TitanRenderer({
   return (
     <group ref={setGroupRef} visible={!isDying || opacity.current > 0}>
       <TitanModel
-        isWalking={!isAttacking && !isPoweringUp && !isStomping && !isCasting && !isDying}
+        isWalking={isWalking}
         isAttacking={isAttacking}
         isPoweringUp={isPoweringUp}
         isStomping={isStomping}
